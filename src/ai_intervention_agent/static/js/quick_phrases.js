@@ -96,6 +96,8 @@
     "quickPhrases.importBtn": "Import",
     "quickPhrases.importBtnAriaLabel": "Import quick replies from a JSON file",
     "quickPhrases.importErrorInvalidJson": "Selected file is not valid JSON",
+    "quickPhrases.importErrorReadFailed":
+      "Could not read selected file. Please try again.",
     "quickPhrases.importErrorSchema":
       "File does not look like a quick-replies export",
     "quickPhrases.importErrorEmpty": "File contains no valid quick replies",
@@ -732,6 +734,42 @@
     return JSON.stringify(buildExportEnvelope(), null, 2);
   }
 
+  function revokeObjectURLLater(url) {
+    var revoke = function () {
+      try {
+        window.URL.revokeObjectURL(url);
+      } catch (_e) {
+        /* 忽略：浏览器自行 GC */
+      }
+    };
+    if (typeof window.setTimeout === "function") {
+      // 100ms 后释放 URL；过早 revoke 在某些 Safari 版本会取消下载
+      window.setTimeout(revoke, 100);
+    } else {
+      revoke();
+    }
+  }
+
+  function removeTemporaryDownloadAnchor(anchor) {
+    if (!anchor || !anchor.parentNode) return;
+    try {
+      anchor.parentNode.removeChild(anchor);
+    } catch (_e) {
+      /* 忽略：临时下载节点清理失败不应覆盖原始下载错误 */
+    }
+  }
+
+  function clickTemporaryDownloadAnchor(anchor) {
+    try {
+      document.body.appendChild(anchor);
+      anchor.click();
+      return true;
+    } finally {
+      // R452-export-cleanup: always release the temporary download anchor.
+      removeTemporaryDownloadAnchor(anchor);
+    }
+  }
+
   /**
    * 触发浏览器下载 ``ai-intervention-agent-quick-phrases-<ISO8601>.json``。
    * 用 ``URL.createObjectURL`` + 临时 ``<a>`` + ``revokeObjectURL`` 标准
@@ -751,18 +789,12 @@
       a.download = filename;
       // R71-CSP：dispatch 一个 click 事件比 ``a.click()`` 更兼容老 Safari
       // 且不会触发 popup blocker（同步用户手势链路上）
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // 100ms 后释放 URL；过早 revoke 在某些 Safari 版本会取消下载
-      window.setTimeout(function () {
-        try {
-          window.URL.revokeObjectURL(url);
-        } catch (_e) {
-          /* 忽略：浏览器自行 GC */
-        }
-      }, 100);
-      return true;
+      try {
+        return clickTemporaryDownloadAnchor(a);
+      } finally {
+        // R452-export-cleanup: Blob URLs pin browser-owned data until revoked.
+        revokeObjectURLLater(url);
+      }
     }
     // 兜底：data URL（老 IE / 极简 webview）。RFC 2397 编码体大小约
     // 1.33x，但 export 内容上限 20 phrase 不会超 100KB，可接受。
@@ -771,10 +803,7 @@
     var fallback = document.createElement("a");
     fallback.href = dataUrl;
     fallback.download = filename;
-    document.body.appendChild(fallback);
-    fallback.click();
-    document.body.removeChild(fallback);
-    return true;
+    return clickTemporaryDownloadAnchor(fallback);
   }
 
   /**
@@ -914,6 +943,21 @@
     return true;
   }
 
+  function resetImportFileInput(input) {
+    if (!input) return;
+    try {
+      input.value = "";
+    } catch (_e) {
+      /* ignore: resetting a file input is best-effort */
+    }
+  }
+
+  function alertImportReadFailed() {
+    if (typeof window.alert === "function") {
+      window.alert(_t("quickPhrases.importErrorReadFailed"));
+    }
+  }
+
   /**
    * file input 的 change 事件 handler。读文件 → 走 import；遇到与既有
    * 数据冲突（merge 后 added=0 且 skipped>0）时改用 confirm 提示是否
@@ -923,7 +967,11 @@
     var input = event && event.target ? event.target : null;
     if (!input || !input.files || input.files.length === 0) return;
     var file = input.files[0];
-    if (typeof window.FileReader !== "function") return;
+    if (typeof window.FileReader !== "function") {
+      alertImportReadFailed();
+      resetImportFileInput(input);
+      return;
+    }
     var reader = new window.FileReader();
     reader.onload = function () {
       var raw = reader.result;
@@ -931,7 +979,7 @@
       var result = importPhrasesFromJson(raw, "merge");
       if (!result.ok) {
         if (typeof window.alert === "function") window.alert(result.message);
-        input.value = "";
+        resetImportFileInput(input);
         return;
       }
       // 如果 merge 全是 skip（数据全部重复），提示用户是否 replace
@@ -964,15 +1012,18 @@
           })
         );
       }
-      input.value = "";
+      resetImportFileInput(input);
     };
     reader.onerror = function () {
-      if (typeof window.alert === "function") {
-        window.alert(_t("quickPhrases.importErrorInvalidJson"));
-      }
-      input.value = "";
+      alertImportReadFailed();
+      resetImportFileInput(input);
     };
-    reader.readAsText(file);
+    try {
+      reader.readAsText(file);
+    } catch (_e) {
+      alertImportReadFailed();
+      resetImportFileInput(input);
+    }
   }
 
   // ============================================================================
@@ -992,6 +1043,8 @@
    */
   var SHORTCUT_INDICES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
   var SHORTCUT_PREFIX = "alt+";
+  var _keyboardShortcutsBound = false;
+  var _fallbackShortcutHandler = null;
 
   /**
    * 派发对应 index 的 phrase 插入。``index`` 是 1-based（与 ``Alt+1``
@@ -1026,6 +1079,9 @@
    *   自挂 ``document.keydown`` listener，行为对齐。
    */
   function setupKeyboardShortcuts() {
+    if (_keyboardShortcutsBound) {
+      return true;
+    }
     if (
       typeof window !== "undefined" &&
       window.KeyboardShortcuts &&
@@ -1045,10 +1101,11 @@
              不让快捷键问题影响 chip 单击主路径 */
         }
       });
+      _keyboardShortcutsBound = true;
       return true;
     }
     // Fallback：KeyboardShortcuts 不可用时自挂 keydown listener
-    document.addEventListener("keydown", function (e) {
+    _fallbackShortcutHandler = function (e) {
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
       var idx = SHORTCUT_INDICES.indexOf(parseInt(e.key, 10));
       if (idx === -1) return;
@@ -1057,7 +1114,9 @@
       if (_activateShortcut(num)) {
         e.preventDefault();
       }
-    });
+    };
+    document.addEventListener("keydown", _fallbackShortcutHandler);
+    _keyboardShortcutsBound = true;
     return false;
   }
 
@@ -1147,6 +1206,9 @@
     editPhrase: editPhrase,
     recordPhraseUsage: recordPhraseUsage,
     setupKeyboardShortcuts: setupKeyboardShortcuts,
+    isKeyboardShortcutsBound: function () {
+      return _keyboardShortcutsBound;
+    },
     _activateShortcut: _activateShortcut,
     insertTextIntoFeedback: insertTextIntoFeedback,
     validatePhraseInput: validatePhraseInput,

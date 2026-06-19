@@ -118,12 +118,29 @@ class TestCodePasteModalHasFocusTrap(unittest.TestCase):
         assert match is not None
         body = match.group(1)
         self.assertIn(
-            "feedbackTextarea.focus()",
+            'document.getElementById("feedback-text")',
             body,
             msg=(
                 "R238 invariant: closeCodePasteModal 必须把焦点还给 "
                 "#feedback-text (modal 触发点的主战场)。不还焦点会让"
                 "用户的键盘 cursor 落在 body 上, 必须重新 Tab 才能继续。"
+            ),
+        )
+        self.assertIn(
+            "focusCodePasteModalRestoreTarget(feedbackTextarea)",
+            body,
+            msg=(
+                "R238/R452 invariant: #feedback-text fallback 必须通过 "
+                "scroll-safe focus helper 恢复焦点，而不是裸 focus()。"
+            ),
+        )
+        self.assertRegex(
+            src,
+            r"function\s+focusCodePasteModalRestoreTarget[\s\S]*?"
+            r"focus\(\{\s*preventScroll:\s*true\s*\}\)",
+            msg=(
+                "R452 invariant: code-paste modal restore helper 必须优先 "
+                "focus({ preventScroll: true })，避免关闭 modal 时页面跳动。"
             ),
         )
 
@@ -168,9 +185,21 @@ class TestSettingsPanelHasFocusTrap(unittest.TestCase):
             ),
         )
         self.assertIn(
-            "settingsBtn.focus()",
+            "this._focusElementWithoutScroll(settingsBtn)",
             body,
-            msg="R238 invariant: hideSettings() 必须调用 settingsBtn.focus()",
+            msg=(
+                "R238/R452 invariant: hideSettings() 必须通过 scroll-safe "
+                "focus helper 恢复 settingsBtn 焦点。"
+            ),
+        )
+        self.assertRegex(
+            src,
+            r"_focusElementWithoutScroll\s*\([^)]*\)\s*\{[\s\S]*?"
+            r"focus\(\{\s*preventScroll:\s*true\s*\}\)",
+            msg=(
+                "R452 invariant: settings restore helper 必须优先 "
+                "focus({ preventScroll: true })，避免关闭设置面板时页面跳动。"
+            ),
         )
 
 

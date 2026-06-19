@@ -138,6 +138,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _cachedInlineAllLocalesJson: string | null;
   private _cachedInlineAllLocalesKey: string | null;
   private _prefetchServerLangPromise: Promise<void> | null;
+  private _prefetchServerLangAbortController: AbortController | null;
+  private _visibilityBenchmarkSeq: number;
+  private _retainContextWhenHidden: boolean;
 
   constructor(
     extensionUri: vscode.Uri,
@@ -148,6 +151,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     onTasksStatsChanged?: TaskStatsCallback,
     onNewTaskIdsFromWebview?: TaskIdsCallback,
     onLanguageChanged?: (lang: string) => void,
+    retainContextWhenHidden = false,
   ) {
     this._extensionUri = extensionUri;
     this._outputChannel = outputChannel;
@@ -227,6 +231,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._cachedInlineAllLocalesJson = null;
     this._cachedInlineAllLocalesKey = null;
     this._prefetchServerLangPromise = null;
+    this._prefetchServerLangAbortController = null;
+    this._visibilityBenchmarkSeq = 0;
+    this._retainContextWhenHidden = retainContextWhenHidden === true;
   }
 
   private async _preloadResources(): Promise<void> {
@@ -341,6 +348,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     ]);
   }
 
+  private _abortPrefetchServerLanguage(): void {
+    const controller = this._prefetchServerLangAbortController;
+    this._prefetchServerLangAbortController = null;
+    this._prefetchServerLangPromise = null;
+    if (controller && typeof controller.abort === "function") {
+      try {
+        controller.abort();
+      } catch {
+        /* noop */
+      }
+    }
+  }
+
   private _prefetchServerLanguage(): Promise<void> {
     // 缓存短路：已有结果就不再发请求（updateServerUrl 会清空缓存以便重新预取）
     if (this._cachedServerLang) {
@@ -350,21 +370,42 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     if (this._prefetchServerLangPromise) {
       return this._prefetchServerLangPromise;
     }
+    const requestServerUrl = this._serverUrl;
     const task = (async (): Promise<void> => {
       let timer: ReturnType<typeof setTimeout> | null = null;
+      let controller: AbortController | null = null;
       try {
-        const controller = new AbortController();
+        controller =
+          typeof AbortController !== "undefined" ? new AbortController() : null;
         // 超时从 3500ms 收紧到 1000ms：localhost 本应毫秒级，失败即降级
         // 不再重试：失败后前端 checkServerStatus 会通过 langDetected 回传语言
-        timer = setTimeout(() => controller.abort(), 1000);
-        const resp = await fetch(`${this._serverUrl}/api/config`, {
-          signal: controller.signal,
+        if (controller) {
+          this._prefetchServerLangAbortController = controller;
+          const activeController = controller;
+          timer = setTimeout(() => {
+            try {
+              activeController.abort();
+            } catch {
+              /* noop */
+            }
+          }, 1000);
+        }
+        const resp = await fetch(`${requestServerUrl}/api/config`, {
+          signal: controller ? controller.signal : undefined,
           headers: { Accept: "application/json" },
         });
-        clearTimeout(timer);
-        timer = null;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        if (this._serverUrl !== requestServerUrl) {
+          return;
+        }
         if (resp.ok) {
           const data = (await resp.json()) as Record<string, unknown>;
+          if (this._serverUrl !== requestServerUrl) {
+            return;
+          }
           if (
             data.language &&
             typeof data.language === "string" &&
@@ -400,13 +441,18 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           ),
         );
       } catch {
-        this._log(
-          vscode.l10n.t(
-            "[i18n] Language prefetch failed, waiting for front-end langDetected",
-          ),
-        );
+        if (this._serverUrl === requestServerUrl) {
+          this._log(
+            vscode.l10n.t(
+              "[i18n] Language prefetch failed, waiting for front-end langDetected",
+            ),
+          );
+        }
       } finally {
         if (timer) clearTimeout(timer);
+        if (this._prefetchServerLangAbortController === controller) {
+          this._prefetchServerLangAbortController = null;
+        }
       }
     })();
     this._prefetchServerLangPromise = task;
@@ -429,6 +475,98 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private _sendVisibilityBenchmarkProbe(): void {
+    try {
+      this._visibilityBenchmarkSeq += 1;
+      this._sendMessage({
+        type: "visibility-benchmark-probe",
+        seq: this._visibilityBenchmarkSeq,
+        hostSentAtMs: Date.now(),
+        retainContextWhenHidden: this._retainContextWhenHidden,
+      });
+    } catch {
+      // Benchmark telemetry must never affect webview restore.
+    }
+  }
+
+  private _recordVisibilityBenchmark(message: WebviewMessage): void {
+    try {
+      const hostReceivedAtMs = Date.now();
+      const seq =
+        typeof message.seq === "number" && Number.isFinite(message.seq)
+          ? Math.max(0, Math.floor(message.seq))
+          : 0;
+      const hostSentAtMs =
+        typeof message.hostSentAtMs === "number" &&
+        Number.isFinite(message.hostSentAtMs)
+          ? message.hostSentAtMs
+          : 0;
+      const webviewReceivedAtMs =
+        typeof message.webviewReceivedAtMs === "number" &&
+        Number.isFinite(message.webviewReceivedAtMs)
+          ? message.webviewReceivedAtMs
+          : 0;
+      const webviewPaintedAtMs =
+        typeof message.webviewPaintedAtMs === "number" &&
+        Number.isFinite(message.webviewPaintedAtMs)
+          ? message.webviewPaintedAtMs
+          : 0;
+      const paintLatencyMs =
+        typeof message.paintLatencyMs === "number" &&
+        Number.isFinite(message.paintLatencyMs)
+          ? message.paintLatencyMs
+          : webviewPaintedAtMs && webviewReceivedAtMs
+            ? webviewPaintedAtMs - webviewReceivedAtMs
+            : null;
+      const roundTripMs = hostSentAtMs ? hostReceivedAtMs - hostSentAtMs : null;
+      const usedJSHeapSize =
+        typeof message.usedJSHeapSize === "number" &&
+        Number.isFinite(message.usedJSHeapSize)
+          ? Math.max(0, Math.floor(message.usedJSHeapSize))
+          : null;
+      const totalJSHeapSize =
+        typeof message.totalJSHeapSize === "number" &&
+        Number.isFinite(message.totalJSHeapSize)
+          ? Math.max(0, Math.floor(message.totalJSHeapSize))
+          : null;
+      const payload = {
+        seq,
+        retainContextWhenHidden: this._retainContextWhenHidden,
+        hostSentAtMs,
+        hostReceivedAtMs,
+        webviewReceivedAtMs,
+        webviewPaintedAtMs,
+        roundTripMs,
+        paintLatencyMs,
+        usedJSHeapSize,
+        totalJSHeapSize,
+      };
+
+      if (this._logger && typeof this._logger.event === "function") {
+        this._logger.event("webview.visibility_benchmark", payload, {
+          level: "debug",
+        });
+      } else if (this._logger && typeof this._logger.debug === "function") {
+        this._logger.debug(
+          `webview.visibility_benchmark ${JSON.stringify(payload)}`,
+        );
+      }
+
+      const outputPath =
+        typeof process !== "undefined" &&
+        process &&
+        process.env &&
+        process.env.AIIA_WEBVIEW_BENCH_OUTPUT
+          ? String(process.env.AIIA_WEBVIEW_BENCH_OUTPUT)
+          : "";
+      if (outputPath) {
+        fs.appendFileSync(outputPath, JSON.stringify(payload) + "\n", "utf8");
+      }
+    } catch {
+      // Benchmark telemetry must stay best-effort.
+    }
+  }
+
   dispose(): void {
     try {
       this._webviewReady = false;
@@ -441,6 +579,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     }
     try {
       this._pendingMessages = [];
+    } catch {
+      // 忽略
+    }
+    try {
+      this._abortPrefetchServerLanguage();
     } catch {
       // 忽略
     }
@@ -519,6 +662,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         // retainContextWhenHidden:true 时，隐藏→显示可能保留过期合成层；
         // 发送 force-repaint 让前端用 rAF 触发 layer 重建清除残影。
         this._sendMessage({ type: "force-repaint" });
+        this._sendVisibilityBenchmarkProbe();
       }
     });
 
@@ -542,6 +686,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           clearTimeout(this._webviewReadyTimer);
           this._webviewReadyTimer = null;
         }
+        this._abortPrefetchServerLanguage();
       } catch {
         // 忽略
       }
@@ -660,6 +805,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._notificationConfigFetchedAt = 0;
     this._notificationConfigFetchPromise = null;
     this._cachedServerLang = null;
+    this._abortPrefetchServerLanguage();
     if (this._view && this._view.webview) {
       try {
         this._webviewReady = false;
@@ -956,6 +1102,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         } catch {
           /* 忽略 */
         }
+        break;
+      case "visibilityBenchmarkResult":
+        this._recordVisibilityBenchmark(message);
         break;
       default:
         break;
@@ -1275,51 +1424,63 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     if (this._notificationConfigFetchPromise)
       return this._notificationConfigFetchPromise;
 
-    this._notificationConfigFetchPromise =
-      (async (): Promise<NotificationConfig | null> => {
-        try {
-          const controller =
-            typeof AbortController !== "undefined"
-              ? new AbortController()
-              : null;
-          const timeoutId = controller
-            ? setTimeout(() => {
-                try {
-                  controller.abort();
-                } catch {
-                  /* noop */
-                }
-              }, 2500)
-            : null;
-          const resp = await fetch(
-            `${this._serverUrl}/api/get-notification-config`,
-            {
-              signal: controller ? controller.signal : undefined,
-              headers: {
-                Accept: "application/json",
-                "Cache-Control": "no-cache",
-              },
-            } as RequestInit,
-          );
-          if (timeoutId) clearTimeout(timeoutId);
-          if (!resp.ok) return this._notificationConfig;
-          const data = (await resp.json()) as Record<string, unknown>;
-          const config = data.config as Record<string, unknown> | undefined;
-          if (data && data.status === "success" && config) {
-            this._notificationConfig = {
-              enabled: config.enabled !== false,
-              macosNativeEnabled: config.macos_native_enabled !== false,
-            };
-            this._notificationConfigFetchedAt = Date.now();
-          }
+    const requestServerUrl = this._serverUrl;
+    let fetchPromise: Promise<NotificationConfig | null> | null = null;
+    fetchPromise = (async (): Promise<NotificationConfig | null> => {
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      try {
+        const controller =
+          typeof AbortController !== "undefined" ? new AbortController() : null;
+        timeoutId = controller
+          ? setTimeout(() => {
+              try {
+                controller.abort();
+              } catch {
+                /* noop */
+              }
+            }, 2500)
+          : null;
+        const resp = await fetch(
+          `${requestServerUrl}/api/get-notification-config`,
+          {
+            signal: controller ? controller.signal : undefined,
+            headers: {
+              Accept: "application/json",
+              "Cache-Control": "no-cache",
+            },
+          } as RequestInit,
+        );
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        if (!resp.ok) return this._notificationConfig;
+        const data = (await resp.json()) as Record<string, unknown>;
+        const config = data.config as Record<string, unknown> | undefined;
+        if (this._serverUrl !== requestServerUrl) {
           return this._notificationConfig;
-        } catch {
-          return this._notificationConfig;
-        } finally {
+        }
+        if (data && data.status === "success" && config) {
+          this._notificationConfig = {
+            enabled: config.enabled !== false,
+            macosNativeEnabled: config.macos_native_enabled !== false,
+          };
+          this._notificationConfigFetchedAt = Date.now();
+        }
+        return this._notificationConfig;
+      } catch {
+        return this._notificationConfig;
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        if (this._notificationConfigFetchPromise === fetchPromise) {
           this._notificationConfigFetchPromise = null;
         }
-      })();
-    return this._notificationConfigFetchPromise;
+      }
+    })();
+    this._notificationConfigFetchPromise = fetchPromise;
+    return fetchPromise;
   }
 
   async dispatchNewTaskNotification(taskData: TaskData[]): Promise<void> {

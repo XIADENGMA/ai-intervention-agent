@@ -120,20 +120,62 @@
     return false;
   }
 
-  function _resolveLabel(key, fallback) {
+  function _getI18nApis() {
+    const apis = [];
     try {
       if (
-        typeof window.i18n === "object" &&
-        window.i18n &&
-        typeof window.i18n.t === "function"
+        window.AIIA_I18N &&
+        typeof window.AIIA_I18N.t === "function"
       ) {
-        const v = window.i18n.t(key);
+        apis.push(window.AIIA_I18N);
+      }
+    } catch (_e) {
+      // i18n namespace unavailable — try legacy fallback below
+    }
+    try {
+      if (
+        window.i18n &&
+        typeof window.i18n.t === "function" &&
+        apis.indexOf(window.i18n) === -1
+      ) {
+        apis.push(window.i18n);
+      }
+    } catch (_e) {
+      // legacy i18n namespace unavailable
+    }
+    return apis;
+  }
+
+  function _resolveLabel(key, fallback) {
+    try {
+      const apis = _getI18nApis();
+      for (let i = 0; i < apis.length; i += 1) {
+        const v = apis[i].t(key);
         if (typeof v === "string" && v && v !== key) return v;
       }
     } catch (_e) {
       // i18n 未就绪 fallback
     }
     return fallback;
+  }
+
+  function _nextFrame(callback) {
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(callback);
+      return;
+    }
+    setTimeout(callback, 16);
+  }
+
+  function _removeElement(element) {
+    if (!element) return;
+    if (typeof element.remove === "function") {
+      element.remove();
+      return;
+    }
+    if (element.parentNode) {
+      element.parentNode.removeChild(element);
+    }
   }
 
   function _buildBanner() {
@@ -203,7 +245,7 @@
       '<line x1="6" y1="6" x2="18" y2="18"/></svg>';
     dismissBtn.addEventListener("click", () => {
       _setDismissed();
-      banner.remove();
+      _removeElement(banner);
     });
 
     banner.appendChild(content);
@@ -226,7 +268,7 @@
       const banner = _buildBanner();
       document.body.appendChild(banner);
       // 上滑入场动画
-      requestAnimationFrame(() => {
+      _nextFrame(() => {
         banner.classList.add("ios-a2hs-banner--visible");
       });
     }, SHOW_DELAY_MS);
@@ -245,7 +287,11 @@
       _isAlreadyStandalone,
       _isDismissed,
       _setDismissed,
+      _getI18nApis,
+      _resolveLabel,
       _buildBanner,
+      _nextFrame,
+      _removeElement,
       STORAGE_KEY,
       BANNER_ID,
     };

@@ -5,7 +5,8 @@
  *
  * 依赖（全局）：showStatus(), t(), DOMSecurity, ValidationUtils, hourglassAnimation
  * 暴露（全局）：selectedImages, initializeImageFeatures(), startPeriodicCleanup(),
- *               clearAllImages, removeImage, openImageModal, handleFileUpload, ...
+ *               stopPeriodicCleanup(), clearAllImages, removeImage, openImageModal,
+ *               handleFileUpload, ...
  *
  * 加载顺序：templates/web_ui.html 中 image-upload.js 在 app.js 之前 defer 加载；
  *          app.js 顶层定义的 function t() 会挂到全局对象上，事件回调执行时可用。
@@ -15,6 +16,24 @@
 
 // 图片管理数组
 let selectedImages = [];
+
+function isImageItemActive(imageItem) {
+  if (!imageItem) return false;
+  return selectedImages.some(
+    (img) => img === imageItem && img.id === imageItem.id,
+  );
+}
+
+function dataTransferHasFiles(event) {
+  const types =
+    event && event.dataTransfer && event.dataTransfer.types
+      ? event.dataTransfer.types
+      : null;
+  if (!types) return false;
+  if (typeof types.includes === "function") return types.includes("Files");
+  if (typeof types.contains === "function") return types.contains("Files");
+  return Array.prototype.indexOf.call(types, "Files") !== -1;
+}
 
 // 性能优化工具函数
 
@@ -127,9 +146,38 @@ function sanitizeFileName(fileName) {
 // 注意：已移除 fileToBase64 函数，现在直接使用文件对象上传
 
 // 改进的内存管理跟踪：防止内存泄漏
+const OBJECT_URL_MAX_AGE_MS = 20 * 60 * 1000;
+const OBJECT_URL_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
 let objectURLs = new Set();
 let urlToFileMap = new WeakMap(); // 使用WeakMap跟踪URL与文件的关联
 let urlCreationTime = new Map(); // 跟踪URL创建时间，用于自动清理
+let objectURLCleanupIntervalId = null;
+let objectURLLifecycleListenersInstalled = false;
+
+function shouldRunObjectURLCleanupInterval() {
+  if (typeof setInterval !== "function") return false;
+  if (objectURLs.size === 0) return false;
+  if (typeof document !== "undefined" && document.hidden === true) {
+    return false;
+  }
+  return true;
+}
+
+function stopPeriodicCleanup() {
+  if (objectURLCleanupIntervalId === null) return false;
+  if (typeof clearInterval === "function") {
+    clearInterval(objectURLCleanupIntervalId);
+  }
+  objectURLCleanupIntervalId = null;
+  return true;
+}
+
+function stopPeriodicCleanupIfIdle() {
+  if (objectURLs.size === 0) {
+    stopPeriodicCleanup();
+  }
+}
 
 // 创建安全的Object URL
 function createObjectURL(file) {
@@ -138,17 +186,7 @@ function createObjectURL(file) {
     objectURLs.add(url);
     urlToFileMap.set(file, url);
     urlCreationTime.set(url, Date.now());
-
-    // 设置自动清理定时器（30分钟后自动清理）
-    setTimeout(
-      () => {
-        if (objectURLs.has(url)) {
-          console.warn(`Auto-cleaning expired object URL: ${url}`);
-          revokeObjectURL(url);
-        }
-      },
-      30 * 60 * 1000,
-    ); // 30分钟
+    startPeriodicCleanup();
 
     return url;
   } catch (error) {
@@ -166,6 +204,7 @@ function revokeObjectURL(url) {
       URL.revokeObjectURL(url);
       objectURLs.delete(url);
       urlCreationTime.delete(url);
+      stopPeriodicCleanupIfIdle();
       console.debug(`Revoked object URL: ${url}`);
     }
   } catch (error) {
@@ -188,6 +227,7 @@ function cleanupAllObjectURLs() {
 
   objectURLs.clear();
   urlCreationTime.clear();
+  stopPeriodicCleanup();
 
   const endTime = performance.now();
   console.debug(
@@ -195,29 +235,66 @@ function cleanupAllObjectURLs() {
   );
 }
 
-// 定期清理过期的URL对象（每5分钟检查一次）
+function cleanupExpiredObjectURLs(now = Date.now()) {
+  const expiredUrls = [];
+
+  urlCreationTime.forEach((creationTime, url) => {
+    if (now - creationTime > OBJECT_URL_MAX_AGE_MS) {
+      expiredUrls.push(url);
+    }
+  });
+
+  if (expiredUrls.length > 0) {
+    console.debug(`Periodic cleanup: ${expiredUrls.length} expired object URLs`);
+    expiredUrls.forEach((url) => revokeObjectURL(url));
+  }
+
+  stopPeriodicCleanupIfIdle();
+  return expiredUrls.length;
+}
+
+// 定期清理过期的URL对象（仅在有 URL 且页面可见时运行）
 function startPeriodicCleanup() {
-  setInterval(
-    () => {
-      const now = Date.now();
-      const expiredUrls = [];
+  if (objectURLCleanupIntervalId !== null) return objectURLCleanupIntervalId;
+  if (!shouldRunObjectURLCleanupInterval()) return null;
 
-      urlCreationTime.forEach((creationTime, url) => {
-        // 清理超过20分钟的URL对象
-        if (now - creationTime > 20 * 60 * 1000) {
-          expiredUrls.push(url);
-        }
-      });
+  objectURLCleanupIntervalId = setInterval(() => {
+    cleanupExpiredObjectURLs();
+  }, OBJECT_URL_CLEANUP_INTERVAL_MS);
+  return objectURLCleanupIntervalId;
+}
 
-      if (expiredUrls.length > 0) {
-        console.debug(
-          `Periodic cleanup: ${expiredUrls.length} expired object URLs`,
-        );
-        expiredUrls.forEach((url) => revokeObjectURL(url));
-      }
-    },
-    5 * 60 * 1000,
-  ); // 每5分钟检查一次
+function syncObjectURLCleanupWithVisibility() {
+  if (typeof document !== "undefined" && document.hidden === true) {
+    stopPeriodicCleanup();
+    return;
+  }
+  cleanupExpiredObjectURLs();
+  startPeriodicCleanup();
+}
+
+function setupObjectURLCleanupLifecycle() {
+  if (objectURLLifecycleListenersInstalled) return false;
+  objectURLLifecycleListenersInstalled = true;
+
+  if (
+    typeof document !== "undefined" &&
+    typeof document.addEventListener === "function"
+  ) {
+    document.addEventListener(
+      "visibilitychange",
+      syncObjectURLCleanupWithVisibility,
+    );
+  }
+
+  if (
+    typeof window !== "undefined" &&
+    typeof window.addEventListener === "function"
+  ) {
+    window.addEventListener("pageshow", syncObjectURLCleanupWithVisibility);
+  }
+
+  return true;
 }
 
 /**
@@ -566,11 +643,12 @@ async function addImageToList(file) {
 
   // 预先生成 ID，确保 catch 分支也能安全引用
   const imageId = Date.now() + Math.random();
+  let imageItem = null;
 
   try {
     // 创建加载占位符
     const timestamp = Date.now();
-    const imageItem = {
+    imageItem = {
       id: imageId,
       file: file,
       name: file.name,
@@ -586,6 +664,9 @@ async function addImageToList(file) {
 
     // 压缩图片（如果需要）
     const processedFile = await compressImage(file);
+    if (!isImageItemActive(imageItem)) {
+      return false;
+    }
 
     // 更新文件信息
     imageItem.file = processedFile;
@@ -609,6 +690,10 @@ async function addImageToList(file) {
     );
     return true;
   } catch (error) {
+    if (!isImageItemActive(imageItem)) {
+      return false;
+    }
+
     console.error("Image processing failed:", error);
     showStatus(t("status.imageError", { reason: error.message }), "error");
 
@@ -641,6 +726,10 @@ async function addImageToList(file) {
 // 优化的图片预览渲染
 function renderImagePreview(imageItem, isLoading = false) {
   rafUpdate(() => {
+    if (!isImageItemActive(imageItem)) {
+      return;
+    }
+
     const previewContainer = document.getElementById("image-previews");
     if (!previewContainer) {
       console.error(
@@ -679,11 +768,20 @@ function renderImagePreview(imageItem, isLoading = false) {
       const img = new Image();
       img.onload = () => {
         rafUpdate(() => {
+          if (!isImageItemActive(imageItem)) {
+            return;
+          }
+          const currentPreviewElement = document.getElementById(
+            `preview-${imageItem.id}`,
+          );
+          if (!currentPreviewElement) {
+            return;
+          }
           const updatedPreviewElement = DOMSecurity.createImagePreview(
             imageItem,
             false,
           );
-          replacePreviewChildren(previewElement, updatedPreviewElement);
+          replacePreviewChildren(currentPreviewElement, updatedPreviewElement);
         });
       };
       img.src = imageItem.previewUrl;
@@ -743,8 +841,13 @@ function clearAllImages() {
   console.debug("All images cleared; memory released");
 }
 
-// 页面卸载时的清理
-function cleanupOnUnload() {
+// 页面离开时的清理
+function cleanupOnPageExit(event) {
+  if (event && event.persisted === true) {
+    stopPeriodicCleanup();
+    return;
+  }
+
   // 清理 Lottie 动画实例（避免在页面卸载过程中仍占用定时器/RAF）
   try {
     if (hourglassAnimation) {
@@ -765,9 +868,10 @@ function cleanupOnUnload() {
   clearAllImages();
 }
 
-// 监听页面卸载事件
-window.addEventListener("beforeunload", cleanupOnUnload);
-window.addEventListener("pagehide", cleanupOnUnload);
+setupObjectURLCleanupLifecycle();
+
+// 监听页面离开事件；pagehide 与 bfcache 兼容，持久化时只暂停定时器。
+window.addEventListener("pagehide", cleanupOnPageExit);
 
 // 更新图片计数
 function updateImageCounter() {
@@ -867,33 +971,57 @@ async function handleFileUpload(files) {
 
 // 优化的拖放功能实现
 function initializeDragAndDrop() {
+  if (typeof window.__aiInterventionAgentDragDropCleanup === "function") {
+    try {
+      window.__aiInterventionAgentDragDropCleanup();
+    } catch (_) {
+      // 忽略：旧 handler 清理失败不应阻止重新绑定当前 DOM
+    }
+  }
+
   const textarea = document.getElementById("feedback-text");
   const dragOverlay = document.getElementById("drag-overlay");
+
+  if (!textarea || !dragOverlay) {
+    const missing = [];
+    if (!textarea) missing.push("#feedback-text");
+    if (!dragOverlay) missing.push("#drag-overlay");
+    console.debug(
+      `Image drag-and-drop skipped: ${missing.join(", ")} unavailable`,
+    );
+    return false;
+  }
+
   let dragCounter = 0;
   let dragTimer = null;
+  const listenerEntries = [];
+
+  const addDocumentListener = (type, handler, options) => {
+    document.addEventListener(type, handler, options);
+    listenerEntries.push({ type, handler, options });
+  };
 
   // 阻止默认的拖放行为
   ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
-    document.addEventListener(eventName, preventDefaults, { passive: false });
+    addDocumentListener(eventName, preventDefaults, { passive: false });
   });
 
   function preventDefaults(e) {
+    if (!dataTransferHasFiles(e)) return;
     e.preventDefault();
     e.stopPropagation();
   }
 
   // 节流的拖拽处理函数
-  const throttledDragEnter = throttle((e) => {
+  const throttledFileDragEnter = throttle((e) => {
     dragCounter++;
-    if (e.dataTransfer.types.includes("Files")) {
-      rafUpdate(() => {
-        dragOverlay.style.display = "flex";
-        textarea.classList.add("textarea-drag-over");
-      });
-    }
+    rafUpdate(() => {
+      dragOverlay.style.display = "flex";
+      textarea.classList.add("textarea-drag-over");
+    });
   }, 100);
 
-  const throttledDragLeave = throttle((e) => {
+  const throttledFileDragLeave = throttle((e) => {
     dragCounter--;
     if (dragCounter <= 0) {
       dragCounter = 0;
@@ -907,19 +1035,26 @@ function initializeDragAndDrop() {
     }
   }, 50);
 
-  const throttledDragOver = throttle((e) => {
-    if (e.dataTransfer.types.includes("Files")) {
-      e.dataTransfer.dropEffect = "copy";
-    }
+  const throttledFileDragOver = throttle((e) => {
+    e.dataTransfer.dropEffect = "copy";
   }, 50);
 
-  // 拖拽事件监听
-  document.addEventListener("dragenter", throttledDragEnter);
-  document.addEventListener("dragleave", throttledDragLeave);
-  document.addEventListener("dragover", throttledDragOver);
+  const dragEnterHandler = (e) => {
+    if (!dataTransferHasFiles(e)) return;
+    throttledFileDragEnter(e);
+  };
 
-  // 拖拽放下
-  document.addEventListener("drop", function (e) {
+  const dragLeaveHandler = (e) => {
+    if (!dataTransferHasFiles(e)) return;
+    throttledFileDragLeave(e);
+  };
+
+  const dragOverHandler = (e) => {
+    if (!dataTransferHasFiles(e)) return;
+    throttledFileDragOver(e);
+  };
+
+  const dropHandler = function (e) {
     dragCounter = 0;
     clearTimeout(dragTimer);
 
@@ -928,17 +1063,41 @@ function initializeDragAndDrop() {
       textarea.classList.remove("textarea-drag-over");
     });
 
-    if (e.dataTransfer.files.length > 0) {
-      // 验证文件数量限制
-      const totalFiles = selectedImages.length + e.dataTransfer.files.length;
-      if (totalFiles > MAX_IMAGE_COUNT) {
-        showStatus(t("status.maxImages", { count: MAX_IMAGE_COUNT }), "error");
-        return;
-      }
+    const files = e && e.dataTransfer ? e.dataTransfer.files : null;
+    if (!files || files.length === 0) return;
 
-      handleFileUpload(e.dataTransfer.files);
+    // 验证文件数量限制
+    const totalFiles = selectedImages.length + files.length;
+    if (totalFiles > MAX_IMAGE_COUNT) {
+      showStatus(t("status.maxImages", { count: MAX_IMAGE_COUNT }), "error");
+      return;
     }
-  });
+
+    handleFileUpload(files);
+  };
+
+  // 拖拽事件监听
+  addDocumentListener("dragenter", dragEnterHandler);
+  addDocumentListener("dragleave", dragLeaveHandler);
+  addDocumentListener("dragover", dragOverHandler);
+  addDocumentListener("drop", dropHandler);
+
+  function cleanupDragAndDrop() {
+    listenerEntries.forEach((entry) => {
+      document.removeEventListener(entry.type, entry.handler, entry.options);
+    });
+    clearTimeout(dragTimer);
+    dragCounter = 0;
+    dragOverlay.style.display = "none";
+    textarea.classList.remove("textarea-drag-over");
+    if (window.__aiInterventionAgentDragDropCleanup === cleanupDragAndDrop) {
+      window.__aiInterventionAgentDragDropCleanup = null;
+    }
+  }
+
+  window.__aiInterventionAgentDragDropCleanup = cleanupDragAndDrop;
+
+  return true;
 }
 
 // 粘贴功能实现
@@ -1086,17 +1245,35 @@ function initializeFileSelection() {
   const fileInput = document.getElementById("file-upload-input");
   const uploadBtn = document.getElementById("upload-image-btn");
 
-  uploadBtn.addEventListener("click", () => {
-    fileInput.click();
-  });
+  if (!fileInput || !uploadBtn) {
+    console.debug(
+      "Image file selection skipped: upload controls unavailable",
+    );
+    return false;
+  }
 
-  fileInput.addEventListener("change", (e) => {
-    if (e.target.files.length > 0) {
-      handleFileUpload(e.target.files);
-      // 清空input，允许重复选择相同文件
-      e.target.value = "";
-    }
-  });
+  if (!uploadBtn.dataset.aiiaImageUploadWired) {
+    uploadBtn.dataset.aiiaImageUploadWired = "1";
+    uploadBtn.addEventListener("click", () => {
+      if (typeof fileInput.click === "function") {
+        fileInput.click();
+      }
+    });
+  }
+
+  if (!fileInput.dataset.aiiaImageUploadWired) {
+    fileInput.dataset.aiiaImageUploadWired = "1";
+    fileInput.addEventListener("change", (e) => {
+      const target = e && e.target ? e.target : fileInput;
+      if (target.files && target.files.length > 0) {
+        handleFileUpload(target.files);
+        // 清空input，允许重复选择相同文件
+        target.value = "";
+      }
+    });
+  }
+
+  return true;
 }
 
 // 图片模态框功能（cycle-8 Track B R263：完整 a11y dialog 行为）
@@ -1112,6 +1289,7 @@ function initializeFileSelection() {
 // 修复参考 keyboard_shortcut_help.js (cycle-1 Track A R255) 的模式。
 
 let _imageModalPreviouslyFocusedElement = null;
+let _imageModalKeydownHandlersAttached = false;
 
 function _imageModalBackgroundClickHandler(e) {
   const modal = document.getElementById("image-modal");
@@ -1147,10 +1325,43 @@ if (document.readyState === "loading") {
   _initImageModalOnce();
 }
 
-function openImageModal(base64, name, size) {
+function _attachImageModalKeydownHandlers() {
+  if (_imageModalKeydownHandlersAttached) return;
+  document.addEventListener("keydown", handleModalKeydown);
+  document.addEventListener("keydown", _imageModalTabTrapHandler);
+  _imageModalKeydownHandlersAttached = true;
+}
+
+function _detachImageModalKeydownHandlers() {
+  if (!_imageModalKeydownHandlersAttached) return;
+  document.removeEventListener("keydown", handleModalKeydown);
+  document.removeEventListener("keydown", _imageModalTabTrapHandler);
+  _imageModalKeydownHandlersAttached = false;
+}
+
+function _getImageModalPartsForOpen() {
   const modal = document.getElementById("image-modal");
   const modalImage = document.getElementById("modal-image");
   const modalInfo = document.getElementById("modal-info");
+
+  if (!modal || !modalImage || !modalInfo) {
+    const missing = [];
+    if (!modal) missing.push("#image-modal");
+    if (!modalImage) missing.push("#modal-image");
+    if (!modalInfo) missing.push("#modal-info");
+    console.debug(`Image modal open skipped: ${missing.join(", ")} unavailable`);
+    return null;
+  }
+
+  return { modal, modalImage, modalInfo };
+}
+
+function openImageModal(base64, name, size) {
+  const parts = _getImageModalPartsForOpen();
+  if (!parts) return false;
+
+  const { modal, modalImage, modalInfo } = parts;
+  const wasAlreadyOpen = modal.classList.contains("show");
 
   modalImage.src = base64;
   modalImage.alt = name;
@@ -1164,8 +1375,11 @@ function openImageModal(base64, name, size) {
     size: _formatNum(size / 1024, { maximumFractionDigits: 2 }),
   });
 
-  // R263 a11y: 记录触发元素以便 close 时回归焦点（cycle-1 R255 pattern）
-  _imageModalPreviouslyFocusedElement = document.activeElement;
+  // R263 a11y: 记录触发元素以便 close 时回归焦点（cycle-1 R255 pattern）。
+  // 若 modal 已打开，只更新图片内容，不把 opener 污染成 modal 内 close button。
+  if (!wasAlreadyOpen) {
+    _imageModalPreviouslyFocusedElement = document.activeElement;
+  }
 
   // R237 follow-up：HTML 默认带 ``hidden`` attribute（screen reader 跳过且
   // user-agent stylesheet 默认 ``display: none``），打开 modal 时必须先
@@ -1173,29 +1387,33 @@ function openImageModal(base64, name, size) {
   modal.removeAttribute("hidden");
   modal.classList.add("show");
 
-  document.addEventListener("keydown", handleModalKeydown);
-  document.addEventListener("keydown", _imageModalTabTrapHandler);
+  _attachImageModalKeydownHandlers();
 
   // R263 a11y: 把焦点移到 close button（modal 内唯一可聚焦元素）
   const closeBtn = modal.querySelector(".image-modal-close");
-  if (closeBtn) {
+  if (!wasAlreadyOpen && closeBtn) {
     try {
       closeBtn.focus();
     } catch (_e) {
       // ignore
     }
   }
+
+  return true;
 }
 
 function closeImageModal() {
   const modal = document.getElementById("image-modal");
-  modal.classList.remove("show");
-  // R237 follow-up：恢复 ``hidden`` attribute，让 screen reader 重新跳过
-  // 整个 modal 并避免 page-load 残留焦点陷阱。
-  modal.setAttribute("hidden", "");
+  if (modal) {
+    modal.classList.remove("show");
+    // R237 follow-up：恢复 ``hidden`` attribute，让 screen reader 重新跳过
+    // 整个 modal 并避免 page-load 残留焦点陷阱。
+    modal.setAttribute("hidden", "");
+  } else {
+    console.debug("Image modal close skipped: #image-modal unavailable");
+  }
 
-  document.removeEventListener("keydown", handleModalKeydown);
-  document.removeEventListener("keydown", _imageModalTabTrapHandler);
+  _detachImageModalKeydownHandlers();
 
   // R263 a11y: 焦点回归到触发元素（cycle-1 R255 pattern）
   if (
@@ -1209,6 +1427,8 @@ function closeImageModal() {
     }
   }
   _imageModalPreviouslyFocusedElement = null;
+
+  return !!modal;
 }
 
 function handleModalKeydown(event) {
@@ -1303,7 +1523,8 @@ function initializeImageFeatures() {
 
     // 清除所有图片按钮事件
     const clearBtn = document.getElementById("clear-all-images-btn");
-    if (clearBtn) {
+    if (clearBtn && !clearBtn.dataset.aiiaImageUploadWired) {
+      clearBtn.dataset.aiiaImageUploadWired = "1";
       clearBtn.addEventListener("click", clearAllImages);
     }
 
@@ -1312,4 +1533,25 @@ function initializeImageFeatures() {
     console.error("Image features init failed:", error);
     showStatus(t("status.imageInitFailed"), "error");
   }
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    OBJECT_URL_MAX_AGE_MS,
+    OBJECT_URL_CLEANUP_INTERVAL_MS,
+    createObjectURL,
+    revokeObjectURL,
+    cleanupAllObjectURLs,
+    cleanupExpiredObjectURLs,
+    startPeriodicCleanup,
+    stopPeriodicCleanup,
+    setupObjectURLCleanupLifecycle,
+    _getObjectURLLifecycleState: () => ({
+      size: objectURLs.size,
+      cleanupIntervalId: objectURLCleanupIntervalId,
+      lifecycleListenersInstalled: objectURLLifecycleListenersInstalled,
+      trackedUrls: Array.from(objectURLs),
+      creationTimes: Array.from(urlCreationTime.entries()),
+    }),
+  };
 }

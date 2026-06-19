@@ -160,6 +160,12 @@ diverges.
   committed baseline and fails CI if regressions exceed the
   configured budget. Bench-and-gate are kept strictly separate;
   the bench never bakes in thresholds.
+- [`bench_vscode_webview_retain.mjs`](bench_vscode_webview_retain.mjs)
+  _(R452)_ — summarize VS Code Webview hide/show probes emitted when
+  `AIIA_WEBVIEW_BENCH_OUTPUT=/tmp/aiia-webview-retain.ndjson` is set.
+  Reports restore round-trip, two-`requestAnimationFrame` paint latency,
+  and Chromium heap fields when available, so `retainContextWhenHidden`
+  decisions are data-backed instead of guesswork.
 
 ## Tests / QA
 

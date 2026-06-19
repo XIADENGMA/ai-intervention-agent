@@ -384,7 +384,11 @@
       try {
         card.focus({ preventScroll: true });
       } catch (_e) {
-        // 老浏览器不支持 focus options，忽略
+        try {
+          card.focus();
+        } catch (_e2) {
+          // 元素不可 focus —— silent skip，对 a11y 无伤
+        }
       }
     }
 

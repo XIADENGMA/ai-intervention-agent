@@ -207,7 +207,6 @@ def scan() -> dict[str, dict]:
     # 这些 keys 在代码里以 ``let msgKey = "..."``变量赋值方式构造，
     # 后面 ``t(msgKey)`` 才用 — 正则无法 trace dynamic key。
     _WEB_RESERVED_DYNAMIC: set[str] = {
-        "settings.customSound.errors.generic",
         "settings.customSound.errors.invalidMime",
         "settings.customSound.errors.tooLarge",
         "settings.customSound.errors.readFailed",

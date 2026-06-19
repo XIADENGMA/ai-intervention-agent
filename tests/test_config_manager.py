@@ -3036,6 +3036,10 @@ class TestFindConfigFileUvxMode(unittest.TestCase):
                 patch(
                     "ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE", True
                 ),
+                patch(
+                    "ai_intervention_agent.config_manager._macos_legacy_xdg_config_dir",
+                    return_value=None,
+                ),
                 patch.dict(os.environ, {}, clear=False),
             ):
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
@@ -3057,6 +3061,10 @@ class TestFindConfigFileUvxMode(unittest.TestCase):
                 ),
                 patch(
                     "ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE", True
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager._macos_legacy_xdg_config_dir",
+                    return_value=None,
                 ),
                 patch.dict(os.environ, {}, clear=False),
             ):
@@ -3080,6 +3088,10 @@ class TestFindConfigFileUvxMode(unittest.TestCase):
                 patch(
                     "ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE", True
                 ),
+                patch(
+                    "ai_intervention_agent.config_manager._macos_legacy_xdg_config_dir",
+                    return_value=None,
+                ),
                 patch.dict(os.environ, {}, clear=False),
             ):
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
@@ -3099,6 +3111,10 @@ class TestFindConfigFileUvxMode(unittest.TestCase):
                 patch(
                     "ai_intervention_agent.config_manager._get_user_config_dir_fallback",
                     return_value=Path(td),
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager._macos_legacy_xdg_config_dir",
+                    return_value=None,
                 ),
                 patch.dict(os.environ, {}, clear=False),
             ):

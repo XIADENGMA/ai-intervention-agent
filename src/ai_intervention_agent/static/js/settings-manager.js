@@ -73,18 +73,65 @@ class SettingsManager {
       barkUrlTemplate: "{base_url}/?task_id={task_id}",
     };
     this.initialized = false;
+    this._initPromise = null;
+    this._eventListenersInitialized = false;
+    this._settingsEscHandler = null;
+    this._previouslyFocusedElement = null;
+    this._backendSyncPromise = null;
+    this._pendingBackendSyncSettings = null;
+    this._settingsEditEpoch = 0;
+    this._feedbackConfigSavePromise = null;
+    this._pendingFeedbackConfigUpdates = null;
+    this._feedbackConfigDebounceTimer = null;
+    this._pendingDebouncedFeedbackConfigUpdates = null;
+    this._feedbackConfigSaveEpoch = 0;
+    this._feedbackConfigEditEpoch = 0;
+    this._languageChangeEpoch = 0;
+    this._languagePersistPromise = null;
+    this._pendingLanguagePreference = null;
     // 注意：不在构造函数中调用 init()，由 DOMContentLoaded 触发
   }
 
-  async init() {
-    if (this.initialized) return;
-    this.settings = await this.loadSettings();
-    this.feedbackConfig = await this.loadFeedbackConfig();
-    this.initEventListeners();
-    this.initOpenConfigFileButton();
-    this.initBarkBaseUrlStatus();
-    this.initialized = true;
-    console.debug("SettingsManager initialized");
+  _setElementPropertyById(id, propertyName, value) {
+    const element = document.getElementById(id);
+    if (element) {
+      element[propertyName] = value;
+    }
+    return element;
+  }
+
+  _setFirstMatchText(selector, value) {
+    const element = document.querySelector(selector);
+    if (element) {
+      element.textContent = value;
+    }
+    return element;
+  }
+
+  init() {
+    if (this.initialized) {
+      return Promise.resolve();
+    }
+    if (this._initPromise) {
+      return this._initPromise;
+    }
+
+    this._initPromise = (async () => {
+      try {
+        this.settings = await this.loadSettings();
+        this.feedbackConfig = await this.loadFeedbackConfig();
+        this.initEventListeners();
+        this.initOpenConfigFileButton();
+        this.initBarkBaseUrlStatus();
+        this.initialized = true;
+        console.debug("SettingsManager initialized");
+      } finally {
+        // R279 audit: state-only cleanup; no DOM access in this finally block.
+        this._initPromise = null;
+      }
+    })();
+
+    return this._initPromise;
   }
 
   async loadSettings() {
@@ -161,6 +208,7 @@ class SettingsManager {
   }
 
   updateSetting(key, value) {
+    this._settingsEditEpoch += 1;
     this.settings[key] = value;
     this.saveSettings();
     this.applySettings();
@@ -195,7 +243,30 @@ class SettingsManager {
     }
   }
 
-  async syncConfigToBackend() {
+  syncConfigToBackend() {
+    this._pendingBackendSyncSettings = {
+      ...(this.settings || this.defaultSettings),
+    };
+    if (!this._backendSyncPromise) {
+      this._backendSyncPromise = this._drainBackendConfigSyncQueue();
+    }
+    return this._backendSyncPromise;
+  }
+
+  async _drainBackendConfigSyncQueue() {
+    try {
+      while (this._pendingBackendSyncSettings) {
+        const settingsSnapshot = this._pendingBackendSyncSettings;
+        this._pendingBackendSyncSettings = null;
+        await this._postNotificationConfigToBackend(settingsSnapshot);
+      }
+    } finally {
+      // R279 audit: state-only cleanup; no DOM nodes are touched here.
+      this._backendSyncPromise = null;
+    }
+  }
+
+  async _postNotificationConfigToBackend(settingsSnapshot) {
     try {
       _suppressConfigChangedEchoIfAvailable();
       const response = await fetch("/api/update-notification-config", {
@@ -203,7 +274,7 @@ class SettingsManager {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(this.settings),
+        body: JSON.stringify(settingsSnapshot),
       });
 
       const result = await response.json();
@@ -267,22 +338,47 @@ class SettingsManager {
 
   updateUI() {
     // 更新设置面板中的控件状态
-    document.getElementById("notification-enabled").checked =
-      this.settings.enabled;
-    document.getElementById("web-notification-enabled").checked =
-      this.settings.webEnabled;
-    document.getElementById("auto-request-permission").checked =
-      this.settings.autoRequestPermission;
-    document.getElementById("sound-notification-enabled").checked =
-      this.settings.soundEnabled;
-    document.getElementById("sound-mute").checked = this.settings.soundMute;
-    document.getElementById("sound-volume").value = this.settings.soundVolume;
-    document.querySelector(".volume-value").textContent =
-      `${this.settings.soundVolume}%`;
-    document.getElementById("mobile-optimized").checked =
-      this.settings.mobileOptimized;
-    document.getElementById("mobile-vibrate").checked =
-      this.settings.mobileVibrate;
+    this._setElementPropertyById(
+      "notification-enabled",
+      "checked",
+      this.settings.enabled,
+    );
+    this._setElementPropertyById(
+      "web-notification-enabled",
+      "checked",
+      this.settings.webEnabled,
+    );
+    this._setElementPropertyById(
+      "auto-request-permission",
+      "checked",
+      this.settings.autoRequestPermission,
+    );
+    this._setElementPropertyById(
+      "sound-notification-enabled",
+      "checked",
+      this.settings.soundEnabled,
+    );
+    this._setElementPropertyById(
+      "sound-mute",
+      "checked",
+      this.settings.soundMute,
+    );
+    this._setElementPropertyById(
+      "sound-volume",
+      "value",
+      this.settings.soundVolume,
+    );
+    this._setFirstMatchText(".volume-value", `${this.settings.soundVolume}%`);
+    this._setElementPropertyById(
+      "mobile-optimized",
+      "checked",
+      this.settings.mobileOptimized,
+    );
+    this._setElementPropertyById(
+      "mobile-vibrate",
+      "checked",
+      this.settings.mobileVibrate,
+    );
 
     // 语言选择器
     const langSelect = document.getElementById("language-select");
@@ -295,13 +391,23 @@ class SettingsManager {
     }
 
     // 更新 Bark 设置
-    document.getElementById("bark-notification-enabled").checked =
-      this.settings.barkEnabled;
-    document.getElementById("bark-url").value = this.settings.barkUrl;
-    document.getElementById("bark-device-key").value =
-      this.settings.barkDeviceKey;
-    document.getElementById("bark-icon").value = this.settings.barkIcon;
-    document.getElementById("bark-action").value = this.settings.barkAction;
+    this._setElementPropertyById(
+      "bark-notification-enabled",
+      "checked",
+      this.settings.barkEnabled,
+    );
+    this._setElementPropertyById("bark-url", "value", this.settings.barkUrl);
+    this._setElementPropertyById(
+      "bark-device-key",
+      "value",
+      this.settings.barkDeviceKey,
+    );
+    this._setElementPropertyById("bark-icon", "value", this.settings.barkIcon);
+    this._setElementPropertyById(
+      "bark-action",
+      "value",
+      this.settings.barkAction,
+    );
     const barkUrlTplEl = document.getElementById("bark-url-template");
     if (barkUrlTplEl) {
       barkUrlTplEl.value = this.settings.barkUrlTemplate || "";
@@ -414,11 +520,17 @@ class SettingsManager {
       }
     }
 
-    document.getElementById("browser-support-status").innerHTML =
-      browserSupportHtml;
-    document.getElementById("notification-permission-status").innerHTML =
-      permissionHtml;
-    document.getElementById("audio-status").innerHTML = audioStateHtml;
+    this._setElementPropertyById(
+      "browser-support-status",
+      "innerHTML",
+      browserSupportHtml,
+    );
+    this._setElementPropertyById(
+      "notification-permission-status",
+      "innerHTML",
+      permissionHtml,
+    );
+    this._setElementPropertyById("audio-status", "innerHTML", audioStateHtml);
     const secureEl = document.getElementById(
       "notification-secure-context-status",
     );
@@ -428,6 +540,11 @@ class SettingsManager {
   }
 
   initEventListeners() {
+    if (this._eventListenersInitialized) {
+      return;
+    }
+    this._eventListenersInitialized = true;
+
     // 设置按钮点击事件 - 使用直接绑定确保可靠
     const settingsBtn = document.getElementById("settings-btn");
     const settingsCloseBtn = document.getElementById("settings-close-btn");
@@ -506,24 +623,8 @@ class SettingsManager {
     //                                            新 timer(at 1100)
     //   T=1100 发送 {resubmit_prompt:"x"}      → frontend_countdown=60 永久丢
     //
-    // 修复：每次调用把 updates 合进 ``feedbackPendingUpdates``，timer
-    // 触发时一次性 POST。和 packages/vscode/webview-settings-ui.js 保持
-    // byte-parity（双份代码必须同步修，否则 Web/VSCode 行为分歧）。
-    let feedbackSaveTimer = null;
-    let feedbackPendingUpdates = null;
-    const debounceSaveFeedback = (updates) => {
-      if (feedbackSaveTimer) clearTimeout(feedbackSaveTimer);
-      feedbackPendingUpdates = Object.assign(
-        feedbackPendingUpdates || {},
-        updates || {},
-      );
-      feedbackSaveTimer = setTimeout(() => {
-        const merged = feedbackPendingUpdates;
-        feedbackPendingUpdates = null;
-        feedbackSaveTimer = null;
-        this.saveFeedbackConfig(merged);
-      }, 800);
-    };
+    // 修复：每次调用把 updates 合进实例级 pending，timer 触发时一次性
+    // POST。实例级状态允许 resetFeedbackConfig() 取消尚未发出的旧编辑。
 
     if (feedbackCountdown) {
       feedbackCountdown.addEventListener("change", () => {
@@ -532,18 +633,22 @@ class SettingsManager {
         // remains the "disabled" sentinel. Locked by
         // tests/test_frontend_input_range_parity.py.
         if (!isNaN(val) && val >= 0 && val <= 3600) {
-          debounceSaveFeedback({ frontend_countdown: val });
+          this._queueFeedbackConfigSaveFromUi({ frontend_countdown: val });
         }
       });
     }
     if (feedbackPrompt) {
       feedbackPrompt.addEventListener("input", () => {
-        debounceSaveFeedback({ resubmit_prompt: feedbackPrompt.value });
+        this._queueFeedbackConfigSaveFromUi({
+          resubmit_prompt: feedbackPrompt.value,
+        });
       });
     }
     if (feedbackSuffix) {
       feedbackSuffix.addEventListener("input", () => {
-        debounceSaveFeedback({ prompt_suffix: feedbackSuffix.value });
+        this._queueFeedbackConfigSaveFromUi({
+          prompt_suffix: feedbackSuffix.value,
+        });
       });
     }
 
@@ -552,41 +657,8 @@ class SettingsManager {
     // 语言切换
     const langSelect = document.getElementById("language-select");
     if (langSelect) {
-      langSelect.addEventListener("change", async () => {
-        const newLang = langSelect.value;
-        if (window.AIIA_I18N) {
-          const targetLang =
-            newLang === "auto"
-              ? window.AIIA_I18N.detectLang()
-              : window.AIIA_I18N.normalizeLang(newLang);
-
-          if (!window.AIIA_I18N.getAvailableLangs().includes(targetLang)) {
-            await window.AIIA_I18N.loadLocale(
-              targetLang,
-              "/static/locales/" + targetLang + ".json",
-            );
-          }
-          if (
-            targetLang !== "en" &&
-            !window.AIIA_I18N.getAvailableLangs().includes("en")
-          ) {
-            await window.AIIA_I18N.loadLocale("en", "/static/locales/en.json");
-          }
-
-          window.AIIA_I18N.setLang(targetLang);
-          window.AIIA_I18N.translateDOM();
-        }
-
-        try {
-          _suppressConfigChangedEchoIfAvailable();
-          await fetch("/api/update-language", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ language: newLang }),
-          });
-        } catch (e) {
-          console.warn("Persist language preference failed:", e);
-        }
+      langSelect.addEventListener("change", () => {
+        return this._handleLanguageSelectChange(langSelect.value);
       });
     }
 
@@ -614,8 +686,7 @@ class SettingsManager {
         this.updateSetting(settingMap[e.target.id], e.target.checked);
       } else if (e.target.id === "sound-volume") {
         this.updateSetting("soundVolume", parseInt(e.target.value));
-        document.querySelector(".volume-value").textContent =
-          `${e.target.value}%`;
+        this._setFirstMatchText(".volume-value", `${e.target.value}%`);
       } else if (e.target.id === "bark-url") {
         this.updateSetting("barkUrl", e.target.value);
       } else if (e.target.id === "bark-device-key") {
@@ -690,34 +761,53 @@ class SettingsManager {
       }
     };
 
+    const resetFileInput = (input) => {
+      if (!input) return;
+      try {
+        input.value = "";
+      } catch (_e) {
+        // best-effort: file input cleanup must not mask the upload result
+      }
+    };
+
     if (!fileInput.dataset.aiiaWired) {
       fileInput.dataset.aiiaWired = "1";
       fileInput.addEventListener("change", async (e) => {
-        const file = e.target.files && e.target.files[0];
-        if (!file) return;
-        const result = await notificationManager.saveCustomSoundFromFile(file);
-        if (result.success) {
-          refresh();
-          // 立即播放一次让用户听到效果（同时也确认 decode 真的 OK）
-          try {
-            await notificationManager.playSound("custom");
-          } catch (_e) {
-            // 静默：上传成功 + decode 成功就够了，自动 play 失败不算 error
-          }
-        } else {
-          const code = String(result.error || "unknown");
-          let msgKey = "settings.customSound.errors.generic";
-          if (code === "invalid_mime") msgKey = "settings.customSound.errors.invalidMime";
-          else if (code === "too_large") msgKey = "settings.customSound.errors.tooLarge";
-          else if (code === "read_failed") msgKey = "settings.customSound.errors.readFailed";
-          else if (code === "storage_failed") msgKey = "settings.customSound.errors.storageFailed";
-          else if (code === "decode_failed") msgKey = "settings.customSound.errors.decodeFailed";
-          else if (code === "duration_too_long") msgKey = "settings.customSound.errors.durationTooLong";
-          statusEl.textContent = t(msgKey);
-          statusEl.setAttribute("data-status", "error");
+        const target = e && e.target ? e.target : fileInput;
+        const file = target.files && target.files[0];
+        if (!file) {
+          resetFileInput(target);
+          return;
         }
-        // reset input so re-selecting the same file re-triggers ``change``
-        e.target.value = "";
+        try {
+          const result = await notificationManager.saveCustomSoundFromFile(file);
+          if (result.success) {
+            refresh();
+            // 立即播放一次让用户听到效果（同时也确认 decode 真的 OK）
+            try {
+              await notificationManager.playSound("custom");
+            } catch (_e) {
+              // 静默：上传成功 + decode 成功就够了，自动 play 失败不算 error
+            }
+          } else {
+            const code = String(result.error || "unknown");
+            let msgKey = "settings.customSound.errors.generic";
+            if (code === "invalid_mime") msgKey = "settings.customSound.errors.invalidMime";
+            else if (code === "too_large") msgKey = "settings.customSound.errors.tooLarge";
+            else if (code === "read_failed") msgKey = "settings.customSound.errors.readFailed";
+            else if (code === "storage_failed") msgKey = "settings.customSound.errors.storageFailed";
+            else if (code === "decode_failed") msgKey = "settings.customSound.errors.decodeFailed";
+            else if (code === "duration_too_long") msgKey = "settings.customSound.errors.durationTooLong";
+            statusEl.textContent = t(msgKey);
+            statusEl.setAttribute("data-status", "error");
+          }
+        } catch (_e) {
+          statusEl.textContent = t("settings.customSound.errors.generic");
+          statusEl.setAttribute("data-status", "error");
+        } finally {
+          // R452-custom-sound-upload-reset: always allow re-selecting the same file.
+          resetFileInput(target);
+        }
       });
 
       testBtn.addEventListener("click", () => {
@@ -1050,6 +1140,7 @@ class SettingsManager {
 
     const panel = document.getElementById("settings-panel");
     if (panel) {
+      const wasAlreadyOpen = this._settingsEscHandler !== null;
       // cycle-22 / cr51 follow-up #1：升级到 capture-activeElement 模式（对齐
       // image-modal cycle-8 R263a 与 keyboard_shortcut_help cycle-1 R255 的
       // pattern）。关闭面板时回归到**真正触发打开的元素**，而非 hardcode
@@ -1062,7 +1153,9 @@ class SettingsManager {
       //      hardcode 跳到 settings-btn 会触发不必要的 viewport scroll。
       // ``document.contains(prev)`` 兜底：若原元素已从 DOM 移除（如
       // 重渲染后），降级到 settings-btn 而非 silent fail。
-      this._previouslyFocusedElement = document.activeElement;
+      if (!wasAlreadyOpen) {
+        this._previouslyFocusedElement = document.activeElement;
+      }
 
       const container = document.querySelector(".container");
       if (container) {
@@ -1075,38 +1168,41 @@ class SettingsManager {
 
       this.applySettingsTheme();
 
-      this._settingsEscHandler = (e) => {
-        if (e.key === "Escape") {
-          this.hideSettings();
-          return;
-        }
-        if (e.key === "Tab") this._settingsFocusTrap(panel, e);
-      };
-      document.addEventListener("keydown", this._settingsEscHandler);
+      this._attachSettingsKeydownHandler(panel);
 
       const firstFocusable = panel.querySelector(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       );
-      if (firstFocusable) setTimeout(() => firstFocusable.focus(), 50);
+      if (!wasAlreadyOpen && firstFocusable) {
+        setTimeout(() => {
+          this._focusSettingsPanelControl(firstFocusable, panel);
+        }, 50);
+      }
     }
 
     // 每次打开设置面板都从后端刷新一次配置
     // 目的：
     // - 让“外部编辑 config.jsonc”能在不刷新页面的情况下反映到 UI
     // - 避免打开面板时把旧的本地缓存配置反向写回后端（覆盖外部修改）
+    let shouldUpdateSettingsUI = true;
     try {
-      this.settings = await this.loadSettings();
+      shouldUpdateSettingsUI = await this._refreshSettingsForOpen();
     } catch (e) {
       console.warn("Refresh settings on open failed; keeping current:", e);
     }
+    let shouldUpdateFeedbackUI = true;
     try {
-      this.feedbackConfig = await this.loadFeedbackConfig();
+      shouldUpdateFeedbackUI = await this._refreshFeedbackConfigForOpen();
     } catch (e) {
       console.warn("Refresh feedback config on open failed:", e);
     }
 
-    this.updateUI();
-    this.updateFeedbackUI();
+    if (shouldUpdateSettingsUI) {
+      this.updateUI();
+    }
+    if (shouldUpdateFeedbackUI) {
+      this.updateFeedbackUI();
+    }
     this.updateStatus();
   }
 
@@ -1250,6 +1346,88 @@ class SettingsManager {
     }
   }
 
+  _attachSettingsKeydownHandler(panel) {
+    if (this._settingsEscHandler) return;
+    this._settingsEscHandler = (e) => {
+      if (e.key === "Escape") {
+        this.hideSettings();
+        return;
+      }
+      if (e.key === "Tab") this._settingsFocusTrap(panel, e);
+    };
+    document.addEventListener("keydown", this._settingsEscHandler);
+  }
+
+  _focusSettingsPanelControl(element, panel) {
+    if (!element || typeof element.focus !== "function") return false;
+
+    try {
+      if (panel) {
+        if (
+          typeof document.contains === "function" &&
+          !document.contains(panel)
+        ) {
+          return false;
+        }
+        if (typeof panel.contains === "function" && !panel.contains(element)) {
+          return false;
+        }
+        if (
+          panel.classList &&
+          typeof panel.classList.contains === "function" &&
+          panel.classList.contains("hidden")
+        ) {
+          return false;
+        }
+        if (
+          typeof panel.getAttribute === "function" &&
+          panel.getAttribute("aria-hidden") === "true"
+        ) {
+          return false;
+        }
+        if (panel.style && panel.style.display === "none") {
+          return false;
+        }
+      }
+      if (
+        typeof document.contains === "function" &&
+        !document.contains(element)
+      ) {
+        return false;
+      }
+    } catch (_e) {
+      return false;
+    }
+
+    return this._focusElementWithoutScroll(element);
+  }
+
+  _focusElementWithoutScroll(element) {
+    if (!element || typeof element.focus !== "function") return false;
+
+    try {
+      element.focus({ preventScroll: true });
+      return true;
+    } catch (_e) {
+      try {
+        element.focus();
+        return true;
+      } catch (_e2) {
+        return false;
+      }
+    }
+  }
+
+  async _refreshSettingsForOpen() {
+    const editEpoch = this._settingsEditEpoch;
+    const nextSettings = await this.loadSettings();
+    if (editEpoch !== this._settingsEditEpoch) {
+      return false;
+    }
+    this.settings = nextSettings;
+    return true;
+  }
+
   hideSettings() {
     const panel = document.getElementById("settings-panel");
     if (panel) {
@@ -1274,16 +1452,11 @@ class SettingsManager {
     // 与升级前行为对齐避免完全失焦。
     const prev = this._previouslyFocusedElement;
     this._previouslyFocusedElement = null;
-    if (prev && document.contains(prev) && typeof prev.focus === "function") {
-      try {
-        prev.focus();
-        return;
-      } catch (_e) {
-        // 忽略：focus 失败（如元素被设为 inert）走 fallback
-      }
+    if (prev && document.contains(prev) && this._focusElementWithoutScroll(prev)) {
+      return;
     }
     const settingsBtn = document.getElementById("settings-btn");
-    if (settingsBtn) settingsBtn.focus();
+    this._focusElementWithoutScroll(settingsBtn);
   }
 
   async testNotification() {
@@ -1384,7 +1557,188 @@ class SettingsManager {
     if (suffixEl) suffixEl.value = fc.prompt_suffix ?? "";
   }
 
-  async saveFeedbackConfig(updates) {
+  _queueFeedbackConfigSaveFromUi(updates) {
+    this._feedbackConfigEditEpoch += 1;
+    if (this._feedbackConfigDebounceTimer) {
+      clearTimeout(this._feedbackConfigDebounceTimer);
+    }
+    this._pendingDebouncedFeedbackConfigUpdates = Object.assign(
+      this._pendingDebouncedFeedbackConfigUpdates || {},
+      updates || {},
+    );
+    this._feedbackConfigDebounceTimer = setTimeout(() => {
+      const merged = this._pendingDebouncedFeedbackConfigUpdates;
+      this._pendingDebouncedFeedbackConfigUpdates = null;
+      this._feedbackConfigDebounceTimer = null;
+      this.saveFeedbackConfig(merged);
+    }, 800);
+  }
+
+  _cancelPendingFeedbackConfigUiSave() {
+    if (this._feedbackConfigDebounceTimer) {
+      clearTimeout(this._feedbackConfigDebounceTimer);
+    }
+    this._feedbackConfigDebounceTimer = null;
+    this._pendingDebouncedFeedbackConfigUpdates = null;
+  }
+
+  async _flushStaleFeedbackConfigSaveBeforeReset() {
+    this._cancelPendingFeedbackConfigUiSave();
+    this._pendingFeedbackConfigUpdates = null;
+    this._feedbackConfigSaveEpoch += 1;
+    this._feedbackConfigEditEpoch += 1;
+    const savePromise = this._feedbackConfigSavePromise;
+    if (!savePromise) return;
+    try {
+      await savePromise;
+    } catch (_e) {
+      // The save queue should return error objects, but reset must not be
+      // blocked by a stale autosave rejection if that contract changes.
+    }
+  }
+
+  async _refreshFeedbackConfigForOpen() {
+    const editEpoch = this._feedbackConfigEditEpoch;
+    const nextFeedbackConfig = await this.loadFeedbackConfig();
+    if (editEpoch !== this._feedbackConfigEditEpoch) {
+      return false;
+    }
+    this.feedbackConfig = nextFeedbackConfig;
+    return true;
+  }
+
+  async _handleLanguageSelectChange(newLang) {
+    const changeEpoch = this._languageChangeEpoch + 1;
+    this._languageChangeEpoch = changeEpoch;
+
+    try {
+      if (window.AIIA_I18N) {
+        const i18n = window.AIIA_I18N;
+        const targetLang =
+          newLang === "auto" ? i18n.detectLang() : i18n.normalizeLang(newLang);
+
+        if (!i18n.getAvailableLangs().includes(targetLang)) {
+          await i18n.loadLocale(targetLang);
+          if (changeEpoch !== this._languageChangeEpoch) return;
+        }
+        if (
+          targetLang !== "en" &&
+          !i18n.getAvailableLangs().includes("en")
+        ) {
+          await i18n.loadLocale("en");
+          if (changeEpoch !== this._languageChangeEpoch) return;
+        }
+
+        if (changeEpoch !== this._languageChangeEpoch) return;
+        i18n.setLang(targetLang);
+        i18n.translateDOM();
+      }
+
+      if (changeEpoch !== this._languageChangeEpoch) return;
+      this._queueLanguagePreferenceSave(newLang);
+    } catch (e) {
+      if (changeEpoch === this._languageChangeEpoch) {
+        console.warn("Apply language preference failed:", e);
+      }
+    }
+  }
+
+  _queueLanguagePreferenceSave(language) {
+    this._pendingLanguagePreference = language;
+    if (!this._languagePersistPromise) {
+      this._languagePersistPromise = this._drainLanguagePreferenceSaveQueue();
+    }
+    return this._languagePersistPromise;
+  }
+
+  async _drainLanguagePreferenceSaveQueue() {
+    try {
+      while (this._pendingLanguagePreference !== null) {
+        const language = this._pendingLanguagePreference;
+        this._pendingLanguagePreference = null;
+        await this._postLanguagePreference(language);
+      }
+    } finally {
+      // R279 audit: state-only cleanup; no DOM nodes are touched here.
+      this._languagePersistPromise = null;
+    }
+  }
+
+  async _postLanguagePreference(language) {
+    try {
+      _suppressConfigChangedEchoIfAvailable();
+      const resp = await fetch("/api/update-language", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language: language }),
+      });
+      if (!resp.ok) {
+        console.warn("Persist language preference failed:", resp.status);
+      }
+    } catch (e) {
+      console.warn("Persist language preference failed:", e);
+    }
+  }
+
+  saveFeedbackConfig(updates) {
+    this._pendingFeedbackConfigUpdates = Object.assign(
+      this._pendingFeedbackConfigUpdates || {},
+      updates || {},
+    );
+    if (!this._feedbackConfigSavePromise) {
+      this._feedbackConfigSavePromise = this._drainFeedbackConfigSaveQueue();
+    }
+    return this._feedbackConfigSavePromise;
+  }
+
+  async _drainFeedbackConfigSaveQueue() {
+    const saveEpoch = this._feedbackConfigSaveEpoch;
+    const acknowledgedUpdates = {};
+    let hasAcknowledgedUpdates = false;
+    let finalResult = null;
+
+    try {
+      while (this._pendingFeedbackConfigUpdates) {
+        const updates = this._pendingFeedbackConfigUpdates;
+        this._pendingFeedbackConfigUpdates = null;
+        finalResult = await this._postFeedbackConfigUpdates(updates);
+        if (saveEpoch !== this._feedbackConfigSaveEpoch) {
+          return;
+        }
+        if (finalResult.ok) {
+          Object.assign(acknowledgedUpdates, updates);
+          hasAcknowledgedUpdates = true;
+        } else if (!this._pendingFeedbackConfigUpdates) {
+          if (hasAcknowledgedUpdates) {
+            Object.assign(
+              this.feedbackConfig || (this.feedbackConfig = {}),
+              acknowledgedUpdates,
+            );
+          }
+          this._showFeedbackConfigSaveResult(finalResult);
+          return;
+        }
+      }
+
+      if (saveEpoch !== this._feedbackConfigSaveEpoch) {
+        return;
+      }
+      if (hasAcknowledgedUpdates) {
+        Object.assign(
+          this.feedbackConfig || (this.feedbackConfig = {}),
+          acknowledgedUpdates,
+        );
+      }
+      if (finalResult) {
+        this._showFeedbackConfigSaveResult(finalResult);
+      }
+    } finally {
+      // R279 audit: state-only cleanup; no DOM nodes are touched here.
+      this._feedbackConfigSavePromise = null;
+    }
+  }
+
+  async _postFeedbackConfigUpdates(updates) {
     try {
       _suppressConfigChangedEchoIfAvailable();
       const resp = await fetch("/api/update-feedback-config", {
@@ -1392,19 +1746,31 @@ class SettingsManager {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
       });
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
       if (resp.ok && data.status === "success") {
-        Object.assign(this.feedbackConfig, updates);
-        showStatus(t("settings.feedbackConfigSaved"), "success");
-      } else {
-        showStatus(
-          data.message || t("settings.feedbackConfigSaveFailed"),
-          "error",
-        );
+        return { ok: true };
       }
+      return {
+        ok: false,
+        message: data.message || t("settings.feedbackConfigSaveFailed"),
+      };
     } catch (e) {
       console.error("Save feedback config failed:", e);
-      showStatus(t("settings.feedbackConfigSaveFailed"), "error");
+      return {
+        ok: false,
+        message: t("settings.feedbackConfigSaveFailed"),
+      };
+    }
+  }
+
+  _showFeedbackConfigSaveResult(result) {
+    if (result && result.ok) {
+      showStatus(t("settings.feedbackConfigSaved"), "success");
+    } else {
+      showStatus(
+        (result && result.message) || t("settings.feedbackConfigSaveFailed"),
+        "error",
+      );
     }
   }
 
@@ -1438,6 +1804,7 @@ class SettingsManager {
       );
       return;
     }
+    await this._flushStaleFeedbackConfigSaveBeforeReset();
     // 真源：调用后端 /api/reset-feedback-config，避免前端硬编码中文默认值。
     // 若后端不可用，回退到重新读取当前配置；不再吞掉错误，好让用户知道发生了什么。
     try {
@@ -1474,3 +1841,12 @@ class SettingsManager {
 
 // 创建全局设置管理器实例
 const settingsManager = new SettingsManager();
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    SettingsManager,
+    settingsManager,
+    _tl,
+    _suppressConfigChangedEchoIfAvailable,
+  };
+}

@@ -253,10 +253,13 @@ class TestResizeObserverWithFallback(unittest.TestCase):
         self.assertIn('addEventListener("touchend"', src)
 
     def test_setup_returns_mode_marker(self) -> None:
-        # 返回值结构 {observer, mode}，让单元测试 + 调试能检测当前路径
+        # 返回 binding 结构含 observer + mode，让单元测试 + 调试能检测当前路径。
+        # R452 后 binding 同时承载 active lifecycle state，避免 repeat init 泄漏。
         src = _read_js()
-        self.assertIn('mode: "resize_observer"', src)
-        self.assertIn('mode: "mouseup_fallback"', src)
+        self.assertIn('binding.mode = "resize_observer"', src)
+        self.assertIn('binding.mode = "mouseup_fallback"', src)
+        self.assertIn("binding.observer = ro", src)
+        self.assertIn("return binding", src)
 
 
 if __name__ == "__main__":

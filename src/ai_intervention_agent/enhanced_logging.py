@@ -235,8 +235,13 @@ _sink_id = _loguru_logger.add(  # ty: ignore[no-matching-overload]
 # ========================================================================
 
 
+_ROOT_INTERCEPT_HANDLER_ATTR = "_aiia_root_intercept_handler"
+
+
 class InterceptHandler(logging.Handler):
     """将 stdlib logging 路由到 Loguru（用于第三方库的 logging 输出）。"""
+
+    _aiia_root_intercept_handler = True
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -247,6 +252,28 @@ class InterceptHandler(logging.Handler):
         _loguru_logger.bind(logger_name=record.name).opt(exception=record.exc_info).log(
             level, record.getMessage()
         )
+
+
+def _is_root_intercept_handler(handler: logging.Handler) -> bool:
+    """Return whether *handler* is this module's root logging bridge.
+
+    ``importlib.reload()`` recreates ``InterceptHandler``. Existing handler
+    instances from the previous module execution are still valid bridges, but
+    they no longer satisfy ``isinstance(handler, InterceptHandler)`` for the
+    newly created class. A stable marker keeps root installation idempotent
+    across reloads and xdist worker ordering.
+    """
+    if isinstance(handler, InterceptHandler):
+        return True
+    if getattr(handler, _ROOT_INTERCEPT_HANDLER_ATTR, False) is True:
+        return True
+
+    handler_type = type(handler)
+    return (
+        isinstance(handler, logging.Handler)
+        and handler_type.__module__ == __name__
+        and handler_type.__name__ == InterceptHandler.__name__
+    )
 
 
 def _install_root_intercept_once() -> None:
@@ -274,9 +301,9 @@ def _install_root_intercept_once() -> None:
     幂等性
     ------
 
-    用 ``isinstance(h, InterceptHandler)`` 检测已存在的 handler，避免重复
-    安装。这对测试场景特别重要：``pytest`` 可能多次 import 模块，
-    ``logging`` root 是进程级单例。
+    用 ``_is_root_intercept_handler(h)`` 检测已存在的 handler，避免重复
+    安装。这对测试场景特别重要：``pytest`` 可能多次 import/reload 模块，
+    而 ``logging`` root 是进程级单例。
 
     与 ``SingletonLogManager.setup_logger`` 的关系
     -------------------------------------------------
@@ -287,7 +314,7 @@ def _install_root_intercept_once() -> None:
     """
     root = logging.getLogger()
     for handler in root.handlers:
-        if isinstance(handler, InterceptHandler):
+        if _is_root_intercept_handler(handler):
             return
     root.addHandler(InterceptHandler())
 

@@ -125,6 +125,11 @@ function getConfiguredServerUrl(): string {
   return normalizeServerUrl(cfg.get<string>("serverUrl", DEFAULT_SERVER_URL));
 }
 
+function getRetainWebviewContextWhenHidden(): boolean {
+  const cfg = vscode.workspace.getConfiguration("ai-intervention-agent");
+  return cfg.get<boolean>("webview.retainContextWhenHidden", false) === true;
+}
+
 interface StatusBarState {
   connected?: boolean | null;
   active?: number;
@@ -158,6 +163,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
     },
   });
   let serverUrl = getConfiguredServerUrl();
+  const retainWebviewContextWhenHidden = getRetainWebviewContextWhenHidden();
 
   try {
     EXT_VERSION = context.extension.packageJSON.version || EXT_VERSION;
@@ -175,6 +181,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         buildId: getBuildId(),
         serverUrl,
         logLevel,
+        retainWebviewContextWhenHidden,
       },
       { level: "info" },
     );
@@ -185,6 +192,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         version: EXT_VERSION,
         buildId: getBuildId(),
         serverUrl,
+        retainWebviewContextWhenHidden,
       },
       { level: "info" },
     );
@@ -390,6 +398,23 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
 
   updateStatusBarVisibility();
 
+  let statusPollDisposed = false;
+  let statusPollAbortController: AbortController | null = null;
+
+  const abortStatusPollRequest = (): void => {
+    if (
+      statusPollAbortController &&
+      typeof statusPollAbortController.abort === "function"
+    ) {
+      try {
+        statusPollAbortController.abort();
+      } catch {
+        // Ignore: AbortController can be partially implemented in older hosts.
+      }
+    }
+    statusPollAbortController = null;
+  };
+
   const updateStatusBar = async (): Promise<boolean | null> => {
     if (typeof fetch !== "function") {
       lastPollAtMs = Date.now();
@@ -404,8 +429,14 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       return null;
     }
 
+    const requestServerUrl = serverUrl;
+    const isStaleStatusPoll = (): boolean =>
+      statusPollDisposed || serverUrl !== requestServerUrl;
     const controller =
       typeof AbortController !== "undefined" ? new AbortController() : null;
+    if (controller) {
+      statusPollAbortController = controller;
+    }
     const timeoutId = controller
       ? setTimeout(() => {
           try {
@@ -423,7 +454,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
     const prevPending = lastPending;
 
     try {
-      const resp = await fetch(`${serverUrl}/api/tasks`, {
+      const resp = await fetch(`${requestServerUrl}/api/tasks`, {
         signal: controller ? controller.signal : undefined,
         headers: { Accept: "application/json", "Cache-Control": "no-cache" },
       } as RequestInit);
@@ -443,6 +474,14 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         stats && typeof stats.pending === "number" ? stats.pending : 0;
       const connected = !!(data && data.success);
       const durationMs = Date.now() - startedAt;
+      if (isStaleStatusPoll()) {
+        logger.event(
+          "server.poll.stale",
+          { requestId, serverUrlChanged: serverUrl !== requestServerUrl },
+          { level: "debug" },
+        );
+        return null;
+      }
       const changed =
         connected !== prevConnected ||
         active !== prevActive ||
@@ -539,6 +578,9 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
 
       return connected;
     } catch (e: unknown) {
+      if (isStaleStatusPoll()) {
+        return null;
+      }
       const durationMs = Date.now() - startedAt;
       const errName = e instanceof Error ? e.name : "";
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -578,6 +620,9 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       return false;
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
+      if (statusPollAbortController === controller) {
+        statusPollAbortController = null;
+      }
     }
   };
 
@@ -589,7 +634,6 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   let statusPollTimer: ReturnType<typeof setTimeout> | null = null;
   let statusPollBackoffMs = STATUS_POLL_FAST_MS;
   let statusPollInFlight = false;
-  let statusPollDisposed = false;
   let isViewVisible = true;
   let isWindowFocused = vscode.window.state.focused;
   let lastWebviewStatsAtMs = 0;
@@ -1019,6 +1063,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         });
       }
     },
+    retainWebviewContextWhenHidden,
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -1026,9 +1071,9 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       provider,
       {
         webviewOptions: {
-          // VSCode 官方推荐：保留 Webview 上下文以消除重复 resolveWebviewView + 阻塞 await，
-          // 侧边栏在隐藏/collapse/切视图后恢复秒开。内存开销约 1~3MB（Lottie 去内联后更低）。
-          retainContextWhenHidden: true,
+          // VS Code 官方文档推荐优先用 getState/setState；retain 仅作为
+          // 复杂/诊断场景的显式开关，避免隐藏 webview 常驻带来的内存开销。
+          retainContextWhenHidden: retainWebviewContextWhenHidden,
         },
       },
     ),
@@ -1043,6 +1088,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
 
       const prev = serverUrl;
       serverUrl = next;
+      abortStatusPollRequest();
       logger.event(
         "config.update",
         { key: "serverUrl", prev, next: serverUrl },
@@ -1055,6 +1101,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       statusPollBackoffMs = STATUS_POLL_FAST_MS;
       extKnownTaskIds = new Set<string>();
       extTaskTrackingInitialized = false;
+      _lastEventId = null;
       statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n${hostT("statusBar.language")}: ${hostLang}\n${hostT("statusBar.clickToOpen")}\n${hostT("statusBar.openSettings")}`;
       _connectSSE();
       scheduleStatusPoll(0);
@@ -1142,6 +1189,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   const cleanup = (): void => {
     try {
       statusPollDisposed = true;
+      abortStatusPollRequest();
       _disconnectSSE();
       if (statusPollTimer) {
         clearTimeout(statusPollTimer);

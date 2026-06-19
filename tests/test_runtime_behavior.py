@@ -756,9 +756,9 @@ class TestI18nDeadKeys(unittest.TestCase):
     # cr40 cycle health-fix #3：customSound.errors.* 系列 keys 用
     # **dynamic-key 模式** 由 ``settings-manager.js`` 通过 ``let msgKey =
     # "..."`` 变量赋值后用 ``t(msgKey)`` 调用，正则无法 trace 到字面 key。
-    # 全部 7 个 keys 加入 reserved set，避免 dead-key check 误报。
+    # 除 generic 已被异常兜底路径直接 ``t("...")`` 消费外，其余 dynamic
+    # keys 加入 reserved set，避免 dead-key check 误报。
     _PRE_RESERVED_KEYS: dict[str, frozenset[str]] = {
-        "settings.customSound.errors.generic": frozenset({"web"}),
         "settings.customSound.errors.invalidMime": frozenset({"web"}),
         "settings.customSound.errors.tooLarge": frozenset({"web"}),
         "settings.customSound.errors.readFailed": frozenset({"web"}),

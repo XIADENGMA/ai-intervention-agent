@@ -40,11 +40,20 @@ import unittest
 import ai_intervention_agent.enhanced_logging as enhanced_logging
 from ai_intervention_agent.enhanced_logging import (
     EnhancedLogger,
-    InterceptHandler,
     SingletonLogManager,
     _install_root_intercept_once,
+    _is_root_intercept_handler,
     _sanitize_and_escape,
 )
+
+
+def _root_intercepts() -> list[logging.Handler]:
+    """Return root intercept handlers using the module's reload-safe predicate."""
+    return [
+        handler
+        for handler in logging.getLogger().handlers
+        if enhanced_logging._is_root_intercept_handler(handler)
+    ]
 
 
 class TestRootInterceptHandlerInstalled(unittest.TestCase):
@@ -57,14 +66,13 @@ class TestRootInterceptHandlerInstalled(unittest.TestCase):
         因此这里 actively 调一次 install ensure 函数。这正是 R72-A 把
         install 函数做成 idempotent 的目的。
         """
-        _install_root_intercept_once()
-        root = logging.getLogger()
-        intercepts = [h for h in root.handlers if isinstance(h, InterceptHandler)]
+        enhanced_logging._install_root_intercept_once()
+        intercepts = _root_intercepts()
         self.assertGreaterEqual(
             len(intercepts),
             1,
             "root logger 必须有至少一个 InterceptHandler（R72-A 契约）；"
-            f"当前 handlers: {root.handlers!r}",
+            f"当前 handlers: {logging.getLogger().handlers!r}",
         )
 
     def test_install_is_idempotent(self) -> None:
@@ -74,17 +82,16 @@ class TestRootInterceptHandlerInstalled(unittest.TestCase):
         顺序里其他 test 可能 reload/clear 过 root，所以这里用先 +1 后比对的
         方式锁住"幂等"语义而不是依赖 module-load 时机）。
         """
-        _install_root_intercept_once()
-        root = logging.getLogger()
-        before = len([h for h in root.handlers if isinstance(h, InterceptHandler)])
+        enhanced_logging._install_root_intercept_once()
+        before = len(_root_intercepts())
         self.assertGreaterEqual(
             before, 1, "调用一次 install 后 root 必须至少有 1 个 InterceptHandler"
         )
 
         for _ in range(5):
-            _install_root_intercept_once()
+            enhanced_logging._install_root_intercept_once()
 
-        after = len([h for h in root.handlers if isinstance(h, InterceptHandler)])
+        after = len(_root_intercepts())
         self.assertEqual(
             before,
             after,
@@ -97,16 +104,13 @@ class TestRootInterceptHandlerInstalled(unittest.TestCase):
         前置：用 ``_install_root_intercept_once()`` 先确保 root 已有
         InterceptHandler（同样为了不依赖 collection order）。
         """
-        _install_root_intercept_once()
-        root = logging.getLogger()
-        before = len([h for h in root.handlers if isinstance(h, InterceptHandler)])
+        enhanced_logging._install_root_intercept_once()
+        before = len(_root_intercepts())
         self.assertGreaterEqual(before, 1)
 
         importlib.reload(enhanced_logging)
 
-        after = len(
-            [h for h in logging.getLogger().handlers if isinstance(h, InterceptHandler)]
-        )
+        after = len(_root_intercepts())
         self.assertEqual(
             before,
             after,
@@ -221,6 +225,10 @@ class TestRegressionContract(unittest.TestCase):
             callable(_install_root_intercept_once),
             "_install_root_intercept_once 必须是模块级 callable",
         )
+        self.assertTrue(
+            callable(_is_root_intercept_handler),
+            "_is_root_intercept_handler 必须是模块级 callable",
+        )
 
     def test_install_function_called_at_module_load(self) -> None:
         """``importlib.reload(enhanced_logging)`` 后 root 必须有 InterceptHandler。
@@ -230,25 +238,15 @@ class TestRegressionContract(unittest.TestCase):
         ``_install_root_intercept_once()`` 调用被静默从 module top-level 移
         除，这个 test 就会失败。
 
-        **Reload isolation 注意 (cycle-52 fix)**:
+        **Reload isolation 注意 (cycle-52 fix, R452 tightened)**:
         ``importlib.reload(enhanced_logging)`` 会**重新创建** ``InterceptHandler``
         类，与本测试文件顶部 ``from ai_intervention_agent.enhanced_logging
-        import InterceptHandler`` 拿到的旧类**不是同一个对象**。
-        旧 reload (如果前面 test 已 reload 过) 的 install 注册的 handler 是
-        旧旧类的实例, 而本次 reload 的 install 注册的是新新类的实例 — 用顶部
-        import 的旧类 isinstance 会**漏判**。
-        修复: 用 ``enhanced_logging.InterceptHandler`` (reload 后的最新引用)
-        来 isinstance 检查, 而非顶部 import 的固定引用。这是 xdist 并行测试
-        + 多次 reload 场景下的 test isolation bug, 不属于 production code 问题。
+        import InterceptHandler`` 拿到的旧类**不是同一个对象**。因此测试和
+        production install 都使用 ``_is_root_intercept_handler`` 这个稳定语义
+        谓词，而不是直接绑死在某次 module execution 的 class identity 上。
         """
         importlib.reload(enhanced_logging)
-        # 用 reload 后的最新 InterceptHandler 类引用做 isinstance, 避免
-        # 因为多次 reload 让 isinstance 漏判跨 reload 创建的 handler 实例。
-        current_intercept_handler = enhanced_logging.InterceptHandler
-        root = logging.getLogger()
-        intercepts = [
-            h for h in root.handlers if isinstance(h, current_intercept_handler)
-        ]
+        intercepts = _root_intercepts()
         self.assertGreaterEqual(
             len(intercepts),
             1,

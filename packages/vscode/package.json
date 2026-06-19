@@ -127,6 +127,15 @@
           "tags": [
             "experimental"
           ]
+        },
+        "ai-intervention-agent.webview.retainContextWhenHidden": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.webview.retainContextWhenHidden.description%",
+          "markdownDescription": "%config.webview.retainContextWhenHidden.markdownDescription%",
+          "tags": [
+            "experimental"
+          ]
         }
       }
     }

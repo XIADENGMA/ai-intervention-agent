@@ -180,14 +180,16 @@ class TestResizeObserverReturnsHandle(unittest.TestCase):
         )
 
     def test_returns_object_with_observer_field(self) -> None:
-        """setupResizeObserver 必须 return { observer: ro, mode: ... } 让 caller 可控。"""
+        """setupResizeObserver 必须返回带 observer/mode 的 binding 让 caller 可控。"""
         m = re.search(
-            r"new\s+ResizeObserver\([\s\S]{0,200}?return\s*\{\s*observer\s*:\s*\w+",
+            r"new\s+ResizeObserver\([\s\S]{0,300}?binding\.observer\s*=\s*\w+"
+            r"[\s\S]{0,120}?binding\.mode\s*=\s*['\"]resize_observer['\"]"
+            r"[\s\S]{0,120}?return\s+binding",
             self.js,
         )
         self.assertIsNotNone(
             m,
-            "setupResizeObserver 必须 return { observer: ro, mode: ... } "
+            "setupResizeObserver 必须 return binding，且 binding 包含 observer + mode "
             "— caller 可凭 observer 引用调用 .disconnect() 做 cleanup",
         )
 

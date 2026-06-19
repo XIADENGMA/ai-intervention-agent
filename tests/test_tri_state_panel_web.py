@@ -127,14 +127,20 @@ class TestTriStatePanelWebDom(unittest.TestCase):
             msg="templates/web_ui.html must declare an importmap for @aiia/tri-state-panel",
         )
         self.assertIn(
-            'src="/static/js/tri-state-panel-loader.js"',
+            'src="/static/js/tri-state-panel-loader.js?v={{ tri_state_panel_loader_version }}"',
             self.html,
-            msg="Loader script (<script type='module' src='/static/js/tri-state-panel-loader.js'>) missing",
+            msg=(
+                "Loader script (<script type='module' "
+                "src='/static/js/tri-state-panel-loader.js?v={{ tri_state_panel_loader_version }}'>) missing"
+            ),
         )
         self.assertIn(
-            'src="/static/js/tri-state-panel-bootstrap.js"',
+            'src="/static/js/tri-state-panel-bootstrap.js?v={{ tri_state_panel_bootstrap_version }}"',
             self.html,
-            msg="Bootstrap script (<script defer src='/static/js/tri-state-panel-bootstrap.js'>) missing",
+            msg=(
+                "Bootstrap script (<script defer "
+                "src='/static/js/tri-state-panel-bootstrap.js?v={{ tri_state_panel_bootstrap_version }}'>) missing"
+            ),
         )
 
 
@@ -143,6 +149,7 @@ class TestTriStatePanelEsModule(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
+        cls.html = WEB_UI_HTML.read_text(encoding="utf-8")
         cls.panel_src = TRI_STATE_PANEL_JS.read_text(encoding="utf-8")
         cls.loader_src = TRI_STATE_PANEL_LOADER_JS.read_text(encoding="utf-8")
         cls.bootstrap_src = TRI_STATE_PANEL_BOOTSTRAP_JS.read_text(encoding="utf-8")
@@ -244,19 +251,20 @@ class TestTriStatePanelEsModule(unittest.TestCase):
                 ),
             )
 
-    def test_main_css_imports_tri_state_panel(self) -> None:
-        import_re = re.compile(
-            r'@import\s+url\(\s*(["\'])\./tri-state-panel\.css\1\s*\)\s*;'
+    def test_template_links_versioned_tri_state_panel_css(self) -> None:
+        link_re = re.compile(
+            r'href="/static/css/tri-state-panel\.css\?v=\{\{\s*tri_state_panel_css_version\s*\}\}"'
         )
         self.assertRegex(
-            self.main_css_src,
-            import_re,
+            self.html,
+            link_re,
             msg=(
-                "static/css/main.css must @import ./tri-state-panel.css so the "
-                "component layer is actually loaded by the browser. Single or "
-                "double quotes are both acceptable (formatter-agnostic)."
+                "templates/web_ui.html must load tri-state-panel.css with its "
+                "own cache-busting version query so the browser does not fetch "
+                "the component stylesheet through an unversioned CSS @import."
             ),
         )
+        self.assertNotIn('@import url("./tri-state-panel.css")', self.main_css_src)
 
 
 if __name__ == "__main__":

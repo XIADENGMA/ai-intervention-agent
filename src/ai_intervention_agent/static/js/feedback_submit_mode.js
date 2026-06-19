@@ -43,6 +43,8 @@
   const VALID_MODES = ["ctrl_enter", "enter"];
   const TARGET_ID = "feedback-text";
   const SUBMIT_BTN_ID = "submit-btn";
+  let activeKeydownInterceptor = null;
+  let activeSelectBinding = null;
 
   function _isStorageAvailable() {
     try {
@@ -115,18 +117,45 @@
     return true;
   }
 
+  function handleTextareaKeydown(event) {
+    if (getMode() !== "enter") return;
+    if (!_shouldSubmitOnEnter(event)) return;
+    event.preventDefault();
+    _triggerSubmit();
+  }
+
   function setupKeydownInterceptor(textarea) {
+    if (activeKeydownInterceptor !== null) {
+      if (activeKeydownInterceptor.textarea === textarea) {
+        return activeKeydownInterceptor;
+      }
+      if (activeKeydownInterceptor.textarea.removeEventListener) {
+        activeKeydownInterceptor.textarea.removeEventListener(
+          "keydown",
+          activeKeydownInterceptor.handler,
+          true,
+        );
+      }
+      activeKeydownInterceptor = null;
+    }
     if (!textarea) return null;
-    const handler = function (event) {
-      if (getMode() !== "enter") return;
-      if (!_shouldSubmitOnEnter(event)) return;
-      event.preventDefault();
-      _triggerSubmit();
-    };
+    const handler = handleTextareaKeydown;
     // capture phase 让本拦截器先于 document-level keydown 跑，确保
     // ``preventDefault`` 在浏览器 newline 默认行为发生前生效。
     textarea.addEventListener("keydown", handler, true);
-    return { textarea: textarea, handler: handler };
+    activeKeydownInterceptor = { textarea: textarea, handler: handler };
+    return activeKeydownInterceptor;
+  }
+
+  function handleSubmitModeSelectChange(event) {
+    const select =
+      event && event.currentTarget
+        ? event.currentTarget
+        : activeSelectBinding && activeSelectBinding.select;
+    if (!select) return;
+    const next = select.value;
+    if (VALID_MODES.indexOf(next) === -1) return;
+    setMode(next);
   }
 
   // 设置面板里的 <select id="feedback-submit-mode-select"> 切换 mode
@@ -134,13 +163,26 @@
   // 实时读，不缓存模块状态）。
   function setupSelectListener() {
     const select = document.getElementById("feedback-submit-mode-select");
+    if (activeSelectBinding !== null) {
+      if (activeSelectBinding.select === select) {
+        if (select) select.value = getMode();
+        return select;
+      }
+      if (activeSelectBinding.select.removeEventListener) {
+        activeSelectBinding.select.removeEventListener(
+          "change",
+          activeSelectBinding.handler,
+        );
+      }
+      activeSelectBinding = null;
+    }
     if (!select) return null;
     select.value = getMode();
-    select.addEventListener("change", function () {
-      const next = select.value;
-      if (VALID_MODES.indexOf(next) === -1) return;
-      setMode(next);
-    });
+    select.addEventListener("change", handleSubmitModeSelectChange);
+    activeSelectBinding = {
+      select: select,
+      handler: handleSubmitModeSelectChange,
+    };
     return select;
   }
 

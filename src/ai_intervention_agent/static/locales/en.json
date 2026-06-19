@@ -94,6 +94,7 @@
     "importBtn": "Import",
     "importBtnAriaLabel": "Import quick replies from a JSON file",
     "importErrorInvalidJson": "Selected file is not valid JSON",
+    "importErrorReadFailed": "Could not read selected file. Please try again.",
     "importErrorSchema": "File does not look like a quick-replies export",
     "importErrorEmpty": "File contains no valid quick replies",
     "importConfirmReplace": "Replace all {{current}} current quick replies with {{count}} from file? This cannot be undone.",

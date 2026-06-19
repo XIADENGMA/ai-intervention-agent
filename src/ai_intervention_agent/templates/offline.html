@@ -178,6 +178,9 @@
         var btn = document.getElementById("retry-btn");
         var status = document.getElementById("status");
         var pingTimer = null;
+        var reloadTimer = null;
+        var activePingController = null;
+        var pollGeneration = 0;
 
         // R252 / cr45 §7 follow-up #2：exponential backoff
         // 让长时间断网（小时级别）不会持续以 5s 间隔产生 720 req/h
@@ -187,6 +190,7 @@
         var BACKOFF_INITIAL_MS = 5000;
         var BACKOFF_MAX_MS = 60000;
         var BACKOFF_FACTOR = 2;
+        var PING_TIMEOUT_MS = 4000;
         var currentDelayMs = BACKOFF_INITIAL_MS;
 
         function reload() {
@@ -199,25 +203,93 @@
           status.classList.toggle("is-online", !!isOnline);
         }
 
+        function isHidden() {
+          return document.hidden || document.visibilityState === "hidden";
+        }
+
+        function clearPingTimer() {
+          if (pingTimer !== null) {
+            clearTimeout(pingTimer);
+            pingTimer = null;
+          }
+        }
+
+        function clearReloadTimer() {
+          if (reloadTimer !== null) {
+            clearTimeout(reloadTimer);
+            reloadTimer = null;
+          }
+        }
+
+        function abortActivePing() {
+          if (activePingController) {
+            activePingController.abort();
+            activePingController = null;
+          }
+        }
+
+        function pauseAutoCheck() {
+          pollGeneration += 1;
+          clearPingTimer();
+          clearReloadTimer();
+          abortActivePing();
+        }
+
+        function scheduleReload(delayMs) {
+          clearReloadTimer();
+          reloadTimer = setTimeout(function () {
+            reloadTimer = null;
+            reload();
+          }, delayMs);
+        }
+
+        function scheduleAutoCheck(delayMs) {
+          clearPingTimer();
+          if (isHidden()) return;
+          var generation = (pollGeneration += 1);
+          pingTimer = setTimeout(function () {
+            pingTimer = null;
+            autoCheck(generation);
+          }, delayMs);
+        }
+
         async function ping() {
+          var controller = null;
+          var timeoutId = null;
           try {
-            var res = await fetch("/?_offline_ping=1", {
+            var options = {
               method: "HEAD",
               cache: "no-store",
               redirect: "manual",
-            });
+            };
+            if (typeof AbortController === "function") {
+              controller = new AbortController();
+              activePingController = controller;
+              options.signal = controller.signal;
+              timeoutId = setTimeout(function () {
+                controller.abort();
+              }, PING_TIMEOUT_MS);
+            }
+            var res = await fetch("/?_offline_ping=1", options);
             // 即使是 redirect / 200 都算 "服务恢复"
             return !!res;
           } catch (_e) {
             return false;
+          } finally {
+            if (timeoutId !== null) clearTimeout(timeoutId);
+            if (activePingController === controller) {
+              activePingController = null;
+            }
           }
         }
 
-        async function autoCheck() {
+        async function autoCheck(generation) {
+          if (generation !== pollGeneration || isHidden()) return;
           var ok = await ping();
+          if (generation !== pollGeneration || isHidden()) return;
           if (ok) {
             setStatus("服务已恢复，正在重新加载… / Service back, reloading…", true);
-            setTimeout(reload, 600);
+            scheduleReload(600);
             return;
           }
           // 失败 → 增长 delay 再调度（exponential backoff with cap）
@@ -225,24 +297,44 @@
             currentDelayMs * BACKOFF_FACTOR,
             BACKOFF_MAX_MS
           );
-          pingTimer = setTimeout(autoCheck, currentDelayMs);
+          scheduleAutoCheck(currentDelayMs);
+        }
+
+        function resumeAutoCheck(immediate) {
+          if (isHidden()) return;
+          currentDelayMs = BACKOFF_INITIAL_MS;
+          scheduleAutoCheck(immediate ? 0 : currentDelayMs);
         }
 
         // 浏览器 online 事件：连接恢复立刻自动重试
         // 重置 backoff 让用户回到 fast-poll 模式（如果 online 事件
         // 误报，下一轮失败会再次开始 backoff 累积）
         window.addEventListener("online", function () {
-          currentDelayMs = BACKOFF_INITIAL_MS;
+          pauseAutoCheck();
           setStatus("网络已连接，重试中… / Online, retrying…", true);
-          setTimeout(reload, 400);
+          resumeAutoCheck(true);
+        });
+
+        document.addEventListener("visibilitychange", function () {
+          if (isHidden()) {
+            pauseAutoCheck();
+            return;
+          }
+          resumeAutoCheck(true);
+        });
+
+        window.addEventListener("pagehide", pauseAutoCheck);
+        window.addEventListener("pageshow", function (event) {
+          if (event && event.persisted) resumeAutoCheck(true);
         });
 
         // 后台 ping：从 5s 开始，失败逐步 backoff 到 max 60s
-        pingTimer = setTimeout(autoCheck, currentDelayMs);
+        resumeAutoCheck(false);
 
         if (btn) {
           btn.addEventListener("click", function () {
             // 手动 retry 也重置 backoff
+            pauseAutoCheck();
             currentDelayMs = BACKOFF_INITIAL_MS;
             setStatus("正在重试… / Retrying…");
             reload();

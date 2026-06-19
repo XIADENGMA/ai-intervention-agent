@@ -33,6 +33,7 @@
   const MAX_HEIGHT_PX = 800;
   const DEBOUNCE_MS = 150;
   const TARGET_ID = "feedback-text";
+  let activeResizeBinding = null;
 
   function _clamp(value) {
     return Math.max(MIN_HEIGHT_PX, Math.min(MAX_HEIGHT_PX, value));
@@ -81,31 +82,65 @@
     return true;
   }
 
+  function disconnectActiveResizeBinding() {
+    if (!activeResizeBinding) return;
+    if (activeResizeBinding.timeoutId) clearTimeout(activeResizeBinding.timeoutId);
+    if (
+      activeResizeBinding.observer &&
+      typeof activeResizeBinding.observer.disconnect === "function"
+    ) {
+      activeResizeBinding.observer.disconnect();
+    }
+    if (activeResizeBinding.mode === "mouseup_fallback") {
+      const textarea = activeResizeBinding.textarea;
+      if (textarea && typeof textarea.removeEventListener === "function") {
+        textarea.removeEventListener("mouseup", activeResizeBinding.handler);
+        textarea.removeEventListener("touchend", activeResizeBinding.handler);
+      }
+    }
+    activeResizeBinding = null;
+  }
+
   function setupResizeObserver(textarea) {
     if (!textarea) return null;
-    let timeoutId = null;
+    if (activeResizeBinding && activeResizeBinding.textarea === textarea) {
+      return activeResizeBinding;
+    }
+    disconnectActiveResizeBinding();
 
+    const binding = {
+      textarea: textarea,
+      observer: null,
+      handler: null,
+      timeoutId: null,
+    };
     const handler = function () {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      if (binding.timeoutId) {
+        clearTimeout(binding.timeoutId);
       }
-      timeoutId = setTimeout(function () {
+      binding.timeoutId = setTimeout(function () {
         const h = textarea.offsetHeight;
         if (h >= MIN_HEIGHT_PX && h <= MAX_HEIGHT_PX) {
           persistHeight(h);
         }
-        timeoutId = null;
+        binding.timeoutId = null;
       }, DEBOUNCE_MS);
     };
+    binding.handler = handler;
 
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver(handler);
       ro.observe(textarea);
-      return { observer: ro, mode: "resize_observer" };
+      binding.observer = ro;
+      binding.mode = "resize_observer";
+      activeResizeBinding = binding;
+      return binding;
     }
     textarea.addEventListener("mouseup", handler);
     textarea.addEventListener("touchend", handler);
-    return { observer: null, mode: "mouseup_fallback" };
+    binding.mode = "mouseup_fallback";
+    activeResizeBinding = binding;
+    return binding;
   }
 
   function init() {

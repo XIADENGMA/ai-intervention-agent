@@ -399,6 +399,9 @@ class TestRuntimeBehavior(unittest.TestCase):
                 function stopTasksHealthCheck() {
                   calls.push({ fn: 'stopTasksHealthCheck', enter: Date.now() });
                 }
+                function setupRealtimeAutosaveListeners() {
+                  return { textarea: null, optionsContainer: null };
+                }
 
                 // 兼容 init body 内可能引用的浏览器 API
                 // 把 console 静默掉：init body 里 ``console.log('Initializing…')``

@@ -95,6 +95,34 @@ const KeyboardShortcuts = (function () {
   }
 
   /**
+   * Normalize a key name into the token used by shortcut IDs.
+   * @param {string} key - Parsed shortcut key or KeyboardEvent.key
+   * @returns {string}
+   */
+  function normalizeKeyForId(key) {
+    const normalized = String(key || '').toLowerCase();
+    const aliased = KEY_ALIASES[normalized] || normalized;
+    if (aliased === ' ') return 'space';
+    return String(aliased).toLowerCase();
+  }
+
+  /**
+   * Build a canonical shortcut ID from parsed modifiers and key.
+   * @param {Set} modifiers - Normalized modifier property names
+   * @param {string} key - Parsed shortcut key or KeyboardEvent.key
+   * @returns {string}
+   */
+  function buildShortcutId(modifiers, key) {
+    const parts = [];
+    if (modifiers.has('ctrlKey')) parts.push('ctrl');
+    if (modifiers.has('altKey')) parts.push('alt');
+    if (modifiers.has('shiftKey')) parts.push('shift');
+    if (modifiers.has('metaKey')) parts.push('meta');
+    parts.push(normalizeKeyForId(key));
+    return parts.join('+');
+  }
+
+  /**
    * 生成标准化的快捷键 ID
    * @param {KeyboardEvent} event - 键盘事件
    * @returns {string}
@@ -108,9 +136,7 @@ const KeyboardShortcuts = (function () {
     if (event.metaKey) parts.push('meta');
 
     // 标准化键名
-    let key = event.key.toLowerCase();
-    if (key === ' ') key = 'space';
-    parts.push(key);
+    parts.push(normalizeKeyForId(event.key));
 
     return parts.join('+');
   }
@@ -125,7 +151,11 @@ const KeyboardShortcuts = (function () {
     // 检查是否在忽略元素内
     if (!options.allowInInputs) {
       const target = event.target;
-      if (IGNORED_ELEMENTS.includes(target.tagName)) {
+      if (!target) {
+        return false;
+      }
+      const tagName = typeof target.tagName === 'string' ? target.tagName.toUpperCase() : '';
+      if (IGNORED_ELEMENTS.includes(tagName)) {
         return true;
       }
       if (target.isContentEditable) {
@@ -206,16 +236,7 @@ const KeyboardShortcuts = (function () {
 
       const mergedOptions = { ...defaultOptions, ...options };
       const { modifiers, key } = parseShortcut(shortcut);
-
-      // 生成标准化 ID
-      const parts = [];
-      if (modifiers.has('ctrlKey')) parts.push('ctrl');
-      if (modifiers.has('altKey')) parts.push('alt');
-      if (modifiers.has('shiftKey')) parts.push('shift');
-      if (modifiers.has('metaKey')) parts.push('meta');
-      parts.push(key.toLowerCase());
-
-      const id = parts.join('+');
+      const id = buildShortcutId(modifiers, key);
 
       if (shortcuts.has(id)) {
         console.warn(`[KeyboardShortcuts] Shortcut "${shortcut}" already exists, will be overridden`);
@@ -231,15 +252,7 @@ const KeyboardShortcuts = (function () {
      */
     unregister: function (shortcut) {
       const { modifiers, key } = parseShortcut(shortcut);
-
-      const parts = [];
-      if (modifiers.has('ctrlKey')) parts.push('ctrl');
-      if (modifiers.has('altKey')) parts.push('alt');
-      if (modifiers.has('shiftKey')) parts.push('shift');
-      if (modifiers.has('metaKey')) parts.push('meta');
-      parts.push(key.toLowerCase());
-
-      const id = parts.join('+');
+      const id = buildShortcutId(modifiers, key);
 
       if (shortcuts.delete(id)) {
         console.debug(`[KeyboardShortcuts] unregistered: ${id}`);
@@ -447,6 +460,10 @@ const KeyboardShortcuts = (function () {
     }
   };
 })();
+
+if (typeof window !== 'undefined') {
+  window.KeyboardShortcuts = KeyboardShortcuts;
+}
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {

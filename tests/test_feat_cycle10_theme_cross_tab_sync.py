@@ -43,9 +43,12 @@ class TestCrossTabSync(unittest.TestCase):
         assert m is not None
         init_body = m.group(1)
         self.assertIn(
-            "addEventListener('storage'",
+            "setupStorageSync()",
             init_body,
-            "init 必须为 cross-tab sync 注册 'storage' event listener",
+            "init 必须安装 cross-tab sync storage listener",
+        )
+        self.assertIn(
+            "window.addEventListener('storage', handleStorageChange)", self.theme_js
         )
 
     # ---------------------------------------------------------------
@@ -76,7 +79,9 @@ class TestCrossTabSync(unittest.TestCase):
     def test_handler_wrapped_in_try_catch(self) -> None:
         # 整个 storage listener 注册必须包在 try/catch 里
         m = re.search(
-            r"try\s*\{\s*window\.addEventListener\('storage'.*?\}\s*catch\s*\(",
+            r"function\s+setupStorageSync\(\)\s*\{[\s\S]*?"
+            r"try\s*\{\s*window\.addEventListener\('storage',\s*handleStorageChange\)"
+            r"[\s\S]*?\}\s*catch\s*\(",
             self.theme_js,
             re.DOTALL,
         )
@@ -108,7 +113,8 @@ class TestCrossTabSync(unittest.TestCase):
     # ---------------------------------------------------------------
     def _storage_handler_block(self) -> str:
         m = re.search(
-            r"window\.addEventListener\('storage',\s*function\s*\([^)]*\)\s*\{.*?\}\s*\)\s*;",
+            r"function\s+handleStorageChange\s*\([^)]*\)\s*\{(?P<body>[\s\S]*?)"
+            r"\n  \}",
             self.theme_js,
             re.DOTALL,
         )

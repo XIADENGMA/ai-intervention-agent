@@ -193,9 +193,12 @@ class TestWebUITasksPollTimeoutInvariants(unittest.TestCase):
             "下两端表现不一致（Web UI 永久 hang，VSCode 6s 超时）。",
         )
 
-    def test_abort_callback_guards_against_null_controller(self) -> None:
-        """``setTimeout`` 回调中 abort 前必须先判 ``tasksPollAbortController``
-        非 null——否则在 ``finally`` 已清空 controller 后 timer 触发会 NPE。"""
+    def test_abort_callback_uses_request_owned_controller(self) -> None:
+        """``setTimeout`` 回调必须 abort 本轮请求自己的 controller。
+
+        不能在 callback 里重新读全局 ``tasksPollAbortController``，否则旧请求的
+        timer 可能 abort 后启动的新请求。
+        """
         body = _extract_fetchAndApplyTasks_body(self.text)
         st_match = re.search(
             r"setTimeout\s*\(\s*\(\s*\)\s*=>\s*\{(?P<cb>.*?)\}\s*,\s*"
@@ -206,15 +209,22 @@ class TestWebUITasksPollTimeoutInvariants(unittest.TestCase):
         assert st_match is not None
         cb = st_match.group("cb")
         self.assertIn(
+            "currentTasksPollController",
+            cb,
+            "setTimeout 回调里必须引用本轮请求的 currentTasksPollController，"
+            "不能重新读取全局 tasksPollAbortController",
+        )
+        self.assertNotIn(
             "tasksPollAbortController",
             cb,
-            "setTimeout 回调里必须引用 tasksPollAbortController 才能 abort",
+            "setTimeout 回调不能读取全局 tasksPollAbortController；旧 timer "
+            "触发时全局变量可能已经指向更新的请求。",
         )
         # 必须有显式 if 判 null（防御性写法）或 try/catch（兜底）
-        has_guard = ("if (tasksPollAbortController" in cb) or ("try" in cb)
+        has_guard = ("if (currentTasksPollController" in cb) or ("try" in cb)
         self.assertTrue(
             has_guard,
-            "setTimeout 回调必须在 abort 前用 ``if (tasksPollAbortController)``"
+            "setTimeout 回调必须在 abort 前用 ``if (currentTasksPollController)``"
             " 守卫或包在 try/catch 里——否则 finally 清空 controller 后 timer "
             "触发会抛 TypeError。",
         )

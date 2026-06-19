@@ -72,6 +72,55 @@ def _read(p: Path) -> str:
 # ============================================================================
 
 
+class TestServiceWorkerDocumentationContract(unittest.TestCase):
+    """Layer 2: SW 顶部契约注释必须与长期驻留的 fetch 行为一致。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.src = _read(SW_JS)
+        m = re.match(r"/\*[\s\S]*?\*/", cls.src)
+        assert m is not None, "R312-L2: SW 顶部必须保留行为契约注释"
+        cls.header = m.group(0)
+
+    def test_header_mentions_navigation_offline_fallback(self) -> None:
+        """R312-L2: 顶部契约必须写明 navigation network-first + offline fallback。"""
+        self.assertIn(
+            "一个文件承担三件事",
+            self.header,
+            "R312-L2: SW 顶部契约应列出通知、静态缓存、导航离线兜底三类职责",
+        )
+        self.assertIn(
+            "导航离线兜底",
+            self.header,
+            "R312-L2: SW 已实现 navigation offline fallback，顶部契约必须明示",
+        )
+        self.assertIn(
+            "request.mode === 'navigate'",
+            self.header,
+            "R312-L2: SW 顶部契约应说明 offline fallback 只作用于 navigation 请求",
+        )
+        self.assertIn(
+            "network-first",
+            self.header,
+            "R312-L2: SW 顶部契约应说明 HTML navigation 是 network-first",
+        )
+
+    def test_header_does_not_claim_offline_fallback_is_absent(self) -> None:
+        """R312-L2: 禁止注释继续声称离线兜底不存在。"""
+        stale_claims = [
+            "一个文件承担两件事",
+            "当前不需要 PWA 离线场景",
+            "offline page fallback）—— 当前不需要",
+            "离线页面**（offline page fallback）—— 当前不需要",
+        ]
+        for claim in stale_claims:
+            self.assertNotIn(
+                claim,
+                self.header,
+                f"R312-L2: SW 顶部契约含过期说法: {claim!r}",
+            )
+
+
 class TestServiceWorkerCacheNaming(unittest.TestCase):
     """Layer 2: SW JS 常量 ``STATIC_CACHE_NAME`` / ``OFFLINE_CACHE_NAME`` 命名规范。"""
 

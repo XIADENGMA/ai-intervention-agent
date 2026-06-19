@@ -121,7 +121,11 @@
          首屏可省 ~33 KB 带宽与对应解析时间。
          必须保留 ``?v=`` 版本号 query 与下游 ``<script>`` 标签**完全一致**，否则 preload 缓存命中失败。
          CSP nonce 不属于 URL 的一部分，无需在 preload link 上声明。 -->
-    <link rel="preload" href="/static/css/prism.css" as="style" />
+    <link
+      rel="preload"
+      href="/static/css/prism.css?v={{ prism_css_version }}"
+      as="style"
+    />
     <link
       rel="preload"
       href="/static/js/app.js?v={{ app_version }}"
@@ -161,12 +165,15 @@
          本脚本仍是第一个 defer，先于 marked / prism / app 加载，依赖关系不变。 -->
     <script
       defer
-      src="/static/js/mathjax-loader.js"
+      src="/static/js/mathjax-loader.js?v={{ mathjax_loader_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
     <!-- Prism.js 代码高亮 CSS -->
-    <link rel="stylesheet" href="/static/css/prism.css" />
+    <link
+      rel="stylesheet"
+      href="/static/css/prism.css?v={{ prism_css_version }}"
+    />
 
     <!-- marked.js Markdown 渲染（defer 属性：按顺序异步加载）
          R27.2：``?v={{ marked_js_version }}`` 让 ``serve_js`` 路由匹配带版本查询
@@ -194,6 +201,11 @@
     <link
       rel="stylesheet"
       href="/static/css/main.css?v={{ css_version }}"
+      nonce="{{ csp_nonce }}"
+    />
+    <link
+      rel="stylesheet"
+      href="/static/css/tri-state-panel.css?v={{ tri_state_panel_css_version }}"
       nonce="{{ csp_nonce }}"
     />
   </head>
@@ -2073,7 +2085,7 @@
 
     <script
       defer
-      src="/static/js/validation-utils.js"
+      src="/static/js/validation-utils.js?v={{ validation_utils_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
@@ -2085,13 +2097,13 @@
 
     <script
       defer
-      src="/static/js/keyboard-shortcuts.js"
+      src="/static/js/keyboard-shortcuts.js?v={{ keyboard_shortcuts_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
     <script
       defer
-      src="/static/js/dom-security.js"
+      src="/static/js/dom-security.js?v={{ dom_security_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
@@ -2129,6 +2141,8 @@
     {% endif %}
     <script defer nonce="{{ csp_nonce }}">
       window.AIIA_CONFIG_LANG = {{ language|tojson }};
+      window.AIIA_LOTTIE_JS_URL = "/static/js/lottie.min.js?v={{ lottie_min_version }}";
+      window.AIIA_LOCALE_VERSIONS = {{ locale_versions|tojson }};
       document.addEventListener('DOMContentLoaded', function() {
         if (window.AIIA_I18N) {
           var cfgLang = window.AIIA_CONFIG_LANG;
@@ -2151,17 +2165,17 @@
 
     <script
       defer
-      src="/static/js/notification-manager.js"
+      src="/static/js/notification-manager.js?v={{ notification_manager_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
     <script
       defer
-      src="/static/js/settings-manager.js"
+      src="/static/js/settings-manager.js?v={{ settings_manager_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
     <script
       defer
-      src="/static/js/image-upload.js"
+      src="/static/js/image-upload.js?v={{ image_upload_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
@@ -2238,18 +2252,18 @@
     <script type="importmap" nonce="{{ csp_nonce }}">
       {
         "imports": {
-          "@aiia/tri-state-panel": "/static/js/tri-state-panel.js"
+          "@aiia/tri-state-panel": "/static/js/tri-state-panel.js?v={{ tri_state_panel_version }}"
         }
       }
     </script>
     <script
       type="module"
       nonce="{{ csp_nonce }}"
-      src="/static/js/tri-state-panel-loader.js"
+      src="/static/js/tri-state-panel-loader.js?v={{ tri_state_panel_loader_version }}"
     ></script>
     <script
       defer
-      src="/static/js/tri-state-panel-bootstrap.js"
+      src="/static/js/tri-state-panel-bootstrap.js?v={{ tri_state_panel_bootstrap_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
   </body>

@@ -65,13 +65,14 @@ MODAL_DIALOG_PAIRS = frozenset(
     }
 )
 
-# 已审查的 page-level long-lived handler (不需要 remove, 整个 SPA 生命周期)
+# 已审查的 page-level long-lived handler (不需要 remove, 整个 SPA 生命周期)。
+# 值可以是稳定 handler 名（优先，抗行号漂移）或历史行号哨兵。
 PAGE_LEVEL_LONG_LIVED = frozenset(
     {
-        ("app.js", 1694),  # 主键盘快捷键 (inline arrow function)
-        ("keyboard_shortcut_help.js", 503),  # _onKeydown ? trigger
-        ("quick_phrases.js", 1051),  # Alt+N fallback
-        ("keyboard-shortcuts.js", 182),  # handleKeydown - 有 destroy() 配对
+        ("app.js", "handleGlobalKeydown"),  # 主键盘快捷键 (page-level)
+        ("keyboard_shortcut_help.js", "_onKeydown"),  # ? cheatsheet trigger
+        ("quick_phrases.js", "_fallbackShortcutHandler"),  # Alt+N fallback
+        ("keyboard-shortcuts.js", "handleKeydown"),  # 有 destroy() 配对
         ("feedback_submit_mode.js", None),  # docstring 引用
     }
 )
@@ -192,9 +193,13 @@ class TestLayer3FutureGuardEnumeration:
                     file_name == f and handler == h for f, h in MODAL_DIALOG_PAIRS
                 )
                 page_match = any(
-                    file_name == f and line_no == ln
-                    for f, ln in PAGE_LEVEL_LONG_LIVED
-                    if ln is not None
+                    file_name == f
+                    and (
+                        (isinstance(marker, int) and line_no == marker)
+                        or (isinstance(marker, str) and handler == marker)
+                    )
+                    for f, marker in PAGE_LEVEL_LONG_LIVED
+                    if marker is not None
                 )
                 assert modal_match or page_match, (
                     f"R338-L3 future-guard: NEW `document.addEventListener"

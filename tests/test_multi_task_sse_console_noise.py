@@ -16,13 +16,16 @@ def _read_source() -> str:
 
 
 def _extract_connect_sse(source: str) -> str:
+    # R452 split the public _connectSSE wrapper from the direct EventSource
+    # connector so BroadcastChannel followers can share one stream. Console-noise
+    # assertions belong to the direct connector where EventSource handlers live.
     match = re.search(
-        r"function _connectSSE\(\) \{(?P<body>.*?)\n\}\n\nfunction _disconnectSSE",
+        r"function _connectDirectSSE\(sharedLeaderMode\) \{(?P<body>.*?)\n\}\n\nfunction _sseNowMs",
         source,
         re.DOTALL,
     )
     assert match is not None, (
-        "multi_task.js 必须保留 _connectSSE 到 _disconnectSSE 的结构"
+        "multi_task.js 必须保留 _connectDirectSSE 到 _sseNowMs 的结构"
     )
     return match.group("body")
 

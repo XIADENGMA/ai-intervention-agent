@@ -1,6 +1,6 @@
 /* AI Intervention Agent · Service Worker
  *
- * 一个文件承担两件事：
+ * 一个文件承担三件事：
  *
  * 1. **通知点击路由**（既有功能，``notificationclick`` 事件）—— 接住系统
  *    通知中心的点击，把焦点切到已存在的 Web UI 标签页或新开一个窗口。
@@ -11,6 +11,11 @@
  *    资源走 **cache-first**：第一次走网络存进 cache，后续重复访问全部命中
  *    本地 IndexedDB-backed cache，零 RTT。``/api/*`` 与 HTML 路径绕过缓存。
  *
+ * 3. **导航离线兜底（R249）** —— 对 ``request.mode === 'navigate'`` 的 HTML
+ *    导航请求走 **network-first**：有网时永远返回最新页面；网络失败时只兜底
+ *    到 install 阶段预缓存的 ``/offline.html``。API / SSE / 静态资源不走这个
+ *    路径，避免把动态状态伪装成可离线。
+ *
  * 设计要点
  * --------
  * - **Cache 名带版本号**（``aiia-static-v1``）：当 SW 升级（比如重构 fetch
@@ -19,8 +24,12 @@
  * - **白名单 cache-first**：只缓存"内容稳定 + 带版本号"的资源；任何
  *   ``/api/*``、``/sse``、HTML 路径（``/`` / 任何 200 但 ``Content-Type:
  *   text/html``）都不缓存，避免会话状态被冻结。
+ * - **导航 network-first**：HTML 导航请求永远先走网络；只有网络失败才返回
+ *   ``/offline.html``，所以离线兜底不会掩盖在线状态下的新版本页面。
  * - **同源限制**：只缓存 ``self.location.origin`` 下的资源，跨域引用一律
  *   走默认网络路径（避免 CDN / 第三方资源被错误冻结）。
+ * - **离线 shell 单独 cache**：``OFFLINE_CACHE_NAME`` 使用 ``aiia-offline-*``
+ *   前缀，与 ``aiia-static-*`` 静态资源 cache 分开升级、分开清理。
  * - **Cache size 限流**（``MAX_ENTRIES``）：超过上限时**异步**淘汰最早写入
  *   的 entry，不阻塞响应。LRU 严格性需要额外簿记，这里用 FIFO 近似（cache
  *   key 顺序就是 ``cache.keys()`` 返回顺序），代价是偶尔淘汰错对象，但
@@ -36,8 +45,8 @@
  * --------------------
  * - **Push notification**（推送通知）—— 仍由 `notification-manager.js` 走
  *   非 SW 路径或后端 Bark/Telegram 推送。
- * - **离线页面**（offline page fallback）—— 当前不需要 PWA 离线场景，AI
- *   Intervention Agent 是 LAN/loopback only。
+ * - **完整 PWA app-shell 离线模式**—— 本文件只提供导航失败时的
+ *   ``/offline.html`` 兜底；不会离线缓存动态 HTML、API 结果或任务状态。
  * - **动态 API 缓存**（stale-while-revalidate /api/）—— ``/api/tasks`` 等
  *   端点状态高度动态，缓存反而错误地展示陈旧任务列表。永远 fall-through。
  */

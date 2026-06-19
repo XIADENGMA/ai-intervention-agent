@@ -38,8 +38,10 @@ r"""锁定 debounceSaveFeedback 的「累积」语义：800ms 窗口内多个字
 合约（被本测试锁定）
 --------------------
 - ``static/js/settings-manager.js`` 与 ``packages/vscode/webview-settings-ui.js``
-  各自有一个 ``Pending(?:Updates)?`` 变量名，且 ``debounceSaveFeedback`` 体里
-  必须出现 ``Object.assign(`` 模式（保证累积写入）。
+  各自有一个 ``Pending(?:Updates)?`` 变量名，且 feedback-config debounce
+  helper 体里必须出现 ``Object.assign(`` 模式（保证累积写入）。Web UI
+  允许使用实例方法承载该状态，因为 reset-feedback-config 需要取消尚未发
+  出的 debounced update。
 - 两份代码必须**同步**修改；任何一份退化成 ``setTimeout(...saveFeedbackConfig(updates))``
   形式（即在 ``debounceSaveFeedback`` 体内直接把 ``updates`` 喂给 ``saveFeedbackConfig``）
   都会被本测试 catch。
@@ -64,7 +66,7 @@ VSCODE_FILE = REPO_ROOT / "packages" / "vscode" / "webview-settings-ui.js"
 
 
 def _extract_debounce_block(text: str) -> str:
-    """切出 ``const debounceSaveFeedback = updates => { ... }`` 函数体。
+    """切出 feedback-config debounce helper 函数体。
 
     取**最后**一个匹配，避免误匹配注释里复制的旧实现（修复版往往会
     在注释里保留 ``const debounceSaveFeedback = updates =>`` 历史片段
@@ -74,14 +76,14 @@ def _extract_debounce_block(text: str) -> str:
     `arrowParens: "always"` 默认会加括号，旧仓库 `arrowParens: "avoid"`
     则不加。锁的是 debounce 累积语义，括号风格无关。
     """
-    matches = list(
-        re.finditer(
-            r"const\s+debounceSaveFeedback\s*=\s*(?:updates|\(\s*updates\s*\))\s*=>",
-            text,
-        )
-    )
+    patterns = [
+        r"const\s+debounceSaveFeedback\s*=\s*(?:updates|\(\s*updates\s*\))\s*=>",
+        r"_queueFeedbackConfigSaveFromUi\s*\(\s*updates\s*\)\s*\{",
+    ]
+    matches = [match for pattern in patterns for match in re.finditer(pattern, text)]
     if not matches:
         return ""
+    matches.sort(key=lambda match: match.start())
     start = matches[-1].end()
     return text[start : start + 600]
 
@@ -95,7 +97,7 @@ class TestDebounceSaveFeedbackAccumulates(unittest.TestCase):
         self.assertNotEqual(
             body,
             "",
-            f"{label}: 找不到 `const debounceSaveFeedback = updates =>` "
+            f"{label}: 找不到 feedback-config debounce helper "
             "声明——可能函数被重构，本测试正则需要更新",
         )
 

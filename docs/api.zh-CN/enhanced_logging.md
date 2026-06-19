@@ -10,6 +10,16 @@
 
 Loguru patcher: 防注入转义 + 敏感信息脱敏
 
+### `_is_root_intercept_handler(handler: logging.Handler) -> bool`
+
+Return whether *handler* is this module's root logging bridge.
+
+``importlib.reload()`` recreates ``InterceptHandler``. Existing handler
+instances from the previous module execution are still valid bridges, but
+they no longer satisfy ``isinstance(handler, InterceptHandler)`` for the
+newly created class. A stable marker keeps root installation idempotent
+across reloads and xdist worker ordering.
+
 ### `_install_root_intercept_once() -> None`
 
 R72-A：在 root logger 上 idempotently 安装一份 ``InterceptHandler``。
@@ -36,9 +46,9 @@ log 行。
 幂等性
 ------
 
-用 ``isinstance(h, InterceptHandler)`` 检测已存在的 handler，避免重复
-安装。这对测试场景特别重要：``pytest`` 可能多次 import 模块，
-``logging`` root 是进程级单例。
+用 ``_is_root_intercept_handler(h)`` 检测已存在的 handler，避免重复
+安装。这对测试场景特别重要：``pytest`` 可能多次 import/reload 模块，
+而 ``logging`` root 是进程级单例。
 
 与 ``SingletonLogManager.setup_logger`` 的关系
 -------------------------------------------------

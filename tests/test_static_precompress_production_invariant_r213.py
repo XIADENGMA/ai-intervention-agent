@@ -53,13 +53,13 @@ MIN_SIZE_BYTES + 扩展名不在 SKIP_EXTENSIONS) 都有：
 测试架构 (4 invariant class / 9 cases / 1 subtest)
 ==================================================
 
-1. TestProductionGzipCompleteness (3 cases): production css/js/locales
+1. TestProductionGzipCompleteness (3 cases): production css/js/locales/lottie
    目录里, 每个符合条件的 source 都有 .gz + .gz 体积 < 原 + 反解
    byte-equal;
 2. TestProductionBrotliCompleteness (3 cases, brotli-skip): 同上 .br
    层 + .br 体积 < .gz;
 3. TestProductionTargetDirsRegistered (2 cases): 防 refactor 漂移
-   ——`DEFAULT_TARGET_DIRS` 必含 css / js / locales 三个目录, 路径
+   ——`DEFAULT_TARGET_DIRS` 必含 css / js / locales / lottie 四个目录, 路径
    存在;
 4. TestPrecompressCheckExitsCleanInProduction (1 case + 1 subtest):
    `precompress_static.py --check` 在 production assets 上必须
@@ -133,7 +133,7 @@ class TestProductionGzipCompleteness(unittest.TestCase):
             0,
             "production target dirs 必有至少一个符合预压缩条件的源文件; "
             "为 0 暗示 DEFAULT_TARGET_DIRS 路径漂移或目录全空 — 检查 "
-            "src/ai_intervention_agent/static/{css,js,locales}",
+            "src/ai_intervention_agent/static/{css,js,locales,lottie}",
         )
 
     def test_every_source_has_gz_sibling(self) -> None:
@@ -293,7 +293,7 @@ class TestProductionBrotliCompleteness(unittest.TestCase):
 
 
 class TestProductionTargetDirsRegistered(unittest.TestCase):
-    """``DEFAULT_TARGET_DIRS`` 必含 css / js / locales 三个目录, 路径存在。
+    """``DEFAULT_TARGET_DIRS`` 必含 css / js / locales / lottie 四个目录, 路径存在。
 
     防 refactor 漂移: R76 把 ``static/`` 从根挪进 ``src/ai_intervention_
     agent/`` 包内时, ``DEFAULT_TARGET_DIRS`` 没同步过一次 (历史教
@@ -304,7 +304,7 @@ class TestProductionTargetDirsRegistered(unittest.TestCase):
 
     def test_default_target_dirs_contain_expected_subdirs(self) -> None:
         names = [d.name for d in DEFAULT_TARGET_DIRS]
-        for expected in ("css", "js", "locales"):
+        for expected in ("css", "js", "locales", "lottie"):
             self.assertIn(
                 expected,
                 names,

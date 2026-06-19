@@ -76,6 +76,7 @@ EXPECTED_NEW_QP_KEYS: tuple[str, ...] = (
     "importBtn",
     "importBtnAriaLabel",
     "importErrorInvalidJson",
+    "importErrorReadFailed",
     "importErrorSchema",
     "importErrorEmpty",
     "importConfirmReplace",

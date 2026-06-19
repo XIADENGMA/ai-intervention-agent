@@ -101,6 +101,8 @@ class NotificationManager {
     this.permissionRequestPromise = null
     this.autoPermissionListenersBound = false
     this.boundPermissionRequestHandler = null
+    this._titleFlashInterval = null
+    this._titleFlashOriginalTitle = null
     this.config = {
       enabled: true,
       webEnabled: true,
@@ -236,10 +238,13 @@ class NotificationManager {
         return
       }
 
+      this.removeAutoPermissionRequestListeners()
       this.requestPermission({ requireUserGesture: false }).finally(() => {
-        if (this.syncPermissionState() !== 'default') {
+        if (!this.config.autoRequestPermission || this.syncPermissionState() !== 'default') {
           this.removeAutoPermissionRequestListeners()
+          return
         }
+        this.bindAutoPermissionRequest()
       })
     }
     ;['click', 'keydown', 'touchstart'].forEach(eventName => {
@@ -1068,19 +1073,33 @@ class NotificationManager {
     })
   }
 
+  clearTitleFlash() {
+    if (this._titleFlashInterval !== null) {
+      clearInterval(this._titleFlashInterval)
+      this._titleFlashInterval = null
+    }
+
+    if (this._titleFlashOriginalTitle !== null) {
+      document.title = this._titleFlashOriginalTitle
+      this._titleFlashOriginalTitle = null
+    }
+  }
+
   flashTitle(message) {
-    // 标题闪烁提醒
-    const originalTitle = document.title
+    // 标题闪烁提醒；同一时间只保留一个 interval，避免连续降级通知互相恢复旧标题。
+    this.clearTitleFlash()
+    this._titleFlashOriginalTitle = document.title
     let flashCount = 0
     const maxFlashes = 6
 
-    const flashInterval = setInterval(() => {
+    this._titleFlashInterval = setInterval(() => {
+      const originalTitle =
+        this._titleFlashOriginalTitle !== null ? this._titleFlashOriginalTitle : document.title
       document.title = flashCount % 2 === 0 ? t('notify.titleFlash', { message: message }) : originalTitle
       flashCount++
 
       if (flashCount >= maxFlashes) {
-        clearInterval(flashInterval)
-        document.title = originalTitle
+        this.clearTitleFlash()
       }
     }, 1000)
   }
@@ -1100,6 +1119,17 @@ class NotificationManager {
       audioContext: this.audioContext ? this.audioContext.state : 'unavailable',
       config: this.config
     }
+  }
+
+  _getInPageNotificationTimeoutMs(options = {}) {
+    const rawTimeout = Object.prototype.hasOwnProperty.call(options, 'timeout')
+      ? options.timeout
+      : this.config.timeout
+    const timeout = Number(rawTimeout)
+    if (!Number.isFinite(timeout)) {
+      return 5000
+    }
+    return Math.max(0, Math.floor(timeout))
   }
 
   showInPageNotification(title, message, options = {}) {
@@ -1149,8 +1179,16 @@ class NotificationManager {
     // 添加到页面
     document.body.appendChild(notification)
 
-    // 关闭按钮事件
-    closeEl.addEventListener('click', () => {
+    let closeStarted = false
+    let autoCloseTimerId = null
+
+    const closeNotification = () => {
+      if (closeStarted) return
+      closeStarted = true
+      if (autoCloseTimerId !== null) {
+        clearTimeout(autoCloseTimerId)
+        autoCloseTimerId = null
+      }
       notification.style.transform = 'translateX(100%)'
       notification.style.opacity = '0'
       setTimeout(() => {
@@ -1158,7 +1196,10 @@ class NotificationManager {
           notification.parentNode.removeChild(notification)
         }
       }, 300)
-    })
+    }
+
+    // 关闭按钮事件
+    closeEl.addEventListener('click', closeNotification)
 
     closeEl.addEventListener('mouseenter', () => {
       closeEl.style.background = 'rgba(255, 255, 255, 0.1)'
@@ -1178,11 +1219,10 @@ class NotificationManager {
     }, 10)
 
     // 自动关闭
-    setTimeout(() => {
-      if (notification.parentNode) {
-        closeEl.click()
-      }
-    }, options.timeout || 5000)
+    const timeoutMs = this._getInPageNotificationTimeoutMs(options)
+    if (timeoutMs > 0) {
+      autoCloseTimerId = setTimeout(closeNotification, timeoutMs)
+    }
 
     return notification
   }

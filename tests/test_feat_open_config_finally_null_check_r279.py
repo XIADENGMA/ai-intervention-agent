@@ -258,11 +258,13 @@ class TestFinallyBlockMetaLint(unittest.TestCase):
             "settings-manager.js": [
                 "R279",
                 "removeChild(ta)",
-            ],  # R279 fixed + local-sync ta
+                "R452-custom-sound-upload-reset",
+            ],  # R279 fixed + local-sync ta + custom sound file-input cleanup
             "app.js": ["R268"],  # R268 fixed
             "i18n.js": ["seen.delete", "delete _pendingLoads"],  # safe (no DOM)
             "multi_task.js": ["clearTimeout", "tasksPollAbortController", "setTimeout"],
             "notification-manager.js": ["permissionRequestPromise"],  # safe (state)
+            "quick_phrases.js": ["R452-export-cleanup"],  # safe (download cleanup)
         }
 
         # 扫所有 .js (排除 .min.js 和 vendor 第三方库)

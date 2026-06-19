@@ -99,6 +99,7 @@
     "importBtn": "匯入",
     "importBtnAriaLabel": "从 JSON 檔案匯入常用回复",
     "importErrorInvalidJson": "所選檔案不是有效的 JSON",
+    "importErrorReadFailed": "無法讀取所選檔案，請重試。",
     "importErrorSchema": "檔案不像是常用回复匯出格式",
     "importErrorEmpty": "檔案中没有有效的常用回复",
     "importConfirmReplace": "用檔案裡的 {{count}} 条常用回复取代目前 {{current}} 条？此操作無法復原。",

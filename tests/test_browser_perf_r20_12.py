@@ -68,7 +68,7 @@ class TestMathjaxLoaderDefer(unittest.TestCase):
         但首字节时机仍可观测）。
         """
         pattern = re.compile(
-            r"""<script[^>]*\bdefer\b[^>]*src=["']/static/js/mathjax-loader\.js["']""",
+            r"""<script[^>]*\bdefer\b[^>]*src=["']/static/js/mathjax-loader\.js\?v=\{\{\s*mathjax_loader_version\s*\}\}["']""",
         )
         match = pattern.search(self.html_no_comments)
         self.assertIsNotNone(
@@ -101,6 +101,7 @@ class TestMathjaxLoaderDefer(unittest.TestCase):
             msg="模板里至少要有一个 defer 脚本（这个测试基础假设）",
         )
         first_defer_name, _ = positions[0]
+        first_defer_name = first_defer_name.split("?", 1)[0]
         self.assertEqual(
             first_defer_name,
             "mathjax-loader.js",

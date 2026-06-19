@@ -9,6 +9,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Add a FastMCP dynamic tool registration spike covering local SDK
+  behavior.
+
+### Changed
+
+- Prune low-value bundled comments from VS Code and Web UI assets.
+
+### Fixed
+
+- Honor predefined option defaults throughout the Web UI.
+
 ## [1.7.11] - 2026-06-08
 
 > **Consolidated patch release covering cycles 22 → 52** (31 cycles,

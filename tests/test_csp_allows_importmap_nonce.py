@@ -98,11 +98,11 @@ class TestCspAllowsImportMapNonce(unittest.TestCase):
     def test_module_loader_script_carries_nonce(self) -> None:
         pattern = re.compile(
             r'<script\b[^>]*\btype="module"[^>]*\bnonce="\{\{\s*csp_nonce\s*\}\}"'
-            r'[^>]*\bsrc="/static/js/tri-state-panel-loader\.js"',
+            r'[^>]*\bsrc="/static/js/tri-state-panel-loader\.js\?v=\{\{\s*tri_state_panel_loader_version\s*\}\}"',
             flags=re.DOTALL,
         )
         alt_pattern = re.compile(
-            r'<script\b[^>]*\bsrc="/static/js/tri-state-panel-loader\.js"'
+            r'<script\b[^>]*\bsrc="/static/js/tri-state-panel-loader\.js\?v=\{\{\s*tri_state_panel_loader_version\s*\}\}"'
             r'[^>]*\bnonce="\{\{\s*csp_nonce\s*\}\}"[^>]*\btype="module"',
             flags=re.DOTALL,
         )

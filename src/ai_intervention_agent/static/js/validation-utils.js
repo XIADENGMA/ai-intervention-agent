@@ -401,10 +401,18 @@ class ValidationUtils {
  * @version 1.0.0
  */
 
+const API_CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
 class APICache {
-  constructor(defaultTTL = 30000) {
+  constructor(
+    defaultTTL = 30000,
+    cleanupIntervalMs = API_CACHE_CLEANUP_INTERVAL_MS,
+  ) {
     this.cache = new Map();
     this.defaultTTL = defaultTTL; // 默认缓存时间（毫秒）
+    this.cleanupIntervalMs = cleanupIntervalMs;
+    this._cleanupTimerId = null;
+    this._lifecycleListenersInstalled = false;
   }
 
   /**
@@ -414,15 +422,8 @@ class APICache {
    * @returns {*} 缓存的值，不存在或已过期返回 null
    */
   get(key) {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-
-    if (Date.now() > entry.expiry) {
-      this.cache.delete(key);
-      return null;
-    }
-
-    return entry.value;
+    const entry = this._getFreshEntry(key);
+    return entry ? entry.value : null;
   }
 
   /**
@@ -437,6 +438,7 @@ class APICache {
       value,
       expiry: Date.now() + ttl,
     });
+    this._ensureCleanupTimer();
   }
 
   /**
@@ -445,7 +447,9 @@ class APICache {
    * @param {string} key - 缓存键
    */
   delete(key) {
-    this.cache.delete(key);
+    const deleted = this.cache.delete(key);
+    this._stopCleanupTimerIfIdle();
+    return deleted;
   }
 
   /**
@@ -453,6 +457,7 @@ class APICache {
    */
   clear() {
     this.cache.clear();
+    this.stopCleanupTimer();
   }
 
   /**
@@ -460,11 +465,61 @@ class APICache {
    */
   cleanup() {
     const now = Date.now();
+    let removed = 0;
     for (const [key, entry] of this.cache.entries()) {
       if (now > entry.expiry) {
         this.cache.delete(key);
+        removed += 1;
       }
     }
+    this._stopCleanupTimerIfIdle();
+    return removed;
+  }
+
+  _shouldRunCleanupTimer() {
+    if (typeof setInterval !== "function") return false;
+    if (typeof document !== "undefined" && document.hidden === true) {
+      return false;
+    }
+    return this.cache.size > 0;
+  }
+
+  _ensureCleanupTimer() {
+    if (this._cleanupTimerId !== null) return this._cleanupTimerId;
+    if (!this._shouldRunCleanupTimer()) return null;
+    this._cleanupTimerId = setInterval(() => {
+      this.cleanup();
+      this._stopCleanupTimerIfIdle();
+    }, this.cleanupIntervalMs);
+    return this._cleanupTimerId;
+  }
+
+  stopCleanupTimer() {
+    if (this._cleanupTimerId === null) return false;
+    if (typeof clearInterval === "function") {
+      clearInterval(this._cleanupTimerId);
+    }
+    this._cleanupTimerId = null;
+    return true;
+  }
+
+  _stopCleanupTimerIfIdle() {
+    if (this.cache.size === 0) {
+      this.stopCleanupTimer();
+    }
+  }
+
+  _getFreshEntry(key) {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    if (Date.now() > entry.expiry) {
+      this.cache.delete(key);
+      this._stopCleanupTimerIfIdle();
+      return null;
+    }
+
+    return entry;
   }
 
   /**
@@ -511,9 +566,9 @@ class APICache {
 
     // 检查缓存
     const cacheKey = `${method}:${url}`;
-    const cached = this.get(cacheKey);
-    if (cached !== null) {
-      return cached;
+    const cachedEntry = this._getFreshEntry(cacheKey);
+    if (cachedEntry !== null) {
+      return cachedEntry.value;
     }
 
     // 发起请求
@@ -532,13 +587,38 @@ class APICache {
 // 创建全局缓存实例
 const apiCache = new APICache(30000); // 30秒默认缓存
 
-// 定期清理过期缓存（每5分钟）
-setInterval(
-  () => {
-    apiCache.cleanup();
-  },
-  5 * 60 * 1000,
-);
+function setupApiCacheLifecycle(cache) {
+  if (!cache || cache._lifecycleListenersInstalled) return false;
+  cache._lifecycleListenersInstalled = true;
+
+  const syncTimerWithVisibility = () => {
+    if (typeof document !== "undefined" && document.hidden === true) {
+      cache.stopCleanupTimer();
+      return;
+    }
+    cache.cleanup();
+    cache._ensureCleanupTimer();
+  };
+
+  if (
+    typeof document !== "undefined" &&
+    typeof document.addEventListener === "function"
+  ) {
+    document.addEventListener("visibilitychange", syncTimerWithVisibility);
+  }
+  if (
+    typeof window !== "undefined" &&
+    typeof window.addEventListener === "function"
+  ) {
+    window.addEventListener("pagehide", () => {
+      cache.stopCleanupTimer();
+    });
+    window.addEventListener("pageshow", syncTimerWithVisibility);
+  }
+  return true;
+}
+
+setupApiCacheLifecycle(apiCache);
 
 // ========================================
 // 性能优化工具：去抖动与节流
@@ -555,6 +635,7 @@ setInterval(
  * @param {number} [wait=300] - 等待时间（毫秒）
  * @param {boolean} [immediate=false] - 是否立即执行（首次调用时）
  * @returns {Function} 去抖动后的函数
+ *   返回函数附带 cancel() 和 flush()；flush() 会使用最后一次调用的参数。
  *
  * @example
  * const debouncedSave = debounce(() => saveConfig(), 500);
@@ -563,9 +644,25 @@ setInterval(
 function debounce(func, wait = 300, immediate = false) {
   let timeout = null;
   let result = null;
+  let lastArgs = null;
+  let lastThis = null;
+
+  const clearLastCall = () => {
+    lastArgs = null;
+    lastThis = null;
+  };
+
+  const invokeLastCall = () => {
+    const args = lastArgs;
+    const context = lastThis;
+    clearLastCall();
+    result = func.apply(context, args);
+    return result;
+  };
 
   const debounced = function (...args) {
-    const context = this;
+    lastArgs = args;
+    lastThis = this;
     const callNow = immediate && !timeout;
 
     // 清除之前的定时器
@@ -575,14 +672,16 @@ function debounce(func, wait = 300, immediate = false) {
 
     timeout = setTimeout(() => {
       timeout = null;
-      if (!immediate) {
-        result = func.apply(context, args);
+      if (!immediate && lastArgs) {
+        invokeLastCall();
+      } else {
+        clearLastCall();
       }
     }, wait);
 
     // 立即执行模式
     if (callNow) {
-      result = func.apply(context, args);
+      result = func.apply(lastThis, lastArgs);
     }
 
     return result;
@@ -594,12 +693,24 @@ function debounce(func, wait = 300, immediate = false) {
       clearTimeout(timeout);
       timeout = null;
     }
+    clearLastCall();
   };
 
   // 立即执行
-  debounced.flush = function (...args) {
-    debounced.cancel();
-    return func.apply(this, args);
+  debounced.flush = function () {
+    if (!timeout) {
+      return result;
+    }
+
+    clearTimeout(timeout);
+    timeout = null;
+
+    if (!immediate && lastArgs) {
+      return invokeLastCall();
+    }
+
+    clearLastCall();
+    return result;
   };
 
   return debounced;
@@ -765,6 +876,7 @@ class LazyLoader {
    */
   static init(selector = ".lazy-image", options = {}) {
     const config = { ...this.defaultOptions, ...options };
+    this.disconnect();
 
     // 检查浏览器支持
     if (!("IntersectionObserver" in window)) {
@@ -905,6 +1017,8 @@ class VirtualScroller {
     this.itemHeight = options.itemHeight || 50;
     this.buffer = options.buffer || 5;
     this.items = [];
+    this._scrollHandler = null;
+    this._destroyed = false;
     // 默认渲染：对 item 做最小 XSS 清理后再拼接 HTML（避免误用导致注入）
     this.renderItem =
       options.renderItem ||
@@ -927,12 +1041,11 @@ class VirtualScroller {
     this.container.appendChild(this.wrapper);
 
     // 绑定滚动事件（使用节流）
-    this.container.addEventListener(
-      "scroll",
+    this._scrollHandler =
       typeof throttle !== "undefined"
         ? throttle(() => this.render(), 16) // ~60fps
-        : () => this.render(),
-    );
+        : () => this.render();
+    this.container.addEventListener("scroll", this._scrollHandler);
   }
 
   /**
@@ -983,16 +1096,26 @@ class VirtualScroller {
    * 销毁
    */
   destroy() {
-    this.container.removeChild(this.wrapper);
+    if (this._destroyed) return;
+    this._destroyed = true;
+    if (this._scrollHandler) {
+      this.container.removeEventListener("scroll", this._scrollHandler);
+      this._scrollHandler = null;
+    }
+    if (this.wrapper && this.wrapper.parentNode === this.container) {
+      this.container.removeChild(this.wrapper);
+    }
   }
 }
 
 // 导出（兼容不同的模块系统）
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
+    API_CACHE_CLEANUP_INTERVAL_MS,
     ValidationUtils,
     APICache,
     apiCache,
+    setupApiCacheLifecycle,
     debounce,
     throttle,
     RequestDeduplicator,

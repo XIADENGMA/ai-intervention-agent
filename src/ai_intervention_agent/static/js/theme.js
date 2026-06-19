@@ -46,48 +46,59 @@ const ThemeManager = (function () {
   let currentTheme = THEMES.AUTO;
   let systemPreference = null;
   let mediaQuery = null;
+  let systemPreferenceListenerInstalled = false;
+  let storageSyncListenerInstalled = false;
 
   /**
    * 检测系统颜色偏好
    * @returns {string} 'dark' 或 'light'
    */
   function detectSystemPreference() {
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+    const query = getSystemPreferenceMediaQuery();
+    if (query && query.matches) {
       return THEMES.LIGHT;
     }
     return THEMES.DARK;
+  }
+
+  function getSystemPreferenceMediaQuery() {
+    if (!window.matchMedia) return null;
+    if (!mediaQuery) {
+      mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
+    }
+    return mediaQuery;
+  }
+
+  function handleSystemPreferenceChange(e) {
+    systemPreference = e.matches ? THEMES.LIGHT : THEMES.DARK;
+    console.debug('System theme preference changed:', systemPreference);
+
+    // 无条件刷新按钮标签：在 auto 模式下，切换系统偏好也需要同步 aria-label/title
+    // 与 .is-light 类，避免按钮显示与真实主题不一致（P7 yellow finding）
+    if (currentTheme === THEMES.AUTO) {
+      applyTheme(systemPreference);
+    }
+    updateToggleButton();
   }
 
   /**
    * 监听系统偏好变化
    */
   function listenSystemPreference() {
-    if (!window.matchMedia) return;
+    systemPreference = detectSystemPreference();
 
-    mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
-
-    const handleChange = (e) => {
-      systemPreference = e.matches ? THEMES.LIGHT : THEMES.DARK;
-      console.debug('System theme preference changed:', systemPreference);
-
-      // 无条件刷新按钮标签：在 auto 模式下，切换系统偏好也需要同步 aria-label/title
-      // 与 .is-light 类，避免按钮显示与真实主题不一致（P7 yellow finding）
-      if (currentTheme === THEMES.AUTO) {
-        applyTheme(systemPreference);
-      }
-      updateToggleButton();
-    };
+    const query = getSystemPreferenceMediaQuery();
+    if (!query || systemPreferenceListenerInstalled) return;
 
     // 现代浏览器使用 addEventListener
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', handleChange);
-    } else if (mediaQuery.addListener) {
+    if (query.addEventListener) {
+      query.addEventListener('change', handleSystemPreferenceChange);
+      systemPreferenceListenerInstalled = true;
+    } else if (query.addListener) {
       // 兼容旧版浏览器
-      mediaQuery.addListener(handleChange);
+      query.addListener(handleSystemPreferenceChange);
+      systemPreferenceListenerInstalled = true;
     }
-
-    // 初始化系统偏好
-    systemPreference = detectSystemPreference();
   }
 
   /**
@@ -238,6 +249,29 @@ const ThemeManager = (function () {
     });
   }
 
+  function handleStorageChange(event) {
+    if (event.key !== STORAGE_KEY) return;
+    const newTheme = event.newValue;
+    if (!newTheme || !Object.values(THEMES).includes(newTheme)) return;
+    if (newTheme === currentTheme) return;
+    currentTheme = newTheme;
+    applyTheme(newTheme);
+    updateToggleButton();
+  }
+
+  function setupStorageSync() {
+    if (storageSyncListenerInstalled) return;
+
+    // R452: ThemeManager.init() is intentionally repeatable; storage sync is
+    // a process-lifetime listener and must be installed once.
+    try {
+      window.addEventListener('storage', handleStorageChange);
+      storageSyncListenerInstalled = true;
+    } catch (e) {
+      // 极少数浏览器 (very old IE) 不支持 storage event；不致命
+    }
+  }
+
   // 公共 API
   return {
     /**
@@ -266,19 +300,7 @@ const ThemeManager = (function () {
       // tab A 改主题 → localStorage 写入 → 其他 tab 收到 ``storage`` 事件
       // → 自动应用相同主题，无需 reload。事件只在**其他** tab 触发
       // （origin tab 不会收到自己的写入），所以无递归风险。
-      try {
-        window.addEventListener('storage', function (event) {
-          if (event.key !== STORAGE_KEY) return;
-          const newTheme = event.newValue;
-          if (!newTheme || !Object.values(THEMES).includes(newTheme)) return;
-          if (newTheme === currentTheme) return;
-          currentTheme = newTheme;
-          applyTheme(newTheme);
-          updateToggleButton();
-        });
-      } catch (e) {
-        // 极少数浏览器 (very old IE) 不支持 storage event；不致命
-      }
+      setupStorageSync();
 
       console.debug('Theme manager initialized:', currentTheme);
     },

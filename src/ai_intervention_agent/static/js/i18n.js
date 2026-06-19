@@ -1066,35 +1066,61 @@
   var _pendingLoads = {}
   var _defaultPromise = null
 
+  function _localeVersionFor(lang) {
+    try {
+      var versions =
+        typeof window !== 'undefined' && window.AIIA_LOCALE_VERSIONS
+          ? window.AIIA_LOCALE_VERSIONS
+          : null
+      if (!versions || typeof versions !== 'object') return ''
+      return versions[normalizeLang(lang)] || ''
+    } catch (e) {
+      return ''
+    }
+  }
+
+  function _appendLocaleVersion(url, lang) {
+    var version = _localeVersionFor(lang)
+    if (!version) return url
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'v=' + encodeURIComponent(version)
+  }
+
+  function _localeUrlFor(lang) {
+    if (!_localeBaseUrl) return null
+    var normalized = normalizeLang(lang)
+    var path =
+      normalized === 'pseudo'
+        ? '/_pseudo/pseudo.json'
+        : '/' + normalized + '.json'
+    return _appendLocaleVersion(_localeBaseUrl + path, normalized)
+  }
+
   async function loadLocale(lang, url) {
     // pseudo locale 的磁盘布局是 ``_pseudo/pseudo.json``，保留在此处
     // 分派，其它调用方无需关心子路径。
+    var normalized = normalizeLang(lang)
     var target = url
     if (!target && _localeBaseUrl) {
-      if (lang === 'pseudo') {
-        target = _localeBaseUrl + '/_pseudo/pseudo.json'
-      } else {
-        target = _localeBaseUrl + '/' + lang + '.json'
-      }
+      target = _localeUrlFor(normalized)
     }
     if (!target) return false
     // 并发去重：同一 lang 多次 loadLocale 应该只 fetch 一次。复用
     // _pendingLoads 确保后续调用都挂在同一 Promise 上。
-    if (_pendingLoads[lang]) return _pendingLoads[lang]
-    _pendingLoads[lang] = (async function () {
+    if (_pendingLoads[normalized]) return _pendingLoads[normalized]
+    _pendingLoads[normalized] = (async function () {
       try {
         var resp = await fetch(target, { cache: 'default' })
         if (!resp.ok) return false
         var data = await resp.json()
-        registerLocale(lang, data)
+        registerLocale(normalized, data)
         return true
       } catch (e) {
         return false
       } finally {
-        delete _pendingLoads[lang]
+        delete _pendingLoads[normalized]
       }
     })()
-    return _pendingLoads[lang]
+    return _pendingLoads[normalized]
   }
 
   // 确保默认 locale 最终会被加载一次。多次调用复用同一 Promise；成功后
@@ -1103,7 +1129,7 @@
     if (locales[DEFAULT_LANG]) return Promise.resolve(true)
     if (_defaultPromise) return _defaultPromise
     if (!_localeBaseUrl) return Promise.resolve(false)
-    _defaultPromise = loadLocale(DEFAULT_LANG, _localeBaseUrl + '/' + DEFAULT_LANG + '.json').then(
+    _defaultPromise = loadLocale(DEFAULT_LANG).then(
       function (ok) {
         if (ok) {
           try {

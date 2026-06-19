@@ -409,6 +409,28 @@ uv run python scripts/precompress_static.py          # 按需重生成
 硬件参考：Apple Silicon M1 / Python 3.11.15 / macOS 25.4.0 / Cursor
 + VSCode 开发环境。
 
+## R452 · 重资产预算与离线优先打包
+
+当前几个大资源是有意保留，不是误打包：
+
+- `packages/vscode/mathjax` 解包后约 2072 KB，用来保证 VSIX 内公式渲染
+  离线可用；
+- `packages/vscode/vendor/terminal-notifier` 解包后约 1696 KB，用来保证
+  macOS 原生通知不依赖用户机器上某个未追踪的系统命令；
+- `src/ai_intervention_agent/static/js/tex-mml-chtml.js` raw 约 1148 KB，
+  但实际通过 `.br` / `.gz` 预压缩并按需加载；
+- Lottie 资源保持本地化，让 Web UI 和 VS Code webview 在离线 / 企业网络里
+  仍然可用。
+
+因此优化边界是 **预算 + 懒加载 + 预压缩**，不是改 CDN。CDN 会降低包体字节，
+但会破坏项目的 offline / air-gapped 契约。只有当 package-size 或内存 benchmark
+证明真实用户成本已经足够高时，才重新评估 optionalization。
+
+`tests/test_vscode_heavy_asset_budget_r452.py` 锁住已知重资产的 review budget。
+如果它失败，要么用测量方案拆分 / optionalize 对应资产，要么像
+`tests/test_vscode_vsix_size_budget.py` 的 packed VSIX guard 一样，用同等级证据
+更新预算。
+
 ## 未来工作
 
 未约束指针，给将来 R22.x+ 批次。**先按 R20.14-A 加 benchmark，再测量

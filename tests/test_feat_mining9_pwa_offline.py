@@ -87,7 +87,8 @@ class TestOfflineHtml(unittest.TestCase):
         )
         assert m is not None
         block = m.group(0)
-        self.assertIn("currentDelayMs = BACKOFF_INITIAL_MS", block)
+        self.assertIn("pauseAutoCheck()", block)
+        self.assertIn("resumeAutoCheck(true)", block)
 
     def test_backoff_reset_on_manual_retry(self) -> None:
         # R252: 点击 retry 按钮也重置 backoff（用户主动 → fast-poll）
@@ -98,16 +99,25 @@ class TestOfflineHtml(unittest.TestCase):
         )
         assert m is not None
         block = m.group(0)
-        self.assertIn("currentDelayMs = BACKOFF_INITIAL_MS", block)
+        self.assertIn("pauseAutoCheck()", block)
+        self.assertIn("reload()", block)
 
     def test_periodic_ping_check(self) -> None:
         # R252 cycle-10：从 setInterval 切到 setTimeout-recursion +
         # exponential backoff 5s → 60s。仍有 5000 (initial delay) +
         # 60000 (max) 常量保证后台 ping 可发生
-        self.assertIn("setTimeout(autoCheck", self.html)
+        self.assertIn("scheduleAutoCheck", self.html)
         self.assertIn("BACKOFF_INITIAL_MS = 5000", self.html)
         self.assertIn("BACKOFF_MAX_MS = 60000", self.html)
         self.assertIn("BACKOFF_FACTOR = 2", self.html)
+        self.assertIn("PING_TIMEOUT_MS = 4000", self.html)
+
+    def test_ping_loop_is_page_lifecycle_aware(self) -> None:
+        self.assertIn('document.addEventListener("visibilitychange"', self.html)
+        self.assertIn('window.addEventListener("pagehide", pauseAutoCheck)', self.html)
+        self.assertIn('window.addEventListener("pageshow"', self.html)
+        self.assertNotIn('addEventListener("beforeunload"', self.html)
+        self.assertNotIn('addEventListener("unload"', self.html)
 
     def test_ping_uses_head_method(self) -> None:
         # HEAD 比 GET 省带宽且不触发 redirect

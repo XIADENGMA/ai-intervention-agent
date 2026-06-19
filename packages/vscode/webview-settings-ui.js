@@ -171,6 +171,7 @@
   const SETTINGS_AUTO_REFRESH_MS = 2000;
   let settingsAutoRefreshTimer = null;
   let settingsDirty = false;
+  let settingsEditEpoch = 0;
   let settingsRemoteChangedWhileDirty = false;
   let isPopulatingSettingsForm = false;
   let lastNotificationSettingsHash = "";
@@ -183,6 +184,13 @@
   let settingsAutoSaveAbortController = null;
   let settingsAutoSaveInFlight = false;
   let settingsAutoSavePending = false;
+  let settingsAutoSaveFlushWhenClosed = false;
+  let feedbackConfigSavePromise = null;
+  let pendingFeedbackConfigUpdates = null;
+  let feedbackConfigEditEpoch = 0;
+  const FEEDBACK_CONFIG_SAVE_DEBOUNCE_MS = 800;
+  let feedbackConfigDebounceTimer = null;
+  let pendingDebouncedFeedbackConfigUpdates = null;
 
   let uiInitialized = false;
 
@@ -288,6 +296,7 @@
 
   function markSettingsDirty() {
     if (isPopulatingSettingsForm) return;
+    settingsEditEpoch += 1;
     settingsDirty = true;
     scheduleSettingsAutoSave();
   }
@@ -309,6 +318,7 @@
       settingsAutoSaveTimer = null;
     }
     settingsAutoSavePending = false;
+    settingsAutoSaveFlushWhenClosed = false;
     try {
       if (
         settingsAutoSaveAbortController &&
@@ -324,6 +334,23 @@
     }
   }
 
+  function flushSettingsAutoSaveBeforeClose() {
+    const hadScheduledSave = !!settingsAutoSaveTimer;
+    if (settingsAutoSaveTimer) {
+      clearTimeout(settingsAutoSaveTimer);
+      settingsAutoSaveTimer = null;
+    }
+    if (
+      hadScheduledSave ||
+      settingsDirty ||
+      settingsAutoSavePending ||
+      settingsAutoSaveInFlight
+    ) {
+      settingsAutoSaveFlushWhenClosed = true;
+      saveSettings({ silent: true, allowWhenClosed: true });
+    }
+  }
+
   function startSettingsAutoRefresh() {
     if (settingsAutoRefreshTimer) return;
     settingsAutoRefreshTimer = setInterval(() => {
@@ -332,14 +359,16 @@
     }, SETTINGS_AUTO_REFRESH_MS);
   }
 
-  function stopSettingsAutoRefresh() {
+  function stopSettingsAutoRefresh({ preserveAutoSave = false } = {}) {
     if (settingsAutoRefreshTimer) {
       clearInterval(settingsAutoRefreshTimer);
       settingsAutoRefreshTimer = null;
     }
-    stopSettingsAutoSave();
-    settingsDirty = false;
-    settingsRemoteChangedWhileDirty = false;
+    if (!preserveAutoSave) {
+      stopSettingsAutoSave();
+      settingsDirty = false;
+      settingsRemoteChangedWhileDirty = false;
+    }
   }
 
   async function refreshNotificationSettingsFromServer({
@@ -362,6 +391,7 @@
       return false;
     }
 
+    const refreshEditEpoch = settingsEditEpoch;
     let result = null;
     try {
       result = await core.refreshNotificationSettingsFromServer({
@@ -395,8 +425,12 @@
     const changed =
       !lastNotificationSettingsHash ||
       nextHash !== lastNotificationSettingsHash;
+    const editedDuringRefresh = refreshEditEpoch !== settingsEditEpoch;
 
     if (force || (!settingsDirty && changed)) {
+      if (editedDuringRefresh) {
+        return true;
+      }
       lastNotificationSettingsHash = nextHash;
       settingsDirty = false;
       settingsRemoteChangedWhileDirty = false;
@@ -427,9 +461,11 @@
   }
 
   function closeSettingsOverlay() {
+    flushSettingsAutoSaveBeforeClose();
+    _flushPendingFeedbackConfigSaveFromUi();
     const overlay = document.getElementById("settingsOverlay");
     if (overlay) overlay.classList.add("hidden");
-    stopSettingsAutoRefresh();
+    stopSettingsAutoRefresh({ preserveAutoSave: true });
     setSettingsHint("", false);
   }
 
@@ -454,8 +490,8 @@
     loadFeedbackConfig();
   }
 
-  async function saveSettings({ silent = false } = {}) {
-    if (!isSettingsOverlayOpen()) return;
+  async function saveSettings({ silent = false, allowWhenClosed = false } = {}) {
+    if (!allowWhenClosed && !isSettingsOverlayOpen()) return;
     if (!SERVER_URL) {
       if (!silent) setSettingsHint(t("settings.hint.syncFailedNoUrl"), true);
       return;
@@ -463,11 +499,15 @@
     if (settingsAutoSaveInFlight) {
       // 有请求在飞：标记 pending，等当前请求结束后再同步最新值
       settingsAutoSavePending = true;
+      if (allowWhenClosed) {
+        settingsAutoSaveFlushWhenClosed = true;
+      }
       return;
     }
     settingsAutoSaveInFlight = true;
 
     let timeoutId = null;
+    let currentSettingsAutoSaveAbortController = null;
     try {
       const core = getNotifyCore();
       const updates = collectSettingsForm();
@@ -511,10 +551,11 @@
       };
       if (typeof AbortController !== "undefined") {
         settingsAutoSaveAbortController = new AbortController();
-        fetchOptions.signal = settingsAutoSaveAbortController.signal;
+        currentSettingsAutoSaveAbortController = settingsAutoSaveAbortController;
+        fetchOptions.signal = currentSettingsAutoSaveAbortController.signal;
         timeoutId = setTimeout(() => {
           try {
-            settingsAutoSaveAbortController.abort();
+            currentSettingsAutoSaveAbortController.abort();
           } catch (e) {
             /* 忽略 */
           }
@@ -545,9 +586,15 @@
         // 忽略
       }
 
+      // If the user changed another field while this request was awaiting
+      // fetch/json, keep the dirty bit set so finally schedules the queued
+      // save. Otherwise the older response can erase a newer edit.
+      const hasPendingSave = settingsAutoSavePending;
       lastNotificationSettingsHash = mergedHash;
-      settingsDirty = false;
-      settingsRemoteChangedWhileDirty = false;
+      settingsDirty = hasPendingSave;
+      if (!hasPendingSave) {
+        settingsRemoteChangedWhileDirty = false;
+      }
 
       // 同步成功：短暂提示后自动隐藏（避免常驻）
       setSettingsHint(t("settings.hint.synced"), false, 1200);
@@ -561,13 +608,25 @@
       setSettingsHint(t("settings.hint.syncFailed", { reason: msg }), true);
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
+      if (
+        settingsAutoSaveAbortController ===
+        currentSettingsAutoSaveAbortController
+      ) {
+        settingsAutoSaveAbortController = null;
+      }
       settingsAutoSaveInFlight = false;
       if (settingsAutoSavePending) {
         settingsAutoSavePending = false;
         // 若期间仍有未同步修改，则再触发一次（debounce 复用，避免风暴）
-        if (settingsDirty && isSettingsOverlayOpen()) {
-          scheduleSettingsAutoSave();
+        if (settingsDirty) {
+          if (isSettingsOverlayOpen()) {
+            scheduleSettingsAutoSave();
+          } else if (settingsAutoSaveFlushWhenClosed || allowWhenClosed) {
+            saveSettings({ silent: true, allowWhenClosed: true });
+          }
         }
+      } else if (!settingsDirty) {
+        settingsAutoSaveFlushWhenClosed = false;
       }
     }
   }
@@ -799,6 +858,33 @@
     }
   }
 
+  function _queueFeedbackConfigSaveFromUi(updates) {
+    feedbackConfigEditEpoch += 1;
+    if (feedbackConfigDebounceTimer) clearTimeout(feedbackConfigDebounceTimer);
+    pendingDebouncedFeedbackConfigUpdates = Object.assign(
+      pendingDebouncedFeedbackConfigUpdates || {},
+      updates || {},
+    );
+    feedbackConfigDebounceTimer = setTimeout(() => {
+      const merged = pendingDebouncedFeedbackConfigUpdates;
+      pendingDebouncedFeedbackConfigUpdates = null;
+      feedbackConfigDebounceTimer = null;
+      saveFeedbackConfig(merged);
+    }, FEEDBACK_CONFIG_SAVE_DEBOUNCE_MS);
+  }
+
+  function _flushPendingFeedbackConfigSaveFromUi() {
+    if (feedbackConfigDebounceTimer) {
+      clearTimeout(feedbackConfigDebounceTimer);
+      feedbackConfigDebounceTimer = null;
+    }
+    if (!pendingDebouncedFeedbackConfigUpdates) return false;
+    const merged = pendingDebouncedFeedbackConfigUpdates;
+    pendingDebouncedFeedbackConfigUpdates = null;
+    saveFeedbackConfig(merged);
+    return true;
+  }
+
   function initUiOnce() {
     if (uiInitialized) return;
     uiInitialized = true;
@@ -861,33 +947,16 @@
 
       // Debounce + accumulate：800ms 窗口内多个字段的修改必须合并保存。
       //
-      // 历史 bug：
-      //   const debounceSaveFeedback = updates => {
-      //     if (fbSaveTimer) clearTimeout(fbSaveTimer)
-      //     fbSaveTimer = setTimeout(() => saveFeedbackConfig(updates), 800)
-      //   }
-      //
-      // 重现：
+      // 历史 bug 重现：
       //   T=0    用户改 frontend_countdown=60 → 设 timer(at 800ms)
       //   T=300  用户改 resubmit_prompt="x"   → clearTimeout(旧 timer)，
       //                                          新 timer(at 1100ms)
       //   T=1100 发送 {resubmit_prompt:"x"}，frontend_countdown=60 永久丢失
       //
-      // 修复：每次调用把 updates 合进 ``fbPendingUpdates``，timer 真正触发时
-      // 一次性 POST。clearTimeout 只是「重新计时」，不再丢弃 payload。
+      // 修复：每次调用把 updates 合进 module-level pending buffer，timer 真正
+      // 触发时一次性 POST。clearTimeout 只是「重新计时」，不再丢弃 payload；
+      // close/dispose 会 flush 该 buffer，避免 800ms 窗口内关闭设置面板丢编辑。
       // 锁定行为：tests/test_webview_debounce_save_feedback.test.mjs。
-      let fbSaveTimer = null;
-      let fbPendingUpdates = null;
-      const debounceSaveFeedback = (updates) => {
-        if (fbSaveTimer) clearTimeout(fbSaveTimer);
-        fbPendingUpdates = Object.assign(fbPendingUpdates || {}, updates || {});
-        fbSaveTimer = setTimeout(() => {
-          const merged = fbPendingUpdates;
-          fbPendingUpdates = null;
-          fbSaveTimer = null;
-          saveFeedbackConfig(merged);
-        }, 800);
-      };
       const fbCountdown = document.getElementById("feedbackCountdown");
       const fbPrompt = document.getElementById("feedbackResubmitPrompt");
       const fbSuffix = document.getElementById("feedbackPromptSuffix");
@@ -898,17 +967,17 @@
           // remains the "disabled" sentinel. Locked by
           // tests/test_frontend_input_range_parity.py.
           if (!isNaN(v) && v >= 0 && v <= 3600)
-            debounceSaveFeedback({ frontend_countdown: v });
+            _queueFeedbackConfigSaveFromUi({ frontend_countdown: v });
         });
       }
       if (fbPrompt) {
         fbPrompt.addEventListener("input", () =>
-          debounceSaveFeedback({ resubmit_prompt: fbPrompt.value }),
+          _queueFeedbackConfigSaveFromUi({ resubmit_prompt: fbPrompt.value }),
         );
       }
       if (fbSuffix) {
         fbSuffix.addEventListener("input", () =>
-          debounceSaveFeedback({ prompt_suffix: fbSuffix.value }),
+          _queueFeedbackConfigSaveFromUi({ prompt_suffix: fbSuffix.value }),
         );
       }
 
@@ -938,6 +1007,7 @@
 
   async function loadFeedbackConfig() {
     if (!SERVER_URL) return;
+    const loadEpoch = feedbackConfigEditEpoch;
     try {
       const resp = await fetch(SERVER_URL + "/api/get-feedback-prompts", {
         cache: "no-store",
@@ -951,9 +1021,11 @@
         };
         if (data.config) {
           const c = data.config;
-          el("feedbackCountdown", c.frontend_countdown ?? 240);
-          el("feedbackResubmitPrompt", c.resubmit_prompt ?? "");
-          el("feedbackPromptSuffix", c.prompt_suffix ?? "");
+          if (loadEpoch === feedbackConfigEditEpoch) {
+            el("feedbackCountdown", c.frontend_countdown ?? 240);
+            el("feedbackResubmitPrompt", c.resubmit_prompt ?? "");
+            el("feedbackPromptSuffix", c.prompt_suffix ?? "");
+          }
         }
         if (data.meta && data.meta.config_file) {
           el("settingsConfigPath", data.meta.config_file);
@@ -964,8 +1036,39 @@
     }
   }
 
-  async function saveFeedbackConfig(updates) {
+  function saveFeedbackConfig(updates) {
     if (!SERVER_URL) return;
+    pendingFeedbackConfigUpdates = Object.assign(
+      pendingFeedbackConfigUpdates || {},
+      updates || {},
+    );
+    if (!feedbackConfigSavePromise) {
+      feedbackConfigSavePromise = drainFeedbackConfigSaveQueue();
+    }
+    return feedbackConfigSavePromise;
+  }
+
+  async function drainFeedbackConfigSaveQueue() {
+    let finalResult = null;
+    try {
+      while (pendingFeedbackConfigUpdates) {
+        const updates = pendingFeedbackConfigUpdates;
+        pendingFeedbackConfigUpdates = null;
+        finalResult = await postFeedbackConfigUpdates(updates);
+        if (!finalResult.ok && !pendingFeedbackConfigUpdates) {
+          showFeedbackConfigSaveResult(finalResult);
+          return;
+        }
+      }
+      if (finalResult) {
+        showFeedbackConfigSaveResult(finalResult);
+      }
+    } finally {
+      feedbackConfigSavePromise = null;
+    }
+  }
+
+  async function postFeedbackConfigUpdates(updates) {
     try {
       const resp = await fetch(SERVER_URL + "/api/update-feedback-config", {
         method: "POST",
@@ -974,24 +1077,43 @@
       });
       const data = await resp.json().catch(() => ({}));
       if (resp.ok && data.status === "success") {
-        setSettingsHint(t("settings.feedback.saved"), false, 1200);
-      } else {
-        var reason = data.message || "HTTP " + resp.status;
-        setSettingsHint(
-          t("settings.feedback.saveFailed") + " (" + reason + ")",
-          true,
-        );
+        return { ok: true };
       }
+      return {
+        ok: false,
+        message:
+          t("settings.feedback.saveFailed") +
+          " (" +
+          (data.message || "HTTP " + resp.status) +
+          ")",
+      };
     } catch (e) {
-      setSettingsHint(
-        t("settings.feedback.saveFailed") +
+      return {
+        ok: false,
+        message:
+          t("settings.feedback.saveFailed") +
           (e && e.message ? " (" + e.message + ")" : ""),
+      };
+    }
+  }
+
+  function showFeedbackConfigSaveResult(result) {
+    if (result && result.ok) {
+      setSettingsHint(t("settings.feedback.saved"), false, 1200);
+    } else {
+      setSettingsHint(
+        (result && result.message) || t("settings.feedback.saveFailed"),
         true,
       );
     }
   }
 
   function dispose() {
+    try {
+      _flushPendingFeedbackConfigSaveFromUi();
+    } catch (e) {
+      // 忽略
+    }
     try {
       stopSettingsAutoRefresh();
     } catch (e) {

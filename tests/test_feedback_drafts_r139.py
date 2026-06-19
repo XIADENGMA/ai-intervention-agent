@@ -8,12 +8,13 @@ R139 把 ``mcp-feedback-enhanced`` v2.4.x 的 "Auto-save drafts" 体验
 的前提下把 ``taskTextareaContents`` 状态持久化到 localStorage：启动
 时一次性 hydrate localStorage → 内存（不覆盖既存项），input 事件
 debounce 500ms 写盘，周期性 30s reconcile 兜底程序赋值 / clear /
-submit 后清空等非 input 路径。
+submit 后清空等非 input 路径；页面隐藏 / pagehide 前同步 flush 当前 textarea
+并暂停周期 sync，恢复可见后再重启。
 
 约束 / 不变式（覆盖 6 类）：
 
-1.  **JS 模块文件存在 + 体积合理** — 模块文件存在；约 200-300 行（实
-    际实现 ≈ 270 行），防误删 / 意外膨胀。
+1.  **JS 模块文件存在 + 体积合理** — 模块文件存在；约 200-410 行（实
+    际实现 ≈ 394 行），防误删 / 意外膨胀。
 2.  **常量值锁定** — STORAGE_KEY / SCHEMA_VERSION / TARGET_ID /
     TTL_MS / MAX_DRAFTS / INPUT_DEBOUNCE_MS / SYNC_INTERVAL_MS 字面
     值不漂移，确保模板 / web_ui.py / 测试三方对齐。
@@ -66,9 +67,10 @@ class TestJsFileExistsAndSize(unittest.TestCase):
 
     def test_js_file_line_count_in_envelope(self) -> None:
         line_count = len(_read_js().splitlines())
-        # 200-330 行：当前 ≈ 270 行，envelope 防误删 / 意外膨胀
+        # 200-410 行：当前 ≈ 394 行，envelope 防误删 / 意外膨胀。
+        # R452 增加 DOM replacement cleanup，合理抬高少量上限。
         self.assertGreaterEqual(line_count, 200, "R139 JS 模块过短，疑似空壳")
-        self.assertLessEqual(line_count, 330, "R139 JS 模块超出预期，疑似膨胀")
+        self.assertLessEqual(line_count, 410, "R139 JS 模块超出预期，疑似膨胀")
 
 
 # ----------------------------------------------------------------------
@@ -163,6 +165,9 @@ class TestApiSurface(unittest.TestCase):
             "clearAllDrafts",
             "hydrateMemoryCache",
             "reconcileMemoryToStorage",
+            "flushActiveTextareaDraft",
+            "setupPeriodicSync",
+            "stopPeriodicSync",
             "init",
         ):
             self.assertIn(
@@ -302,6 +307,84 @@ class TestCoreLogic(unittest.TestCase):
         self.assertRegex(
             self.js,
             r"setupInputListener[\s\S]*?setTimeout[\s\S]*?INPUT_DEBOUNCE_MS",
+        )
+
+    def test_flush_active_textarea_clears_pending_debounce(self) -> None:
+        # pagehide / hidden 前必须清掉 pending debounce 并同步 saveDraft 当前 textarea
+        self.assertRegex(
+            self.js,
+            r"flushActiveTextareaDraft[\s\S]*?clearTimeout\(inputDebounceTimerId\)"
+            r"[\s\S]*?inputDebounceTimerId\s*=\s*null"
+            r"[\s\S]*?saveDraft\(taskId,\s*text\)",
+        )
+
+    def test_flush_active_textarea_updates_memory_before_save(self) -> None:
+        # 防止 exit reconcile 用旧的 taskTextareaContents 覆盖当前 textarea 最新值
+        self.assertRegex(
+            self.js,
+            r"flushActiveTextareaDraft[\s\S]*?window\.taskTextareaContents\[taskId\]"
+            r"\s*=\s*text[\s\S]*?saveDraft\(taskId,\s*text\)",
+        )
+
+    def test_page_exit_reconciles_before_active_textarea_flush(self) -> None:
+        # 先全量 reconcile 其他 task，再把当前 textarea 作为最后写入的真值
+        self.assertRegex(
+            self.js,
+            r"flushDraftsForPageExit[\s\S]*?reconcileMemoryToStorage\(\)"
+            r"[\s\S]*?return\s+flushActiveTextareaDraft\(\)",
+        )
+
+    def test_periodic_sync_is_idempotent(self) -> None:
+        # 暴露 init() 后必须避免重复调用时创建多个 30s interval
+        self.assertRegex(
+            self.js,
+            r"setupPeriodicSync[\s\S]*?periodicSyncIntervalId\s*!==\s*null"
+            r"[\s\S]*?return\s+periodicSyncIntervalId"
+            r"[\s\S]*?setInterval\(",
+        )
+
+    def test_stop_periodic_sync_clears_interval(self) -> None:
+        self.assertRegex(
+            self.js,
+            r"stopPeriodicSync[\s\S]*?clearInterval\(periodicSyncIntervalId\)"
+            r"[\s\S]*?periodicSyncIntervalId\s*=\s*null",
+        )
+
+    def test_visibility_hidden_flushes_and_stops_interval(self) -> None:
+        self.assertRegex(
+            self.js,
+            r"handleVisibilityChange[\s\S]*?document\.hidden"
+            r"[\s\S]*?flushDraftsForPageExit\(\)"
+            r"[\s\S]*?stopPeriodicSync\(\)",
+        )
+
+    def test_visibility_visible_hydrates_and_restarts_interval(self) -> None:
+        self.assertRegex(
+            self.js,
+            r"handleVisibilityChange[\s\S]*?hydrateMemoryCache\(\)"
+            r"[\s\S]*?setupPeriodicSync\(\)",
+        )
+
+    def test_lifecycle_listeners_registered_once(self) -> None:
+        self.assertRegex(
+            self.js,
+            r"setupLifecycleListeners[\s\S]*?lifecycleListenersInstalled"
+            r"[\s\S]*?return\s+false"
+            r"[\s\S]*?lifecycleListenersInstalled\s*=\s*true",
+        )
+
+    def test_page_exit_hooks_flush_drafts_without_beforeunload(self) -> None:
+        self.assertIn(
+            'document.addEventListener("visibilitychange", handleVisibilityChange)',
+            self.js,
+        )
+        self.assertIn(
+            'window.addEventListener("pagehide", flushDraftsForPageExit)',
+            self.js,
+        )
+        self.assertNotIn(
+            'window.addEventListener("beforeunload"',
+            self.js,
         )
 
 

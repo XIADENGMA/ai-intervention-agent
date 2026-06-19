@@ -308,6 +308,7 @@
   let themeObserver = null
   // 无有效内容页面：Lottie 动画（默认使用 sprout.json；失败则降级为 Lucide 风格 SVG）
   let noContentHourglassAnimation = null
+  let noContentLottieDisposed = false
 
   // 网络请求超时（避免本地端口“半开/卡住”导致一直停在“正在连接服务器...”）
   const SERVER_STATUS_TIMEOUT_MS = 1500
@@ -671,6 +672,7 @@
   }
 
   function scheduleNoContentLottieRetry(reason) {
+    if (noContentLottieDisposed) return
     if (!isNoContentVisible()) return
     if (noContentHourglassAnimation) return
     clearNoContentLottieTimers()
@@ -706,29 +708,36 @@
 
   let noContentRecoveryHandlersInstalled = false
   let noContentStateObserver = null
+  let noContentOnlineHandler = null
+  let noContentVisibilityHandler = null
   function installNoContentLottieRecoveryHandlers() {
     if (noContentRecoveryHandlersInstalled) return
     noContentRecoveryHandlersInstalled = true
+    noContentLottieDisposed = false
 
     // 网络恢复：立即触发一次重试（避免“恢复后仍停留在降级状态”）
     try {
-      window.addEventListener('online', () => {
+      noContentOnlineHandler = () => {
+        if (noContentLottieDisposed) return
         if (!isNoContentVisible()) return
         if (noContentHourglassAnimation) return
         scheduleNoContentLottieRetry('online')
-      })
+      }
+      window.addEventListener('online', noContentOnlineHandler)
     } catch (_) {
       // 忽略
     }
 
     // 页面重新可见：触发一次重试（与轮询可见性策略一致）
     try {
-      document.addEventListener('visibilitychange', () => {
+      noContentVisibilityHandler = () => {
+        if (noContentLottieDisposed) return
         if (document.hidden) return
         if (!isNoContentVisible()) return
         if (noContentHourglassAnimation) return
         scheduleNoContentLottieRetry('visibilitychange')
-      })
+      }
+      document.addEventListener('visibilitychange', noContentVisibilityHandler)
     } catch (_) {
       // 忽略
     }
@@ -753,6 +762,45 @@
     } catch (_) {
       // 忽略
     }
+  }
+
+  function disposeNoContentLottieRecoveryHandlers() {
+    noContentLottieDisposed = true
+    clearNoContentLottieTimers()
+
+    try {
+      if (noContentOnlineHandler) {
+        window.removeEventListener('online', noContentOnlineHandler)
+      }
+    } catch (_) {
+      // 忽略
+    } finally {
+      noContentOnlineHandler = null
+    }
+
+    try {
+      if (noContentVisibilityHandler) {
+        document.removeEventListener('visibilitychange', noContentVisibilityHandler)
+      }
+    } catch (_) {
+      // 忽略
+    } finally {
+      noContentVisibilityHandler = null
+    }
+
+    try {
+      if (noContentStateObserver) {
+        noContentStateObserver.disconnect()
+      }
+    } catch (_) {
+      // 忽略
+    } finally {
+      noContentStateObserver = null
+    }
+
+    destroyNoContentHourglassAnimation()
+    noContentLottieInitInFlight = false
+    noContentRecoveryHandlersInstalled = false
   }
 
   function ensureLottieLoaded() {
@@ -1265,6 +1313,7 @@
   }
 
   function initNoContentHourglassAnimation() {
+    if (noContentLottieDisposed) return
     const container = document.getElementById('hourglass-lottie')
     if (!container) return
 
@@ -1281,6 +1330,7 @@
 
     Promise.all([ensureLottieLoaded(), loadNoContentLottieData()])
       .then(([okLib, data]) => {
+        if (noContentLottieDisposed) return
         if (!okLib || !data) {
           if (!lottieInitWarned) {
             lottieInitWarned = true
@@ -1373,6 +1423,7 @@
         })
       })
       .catch(() => {
+        if (noContentLottieDisposed) return
         scheduleNoContentLottieRetry('init promise rejected')
       })
       .finally(() => {
@@ -1383,6 +1434,7 @@
   let currentConfig = null
   let selectedOptions = []
   let uploadedImages = []
+  let pendingImageUploadCounts = {}
   let textareaManualRows = null // 文本框手动 rows（用于拖拽调整高度）
   let countdownTimer = null
   // 防止超时自动重调进入“失败重试风暴”（例如 remaining=0 且提交失败/429）：对同一任务做最小退避（可重试但不过载）
@@ -1409,8 +1461,9 @@
   let taskOptionsStates = {} // task_id -> { [index:number]: boolean } | boolean[]
   let taskImages = {} // task_id -> Array<{name: string, data: string}>
 
-  // Webview 状态持久化：即使启用 retainContextWhenHidden=true，reload window / 扩展 disable
-  // 时 webview 仍会 dispose，getState/setState 确保输入/选项/图片等状态可恢复
+  // Webview 状态持久化：默认不保留隐藏上下文，依靠 VS Code 推荐的
+  // getState/setState 恢复输入/选项/图片；即使用户显式启用 retain，
+  // reload window / 扩展 disable 时 webview 仍可能 dispose。
   const UI_STATE_VERSION = 1
   const UI_STATE_SAVE_DEBOUNCE_MS = 250
   const UI_STATE_TEXT_LIMIT_CHARS = 200000
@@ -1531,6 +1584,8 @@
   // 轮询代际：用于解决 stopPolling 与 in-flight 回调的竞态（防止 stop 后“复活”）
   let pollingEnabled = false
   let pollingToken = 0
+  let pollingRunId = 0
+  let activePollingRunId = 0
 
   // SSE 连接状态
   let _sseSource = null
@@ -2446,7 +2501,18 @@
     } finally {
       pollAbortController = null
     }
+    activePollingRunId = 0
     pollingInFlight = false
+  }
+
+  function handleTasksPollFailure() {
+    updateServerStatus(false)
+    if (currentConfig && currentConfig.task_id) {
+      return false
+    }
+    hideTabs()
+    showNoContent()
+    return false
   }
 
   async function pollAllData(reason) {
@@ -2460,8 +2526,14 @@
       return false
     }
     pollingInFlight = true
+    pollingRunId = pollingRunId + 1
+    const runId = pollingRunId
+    activePollingRunId = runId
+    const isCurrentPollRun = () => activePollingRunId === runId
     let tasksTimeoutId = null
     let configTimeoutId = null
+    let tasksAbortController = null
+    let configAbortController = null
 
     try {
       // AbortController：保证同时最多 1 个 in-flight 的 /api/tasks 请求
@@ -2474,40 +2546,44 @@
       }
 
       if (typeof AbortController !== 'undefined') {
-        pollAbortController = new AbortController()
+        tasksAbortController = new AbortController()
+        pollAbortController = tasksAbortController
       } else {
         pollAbortController = null
       }
 
       const fetchOptions = { cache: 'no-store' }
-      if (pollAbortController) {
-        fetchOptions.signal = pollAbortController.signal
+      if (tasksAbortController) {
+        fetchOptions.signal = tasksAbortController.signal
       }
 
-      if (pollAbortController) {
+      if (tasksAbortController) {
         tasksTimeoutId = setTimeout(() => {
           try {
-            pollAbortController.abort()
+            tasksAbortController.abort()
           } catch (e) {
             /* 忽略 */
           }
         }, POLL_TASKS_TIMEOUT_MS)
       }
       const tasksResponse = await fetch(SERVER_URL + '/api/tasks', fetchOptions)
+      if (!isCurrentPollRun()) {
+        return false
+      }
       if (tasksTimeoutId) {
         clearTimeout(tasksTimeoutId)
         tasksTimeoutId = null
       }
 
       if (!tasksResponse.ok) {
-        updateServerStatus(false)
-        hideTabs()
-        showNoContent()
-        return false
+        return handleTasksPollFailure()
       }
 
       updateServerStatus(true)
       const tasksData = await tasksResponse.json()
+      if (!isCurrentPollRun()) {
+        return false
+      }
 
       // 同步服务器时间偏移，避免倒计时漂移
       if (tasksData && typeof tasksData.server_time === 'number') {
@@ -2550,7 +2626,11 @@
         // 忽略：消息派发失败不应影响轮询主流程
       }
 
-      if (tasksData && tasksData.success && tasksData.tasks && tasksData.tasks.length > 0) {
+      if (!tasksData || tasksData.success !== true) {
+        return handleTasksPollFailure()
+      }
+
+      if (Array.isArray(tasksData.tasks) && tasksData.tasks.length > 0) {
         allTasks = tasksData.tasks
         renderTaskTabs()
 
@@ -2564,10 +2644,13 @@
         // 为 /api/config 创建独立 AbortController，避免 /api/tasks 的超时/abort 影响后续请求
         if (typeof AbortController !== 'undefined') {
           try {
-            pollAbortController = new AbortController()
-            fetchOptions.signal = pollAbortController.signal
+            configAbortController = new AbortController()
+            pollAbortController = configAbortController
+            fetchOptions.signal = configAbortController.signal
           } catch (e) {
-            pollAbortController = null
+            if (pollAbortController === tasksAbortController) {
+              pollAbortController = null
+            }
             try {
               delete fetchOptions.signal
             } catch (e2) {
@@ -2575,17 +2658,19 @@
             }
           }
         } else {
-          pollAbortController = null
+          if (pollAbortController === tasksAbortController) {
+            pollAbortController = null
+          }
           try {
             delete fetchOptions.signal
           } catch (e) {
             // 忽略
           }
         }
-        if (pollAbortController) {
+        if (configAbortController) {
           configTimeoutId = setTimeout(() => {
             try {
-              pollAbortController.abort()
+              configAbortController.abort()
             } catch (e) {
               /* 忽略 */
             }
@@ -2596,10 +2681,13 @@
           clearTimeout(configTimeoutId)
           configTimeoutId = null
         }
+        if (!isCurrentPollRun()) {
+          return false
+        }
         return !!okConfig
       }
 
-      // 任务列表为空或 success=false
+      // success=true 且任务列表为空：这是权威空队列，才清理任务级本地草稿/缓存。
       allTasks = []
       activeTaskId = null
       clearAllTabCountdowns()
@@ -2607,12 +2695,11 @@
       taskTextareaContents = {}
       taskOptionsStates = {}
       taskImages = {}
+      pendingImageUploadCounts = {}
       schedulePersistUiState()
       lastTasksHash = ''
       lastTaskIds = new Set()
-      if (tasksData && tasksData.success) {
-        hasInitializedTaskIdTracking = true
-      }
+      hasInitializedTaskIdTracking = true
       hideTabs()
       showNoContent()
 
@@ -2625,18 +2712,16 @@
       }
 
       // success=true 且 tasks=[] 属于正常“无任务”状态，不需要退避
-      return !!(tasksData && tasksData.success)
+      return true
     } catch (error) {
       if (error && (error.name === 'AbortError' || error.code === 20)) {
         return false
       }
+      if (!isCurrentPollRun()) {
+        return false
+      }
       log('Poll failed: ' + error.message)
-      updateServerStatus(false)
-      allTasks = []
-      activeTaskId = null
-      hideTabs()
-      showNoContent()
-      return false
+      return handleTasksPollFailure()
     } finally {
       if (tasksTimeoutId) {
         clearTimeout(tasksTimeoutId)
@@ -2644,8 +2729,13 @@
       if (configTimeoutId) {
         clearTimeout(configTimeoutId)
       }
-      pollingInFlight = false
-      pollAbortController = null
+      if (activePollingRunId === runId) {
+        pollingInFlight = false
+        activePollingRunId = 0
+      }
+      if (pollAbortController === tasksAbortController || pollAbortController === configAbortController) {
+        pollAbortController = null
+      }
     }
   }
 
@@ -2657,8 +2747,19 @@
     container.classList.add('hidden')
   }
 
+  function setHiddenById(id, hidden) {
+    const element = document.getElementById(id)
+    if (!element || !element.classList) return null
+    if (hidden) {
+      element.classList.add('hidden')
+    } else {
+      element.classList.remove('hidden')
+    }
+    return element
+  }
+
   function showTabs() {
-    document.getElementById('tasksTabsContainer').classList.remove('hidden')
+    setHiddenById('tasksTabsContainer', false)
   }
 
   function requestImmediateRefresh() {
@@ -2766,14 +2867,187 @@
     }
   }
 
+  function getImageUploadTargetImages(taskId, fallbackImages) {
+    if (taskId && activeTaskId === taskId && Array.isArray(uploadedImages)) {
+      return uploadedImages
+    }
+    if (taskId && Array.isArray(taskImages[taskId])) {
+      return taskImages[taskId]
+    }
+    if (Array.isArray(fallbackImages)) {
+      return fallbackImages
+    }
+    return Array.isArray(uploadedImages) ? uploadedImages : []
+  }
+
+  function cacheImagesForTask(taskId, images) {
+    if (!taskId || !Array.isArray(images)) return
+    try {
+      taskImages[taskId] = images
+        .map(img => ({
+          name: img && img.name ? String(img.name) : 'image',
+          data: img && img.data ? String(img.data) : ''
+        }))
+        .filter(x => x.data)
+      schedulePersistUiState()
+    } catch (e) {
+      // 忽略
+    }
+  }
+
+  function getPendingImageUploadKey(taskId) {
+    return taskId ? 'task:' + String(taskId) : 'current'
+  }
+
+  function getPendingImageUploadCount(taskId) {
+    const key = getPendingImageUploadKey(taskId)
+    const count = pendingImageUploadCounts[key]
+    return typeof count === 'number' && count > 0 ? count : 0
+  }
+
+  function incrementPendingImageUploadCount(taskId) {
+    const key = getPendingImageUploadKey(taskId)
+    pendingImageUploadCounts[key] = getPendingImageUploadCount(taskId) + 1
+  }
+
+  function decrementPendingImageUploadCount(taskId) {
+    const key = getPendingImageUploadKey(taskId)
+    const next = Math.max(0, getPendingImageUploadCount(taskId) - 1)
+    if (next > 0) {
+      pendingImageUploadCounts[key] = next
+    } else {
+      delete pendingImageUploadCounts[key]
+    }
+  }
+
+  function getTaskIdString(task) {
+    return task && task.task_id ? String(task.task_id) : ''
+  }
+
+  function getOpenTaskId(taskId) {
+    if (!taskId || !Array.isArray(allTasks)) return ''
+    const wanted = String(taskId)
+    try {
+      const found = allTasks.find(
+        task => getTaskIdString(task) === wanted && task.status !== 'completed'
+      )
+      return found ? wanted : ''
+    } catch (e) {
+      return ''
+    }
+  }
+
+  function pickOpenTaskId(preferredTaskId) {
+    const preferred = preferredTaskId ? String(preferredTaskId) : ''
+    if (!hasInitializedTaskIdTracking && preferred) return preferred
+
+    const openPreferred = getOpenTaskId(preferred)
+    if (openPreferred) return openPreferred
+
+    try {
+      const serverActive = Array.isArray(allTasks)
+        ? allTasks.find(task => getTaskIdString(task) && task.status === 'active')
+        : null
+      const serverActiveId = getTaskIdString(serverActive)
+      if (serverActiveId) return serverActiveId
+
+      const firstOpen = Array.isArray(allTasks)
+        ? allTasks.find(task => getTaskIdString(task) && task.status !== 'completed')
+        : null
+      const firstOpenId = getTaskIdString(firstOpen)
+      if (firstOpenId) return firstOpenId
+    } catch (e) {
+      // 忽略
+    }
+    return ''
+  }
+
+  function reconcileActiveTaskId() {
+    const previous = activeTaskId ? String(activeTaskId) : ''
+    const next = pickOpenTaskId(previous)
+    if (previous === next) return false
+    activeTaskId = next || null
+    return true
+  }
+
+  function isTaskStillOpenForLocalState(taskId) {
+    if (!taskId || !hasInitializedTaskIdTracking) return true
+    try {
+      return !!getOpenTaskId(taskId)
+    } catch (e) {
+      return true
+    }
+  }
+
+  function pruneTaskLocalState(activeTaskIdSet) {
+    if (!activeTaskIdSet || typeof activeTaskIdSet.has !== 'function') return false
+
+    const staleTaskIds = new Set()
+    const rememberTaskIds = source => {
+      try {
+        Object.keys(source || {}).forEach(taskId => {
+          if (taskId && !activeTaskIdSet.has(taskId)) {
+            staleTaskIds.add(taskId)
+          }
+        })
+      } catch (e) {
+        // 忽略
+      }
+    }
+
+    rememberTaskIds(tabCountdownTimers)
+    rememberTaskIds(tabCountdownRemaining)
+    rememberTaskIds(taskDeadlines)
+    rememberTaskIds(taskTextareaContents)
+    rememberTaskIds(taskOptionsStates)
+    rememberTaskIds(taskImages)
+    try {
+      Object.keys(pendingImageUploadCounts || {}).forEach(key => {
+        if (!key || !key.startsWith('task:')) return
+        const taskId = key.slice(5)
+        if (taskId && !activeTaskIdSet.has(taskId)) {
+          staleTaskIds.add(taskId)
+        }
+      })
+    } catch (e) {
+      // 忽略
+    }
+
+    staleTaskIds.forEach(existingId => {
+      try {
+        if (tabCountdownTimers[existingId]) {
+          clearInterval(tabCountdownTimers[existingId])
+        }
+      } catch (e) {
+        // 忽略
+      }
+      delete tabCountdownTimers[existingId]
+      delete tabCountdownRemaining[existingId]
+      delete taskDeadlines[existingId]
+      delete taskTextareaContents[existingId]
+      delete taskOptionsStates[existingId]
+      delete taskImages[existingId]
+      delete pendingImageUploadCounts[getPendingImageUploadKey(existingId)]
+    })
+
+    return staleTaskIds.size > 0
+  }
+
   /* 渲染任务标签栏 - 根据服务器返回的任务列表动态生成标签页DOM */
   function renderTaskTabs() {
     const container = document.getElementById('tasksTabsContainer')
 
     if (!allTasks || allTasks.length === 0) {
+      const activeTaskChanged = !!(hasInitializedTaskIdTracking && activeTaskId)
+      if (activeTaskChanged) {
+        activeTaskId = null
+      }
       hideTabs()
       lastTasksHash = ''
       clearAllTabCountdowns()
+      if (activeTaskChanged || pruneTaskLocalState(new Set())) {
+        schedulePersistUiState()
+      }
       return
     }
 
@@ -2794,6 +3068,17 @@
 
     lastTaskIds = currentTaskIds
     hasInitializedTaskIdTracking = true
+    const activeTaskChanged = reconcileActiveTaskId()
+
+    if (!container) {
+      lastTasksHash = ''
+      clearAllTabCountdowns()
+      if (activeTaskChanged) {
+        schedulePersistUiState()
+      }
+      log('Skipped task tabs render: tasksTabsContainer not found')
+      return
+    }
 
     /* 任务列表未变化时仅更新倒计时 + active 状态，避免不必要的DOM重建 */
     if (currentHash === lastTasksHash) {
@@ -2825,6 +3110,9 @@
           // 忽略
         }
       }
+      if (activeTaskChanged) {
+        schedulePersistUiState()
+      }
       return
     }
 
@@ -2837,34 +3125,9 @@
 
     /* 过滤已完成的任务，只显示进行中和等待中的任务 */
     const activeTasks = allTasks.filter(task => task.status !== 'completed')
-    const activeTaskIdSet = new Set(activeTasks.map(t => t.task_id))
-    // 清理不再存在/已完成任务的倒计时定时器，避免内存泄漏
-    let removedAnyTaskCache = false
-    Object.keys(tabCountdownTimers).forEach(existingId => {
-      if (!activeTaskIdSet.has(existingId)) {
-        removedAnyTaskCache = true
-        try {
-          clearInterval(tabCountdownTimers[existingId])
-        } catch (e) {
-          // 忽略
-        }
-        delete tabCountdownTimers[existingId]
-        delete tabCountdownRemaining[existingId]
-        if (taskDeadlines[existingId] !== undefined) {
-          delete taskDeadlines[existingId]
-        }
-        if (taskTextareaContents[existingId] !== undefined) {
-          delete taskTextareaContents[existingId]
-        }
-        if (taskOptionsStates[existingId] !== undefined) {
-          delete taskOptionsStates[existingId]
-        }
-        if (taskImages[existingId] !== undefined) {
-          delete taskImages[existingId]
-        }
-      }
-    })
-    if (removedAnyTaskCache) {
+    const activeTaskIdSet = new Set(activeTasks.map(t => getTaskIdString(t)).filter(Boolean))
+    // 清理不再存在/已完成任务的本地状态，避免草稿、图片 dataURL、定时器长期滞留。
+    if (activeTaskChanged || pruneTaskLocalState(activeTaskIdSet)) {
       schedulePersistUiState()
     }
 
@@ -3195,19 +3458,10 @@
   /* 获取当前活跃任务的详细配置 - 包括提示信息、选项和倒计时设置 */
   function pickFallbackTaskId() {
     try {
-      if (activeTaskId) return String(activeTaskId)
+      return pickOpenTaskId(activeTaskId)
     } catch (e) {
-      // 忽略
+      return ''
     }
-    try {
-      if (Array.isArray(allTasks) && allTasks.length > 0) {
-        const inc = allTasks.find(t => t && t.task_id && t.status !== 'completed')
-        if (inc && inc.task_id) return String(inc.task_id)
-      }
-    } catch (e) {
-      // 忽略
-    }
-    return ''
   }
 
   // 配置端点偶发超时/异常时，用任务详情兜底（避免 UI 卡在“无有效内容”）
@@ -3456,9 +3710,9 @@
     currentConfig = config
 
     /* 隐藏加载动画和无内容页面，显示任务内容 */
-    document.getElementById('loadingState').classList.add('hidden')
-    document.getElementById('noContentState').classList.add('hidden')
-    document.getElementById('feedbackForm').classList.remove('hidden')
+    setHiddenById('loadingState', true)
+    setHiddenById('noContentState', true)
+    setHiddenById('feedbackForm', false)
     destroyNoContentHourglassAnimation()
     noContentLottieRetryAttempt = 0
 
@@ -3496,7 +3750,12 @@
     const optionsSection = document.getElementById('optionsSection')
     const optionsContainer = document.getElementById('optionsContainer')
 
-    if (config.predefined_options && config.predefined_options.length > 0) {
+    if (
+      config.predefined_options &&
+      config.predefined_options.length > 0 &&
+      optionsSection &&
+      optionsContainer
+    ) {
       optionsSection.classList.remove('hidden')
 
       /* 优化：计算选项哈希，只在选项变化时重建DOM */
@@ -3580,7 +3839,9 @@
         lastRenderedOptions = optionsKey
       }
     } else {
-      optionsSection.classList.add('hidden')
+      if (optionsSection && optionsSection.classList) {
+        optionsSection.classList.add('hidden')
+      }
       lastRenderedOptions = ''
     }
 
@@ -3700,9 +3961,9 @@
   function showNoContent() {
     // 立即隐藏标签栏（无内容页只保留右上角设置按钮，不显示 tabs）
     hideTabs()
-    document.getElementById('loadingState').classList.add('hidden')
-    document.getElementById('feedbackForm').classList.add('hidden')
-    document.getElementById('noContentState').classList.remove('hidden')
+    setHiddenById('loadingState', true)
+    setHiddenById('feedbackForm', true)
+    setHiddenById('noContentState', false)
     // 无内容页：重置降级/重试状态（避免上一次失败影响本次展示）
     clearNoContentLottieTimers()
     noContentLottieRetryAttempt = 0
@@ -4253,7 +4514,20 @@
 
   // 提交反馈
   async function submitFeedback() {
-    const feedbackText = document.getElementById('feedbackText').value.trim()
+    const feedbackTextEl = document.getElementById('feedbackText')
+    if (!feedbackTextEl) {
+      try {
+        vscode.postMessage({
+          type: 'log',
+          level: 'debug',
+          message: '[submit] feedbackText not in DOM; skip submit'
+        })
+      } catch (e) {
+        // 忽略
+      }
+      return
+    }
+    const feedbackText = feedbackTextEl.value.trim()
 
     // 获取选中的选项
     const selected = []
@@ -4344,8 +4618,6 @@
     }
 
     submitInFlight = true
-    let submitController = null
-    let submitTimeoutId = null
     try {
       stopCountdown()
 
@@ -4360,14 +4632,29 @@
       formData.append('feedback_text', text)
       formData.append('selected_options', JSON.stringify(options))
 
-      /* 添加已上传的图片到FormData */
-      uploadedImages.forEach((imageData, index) => {
-        formData.append('image_' + index, dataURLtoBlob(imageData.data), imageData.name)
-      })
-
       // 优先使用多任务提交端点（更明确，不依赖“当前激活任务”隐式状态）
       const taskIdToSubmit =
         taskIdOverride || (currentConfig && currentConfig.task_id) || activeTaskId
+
+      const imageAppendResult = appendUploadedImagesToFormData(formData)
+      if (imageAppendResult.dropped > 0) {
+        renderUploadedImages()
+        if (taskIdToSubmit) {
+          syncImagesToTaskCache(taskIdToSubmit)
+        }
+        try {
+          vscode.postMessage({
+            type: 'log',
+            level: 'warn',
+            message:
+              '[submit] dropped invalid cached image data before submit: ' +
+              imageAppendResult.dropped
+          })
+        } catch (e) {
+          // 忽略
+        }
+      }
+
       if (taskIdToSubmit) {
         // 即使回退到 /api/submit，也让后端知道本次提交面向哪个任务。
         formData.append('task_id', taskIdToSubmit)
@@ -4380,7 +4667,7 @@
       try {
         const textLen = (text || '').toString().length
         const optLen = Array.isArray(options) ? options.length : 0
-        const imgLen = Array.isArray(uploadedImages) ? uploadedImages.length : 0
+        const imgLen = imageAppendResult.appended
         vscode.postMessage({
           type: 'log',
           level: 'debug',
@@ -4400,32 +4687,45 @@
         // 忽略
       }
 
-      const requestOptions = {
-        method: 'POST',
-        body: formData
-      }
-      // 兜底超时：避免服务端无响应导致 UI 永久“正在提交…”
-      if (typeof AbortController !== 'undefined') {
+      async function postFeedbackAttempt(path) {
+        const requestOptions = {
+          method: 'POST',
+          body: formData
+        }
+        let attemptController = null
+        let attemptTimeoutId = null
+        // 兜底超时：避免服务端无响应导致 UI 永久“正在提交…”
+        if (typeof AbortController !== 'undefined') {
+          try {
+            attemptController = new AbortController()
+            requestOptions.signal = attemptController.signal
+            attemptTimeoutId = setTimeout(() => {
+              try {
+                attemptController.abort()
+              } catch (e) {
+                /* 忽略 */
+              }
+            }, SUBMIT_TIMEOUT_MS)
+          } catch (e) {
+            attemptController = null
+          }
+        }
         try {
-          submitController = new AbortController()
-          requestOptions.signal = submitController.signal
-          submitTimeoutId = setTimeout(() => {
-            try {
-              submitController.abort()
-            } catch (e) {
-              /* 忽略 */
-            }
-          }, SUBMIT_TIMEOUT_MS)
-        } catch (e) {
-          submitController = null
+          return await fetch(SERVER_URL + path, requestOptions)
+        } finally {
+          if (attemptTimeoutId) {
+            clearTimeout(attemptTimeoutId)
+          }
         }
       }
 
-      let response = await fetch(SERVER_URL + submitPath, requestOptions)
+      let responsePath = submitPath
+      let response = await postFeedbackAttempt(submitPath)
 
       // 向后兼容：如果指定任务端点不存在/任务不存在，回退到通用端点
       if (!response.ok && response.status === 404 && taskIdToSubmit) {
-        response = await fetch(SERVER_URL + '/api/submit', requestOptions)
+        responsePath = '/api/submit'
+        response = await postFeedbackAttempt(responsePath)
       }
 
       if (response.ok) {
@@ -4434,7 +4734,7 @@
           vscode.postMessage({
             type: 'log',
             level: 'info',
-            message: '[submit] ok taskId=' + (taskIdToSubmit || '') + ' path=' + submitPath
+            message: '[submit] ok taskId=' + (taskIdToSubmit || '') + ' path=' + responsePath
           })
         } catch (e) {
           // 忽略
@@ -4538,10 +4838,6 @@
       }
       return false
     } finally {
-      if (submitTimeoutId) {
-        clearTimeout(submitTimeoutId)
-        submitTimeoutId = null
-      }
       submitInFlight = false
       // 安全恢复提交按钮状态
       const submitBtn = document.getElementById('submitBtn')
@@ -4881,32 +5177,56 @@
   }
 
   async function processImages(files) {
+    const targetTaskId = activeTaskId || (currentConfig && currentConfig.task_id) || ''
+    const initialTargetImages = Array.isArray(uploadedImages) ? uploadedImages : []
+
     for (const file of files || []) {
       if (!file) continue
-      if (uploadedImages.length >= MAX_IMAGE_COUNT) {
+      const imagesForLimit = getImageUploadTargetImages(targetTaskId, initialTargetImages)
+      if (imagesForLimit.length + getPendingImageUploadCount(targetTaskId) >= MAX_IMAGE_COUNT) {
         const msg = t('ui.image.tooManyFiles', { count: MAX_IMAGE_COUNT })
         logError(msg)
         vscode.postMessage({ type: 'showInfo', message: msg })
         break
       }
 
+      incrementPendingImageUploadCount(targetTaskId)
       try {
         const processed = await compressImageToDataURL(file)
         if (!processed || !processed.data) continue
+        if (!isTaskStillOpenForLocalState(targetTaskId)) continue
+        const targetImages = getImageUploadTargetImages(targetTaskId, initialTargetImages)
+        if (targetImages.length >= MAX_IMAGE_COUNT) {
+          const msg = t('ui.image.tooManyFiles', { count: MAX_IMAGE_COUNT })
+          logError(msg)
+          vscode.postMessage({ type: 'showInfo', message: msg })
+          break
+        }
 
-        uploadedImages.push({
+        targetImages.push({
           name: processed.name || sanitizeFileName(file.name) || 'image',
           data: processed.data
         })
-        renderUploadedImages()
-        // 实时同步到当前任务缓存
-        if (activeTaskId) {
-          syncImagesToTaskCache(activeTaskId)
+        if (targetTaskId && activeTaskId && targetTaskId !== activeTaskId) {
+          cacheImagesForTask(targetTaskId, targetImages)
+        } else {
+          if (targetImages !== uploadedImages) {
+            uploadedImages = targetImages
+          }
+          renderUploadedImages()
+          // 实时同步到当前任务缓存
+          if (targetTaskId) {
+            syncImagesToTaskCache(targetTaskId)
+          } else if (activeTaskId) {
+            syncImagesToTaskCache(activeTaskId)
+          }
         }
       } catch (e) {
         const msg = t('ui.image.processingFailedReason', { reason: e && e.message ? e.message : String(e) })
         logError(msg)
         vscode.postMessage({ type: 'showInfo', message: msg })
+      } finally {
+        decrementPendingImageUploadCount(targetTaskId)
       }
     }
   }
@@ -4944,24 +5264,114 @@
     }
   }
 
+  function appendUploadedImagesToFormData(formData) {
+    const sourceImages = Array.isArray(uploadedImages) ? uploadedImages : []
+    const keptImages = []
+    let appended = 0
+    let dropped = 0
+
+    sourceImages.forEach(imageData => {
+      const data = imageData && imageData.data ? String(imageData.data) : ''
+      const blob = dataURLtoBlob(data)
+      if (!blob || typeof blob.size !== 'number' || blob.size <= 0) {
+        dropped++
+        return
+      }
+
+      const name = sanitizeFileName(imageData && imageData.name ? imageData.name : '') || 'image'
+      formData.append('image_' + appended, blob, name)
+      keptImages.push({ name, data })
+      appended++
+    })
+
+    if (dropped > 0 || keptImages.length !== sourceImages.length) {
+      uploadedImages = keptImages
+    }
+
+    return { appended, dropped }
+  }
+
   function dataURLtoBlob(dataURL) {
-    const arr = String(dataURL || '').split(',')
-    const header = arr[0] || ''
-    const match = header.match(/:(.*?);/)
-    const mime = match && match[1] ? match[1] : 'application/octet-stream'
-    const body = arr[1] || ''
+    const raw = String(dataURL || '').trim()
+    const commaIndex = raw.indexOf(',')
+    if (commaIndex <= 0) return null
+
+    const header = raw.slice(0, commaIndex).trim()
+    const body = raw.slice(commaIndex + 1).replace(/\s+/g, '')
+    const match = header.match(/^data:(image\/[a-z0-9.+-]+);base64$/i)
+    if (!match || !body) return null
+
+    const mime = match && match[1] ? match[1].toLowerCase() : 'application/octet-stream'
+    if (!SUPPORTED_IMAGE_TYPES.includes(mime)) return null
     let bstr = ''
     try {
       bstr = atob(body)
     } catch (e) {
-      return new Blob([], { type: mime })
+      return null
     }
+    if (!bstr) return null
+
     let n = bstr.length
     const u8arr = new Uint8Array(n)
     while (n--) {
       u8arr[n] = bstr.charCodeAt(n)
     }
     return new Blob([u8arr], { type: mime })
+  }
+
+  function handleVisibilityBenchmarkProbe(message) {
+    try {
+      var seq = message && typeof message.seq === 'number' ? message.seq : 0
+      var hostSentAtMs =
+        message && typeof message.hostSentAtMs === 'number' ? message.hostSentAtMs : 0
+      var webviewReceivedAtMs = Date.now()
+      var perfStart =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : 0
+      var finish = function () {
+        try {
+          var perfEnd =
+            typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? performance.now()
+              : perfStart
+          var memory =
+            typeof performance !== 'undefined' &&
+            performance &&
+            performance.memory &&
+            typeof performance.memory === 'object'
+              ? performance.memory
+              : null
+          vscode.postMessage({
+            type: 'visibilityBenchmarkResult',
+            seq: seq,
+            hostSentAtMs: hostSentAtMs,
+            webviewReceivedAtMs: webviewReceivedAtMs,
+            webviewPaintedAtMs: Date.now(),
+            paintLatencyMs: perfEnd - perfStart,
+            usedJSHeapSize:
+              memory && typeof memory.usedJSHeapSize === 'number'
+                ? memory.usedJSHeapSize
+                : null,
+            totalJSHeapSize:
+              memory && typeof memory.totalJSHeapSize === 'number'
+                ? memory.totalJSHeapSize
+                : null
+          })
+        } catch (e) {
+          // Benchmark telemetry is best-effort only.
+        }
+      }
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(finish)
+        })
+      } else {
+        setTimeout(finish, 0)
+      }
+    } catch (e) {
+      // Ignore benchmark probe failures.
+    }
   }
 
   // 监听消息
@@ -5002,6 +5412,9 @@
       case 'clipboardText':
         handleClipboardTextMessage(message)
         break
+      case 'visibility-benchmark-probe':
+        handleVisibilityBenchmarkProbe(message)
+        break
     }
   })
 
@@ -5010,6 +5423,7 @@
     stopPolling()
     stopCountdown()
     clearAllTabCountdowns()
+    disposeNoContentLottieRecoveryHandlers()
     if (themeObserver) {
       try {
         themeObserver.disconnect()

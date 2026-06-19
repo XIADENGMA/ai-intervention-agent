@@ -454,6 +454,30 @@ uv run python scripts/precompress_static.py          # regenerates as needed
 Hardware reference: Apple Silicon M1 / Python 3.11.15 / macOS 25.4.0 /
 Cursor + VSCode dev environment.
 
+## R452 · Heavy Asset Budget And Offline-First Packaging
+
+Current large assets are deliberate, not accidental:
+
+- `packages/vscode/mathjax` is about 2072 KB unpacked and keeps formula
+  rendering offline inside the VSIX.
+- `packages/vscode/vendor/terminal-notifier` is about 1696 KB unpacked and
+  keeps macOS native notifications working without shelling out to an
+  untracked system dependency.
+- `src/ai_intervention_agent/static/js/tex-mml-chtml.js` is about 1148 KB raw
+  but is served precompressed (`.br` / `.gz`) and lazy-loaded.
+- Lottie assets stay local so the Web UI and VS Code webview work in offline
+  and corporate networks.
+
+The optimization boundary is therefore **budget + lazy load + precompression**,
+not CDN replacement. CDN would reduce package bytes but break the project's
+offline / air-gapped contract. Optionalization is only worth revisiting when a
+measured package-size or memory benchmark shows a real user cost.
+
+`tests/test_vscode_heavy_asset_budget_r452.py` locks review budgets for the
+known heavy assets. If it fails, either split/optionalize the asset with a
+measured plan, or update the budget with the same level of evidence as the
+packed VSIX guard in `tests/test_vscode_vsix_size_budget.py`.
+
 ## Future work
 
 Non-binding pointers for future R22.x+ batches. **Add a benchmark first

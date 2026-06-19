@@ -159,10 +159,20 @@ suite('Extension Test Suite', () => {
     // 内存优先：Webview 状态应使用 getState/setState 持久化
     assert.ok(webviewUi.includes('vscode.getState'))
     assert.ok(webviewUi.includes('vscode.setState'))
-    // 侧边栏加载性能回归点：应启用 retainContextWhenHidden 以消除重复 resolveWebviewView 阻塞
+    // 内存优先：retainContextWhenHidden 仅作为显式诊断/复杂场景开关，
+    // 默认路径依赖 getState/setState，符合 VS Code 官方低开销持久化建议。
+    const retainPkgJson = JSON.parse(extPkgText)
+    assert.strictEqual(
+      retainPkgJson.contributes.configuration.properties[
+        'ai-intervention-agent.webview.retainContextWhenHidden'
+      ].default,
+      false
+    )
     assert.ok(
-      extensionJs.includes('retainContextWhenHidden: true'),
-      'extension.ts 应设置 retainContextWhenHidden: true，避免侧边栏隐藏/显示时重建 webview'
+      extensionJs.includes(
+        'retainContextWhenHidden: retainWebviewContextWhenHidden'
+      ),
+      'extension.ts 应从配置读取 retainContextWhenHidden，不应默认常驻隐藏 webview'
     )
     // 侧边栏加载性能回归点：语言预取必须 fire-and-forget（不能再 await，否则服务器不可达时首屏最坏 7.5s 空白）
     assert.ok(
@@ -389,6 +399,162 @@ suite('Extension Test Suite', () => {
       ]) {
         assert.ok(includesPath(name), `packaging script should include ${name}`)
       }
+    }
+  })
+
+  test('Notification config prefetch ignores stale server URL responses', async () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
+
+    const { WebviewProvider } = require(path.join(ext.extensionPath, 'dist', 'webview.js'))
+    const outputChannel = {
+      name: 'test-output',
+      append() {},
+      appendLine() {},
+      clear() {},
+      show() {},
+      hide() {},
+      dispose() {}
+    }
+    const provider = new WebviewProvider(
+      vscode.Uri.file(ext.extensionPath),
+      outputChannel,
+      'http://old.test',
+      '0.0.0'
+    )
+    const originalFetch = globalThis.fetch
+    const pending = []
+    const makeResponse = config => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return { status: 'success', config }
+      }
+    })
+
+    try {
+      globalThis.fetch = url =>
+        new Promise(resolve => {
+          pending.push({ url: String(url), resolve })
+        })
+
+      const oldFetch = provider._fetchNotificationConfig(true)
+      assert.strictEqual(pending.length, 1)
+      assert.strictEqual(
+        pending[0].url,
+        'http://old.test/api/get-notification-config'
+      )
+
+      provider.updateServerUrl('http://new.test')
+      const newFetch = provider._fetchNotificationConfig(true)
+      assert.strictEqual(pending.length, 2)
+      assert.strictEqual(
+        pending[1].url,
+        'http://new.test/api/get-notification-config'
+      )
+
+      pending[0].resolve(
+        makeResponse({ enabled: true, macos_native_enabled: true })
+      )
+      assert.strictEqual(await oldFetch, null)
+
+      const sharedNewFetch = provider._fetchNotificationConfig(true)
+      assert.strictEqual(
+        pending.length,
+        2,
+        'stale old finally must not clear the newer in-flight promise'
+      )
+
+      pending[1].resolve(
+        makeResponse({ enabled: false, macos_native_enabled: false })
+      )
+      const newConfig = await newFetch
+      assert.deepStrictEqual(newConfig, {
+        enabled: false,
+        macosNativeEnabled: false
+      })
+      assert.deepStrictEqual(await sharedNewFetch, newConfig)
+      assert.deepStrictEqual(await provider._fetchNotificationConfig(false), newConfig)
+      assert.strictEqual(pending.length, 2, 'fresh cache should avoid a third fetch')
+    } finally {
+      globalThis.fetch = originalFetch
+      provider.dispose()
+    }
+  })
+
+  test('Server language prefetch ignores stale server URL responses', async () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
+
+    const { WebviewProvider } = require(path.join(ext.extensionPath, 'dist', 'webview.js'))
+    const outputChannel = {
+      name: 'test-output',
+      append() {},
+      appendLine() {},
+      clear() {},
+      show() {},
+      hide() {},
+      dispose() {}
+    }
+    const languageEvents = []
+    const provider = new WebviewProvider(
+      vscode.Uri.file(ext.extensionPath),
+      outputChannel,
+      'http://old.test',
+      '0.0.0',
+      undefined,
+      undefined,
+      undefined,
+      lang => languageEvents.push(lang)
+    )
+    const originalFetch = globalThis.fetch
+    const pending = []
+    const makeResponse = language => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return { language }
+      }
+    })
+
+    try {
+      globalThis.fetch = (url, options = {}) =>
+        new Promise(resolve => {
+          pending.push({ url: String(url), signal: options.signal, resolve })
+        })
+
+      const oldFetch = provider._prefetchServerLanguage()
+      assert.strictEqual(pending.length, 1)
+      assert.strictEqual(pending[0].url, 'http://old.test/api/config')
+      assert.ok(pending[0].signal, 'language prefetch should use AbortController')
+
+      provider.updateServerUrl('http://new.test')
+      assert.strictEqual(
+        pending[0].signal.aborted,
+        true,
+        'server URL changes should abort the old language prefetch'
+      )
+
+      const newFetch = provider._prefetchServerLanguage()
+      assert.strictEqual(pending.length, 2)
+      assert.strictEqual(pending[1].url, 'http://new.test/api/config')
+
+      pending[1].resolve(makeResponse('zh-CN'))
+      await newFetch
+      assert.deepStrictEqual(languageEvents, ['zh-CN'])
+      assert.strictEqual(provider._cachedServerLang, 'zh-CN')
+
+      pending[0].resolve(makeResponse('en'))
+      await oldFetch
+      assert.deepStrictEqual(
+        languageEvents,
+        ['zh-CN'],
+        'stale old language response must not notify host'
+      )
+      assert.strictEqual(provider._cachedServerLang, 'zh-CN')
+    } finally {
+      globalThis.fetch = originalFetch
+      provider.dispose()
     }
   })
 

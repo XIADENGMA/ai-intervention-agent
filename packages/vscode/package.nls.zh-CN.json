@@ -7,5 +7,7 @@
   "config.serverUrl.description": "AI Intervention Agent 服务端地址（建议填写到端口级别，例如 http://localhost:8080）",
   "config.logLevel.description": "插件日志级别（Output 面板 → AI Intervention Agent）",
   "config.i18nPseudoLocale.description": "使用伪本地化渲染 webview（仅限开发者；用于在视觉上检查每一条可翻译字符串）。",
-  "config.i18nPseudoLocale.markdownDescription": "使用伪本地化 `[!ňöḉőńţéńț_ńēẉẗàśǩ!]` 等字符渲染 webview，一眼看出硬编码字符串、拼接 bug、布局溢出等问题。**仅限开发者** —— 日常使用请保持关闭。"
+  "config.i18nPseudoLocale.markdownDescription": "使用伪本地化 `[!ňöḉőńţéńț_ńēẉẗàśǩ!]` 等字符渲染 webview，一眼看出硬编码字符串、拼接 bug、布局溢出等问题。**仅限开发者** —— 日常使用请保持关闭。",
+  "config.webview.retainContextWhenHidden.description": "隐藏侧边栏时继续保留 webview 上下文（开发/诊断开关；内存开销更高）。",
+  "config.webview.retainContextWhenHidden.markdownDescription": "隐藏侧边栏时继续保留 webview 的 DOM 和 JavaScript 上下文。日常使用建议保持关闭：扩展已经通过 `getState`/`setState` 持久化 UI 状态，这是 VS Code 文档推荐的低开销路径。仅在 benchmark 或诊断复杂恢复行为时开启。"
 }

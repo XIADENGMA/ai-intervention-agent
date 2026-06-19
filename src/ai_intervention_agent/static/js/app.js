@@ -72,6 +72,8 @@ window.addEventListener("unhandledrejection", function (event) {
 // - AbortSignal.timeout() 和 AbortSignal.any() 在 Chrome 116+ / Firefox 124+ /
 //   Safari 17.4+ 已广泛可用；本函数对两者都做了 feature detect，缺失时用
 //   AbortController + addEventListener 手写 fallback。
+// - 极旧/受限宿主如果连 AbortController 也没有，就保留原 options 发起 fetch；
+//   此时无法合成 timeout，但不能因为缺少取消 API 而阻断请求本身。
 // ==================================================================
 function fetchWithTimeout(url, options, timeoutMs) {
   var userSignal = options && options.signal;
@@ -96,6 +98,10 @@ function fetchWithTimeout(url, options, timeoutMs) {
       signal: mergedSignal,
     });
     return fetch(url, mergedNative);
+  }
+
+  if (typeof AbortController === "undefined") {
+    return fetch(url, options);
   }
 
   var controller = new AbortController();
@@ -208,6 +214,147 @@ configureMarkedSecurity();
 
 // Lottie 动画实例引用（用于后续控制如暂停/销毁）
 let hourglassAnimation = null;
+let _lottieLoadPromise = null;
+let _hourglassObserver = null;
+let _hourglassDelayTimer = null;
+let _hourglassFallbackRemovalTimer = null;
+let _hourglassIdleCallbackId = null;
+let _hourglassLoadHandler = null;
+let _hourglassThemeTimer = null;
+let _hourglassLifecycleToken = 0;
+let _hourglassLifecycleDisposed = false;
+let _hourglassLifecycleHandlersInstalled = false;
+
+function _isHourglassLifecycleActive(container, token) {
+  if (_hourglassLifecycleDisposed) return false;
+  if (token !== _hourglassLifecycleToken) return false;
+  if (typeof document !== "undefined" && document.hidden) return false;
+  if (!container) return false;
+  try {
+    if (container.isConnected === false) return false;
+  } catch (_e) {
+    // 忽略
+  }
+  try {
+    if (
+      document.body &&
+      typeof document.body.contains === "function" &&
+      !document.body.contains(container)
+    ) {
+      return false;
+    }
+  } catch (_e) {
+    // 忽略
+  }
+  return true;
+}
+
+function _disconnectHourglassObserver() {
+  try {
+    if (_hourglassObserver) _hourglassObserver.disconnect();
+  } catch (_e) {
+    // 忽略
+  }
+  _hourglassObserver = null;
+}
+
+function _clearHourglassLifecycleTimers() {
+  try {
+    if (_hourglassDelayTimer) clearTimeout(_hourglassDelayTimer);
+  } catch (_e) {
+    // 忽略
+  }
+  _hourglassDelayTimer = null;
+
+  try {
+    if (_hourglassFallbackRemovalTimer) {
+      clearTimeout(_hourglassFallbackRemovalTimer);
+    }
+  } catch (_e) {
+    // 忽略
+  }
+  _hourglassFallbackRemovalTimer = null;
+
+  try {
+    if (
+      _hourglassIdleCallbackId !== null &&
+      typeof window.cancelIdleCallback === "function"
+    ) {
+      window.cancelIdleCallback(_hourglassIdleCallbackId);
+    }
+  } catch (_e) {
+    // 忽略
+  }
+  _hourglassIdleCallbackId = null;
+
+  try {
+    if (_hourglassLoadHandler) {
+      window.removeEventListener("load", _hourglassLoadHandler);
+    }
+  } catch (_e) {
+    // 忽略
+  }
+  _hourglassLoadHandler = null;
+
+  try {
+    if (_hourglassThemeTimer) clearTimeout(_hourglassThemeTimer);
+  } catch (_e) {
+    // 忽略
+  }
+  _hourglassThemeTimer = null;
+}
+
+function destroyHourglassAnimation() {
+  try {
+    if (hourglassAnimation) hourglassAnimation.destroy();
+  } catch (_e) {
+    // 忽略
+  }
+  hourglassAnimation = null;
+}
+
+function disposeHourglassAnimationLifecycle() {
+  _hourglassLifecycleDisposed = true;
+  _hourglassLifecycleToken += 1;
+  _disconnectHourglassObserver();
+  _clearHourglassLifecycleTimers();
+  destroyHourglassAnimation();
+}
+
+function installHourglassAnimationLifecycleHandlers() {
+  if (_hourglassLifecycleHandlersInstalled) return;
+  _hourglassLifecycleHandlersInstalled = true;
+
+  try {
+    window.addEventListener("pagehide", function () {
+      disposeHourglassAnimationLifecycle();
+    });
+  } catch (_e) {
+    // 忽略
+  }
+
+  try {
+    window.addEventListener("pageshow", function (event) {
+      if (!event || !event.persisted) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      initHourglassAnimation();
+    });
+  } catch (_e) {
+    // 忽略
+  }
+
+  try {
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) {
+        disposeHourglassAnimationLifecycle();
+      } else {
+        initHourglassAnimation();
+      }
+    });
+  } catch (_e) {
+    // 忽略
+  }
+}
 
 /**
  * 渲染“嫩芽”动画的 SVG/CSS 降级版本
@@ -260,14 +407,13 @@ function renderSproutFallback(container) {
   }
 }
 
-let _lottieLoadPromise = null;
-
 function _ensureLottieLoaded() {
   if (typeof lottie !== "undefined") return Promise.resolve(true);
   if (_lottieLoadPromise) return _lottieLoadPromise;
   _lottieLoadPromise = new Promise((resolve) => {
     const script = document.createElement("script");
-    script.src = "/static/js/lottie.min.js";
+    script.src =
+      window.AIIA_LOTTIE_JS_URL || "/static/js/lottie.min.js";
     script.onload = () => resolve(typeof lottie !== "undefined");
     script.onerror = () => {
       _lottieLoadPromise = null;
@@ -278,11 +424,10 @@ function _ensureLottieLoaded() {
   return _lottieLoadPromise;
 }
 
-_ensureLottieLoaded();
-
-function _createLottieAnimation(container) {
+function _createLottieAnimation(container, token) {
+  if (!_isHourglassLifecycleActive(container, token)) return null;
   try {
-    if (hourglassAnimation) hourglassAnimation.destroy();
+    destroyHourglassAnimation();
     hourglassAnimation = lottie.loadAnimation({
       container,
       renderer: "svg",
@@ -291,75 +436,142 @@ function _createLottieAnimation(container) {
       path: "/static/lottie/sprout.json",
       rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
     });
-    hourglassAnimation.addEventListener("DOMLoaded", () =>
-      updateLottieAnimationColor(),
-    );
+    hourglassAnimation.addEventListener("DOMLoaded", () => {
+      if (!_isHourglassLifecycleActive(container, token)) return;
+      updateLottieAnimationColor();
+    });
     hourglassAnimation.addEventListener("error", () => {
+      if (!_isHourglassLifecycleActive(container, token)) return;
       renderSproutFallback(container);
       container.style.opacity = "1";
     });
     console.debug("Sprout animation initialized (lazy load)");
+    return hourglassAnimation;
   } catch (error) {
     console.error("Lottie animation init failed:", error);
-    renderSproutFallback(container);
-    container.style.opacity = "1";
+    if (_isHourglassLifecycleActive(container, token)) {
+      renderSproutFallback(container);
+      container.style.opacity = "1";
+    }
+    return null;
   }
 }
 
 /**
  * 初始化嫩芽生长 Lottie 动画
  *
- * 策略：app.js 加载时即开始预取 lottie.min.js（见上方 _ensureLottieLoaded()）。
- * 调用本函数时先等待一个短窗口（200ms），若 Lottie 在窗口内就绪则直接渲染，
- * 跳过 SVG 占位，消除视觉闪烁；若超时则显示 SVG 占位并在 Lottie 就绪后
- * 以 crossfade 过渡替换。
+ * 策略：首屏先渲染零依赖 SVG fallback；只有容器进入视口、用户未开启
+ * prefers-reduced-motion、且浏览器空闲时才加载 lottie.min.js。
  */
 function initHourglassAnimation() {
+  installHourglassAnimationLifecycleHandlers();
+
+  if (typeof document !== "undefined" && document.hidden) return;
+
   const container = document.getElementById("hourglass-lottie");
   if (!container) return;
 
-  if (typeof lottie !== "undefined") {
-    _createLottieAnimation(container);
+  _hourglassLifecycleDisposed = false;
+  if (hourglassAnimation) {
+    updateLottieAnimationColor();
     return;
   }
 
-  let settled = false;
-  const timer = setTimeout(() => {
-    if (settled) return;
-    renderSproutFallback(container);
-  }, 200);
+  _disconnectHourglassObserver();
+  _clearHourglassLifecycleTimers();
+  const token = _hourglassLifecycleToken + 1;
+  _hourglassLifecycleToken = token;
 
-  _ensureLottieLoaded().then((ok) => {
-    settled = true;
-    clearTimeout(timer);
-    if (ok) {
-      const fallbackSvgs = Array.from(container.querySelectorAll("svg"));
-      if (fallbackSvgs.length) {
-        container.style.opacity = "0";
-        container.style.transition = "opacity .25s ease";
-      }
-      _createLottieAnimation(container);
-      if (fallbackSvgs.length && hourglassAnimation) {
-        var removeFallback = () => {
-          fallbackSvgs.forEach((s) => {
-            if (s.parentNode) s.remove();
+  renderSproutFallback(container);
+
+  const prefersReducedMotion =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (prefersReducedMotion) return;
+
+  const loadWhenIdle = () => {
+    const run = () => {
+      _hourglassIdleCallbackId = null;
+      if (!_isHourglassLifecycleActive(container, token)) return;
+      _ensureLottieLoaded().then((ok) => {
+        if (!ok || !_isHourglassLifecycleActive(container, token)) return;
+        const fallbackSvgs = Array.from(container.querySelectorAll("svg"));
+        if (fallbackSvgs.length) {
+          container.style.opacity = "0";
+          container.style.transition = "opacity .25s ease";
+        }
+        _createLottieAnimation(container, token);
+        if (fallbackSvgs.length && hourglassAnimation) {
+          var removeFallback = () => {
+            if (!_isHourglassLifecycleActive(container, token)) return;
+            fallbackSvgs.forEach((s) => {
+              _removeElement(s);
+            });
+          };
+          hourglassAnimation.addEventListener("DOMLoaded", () => {
+            if (!_isHourglassLifecycleActive(container, token)) return;
+            removeFallback();
+            _scheduleNextFrame(() => {
+              if (!_isHourglassLifecycleActive(container, token)) return;
+              container.style.opacity = "1";
+            });
           });
-        };
-        hourglassAnimation.addEventListener("DOMLoaded", () => {
-          removeFallback();
-          requestAnimationFrame(() => {
+          _hourglassFallbackRemovalTimer = setTimeout(() => {
+            _hourglassFallbackRemovalTimer = null;
+            if (!_isHourglassLifecycleActive(container, token)) return;
+            removeFallback();
             container.style.opacity = "1";
-          });
-        });
-        setTimeout(() => {
-          removeFallback();
-          container.style.opacity = "1";
-        }, 2000);
-      }
+          }, 2000);
+        }
+      });
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      _hourglassIdleCallbackId = window.requestIdleCallback(run, {
+        timeout: 1500,
+      });
     } else {
-      if (!container.innerHTML.trim()) renderSproutFallback(container);
+      _hourglassDelayTimer = setTimeout(() => {
+        _hourglassDelayTimer = null;
+        run();
+      }, 0);
     }
-  });
+  };
+
+  const loadAfterInitialPaint = () => {
+    const schedule = () => {
+      _hourglassLoadHandler = null;
+      if (!_isHourglassLifecycleActive(container, token)) return;
+      _hourglassDelayTimer = setTimeout(() => {
+        _hourglassDelayTimer = null;
+        loadWhenIdle();
+      }, 500);
+    };
+    if (document.readyState === "complete") {
+      schedule();
+    } else {
+      _hourglassLoadHandler = schedule;
+      window.addEventListener("load", _hourglassLoadHandler, { once: true });
+    }
+  };
+
+  if (typeof IntersectionObserver === "function") {
+    _hourglassObserver = new IntersectionObserver(
+      (entries) => {
+        if (!_isHourglassLifecycleActive(container, token)) return;
+        const visible = entries.some(
+          (entry) => entry.isIntersecting || entry.intersectionRatio > 0,
+        );
+        if (!visible) return;
+        _disconnectHourglassObserver();
+        loadAfterInitialPaint();
+      },
+      { rootMargin: "120px" },
+    );
+    _hourglassObserver.observe(container);
+  } else {
+    loadAfterInitialPaint();
+  }
 }
 
 /**
@@ -396,14 +608,24 @@ function updateLottieAnimationColor() {
 // 用于在用户切换主题时即时更新 Lottie 动画颜色
 window.addEventListener("theme-changed", (event) => {
   // 延迟 50ms 执行，确保 DOM data-theme 属性已更新
-  setTimeout(updateLottieAnimationColor, 50);
+  try {
+    if (_hourglassThemeTimer) clearTimeout(_hourglassThemeTimer);
+  } catch (_e) {
+    // 忽略
+  }
+  _hourglassThemeTimer = setTimeout(() => {
+    _hourglassThemeTimer = null;
+    if (!_hourglassLifecycleDisposed) {
+      updateLottieAnimationColor();
+    }
+  }, 50);
 });
 
 // 高性能markdown渲染函数
 // isMarkdown: 是否为 Markdown 源文本（需要 marked.js 解析）
 function renderMarkdownContent(element, content, isMarkdown = false) {
   // 使用requestAnimationFrame优化渲染时机
-  requestAnimationFrame(() => {
+  _scheduleNextFrame(() => {
     if (content) {
       let htmlContent = content;
 
@@ -516,6 +738,49 @@ function processCodeBlocks(container) {
   });
 }
 
+const COPY_BUTTON_RESTORE_DELAY_MS = 2000;
+const COPY_BUTTON_ORIGINAL_HTML_PROP = "__aiiaCopyOriginalHTML";
+const COPY_BUTTON_RESTORE_TIMER_PROP = "__aiiaCopyRestoreTimer";
+
+function _clearCopyButtonRestoreTimer(button) {
+  if (!button) return;
+  const timerId = button[COPY_BUTTON_RESTORE_TIMER_PROP];
+  if (timerId !== undefined && timerId !== null) {
+    clearTimeout(timerId);
+    button[COPY_BUTTON_RESTORE_TIMER_PROP] = null;
+  }
+}
+
+function _beginCopyButtonTransientFeedback(button) {
+  _clearCopyButtonRestoreTimer(button);
+  if (
+    !Object.prototype.hasOwnProperty.call(button, COPY_BUTTON_ORIGINAL_HTML_PROP)
+  ) {
+    button[COPY_BUTTON_ORIGINAL_HTML_PROP] = button.innerHTML;
+  }
+}
+
+function _restoreCopyButtonBaseline(button) {
+  button.innerHTML = button[COPY_BUTTON_ORIGINAL_HTML_PROP] || "";
+  button.classList.remove("copied");
+  button.classList.remove("error");
+}
+
+function _scheduleCopyButtonRestore(button, restoreCallback) {
+  const timerId = setTimeout(() => {
+    if (button[COPY_BUTTON_RESTORE_TIMER_PROP] !== timerId) {
+      return;
+    }
+    try {
+      restoreCallback();
+    } finally {
+      button[COPY_BUTTON_RESTORE_TIMER_PROP] = null;
+      delete button[COPY_BUTTON_ORIGINAL_HTML_PROP];
+    }
+  }, COPY_BUTTON_RESTORE_DELAY_MS);
+  button[COPY_BUTTON_RESTORE_TIMER_PROP] = timerId;
+}
+
 // 复制代码到剪贴板
 async function copyCodeToClipboard(preElement, button) {
   // R285 / cycle-26 t26-2 (R268/R279/R280 entry-side 第四轮):
@@ -555,18 +820,18 @@ async function copyCodeToClipboard(preElement, button) {
       );
       return;
     }
-    const originalHTML = button.innerHTML;
+    _beginCopyButtonTransientFeedback(button);
     // AIIA-XSS-SAFE: checkIconSvg 是开发者手写 SVG 字面量；t('status.copied')
     // 走 locales/*.json 静态 key 且无参数。详见 docs/i18n.md § Security。
     button.innerHTML = checkIconSvg + t("status.copied");
+    button.classList.remove("error");
     button.classList.add("copied");
 
-    setTimeout(() => {
+    _scheduleCopyButtonRestore(button, () => {
       if (button.isConnected) {
-        button.innerHTML = originalHTML;
-        button.classList.remove("copied");
+        _restoreCopyButtonBaseline(button);
       }
-    }, 2000);
+    });
   } catch (err) {
     console.error("Copy failed:", err);
 
@@ -578,18 +843,18 @@ async function copyCodeToClipboard(preElement, button) {
       );
       return;
     }
-    const originalHTML = button.innerHTML;
+    _beginCopyButtonTransientFeedback(button);
     // AIIA-XSS-SAFE: errorIconSvg 是开发者手写 SVG 字面量；t('status.copyFailed')
     // 走 locales/*.json 静态 key 且无参数。与 line 561 success 路径同源安全。
     button.innerHTML = errorIconSvg + t("status.copyFailed");
+    button.classList.remove("copied");
     button.classList.add("error");
 
-    setTimeout(() => {
+    _scheduleCopyButtonRestore(button, () => {
       if (button.isConnected) {
-        button.innerHTML = originalHTML;
-        button.classList.remove("error");
+        _restoreCopyButtonBaseline(button);
       }
-    }, 2000);
+    });
   }
 }
 
@@ -731,10 +996,20 @@ async function loadConfig() {
   }
 }
 
+function setElementDisplayById(id, display) {
+  const element = document.getElementById(id);
+  if (!element) {
+    console.warn(`Page state update skipped: #${id} not in DOM`);
+    return false;
+  }
+  element.style.display = display;
+  return true;
+}
+
 // 显示无内容页面
 function showNoContentPage() {
-  document.getElementById("content-container").style.display = "none";
-  document.getElementById("no-content-container").style.display = "flex";
+  setElementDisplayById("content-container", "none");
+  setElementDisplayById("no-content-container", "flex");
 
   // 添加无内容模式的CSS类，启用特殊布局
   document.body.classList.add("no-content-mode");
@@ -747,14 +1022,14 @@ function showNoContentPage() {
 
   // 显示关闭按钮，让用户可以关闭服务
   if (config) {
-    document.getElementById("no-content-buttons").style.display = "block";
+    setElementDisplayById("no-content-buttons", "block");
   }
 }
 
 // 显示内容页面
 function showContentPage() {
-  document.getElementById("content-container").style.display = "block";
-  document.getElementById("no-content-container").style.display = "none";
+  setElementDisplayById("content-container", "block");
+  setElementDisplayById("no-content-container", "none");
 
   // 移除无内容模式的CSS类，恢复正常布局
   document.body.classList.remove("no-content-mode");
@@ -804,6 +1079,17 @@ function enableSubmitButton() {
 // 觉反馈，浏览器拒绝通知权限时只能 console.debug。修前: 仅 'success' /
 // 'error' 在 content page 可见; 修后: 'success' / 'warning' / 'error'
 // 都可见 ('info' 仍 silent 以维持 R214 之前的 INFO 噪声水位)。
+const _statusDismissTimers = Object.create(null);
+const _statusDismissGenerations = Object.create(null);
+
+function _clearStatusDismissTimer(statusElementId) {
+  const timerId = _statusDismissTimers[statusElementId];
+  if (timerId !== undefined && timerId !== null) {
+    clearTimeout(timerId);
+    _statusDismissTimers[statusElementId] = null;
+  }
+}
+
 function showStatus(message, type) {
   const noContentContainer = document.getElementById("no-content-container");
   const isNoContentPage =
@@ -818,11 +1104,17 @@ function showStatus(message, type) {
     return;
   }
 
-  const statusElement = isNoContentPage
-    ? document.getElementById("no-content-status-message")
-    : document.getElementById("status-message");
+  const statusElementId = isNoContentPage
+    ? "no-content-status-message"
+    : "status-message";
+  const statusElement = document.getElementById(statusElementId);
 
   if (!statusElement) return;
+
+  _clearStatusDismissTimer(statusElementId);
+  const statusGeneration =
+    (_statusDismissGenerations[statusElementId] || 0) + 1;
+  _statusDismissGenerations[statusElementId] = statusGeneration;
 
   statusElement.textContent = message;
   statusElement.className = `status-message status-${type}`;
@@ -838,11 +1130,42 @@ function showStatus(message, type) {
           ? 10000
           : 0;
   if (autoDismissMs > 0) {
-    setTimeout(() => {
+    const dismissTimerId = setTimeout(() => {
+      if (
+        _statusDismissGenerations[statusElementId] !== statusGeneration ||
+        _statusDismissTimers[statusElementId] !== dismissTimerId
+      ) {
+        return;
+      }
       statusElement.style.display = "none";
+      _statusDismissTimers[statusElementId] = null;
+      _statusDismissGenerations[statusElementId] = statusGeneration + 1;
     }, autoDismissMs);
+    _statusDismissTimers[statusElementId] = dismissTimerId;
   }
 }
+
+function _scheduleNextFrame(callback) {
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(callback);
+    return;
+  }
+  setTimeout(callback, 16);
+}
+
+function _removeElement(element) {
+  if (!element) return;
+  if (typeof element.remove === "function") {
+    element.remove();
+    return;
+  }
+  if (element.parentNode) {
+    element.parentNode.removeChild(element);
+  }
+}
+
+let _toastHideTimerId = null;
+let _toastGeneration = 0;
 
 function _showToast(message) {
   let toast = document.getElementById("_aiia-toast");
@@ -872,15 +1195,31 @@ function _showToast(message) {
     });
     document.body.appendChild(toast);
   }
+  if (_toastHideTimerId !== null) {
+    clearTimeout(_toastHideTimerId);
+    _toastHideTimerId = null;
+  }
+
+  const toastGeneration = (_toastGeneration += 1);
+  let hideTimerId = null;
   toast.textContent = message;
-  requestAnimationFrame(() => {
+  _scheduleNextFrame(() => {
+    if (toastGeneration !== _toastGeneration || _toastHideTimerId !== hideTimerId) {
+      return;
+    }
     toast.style.transform = "translateX(-50%) translateY(0)";
     toast.style.opacity = "1";
   });
-  setTimeout(() => {
+  hideTimerId = setTimeout(() => {
+    if (toastGeneration !== _toastGeneration || _toastHideTimerId !== hideTimerId) {
+      return;
+    }
     toast.style.transform = "translateX(-50%) translateY(-120%)";
     toast.style.opacity = "0";
+    _toastHideTimerId = null;
+    _toastGeneration += 1;
   }, 1800);
+  _toastHideTimerId = hideTimerId;
 }
 
 // 插入代码功能 - 与GUI版本逻辑完全一致
@@ -1013,6 +1352,105 @@ function getClipboardFailureHint(error) {
 //      返回旧引用 → focus 失败 silent fail。
 // 仍保留 fallback 到 ``#feedback-text``，对齐升级前的语义。
 let _codePasteModalPreviouslyFocusedElement = null;
+let _codePasteModalKeydownWired = false;
+let _codePasteModalFocusTimerId = null;
+let _codePasteModalFocusGeneration = 0;
+
+function _isCodePasteModalOpen(panel) {
+  return !!(
+    panel &&
+    panel.classList &&
+    typeof panel.classList.contains === "function" &&
+    panel.classList.contains("show")
+  );
+}
+
+function installCodePasteModalKeydownHandler() {
+  if (_codePasteModalKeydownWired) return;
+  document.addEventListener("keydown", handleCodePasteModalKeydown);
+  _codePasteModalKeydownWired = true;
+}
+
+function removeCodePasteModalKeydownHandler() {
+  if (!_codePasteModalKeydownWired) return;
+  document.removeEventListener("keydown", handleCodePasteModalKeydown);
+  _codePasteModalKeydownWired = false;
+}
+
+function clearCodePasteModalFocusTimer() {
+  _codePasteModalFocusGeneration += 1;
+  if (_codePasteModalFocusTimerId === null) return;
+  try {
+    clearTimeout(_codePasteModalFocusTimerId);
+  } catch (_e) {
+    // 忽略：受限宿主下 clearTimeout 可能不可用
+  }
+  _codePasteModalFocusTimerId = null;
+}
+
+function focusCodePasteModalTextarea(textarea, panel) {
+  if (!textarea || typeof textarea.focus !== "function") return false;
+  if (!_isCodePasteModalOpen(panel)) return false;
+
+  try {
+    if (
+      typeof document.contains === "function" &&
+      (!document.contains(panel) || !document.contains(textarea))
+    ) {
+      return false;
+    }
+    if (typeof panel.contains === "function" && !panel.contains(textarea)) {
+      return false;
+    }
+  } catch (_e) {
+    return false;
+  }
+
+  try {
+    textarea.focus({ preventScroll: true });
+    return true;
+  } catch (_e) {
+    try {
+      textarea.focus();
+      return true;
+    } catch (_e2) {
+      return false;
+    }
+  }
+}
+
+function focusCodePasteModalRestoreTarget(element) {
+  if (!element || typeof element.focus !== "function") return false;
+  try {
+    element.focus({ preventScroll: true });
+    return true;
+  } catch (_e) {
+    try {
+      element.focus();
+      return true;
+    } catch (_e2) {
+      return false;
+    }
+  }
+}
+
+function scheduleCodePasteModalTextareaFocus(textarea, panel) {
+  clearCodePasteModalFocusTimer();
+  const focusGeneration = _codePasteModalFocusGeneration + 1;
+  _codePasteModalFocusGeneration = focusGeneration;
+  let focusTimerId = null;
+  focusTimerId = setTimeout(() => {
+    if (
+      focusGeneration !== _codePasteModalFocusGeneration ||
+      focusTimerId !== _codePasteModalFocusTimerId
+    ) {
+      return;
+    }
+    _codePasteModalFocusTimerId = null;
+    focusCodePasteModalTextarea(textarea, panel);
+  }, 0);
+  _codePasteModalFocusTimerId = focusTimerId;
+}
 
 function openCodePasteModal(error) {
   const panel = document.getElementById("code-paste-panel");
@@ -1024,7 +1462,10 @@ function openCodePasteModal(error) {
     return;
   }
 
-  _codePasteModalPreviouslyFocusedElement = document.activeElement;
+  const wasAlreadyOpen = _isCodePasteModalOpen(panel);
+  if (!wasAlreadyOpen) {
+    _codePasteModalPreviouslyFocusedElement = document.activeElement;
+  }
 
   if (hint) {
     hint.textContent = getClipboardFailureHint(error);
@@ -1037,22 +1478,21 @@ function openCodePasteModal(error) {
   _setContainerSiblingsInert(panel, true);
 
   // iOS 上需要在用户手势链路内尽快 focus，才能弹出键盘与“粘贴”菜单
-  setTimeout(() => {
-    try {
-      textarea.focus();
-    } catch (e) {
-      // 忽略：部分浏览器/设备上 focus 可能失败
-    }
-  }, 0);
+  scheduleCodePasteModalTextareaFocus(textarea, panel);
 
   // ESC 关闭（对齐图片模态框行为）
-  document.addEventListener("keydown", handleCodePasteModalKeydown);
+  installCodePasteModalKeydownHandler();
 }
 
 function closeCodePasteModal() {
   const panel = document.getElementById("code-paste-panel");
   const textarea = document.getElementById("code-paste-textarea");
-  if (!panel) return;
+  clearCodePasteModalFocusTimer();
+  if (!panel) {
+    removeCodePasteModalKeydownHandler();
+    _codePasteModalPreviouslyFocusedElement = null;
+    return;
+  }
 
   panel.classList.remove("show");
   panel.classList.add("hidden");
@@ -1063,20 +1503,15 @@ function closeCodePasteModal() {
     textarea.value = "";
   }
 
-  document.removeEventListener("keydown", handleCodePasteModalKeydown);
+  removeCodePasteModalKeydownHandler();
 
   const prev = _codePasteModalPreviouslyFocusedElement;
   _codePasteModalPreviouslyFocusedElement = null;
-  if (prev && document.contains(prev) && typeof prev.focus === "function") {
-    try {
-      prev.focus();
-      return;
-    } catch (_e) {
-      // 忽略：focus 失败（如元素被设为 inert）走 fallback
-    }
+  if (prev && document.contains(prev) && focusCodePasteModalRestoreTarget(prev)) {
+    return;
   }
   const feedbackTextarea = document.getElementById("feedback-text");
-  if (feedbackTextarea) feedbackTextarea.focus();
+  focusCodePasteModalRestoreTarget(feedbackTextarea);
 }
 
 /**
@@ -1162,6 +1597,24 @@ function captureSubmitBtnOriginalHTML() {
   if (SUBMIT_BTN_ORIGINAL_HTML !== null) return;
   const btn = document.getElementById("submit-btn");
   if (btn) SUBMIT_BTN_ORIGINAL_HTML = btn.innerHTML;
+}
+
+function isSubmitTargetStillCurrent(taskId) {
+  if (!taskId) return !window.activeTaskId;
+  return window.activeTaskId === taskId;
+}
+
+function clearSubmittedTaskLocalState(taskId) {
+  if (!taskId) return;
+  if (typeof taskTextareaContents !== "undefined") {
+    delete taskTextareaContents[taskId];
+  }
+  if (typeof taskOptionsStates !== "undefined") {
+    delete taskOptionsStates[taskId];
+  }
+  if (typeof taskImages !== "undefined") {
+    delete taskImages[taskId];
+  }
 }
 
 // R289 / cycle-27: 错误消息精细化。把 fetch + DOM 操作的 catch error 分类
@@ -1250,6 +1703,7 @@ window._classifyHttpResponse = _classifyHttpResponse;
 // 提交反馈
 async function submitFeedback() {
   captureSubmitBtnOriginalHTML();
+  let submitTargetTaskId = null;
   // R280 / cycle-25 entry-side null guard (R268/R279 同 class)：submitFeedback
   // 可由 Ctrl/Cmd+Enter 键盘快捷键触发（line 1527 keyboard handler），即使
   // submit-btn DOM 不在视图（任务切换动画中 / 新 SSE 推送替换了页面）。
@@ -1320,11 +1774,11 @@ async function submitFeedback() {
     });
 
     // 获取当前活动任务ID（由 multi_task.js 管理）
-    const currentTaskId = window.activeTaskId;
+    submitTargetTaskId = window.activeTaskId;
 
     // 优先使用多任务提交端点（如果有活动任务）
-    const submitUrl = currentTaskId
-      ? `/api/tasks/${currentTaskId}/submit`
+    const submitUrl = submitTargetTaskId
+      ? `/api/tasks/${submitTargetTaskId}/submit`
       : "/api/submit";
     console.debug(`Using submit endpoint: ${submitUrl}`);
 
@@ -1344,31 +1798,28 @@ async function submitFeedback() {
 
       // 反馈提交成功，不需要通知（用户要求）
 
-      // R280 / cycle-25: 清空表单。await 期间 DOM 可能被 multi-task 切换
-      // 替换，再 ``getElementById("feedback-text").value = ""`` 会抛
-      // TypeError 污染 success path。null check 兜底——DOM 已切走时无需
-      // 清空（新视图自己负责状态）。
-      const fbTextEl = document.getElementById("feedback-text");
-      if (fbTextEl) {
-        fbTextEl.value = "";
+      if (isSubmitTargetStillCurrent(submitTargetTaskId)) {
+        // R280 / cycle-25: 清空表单。await 期间 DOM 可能被 multi-task 切换
+        // 替换，再 ``getElementById("feedback-text").value = ""`` 会抛
+        // TypeError 污染 success path。null check 兜底——DOM 已切走时无需
+        // 清空（新视图自己负责状态）。
+        const fbTextEl = document.getElementById("feedback-text");
+        if (fbTextEl) {
+          fbTextEl.value = "";
+        }
+        document
+          .querySelectorAll('input[type="checkbox"]')
+          .forEach((cb) => (cb.checked = false));
+        clearAllImages();
+      } else {
+        console.debug(
+          "submitFeedback: submitted task changed before success cleanup; " +
+            "preserving current form state",
+        );
       }
-      document
-        .querySelectorAll('input[type="checkbox"]')
-        .forEach((cb) => (cb.checked = false));
-      clearAllImages();
 
       // 清理该任务的缓存（如果是多任务模式）
-      if (currentTaskId) {
-        if (typeof taskTextareaContents !== "undefined") {
-          delete taskTextareaContents[currentTaskId];
-        }
-        if (typeof taskOptionsStates !== "undefined") {
-          delete taskOptionsStates[currentTaskId];
-        }
-        if (typeof taskImages !== "undefined") {
-          delete taskImages[currentTaskId];
-        }
-      }
+      clearSubmittedTaskLocalState(submitTargetTaskId);
 
       // 立即刷新任务列表（由 multi_task.js 处理页面状态切换）
       if (typeof refreshTasksList === "function") {
@@ -1412,15 +1863,17 @@ async function submitFeedback() {
     // body 即可。
     const submitBtn = document.getElementById("submit-btn");
     if (submitBtn) {
-      submitBtn.disabled = false;
-      // 还原为首次渲染时的 innerHTML（含 SVG + <span data-i18n>），然后重新翻译。
-      if (SUBMIT_BTN_ORIGINAL_HTML !== null) {
-        submitBtn.innerHTML = SUBMIT_BTN_ORIGINAL_HTML;
-        if (
-          window.AIIA_I18N &&
-          typeof window.AIIA_I18N.translateDOM === "function"
-        ) {
-          window.AIIA_I18N.translateDOM(submitBtn);
+      if (isSubmitTargetStillCurrent(submitTargetTaskId)) {
+        submitBtn.disabled = false;
+        // 还原为首次渲染时的 innerHTML（含 SVG + <span data-i18n>），然后重新翻译。
+        if (SUBMIT_BTN_ORIGINAL_HTML !== null) {
+          submitBtn.innerHTML = SUBMIT_BTN_ORIGINAL_HTML;
+          if (
+            window.AIIA_I18N &&
+            typeof window.AIIA_I18N.translateDOM === "function"
+          ) {
+            window.AIIA_I18N.translateDOM(submitBtn);
+          }
         }
       }
     }
@@ -1597,6 +2050,185 @@ function updateShortcutDisplay(platform) {
   });
 }
 
+function _isElementEventWired(element, wireFlag) {
+  if (!element || !wireFlag) return false;
+  if (element.dataset) {
+    return element.dataset[wireFlag] === "true";
+  }
+  return element[`__${wireFlag}`] === true;
+}
+
+function _markElementEventWired(element, wireFlag) {
+  if (!element || !wireFlag) return;
+  if (element.dataset) {
+    element.dataset[wireFlag] = "true";
+    return;
+  }
+  element[`__${wireFlag}`] = true;
+}
+
+function bindOptionalClick(id, handler, options) {
+  const opts = options || {};
+  const wireFlag = opts.wireFlag || "aiiaAppClickWired";
+  const logMissing = opts.logMissing !== false;
+  const element = document.getElementById(id);
+  if (!element || typeof element.addEventListener !== "function") {
+    if (logMissing) {
+      console.debug(`App button binding skipped: #${id} unavailable`);
+    }
+    return false;
+  }
+  if (_isElementEventWired(element, wireFlag)) {
+    return true;
+  }
+
+  element.addEventListener("click", handler);
+  _markElementEventWired(element, wireFlag);
+  return true;
+}
+
+function handleCodePasteInsertClick() {
+  const textarea = document.getElementById("code-paste-textarea");
+  const text = textarea ? textarea.value || "" : "";
+  if (!text.trim()) {
+    showStatus(t("status.enterCode"), "error");
+    return false;
+  }
+  insertCodeBlockIntoFeedbackTextarea(text);
+  closeCodePasteModal();
+  return true;
+}
+
+function handleCodePasteBackdropClick(e) {
+  const codePastePanel = document.getElementById("code-paste-panel");
+  if (e.target === codePastePanel) {
+    closeCodePasteModal();
+  }
+}
+
+function bindCodePasteModalControls() {
+  bindOptionalClick("code-paste-close-btn", closeCodePasteModal, {
+    wireFlag: "aiiaCodePasteCloseClickWired",
+    logMissing: false,
+  });
+  bindOptionalClick("code-paste-cancel-btn", closeCodePasteModal, {
+    wireFlag: "aiiaCodePasteCancelClickWired",
+    logMissing: false,
+  });
+  bindOptionalClick("code-paste-insert-btn", handleCodePasteInsertClick, {
+    wireFlag: "aiiaCodePasteInsertClickWired",
+    logMissing: false,
+  });
+  bindOptionalClick("code-paste-panel", handleCodePasteBackdropClick, {
+    wireFlag: "aiiaCodePasteBackdropClickWired",
+    logMissing: false,
+  });
+}
+
+async function testNotification() {
+  try {
+    await notificationManager.sendNotification(
+      t("status.testNotifyTitle"),
+      t("status.testNotifyBody"),
+      {
+        tag: "test-notification",
+        requireInteraction: false,
+      },
+    );
+    showStatus(t("status.testNotifySent"), "success");
+  } catch (error) {
+    console.error("Test notification failed:", error);
+    showStatus(t("status.testNotifyFailed"), "error");
+  }
+}
+
+function handleGlobalKeydown(event) {
+  const isMac = detectPlatform() === "mac";
+  const ctrlOrCmd = isMac ? event.metaKey : event.ctrlKey;
+  const altOrOption = isMac ? event.altKey : event.altKey;
+
+  if (ctrlOrCmd && event.key === "Enter") {
+    event.preventDefault();
+    submitFeedback();
+  } else if (altOrOption && event.key === "c") {
+    event.preventDefault();
+    insertCodeFromClipboard();
+  } else if (ctrlOrCmd && event.key === "v") {
+    // Ctrl/Cmd+V 粘贴图片 - 浏览器默认处理，我们只在paste事件中处理
+    console.debug(`Shortcut: ${isMac ? "Cmd" : "Ctrl"}+V paste`);
+  } else if (ctrlOrCmd && event.key === "u") {
+    event.preventDefault();
+    const uploadBtn = document.getElementById("upload-image-btn");
+    if (uploadBtn && typeof uploadBtn.click === "function") {
+      uploadBtn.click();
+      console.debug(`Shortcut: ${isMac ? "Cmd" : "Ctrl"}+U upload image`);
+    } else {
+      console.debug("Shortcut upload skipped: upload button unavailable");
+    }
+  } else if (event.key === "Delete" && selectedImages.length > 0) {
+    event.preventDefault();
+    clearAllImages();
+    console.debug("Shortcut: Delete clear all images");
+  } else if (ctrlOrCmd && event.shiftKey && event.key === "N") {
+    // Ctrl+Shift+N 测试通知
+    event.preventDefault();
+    testNotification();
+    console.debug(
+      `Shortcut: ${isMac ? "Cmd" : "Ctrl"}+Shift+N test notification`,
+    );
+  }
+}
+
+let _globalKeydownHandlerWired = false;
+
+function installGlobalKeydownHandler() {
+  if (_globalKeydownHandlerWired) return;
+  document.addEventListener("keydown", handleGlobalKeydown);
+  _globalKeydownHandlerWired = true;
+}
+
+var AUDIO_UNLOCK_EVENTS = ["click", "keydown", "touchstart"];
+let _audioUnlockListenersWired = false;
+
+function removeAudioUnlockListeners() {
+  if (!_audioUnlockListenersWired) return;
+  for (var i = 0; i < AUDIO_UNLOCK_EVENTS.length; i++) {
+    document.removeEventListener(
+      AUDIO_UNLOCK_EVENTS[i],
+      enableAudioOnFirstInteraction,
+    );
+  }
+  _audioUnlockListenersWired = false;
+}
+
+function enableAudioOnFirstInteraction() {
+  removeAudioUnlockListeners();
+  if (
+    notificationManager.audioContext &&
+    notificationManager.audioContext.state === "suspended"
+  ) {
+    notificationManager.audioContext
+      .resume()
+      .then(() => {
+        console.debug("Audio context enabled");
+      })
+      .catch((error) => {
+        console.warn("Enable audio context failed:", error);
+      });
+  }
+}
+
+function installAudioUnlockListeners() {
+  if (_audioUnlockListenersWired) return;
+  for (var i = 0; i < AUDIO_UNLOCK_EVENTS.length; i++) {
+    document.addEventListener(
+      AUDIO_UNLOCK_EVENTS[i],
+      enableAudioOnFirstInteraction,
+    );
+  }
+  _audioUnlockListenersWired = true;
+}
+
 // 事件监听器 - 兼容 DOM 已加载完成的情况
 function initializeApp() {
   // 初始化 Lottie 沙漏动画
@@ -1655,80 +2287,22 @@ function initializeApp() {
     });
 
   // 按钮事件
-  document
-    .getElementById("insert-code-btn")
-    .addEventListener("click", insertCodeFromClipboard);
-  document
-    .getElementById("submit-btn")
-    .addEventListener("click", submitFeedback);
-  document
-    .getElementById("close-btn")
-    .addEventListener("click", closeInterface);
+  bindOptionalClick("insert-code-btn", insertCodeFromClipboard, {
+    wireFlag: "aiiaInsertCodeClickWired",
+  });
+  bindOptionalClick("submit-btn", submitFeedback, {
+    wireFlag: "aiiaSubmitClickWired",
+  });
+  bindOptionalClick("close-btn", closeInterface, {
+    wireFlag: "aiiaCloseClickWired",
+  });
 
   // 代码粘贴模态框按钮事件
-  const codePasteCloseBtn = document.getElementById("code-paste-close-btn");
-  const codePasteCancelBtn = document.getElementById("code-paste-cancel-btn");
-  const codePasteInsertBtn = document.getElementById("code-paste-insert-btn");
-  const codePastePanel = document.getElementById("code-paste-panel");
+  bindCodePasteModalControls();
 
-  if (codePasteCloseBtn) {
-    codePasteCloseBtn.addEventListener("click", closeCodePasteModal);
-  }
-  if (codePasteCancelBtn) {
-    codePasteCancelBtn.addEventListener("click", closeCodePasteModal);
-  }
-  if (codePasteInsertBtn) {
-    codePasteInsertBtn.addEventListener("click", () => {
-      const textarea = document.getElementById("code-paste-textarea");
-      const text = textarea ? textarea.value || "" : "";
-      if (!text.trim()) {
-        showStatus(t("status.enterCode"), "error");
-        return;
-      }
-      insertCodeBlockIntoFeedbackTextarea(text);
-      closeCodePasteModal();
-    });
-  }
-  if (codePastePanel) {
-    codePastePanel.addEventListener("click", function (e) {
-      if (e.target === codePastePanel) {
-        closeCodePasteModal();
-      }
-    });
-  }
-
-  // 键盘快捷键 - 支持跨平台
-  document.addEventListener("keydown", (event) => {
-    const isMac = detectPlatform() === "mac";
-    const ctrlOrCmd = isMac ? event.metaKey : event.ctrlKey;
-    const altOrOption = isMac ? event.altKey : event.altKey;
-
-    if (ctrlOrCmd && event.key === "Enter") {
-      event.preventDefault();
-      submitFeedback();
-    } else if (altOrOption && event.key === "c") {
-      event.preventDefault();
-      insertCodeFromClipboard();
-    } else if (ctrlOrCmd && event.key === "v") {
-      // Ctrl/Cmd+V 粘贴图片 - 浏览器默认处理，我们只在paste事件中处理
-      console.debug(`Shortcut: ${isMac ? "Cmd" : "Ctrl"}+V paste`);
-    } else if (ctrlOrCmd && event.key === "u") {
-      event.preventDefault();
-      document.getElementById("upload-image-btn").click();
-      console.debug(`Shortcut: ${isMac ? "Cmd" : "Ctrl"}+U upload image`);
-    } else if (event.key === "Delete" && selectedImages.length > 0) {
-      event.preventDefault();
-      clearAllImages();
-      console.debug("Shortcut: Delete clear all images");
-    } else if (ctrlOrCmd && event.shiftKey && event.key === "N") {
-      // Ctrl+Shift+N 测试通知
-      event.preventDefault();
-      testNotification();
-      console.debug(
-        `Shortcut: ${isMac ? "Cmd" : "Ctrl"}+Shift+N test notification`,
-      );
-    }
-  });
+  // 键盘快捷键 - 支持跨平台。页面级长生命周期 listener，由 R338 invariant
+  // 通过稳定 handler 名审计；它不是 modal 临时 listener，不需要 remove。
+  installGlobalKeydownHandler();
 
   // 用户首次交互时启用音频上下文
   //
@@ -1743,53 +2317,7 @@ function initializeApp() {
   //   是白白占用事件分发开销、并阻止 document 的监听器集合被 GC 回收。
   //   改为统一的 "when any fires, remove all three" 之后，document 的事件
   //   分发开销在首次交互后立即归零。
-  var AUDIO_UNLOCK_EVENTS = ["click", "keydown", "touchstart"];
-  function enableAudioOnFirstInteraction() {
-    for (var i = 0; i < AUDIO_UNLOCK_EVENTS.length; i++) {
-      document.removeEventListener(
-        AUDIO_UNLOCK_EVENTS[i],
-        enableAudioOnFirstInteraction,
-      );
-    }
-    if (
-      notificationManager.audioContext &&
-      notificationManager.audioContext.state === "suspended"
-    ) {
-      notificationManager.audioContext
-        .resume()
-        .then(() => {
-          console.debug("Audio context enabled");
-        })
-        .catch((error) => {
-          console.warn("Enable audio context failed:", error);
-        });
-    }
-  }
-
-  for (var i = 0; i < AUDIO_UNLOCK_EVENTS.length; i++) {
-    document.addEventListener(
-      AUDIO_UNLOCK_EVENTS[i],
-      enableAudioOnFirstInteraction,
-    );
-  }
-
-  // 测试通知功能
-  async function testNotification() {
-    try {
-      await notificationManager.sendNotification(
-        t("status.testNotifyTitle"),
-        t("status.testNotifyBody"),
-        {
-          tag: "test-notification",
-          requireInteraction: false,
-        },
-      );
-      showStatus(t("status.testNotifySent"), "success");
-    } catch (error) {
-      console.error("Test notification failed:", error);
-      showStatus(t("status.testNotifyFailed"), "error");
-    }
-  }
+  installAudioUnlockListeners();
 }
 
 // 兼容 DOM 已加载和未加载两种情况

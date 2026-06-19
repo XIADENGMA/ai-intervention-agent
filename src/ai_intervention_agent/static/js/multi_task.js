@@ -378,6 +378,75 @@ var hasLoadedTaskSnapshot = window.hasLoadedTaskSnapshot;
 var feedbackPrompts = window.feedbackPrompts;
 var autoSubmitAttempted = window.autoSubmitAttempted;
 var pendingDeepLinkedTaskId = getDeepLinkedTaskIdFromUrl();
+var realtimeTextareaAutosaveBinding = null;
+var realtimeOptionsAutosaveBinding = null;
+
+function normalizeTaskIdValue(taskId) {
+  if (taskId === null || typeof taskId === "undefined") return null;
+  const normalized = String(taskId);
+  return normalized ? normalized : null;
+}
+
+function getTaskIdString(task) {
+  if (!task) return "";
+  return normalizeTaskIdValue(task.task_id) || "";
+}
+
+function setActiveTaskId(nextTaskId) {
+  activeTaskId = normalizeTaskIdValue(nextTaskId);
+  window.activeTaskId = activeTaskId;
+  return activeTaskId;
+}
+
+function getOpenTaskId(taskId, tasksList) {
+  const preferredTaskId = normalizeTaskIdValue(taskId);
+  if (!preferredTaskId || !Array.isArray(tasksList)) return null;
+  const task = tasksList.find(
+    (candidate) =>
+      candidate &&
+      candidate.status !== "completed" &&
+      getTaskIdString(candidate) === preferredTaskId,
+  );
+  return task ? getTaskIdString(task) : null;
+}
+
+function pickOpenTaskId(preferredTaskId, tasksList) {
+  const currentOpenTaskId = getOpenTaskId(preferredTaskId, tasksList);
+  if (currentOpenTaskId) return currentOpenTaskId;
+  if (!Array.isArray(tasksList)) return null;
+  const firstOpenTask = tasksList.find(
+    (task) => task && task.status !== "completed" && getTaskIdString(task),
+  );
+  return firstOpenTask ? getTaskIdString(firstOpenTask) : null;
+}
+
+function clearTaskLocalState(taskId) {
+  const normalizedTaskId = normalizeTaskIdValue(taskId);
+  if (!normalizedTaskId) return;
+  if (taskCountdowns[normalizedTaskId]) {
+    clearInterval(taskCountdowns[normalizedTaskId].timer);
+    delete taskCountdowns[normalizedTaskId];
+    _debugLog(`Cleared countdown for task ${normalizedTaskId}`);
+  }
+  if (window.taskDeadlines[normalizedTaskId] !== undefined) {
+    delete window.taskDeadlines[normalizedTaskId];
+  }
+  if (taskTextareaContents[normalizedTaskId] !== undefined) {
+    delete taskTextareaContents[normalizedTaskId];
+  }
+  if (taskOptionsStates[normalizedTaskId] !== undefined) {
+    delete taskOptionsStates[normalizedTaskId];
+  }
+  if (taskImages[normalizedTaskId] !== undefined) {
+    delete taskImages[normalizedTaskId];
+  }
+  if (
+    autoSubmitAttempted &&
+    autoSubmitAttempted[normalizedTaskId] !== undefined
+  ) {
+    delete autoSubmitAttempted[normalizedTaskId];
+  }
+}
 
 /**
  * 从 URL 查询参数读取待跳转任务 ID。
@@ -564,6 +633,24 @@ var _sseSource = null;
 var _sseConnected = false;
 var _sseReconnectTimer = null;
 var _sseReconnectDelay = 1000;
+var _sseDebounceTimer = null;
+// R452: 同源多标签共享 SSE。MDN 记录 HTTP/1.x 下 EventSource 每浏览器 /
+// 每域名连接数通常只有 6 条，heavy user 同时打开多个 Web UI 标签页时很容易
+// 把自己顶到上限。BroadcastChannel 可用时，只让一个可见标签页成为 leader
+// 打开 /api/events；其它标签页从 channel 接收同一批事件并保持低频轮询兜底。
+// 不可用时保持旧的单标签直连路径。
+var SSE_SHARED_CHANNEL_NAME = "aiia:sse:v1";
+var SSE_SHARED_ELECTION_DELAY_MS = 160;
+var SSE_SHARED_LEADER_STALE_MS = 5000;
+var SSE_SHARED_LEADER_HEARTBEAT_MS = 2000;
+var _sseSharedChannel = null;
+var _sseSharedClientId = "";
+var _sseSharedLeaderId = null;
+var _sseSharedLeaderSeenAtMs = 0;
+var _sseSharedIsLeader = false;
+var _sseSharedElectionTimer = null;
+var _sseSharedWatchdogTimer = null;
+var _sseSharedLeaderHeartbeatTimer = null;
 
 // feat-sse-status-indicator (§3.1)：把 ``_sseConnected`` 的内部 boolean
 // 翻译成 3 态语义（connected / reconnecting / disconnected），并写入
@@ -1056,7 +1143,7 @@ if (typeof window !== "undefined") {
 // gap_warning (id=-1) 不会进这里：服务端只为正整数 id 输出 ``id:`` 行。
 var _lastEventId = null;
 
-function _connectSSE() {
+function _connectDirectSSE(sharedLeaderMode) {
   if (typeof EventSource === "undefined") return;
   if (_sseSource) {
     try {
@@ -1090,9 +1177,11 @@ function _connectSSE() {
     }
     // feat-sse-status-indicator: 连接成功 → 隐藏 UI 胶囊
     _setSseStatus(SSE_STATUS_CONNECTED);
+    if (sharedLeaderMode) {
+      _postSseSharedMessage({ kind: "open", leaderId: _sseSharedClientId });
+    }
   };
 
-  var _sseDebounceTimer = null;
   source.addEventListener("task_changed", function (e) {
     if (_sseSource !== source) return;
     // R40-S2：先存 lastEventId 再 debounce poll。空字符串视为没拿到（旧 server）。
@@ -1116,6 +1205,15 @@ function _connectSSE() {
       _sseDebounceTimer = null;
       fetchAndApplyTasks("sse");
     }, 80);
+    if (sharedLeaderMode) {
+      _postSseSharedMessage({
+        kind: "event",
+        eventType: "task_changed",
+        data: e && typeof e.data === "string" ? e.data : "",
+        eventLastEventId:
+          e && typeof e.lastEventId === "string" ? e.lastEventId : "",
+      });
+    }
   });
 
   // R40-S2：history evict 警告 → 立即 fetch 全量。这条事件不更新 _lastEventId
@@ -1134,6 +1232,13 @@ function _connectSSE() {
       _sseDebounceTimer = null;
       fetchAndApplyTasks("sse-gap");
     }, 0);
+    if (sharedLeaderMode) {
+      _postSseSharedMessage({
+        kind: "event",
+        eventType: "gap_warning",
+        data: e && typeof e.data === "string" ? e.data : "",
+      });
+    }
   });
 
   // R48：服务端检测到 config.toml 文件变更时（mtime 改变）会广播 ``config_changed``
@@ -1200,6 +1305,13 @@ function _connectSSE() {
         /* noop */
       }
     }
+    if (sharedLeaderMode) {
+      _postSseSharedMessage({
+        kind: "event",
+        eventType: "config_changed",
+        data: e && typeof e.data === "string" ? e.data : "",
+      });
+    }
   });
 
   // R51-B：监听 named-event heartbeat。服务端每 25 s 发一帧，data 里带 ts_unix。
@@ -1212,6 +1324,13 @@ function _connectSSE() {
       _debugLog("SSE heartbeat:", detail);
     } catch (_) {
       /* noop */
+    }
+    if (sharedLeaderMode) {
+      _postSseSharedMessage({
+        kind: "event",
+        eventType: "heartbeat",
+        data: e && typeof e.data === "string" ? e.data : "",
+      });
     }
   });
 
@@ -1237,8 +1356,15 @@ function _connectSSE() {
     if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer);
     _sseReconnectTimer = setTimeout(function () {
       if (typeof document !== "undefined" && document.hidden) return;
-      _connectSSE();
+      if (sharedLeaderMode && !_sseSharedIsLeader) return;
+      _connectDirectSSE(sharedLeaderMode);
     }, _sseReconnectDelay);
+    if (sharedLeaderMode) {
+      _postSseSharedMessage({
+        kind: "error",
+        reconnectInMs: _sseReconnectDelay,
+      });
+    }
     // feat-sse-status-indicator: 区分"短暂闪断"vs"持续断开"
     //   - 当 _sseReconnectDelay 还未退到 30s 上限 → reconnecting
     //     （用户视为"网络正常但暂时丢连接，正在重试"）
@@ -1253,11 +1379,53 @@ function _connectSSE() {
   };
 }
 
-function _disconnectSSE() {
-  if (_sseReconnectTimer) {
-    clearTimeout(_sseReconnectTimer);
-    _sseReconnectTimer = null;
+function _sseNowMs() {
+  if (typeof Date !== "undefined" && typeof Date.now === "function") {
+    return Date.now();
   }
+  return new Date().getTime();
+}
+
+function _makeSseSharedClientId() {
+  var randomPart = "fallback";
+  try {
+    randomPart = Math.random().toString(36).slice(2, 10);
+  } catch (_) {
+    /* noop */
+  }
+  return "tab-" + _sseNowMs().toString(36) + "-" + randomPart;
+}
+
+function _getBroadcastChannelCtor() {
+  try {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.BroadcastChannel === "function"
+    ) {
+      return window.BroadcastChannel;
+    }
+    if (typeof BroadcastChannel === "function") return BroadcastChannel;
+  } catch (_) {
+    /* noop */
+  }
+  return null;
+}
+
+function _postSseSharedMessage(message) {
+  try {
+    if (!_sseSharedChannel || typeof _sseSharedChannel.postMessage !== "function") {
+      return;
+    }
+    message.clientId = _sseSharedClientId;
+    message.ts = _sseNowMs();
+    if (_lastEventId) message.lastEventId = _lastEventId;
+    _sseSharedChannel.postMessage(message);
+  } catch (_) {
+    /* BroadcastChannel failure should never break local SSE/polling. */
+  }
+}
+
+function _closeSseSource() {
   if (_sseSource) {
     try {
       _sseSource.close();
@@ -1266,6 +1434,328 @@ function _disconnectSSE() {
     }
     _sseSource = null;
   }
+}
+
+function _markSharedSseConnected() {
+  _sseConnected = true;
+  _sseReconnectDelay = 1000;
+  tasksPollBackoffMs = TASKS_POLL_SSE_FALLBACK_MS;
+  if (tasksPollingTimer) {
+    clearTimeout(tasksPollingTimer);
+    scheduleNextTasksPoll(TASKS_POLL_SSE_FALLBACK_MS);
+  }
+  _setSseStatus(SSE_STATUS_CONNECTED);
+}
+
+function _updateSharedLastEventId(lastEventId) {
+  if (typeof lastEventId !== "string" || lastEventId === "") return;
+  var nextNum = Number(lastEventId);
+  var prevNum = _lastEventId ? Number(_lastEventId) : NaN;
+  if (
+    !Number.isFinite(nextNum) ||
+    !Number.isFinite(prevNum) ||
+    nextNum >= prevNum
+  ) {
+    _lastEventId = lastEventId;
+  }
+}
+
+function _scheduleSharedSseFetch(reason, delayMs) {
+  if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
+  _sseDebounceTimer = setTimeout(function () {
+    _sseDebounceTimer = null;
+    fetchAndApplyTasks(reason);
+  }, Math.max(0, delayMs || 0));
+}
+
+function _consumeSharedSseEvent(message) {
+  if (!message || _sseSharedIsLeader) return;
+  _sseSharedLeaderSeenAtMs = _sseNowMs();
+  var eventType = String(message.eventType || "");
+  var data = typeof message.data === "string" ? message.data : "";
+  var lastEventId =
+    typeof message.eventLastEventId === "string"
+      ? message.eventLastEventId
+      : typeof message.lastEventId === "string"
+        ? message.lastEventId
+        : "";
+
+  if (eventType === "task_changed") {
+    _updateSharedLastEventId(lastEventId);
+    try {
+      var detail = JSON.parse(data || "{}");
+      _debugLog(
+        "SSE task_changed:",
+        detail.task_id,
+        detail.old_status,
+        "→",
+        detail.new_status,
+      );
+    } catch (_) {
+      /* noop */
+    }
+    _scheduleSharedSseFetch("sse", 80);
+  } else if (eventType === "gap_warning") {
+    _debugLog("SSE gap_warning received, fetching tasks for full resync");
+    try {
+      var gapDetail = JSON.parse(data || "{}");
+      _debugLog("SSE gap_warning detail:", gapDetail);
+    } catch (_) {
+      /* noop */
+    }
+    _scheduleSharedSseFetch("sse-gap", 0);
+  } else if (eventType === "config_changed") {
+    // Reuse a tiny synthetic EventSource path by temporarily calling the
+    // existing listener-equivalent logic: parsing + suppression + toast.
+    var fallbackHint =
+      "Configuration file changed. Reload the page to see the latest values.";
+    var hint = _t("status.configChangedReload");
+    if (!hint || hint === "status.configChangedReload") hint = fallbackHint;
+    try {
+      var cfgDetail = JSON.parse(data || "{}");
+      _debugLog("SSE config_changed detail:", cfgDetail);
+      if (
+        hint === fallbackHint &&
+        cfgDetail &&
+        typeof cfgDetail.hint === "string" &&
+        cfgDetail.hint
+      ) {
+        hint = cfgDetail.hint;
+      }
+    } catch (_) {
+      /* noop */
+    }
+    if (!_isConfigChangedToastSuppressed()) {
+      if (typeof _showToast === "function") {
+        try {
+          _showToast(hint);
+        } catch (_) {
+          /* noop */
+        }
+      } else if (typeof console !== "undefined" && console && console.info) {
+        try {
+          console.info("[aiia] config_changed:", hint);
+        } catch (_) {
+          /* noop */
+        }
+      }
+    }
+  } else if (eventType === "heartbeat") {
+    try {
+      var hbDetail = JSON.parse(data || "{}");
+      _debugLog("SSE heartbeat:", hbDetail);
+    } catch (_) {
+      /* noop */
+    }
+  }
+}
+
+function _broadcastSseLeader() {
+  _postSseSharedMessage({
+    kind: "leader",
+    leaderId: _sseSharedClientId,
+  });
+}
+
+function _stepDownFromSseLeader(leaderId) {
+  _sseSharedIsLeader = false;
+  _sseSharedLeaderId = leaderId || _sseSharedLeaderId;
+  _sseSharedLeaderSeenAtMs = _sseNowMs();
+  if (_sseSharedLeaderHeartbeatTimer) {
+    clearInterval(_sseSharedLeaderHeartbeatTimer);
+    _sseSharedLeaderHeartbeatTimer = null;
+  }
+  _closeSseSource();
+  _markSharedSseConnected();
+}
+
+function _becomeSseLeader() {
+  if (!_sseSharedChannel) {
+    _connectDirectSSE(false);
+    return;
+  }
+  _sseSharedIsLeader = true;
+  _sseSharedLeaderId = _sseSharedClientId;
+  _sseSharedLeaderSeenAtMs = _sseNowMs();
+  _broadcastSseLeader();
+  if (_sseSharedLeaderHeartbeatTimer) {
+    clearInterval(_sseSharedLeaderHeartbeatTimer);
+  }
+  _sseSharedLeaderHeartbeatTimer = setInterval(function () {
+    if (_sseSharedIsLeader) _broadcastSseLeader();
+  }, SSE_SHARED_LEADER_HEARTBEAT_MS);
+  _connectDirectSSE(true);
+}
+
+function _scheduleSseLeaderElection(delayMs) {
+  if (_sseSharedElectionTimer) clearTimeout(_sseSharedElectionTimer);
+  _sseSharedElectionTimer = setTimeout(function () {
+    _sseSharedElectionTimer = null;
+    if (!_sseSharedChannel) return;
+    if (
+      _sseSharedLeaderId &&
+      _sseNowMs() - _sseSharedLeaderSeenAtMs < SSE_SHARED_LEADER_STALE_MS
+    ) {
+      return;
+    }
+    _becomeSseLeader();
+  }, Math.max(0, delayMs || SSE_SHARED_ELECTION_DELAY_MS));
+}
+
+function _handleSseLeaderMessage(message) {
+  var leaderId =
+    message && message.leaderId
+      ? String(message.leaderId)
+      : String((message && message.clientId) || "");
+  if (!leaderId || leaderId === _sseSharedClientId) return;
+  _updateSharedLastEventId(
+    message && typeof message.lastEventId === "string"
+      ? message.lastEventId
+      : "",
+  );
+
+  if (_sseSharedIsLeader) {
+    // Deterministic split-brain resolver: lexicographically smaller client id
+    // wins if two visible tabs become leader at the same time.
+    if (leaderId < _sseSharedClientId) {
+      _stepDownFromSseLeader(leaderId);
+    } else {
+      _broadcastSseLeader();
+    }
+    return;
+  }
+
+  _sseSharedLeaderId = leaderId;
+  _sseSharedLeaderSeenAtMs = _sseNowMs();
+  _markSharedSseConnected();
+}
+
+function _onSseSharedMessage(event) {
+  var message = event && event.data ? event.data : null;
+  if (!message || typeof message !== "object") return;
+  if (message.clientId && String(message.clientId) === _sseSharedClientId) {
+    return;
+  }
+  var kind = String(message.kind || "");
+  if (kind === "hello") {
+    _updateSharedLastEventId(
+      typeof message.lastEventId === "string" ? message.lastEventId : "",
+    );
+    if (_sseSharedIsLeader) _broadcastSseLeader();
+  } else if (kind === "leader" || kind === "open") {
+    _handleSseLeaderMessage(message);
+  } else if (kind === "leader_gone") {
+    var goneId = message.leaderId ? String(message.leaderId) : "";
+    if (!goneId || goneId === _sseSharedLeaderId) {
+      _sseSharedLeaderId = null;
+      _sseSharedLeaderSeenAtMs = 0;
+      _sseConnected = false;
+      _setSseStatus(SSE_STATUS_RECONNECTING);
+      _scheduleSseLeaderElection(50);
+    }
+  } else if (kind === "event") {
+    _consumeSharedSseEvent(message);
+  } else if (kind === "error" && !_sseSharedIsLeader) {
+    _sseConnected = false;
+    tasksPollBackoffMs = TASKS_POLL_BASE_MS;
+    _setSseStatus(SSE_STATUS_RECONNECTING);
+    if (tasksPollingTimer) {
+      clearTimeout(tasksPollingTimer);
+      scheduleNextTasksPoll(0);
+    }
+  }
+}
+
+function _startSseSharedWatchdog() {
+  if (_sseSharedWatchdogTimer) clearInterval(_sseSharedWatchdogTimer);
+  _sseSharedWatchdogTimer = setInterval(function () {
+    if (!_sseSharedChannel || _sseSharedIsLeader) return;
+    if (
+      !_sseSharedLeaderId ||
+      _sseNowMs() - _sseSharedLeaderSeenAtMs > SSE_SHARED_LEADER_STALE_MS
+    ) {
+      _sseSharedLeaderId = null;
+      _sseSharedLeaderSeenAtMs = 0;
+      _sseConnected = false;
+      _setSseStatus(SSE_STATUS_RECONNECTING);
+      _scheduleSseLeaderElection(0);
+    }
+  }, Math.max(1000, Math.floor(SSE_SHARED_LEADER_STALE_MS / 2)));
+}
+
+function _connectSharedSSE() {
+  var BroadcastChannelCtor = _getBroadcastChannelCtor();
+  if (!BroadcastChannelCtor) {
+    _connectDirectSSE(false);
+    return;
+  }
+  try {
+    if (!_sseSharedClientId) _sseSharedClientId = _makeSseSharedClientId();
+    if (_sseSharedChannel) {
+      _postSseSharedMessage({ kind: "hello" });
+      _scheduleSseLeaderElection(SSE_SHARED_ELECTION_DELAY_MS);
+      _startSseSharedWatchdog();
+      return;
+    }
+    _sseSharedChannel = new BroadcastChannelCtor(SSE_SHARED_CHANNEL_NAME);
+    _sseSharedChannel.onmessage = _onSseSharedMessage;
+    _postSseSharedMessage({ kind: "hello" });
+    _scheduleSseLeaderElection(SSE_SHARED_ELECTION_DELAY_MS);
+    _startSseSharedWatchdog();
+  } catch (_) {
+    _sseSharedChannel = null;
+    _connectDirectSSE(false);
+  }
+}
+
+function _connectSSE() {
+  if (typeof EventSource === "undefined") return;
+  if (_getBroadcastChannelCtor()) {
+    _connectSharedSSE();
+  } else {
+    _connectDirectSSE(false);
+  }
+}
+
+function _disconnectSSE() {
+  if (_sseReconnectTimer) {
+    clearTimeout(_sseReconnectTimer);
+    _sseReconnectTimer = null;
+  }
+  if (_sseDebounceTimer) {
+    clearTimeout(_sseDebounceTimer);
+    _sseDebounceTimer = null;
+  }
+  if (_sseSharedElectionTimer) {
+    clearTimeout(_sseSharedElectionTimer);
+    _sseSharedElectionTimer = null;
+  }
+  if (_sseSharedWatchdogTimer) {
+    clearInterval(_sseSharedWatchdogTimer);
+    _sseSharedWatchdogTimer = null;
+  }
+  if (_sseSharedLeaderHeartbeatTimer) {
+    clearInterval(_sseSharedLeaderHeartbeatTimer);
+    _sseSharedLeaderHeartbeatTimer = null;
+  }
+  if (_sseSharedIsLeader) {
+    _postSseSharedMessage({
+      kind: "leader_gone",
+      leaderId: _sseSharedClientId,
+    });
+  }
+  _sseSharedIsLeader = false;
+  _sseSharedLeaderId = null;
+  _sseSharedLeaderSeenAtMs = 0;
+  if (_sseSharedChannel) {
+    try {
+      _sseSharedChannel.close();
+    } catch (_) {
+      /* noop */
+    }
+    _sseSharedChannel = null;
+  }
+  _closeSseSource();
   _sseConnected = false;
   // feat-sse-status-indicator: 主动关闭（页面 hidden / unload）→ 恢复
   // 到 "connected"（即隐藏 UI）。等到重新 connect 才会进入异常态。
@@ -1303,8 +1793,10 @@ async function fetchAndApplyTasks(reason) {
     // 忽略：部分浏览器/环境下 abort 可能抛异常
   }
 
+  let currentTasksPollController = null;
   if (typeof AbortController !== "undefined") {
     tasksPollAbortController = new AbortController();
+    currentTasksPollController = tasksPollAbortController;
   } else {
     tasksPollAbortController = null;
   }
@@ -1312,8 +1804,8 @@ async function fetchAndApplyTasks(reason) {
   const fetchOptions = {
     cache: "no-store",
   };
-  if (tasksPollAbortController) {
-    fetchOptions.signal = tasksPollAbortController.signal;
+  if (currentTasksPollController) {
+    fetchOptions.signal = currentTasksPollController.signal;
   }
 
   // 硬超时护栏：服务端半开连接 / 网络黑洞会导致 fetch 永不返回，
@@ -1321,11 +1813,11 @@ async function fetchAndApplyTasks(reason) {
   // 因为 tasksPollingTimer 仍为已 fired 的非 null ID）。
   // 6s 内未返回则强制 abort，让上层 backoff/重试逻辑接管。
   let tasksTimeoutId = null;
-  if (tasksPollAbortController) {
+  if (currentTasksPollController) {
     tasksTimeoutId = setTimeout(() => {
       try {
-        if (tasksPollAbortController) {
-          tasksPollAbortController.abort();
+        if (currentTasksPollController) {
+          currentTasksPollController.abort();
         }
       } catch (e) {
         // 忽略：abort 可能因状态已变而抛异常
@@ -1420,8 +1912,10 @@ async function fetchAndApplyTasks(reason) {
       }
       tasksTimeoutId = null;
     }
-    // 释放 controller（避免长期持有）
-    tasksPollAbortController = null;
+    // 只有当前请求仍拥有全局 handle 时才释放；旧请求可能在新请求之后完成。
+    if (tasksPollAbortController === currentTasksPollController) {
+      tasksPollAbortController = null;
+    }
   }
 }
 
@@ -1777,31 +2271,13 @@ function updateTasksList(tasks) {
   if (removedTasks.length > 0) {
     _debugLog(`Detected ${removedTasks.length} removed task(s)`);
     removedTasks.forEach((taskId) => {
-      if (taskCountdowns[taskId]) {
-        clearInterval(taskCountdowns[taskId].timer);
-        delete taskCountdowns[taskId];
-        _debugLog(`Cleared countdown for task ${taskId}`);
-      }
-      // 【优化】清理任务截止时间缓存，防止内存泄漏
-      if (window.taskDeadlines[taskId] !== undefined) {
-        delete window.taskDeadlines[taskId];
-      }
-      // 清理任务缓存
-      if (taskTextareaContents[taskId] !== undefined) {
-        delete taskTextareaContents[taskId];
-      }
-      if (taskOptionsStates[taskId] !== undefined) {
-        delete taskOptionsStates[taskId];
-      }
-      if (taskImages[taskId] !== undefined) {
-        delete taskImages[taskId];
-      }
-      // 清理自动提交尝试记录（避免长时间使用导致对象膨胀）
-      if (autoSubmitAttempted && autoSubmitAttempted[taskId] !== undefined) {
-        delete autoSubmitAttempted[taskId];
-      }
+      clearTaskLocalState(taskId);
     });
   }
+
+  tasks
+    .filter((task) => task && task.status === "completed")
+    .forEach((task) => clearTaskLocalState(getTaskIdString(task)));
 
   // 检测当前页面状态和任务状态
   const hasActiveTasks =
@@ -1858,28 +2334,25 @@ function updateTasksList(tasks) {
 
   // 从任务列表中找到active任务，同步activeTaskId
   const activeTask = tasks.find((t) => t.status === "active");
-  if (activeTask && activeTask.task_id !== activeTaskId) {
-    const oldActiveTaskId = activeTaskId;
-    activeTaskId = activeTask.task_id;
-    _debugLog(`Sync activeTaskId: ${oldActiveTaskId} -> ${activeTaskId}`);
-
-    // 更新圆环颜色
-    updateCountdownRingColors(oldActiveTaskId, activeTaskId);
-  } else if (!activeTaskId && tasks.length > 0) {
-    // 如果activeTaskId为null，且有任务，自动设置第一个未完成任务为active
-    // 注意：tasks数组可能包含已完成任务，必须过滤
-    const firstIncompleteTask = tasks.find((t) => t.status !== "completed");
-    if (firstIncompleteTask) {
-      activeTaskId = firstIncompleteTask.task_id;
-      _debugLog(`Auto-set first incomplete task as active: ${activeTaskId}`);
+  const oldActiveTaskId = activeTaskId;
+  const nextActiveTaskId = activeTask
+    ? getTaskIdString(activeTask) || pickOpenTaskId(activeTaskId, tasks)
+    : pickOpenTaskId(activeTaskId, tasks);
+  const activeTaskChanged = nextActiveTaskId !== oldActiveTaskId;
+  if (activeTaskChanged) {
+    setActiveTaskId(nextActiveTaskId);
+    if (activeTaskId) {
+      _debugLog(`Sync activeTaskId: ${oldActiveTaskId} -> ${activeTaskId}`);
+    } else if (oldActiveTaskId) {
+      _debugLog(
+        `No open tasks remain; reset activeTaskId: ${oldActiveTaskId} -> null`,
+      );
     } else {
       _debugLog("All tasks completed; not setting activeTaskId");
     }
-  } else if (tasks.length === 0 && activeTaskId) {
-    _debugLog(
-      `Task list cleared; reset activeTaskId: ${activeTaskId} -> null`,
-    );
-    activeTaskId = null;
+
+    // 更新圆环颜色
+    updateCountdownRingColors(oldActiveTaskId, activeTaskId);
   }
 
   // feat-countdown-extend (§3.2) + mining-6 Track A freeze: 每次任务列表
@@ -1889,7 +2362,7 @@ function updateTasksList(tasks) {
   // task_changed SSE 事件，因为 SSE 接收路径下游也走 updateTasksList。
   if (typeof updateCountdownExtendButton === "function") {
     var _activeTask = tasks.find(function (t) {
-      return t.task_id === activeTaskId;
+      return getTaskIdString(t) === activeTaskId;
     });
     updateCountdownExtendButton(_activeTask);
     if (typeof updateFreezeCountdownButton === "function") {
@@ -1942,7 +2415,11 @@ function updateTasksList(tasks) {
 
   // 如果activeTaskId刚刚被同步更新，加载其详情
   // （activeTask已在上面定义，不重复声明）
-  if (activeTask && activeTask.task_id === activeTaskId) {
+  if (
+    activeTaskId &&
+    (activeTaskChanged ||
+      (activeTask && getTaskIdString(activeTask) === activeTaskId))
+  ) {
     loadTaskDetails(activeTaskId);
   }
 }
@@ -2396,7 +2873,7 @@ async function switchTask(taskId) {
 
   // 立即更新UI，提升响应速度
   const oldActiveTaskId = activeTaskId;
-  activeTaskId = taskId;
+  setActiveTaskId(taskId);
   renderTaskTabs(); // 立即更新标签高亮
 
   // 立即更新圆环颜色，不等待DOM重建
@@ -3082,6 +3559,7 @@ async function closeTask(taskId) {
     }
 
     currentTasks = currentTasks.filter((t) => t.task_id !== taskId);
+    window.currentTasks = currentTasks;
     renderTaskTabs();
 
     if (activeTaskId === taskId) {
@@ -3089,7 +3567,7 @@ async function closeTask(taskId) {
       if (nextTask) {
         switchTask(nextTask.task_id);
       } else {
-        activeTaskId = null;
+        setActiveTaskId(null);
         if (typeof showNoContentPage === "function") {
           showNoContentPage();
         }
@@ -3659,8 +4137,18 @@ function showNewTaskVisualHint(count) {
       };
 
   // 创建提示元素
+  const existingHint = document.getElementById("new-task-hint");
+  if (existingHint && existingHint.parentNode) {
+    if (existingHint.__aiiaRemoveTimer) {
+      clearTimeout(existingHint.__aiiaRemoveTimer);
+    }
+    existingHint.parentNode.removeChild(existingHint);
+  }
+
   const hint = document.createElement("div");
   hint.id = "new-task-hint";
+  hint.setAttribute("role", "status");
+  hint.setAttribute("aria-atomic", "true");
   hint.style.cssText = `
     position: fixed;
     top: 20px;
@@ -3680,15 +4168,24 @@ function showNewTaskVisualHint(count) {
     animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), fadeOutUp 0.3s ease-in 2.7s forwards;
     pointer-events: none;
   `;
-  // AIIA-XSS-SAFE: createSvg 是开发者手写 SVG 字面量；_t('page.noContent.newTasks', …)
-  // 只插值整数 count（ICU plural），无用户可控数据。详见 docs/i18n.md § Security。
-  hint.innerHTML = `${createSvg}<span>${_t("page.noContent.newTasks", { count: count }) || "Received " + count + " new feedback requests"}</span>`;
+  // AIIA-XSS-SAFE: createSvg 是开发者手写 SVG 字面量，不包含运行时数据。
+  const iconWrapper = document.createElement("span");
+  iconWrapper.setAttribute("aria-hidden", "true");
+  iconWrapper.innerHTML = createSvg;
+  hint.appendChild(iconWrapper);
+
+  const label = document.createElement("span");
+  label.textContent =
+    _t("page.noContent.newTasks", { count: count }) ||
+    "Received " + count + " new feedback requests";
+  hint.appendChild(label);
 
   // 添加到页面
   document.body.appendChild(hint);
 
   // 3秒后自动移除
-  setTimeout(() => {
+  hint.__aiiaRemoveTimer = setTimeout(() => {
+    hint.__aiiaRemoveTimer = null;
     if (hint.parentNode) {
       hint.parentNode.removeChild(hint);
     }
@@ -3825,32 +4322,11 @@ async function initMultiTaskSupport() {
 
   // 【新增】实时保存 textarea 和选项状态
   // 监听 input 事件，每次输入都保存，避免轮询导致内容丢失
-  const textarea = document.getElementById("feedback-text");
-  if (textarea) {
-    textarea.addEventListener("input", () => {
-      if (activeTaskId) {
-        taskTextareaContents[activeTaskId] = textarea.value;
-      }
-    });
+  const autosaveBindings = setupRealtimeAutosaveListeners();
+  if (autosaveBindings.textarea) {
     _debugLog("Enabled real-time textarea autosave");
   }
-
-  // 监听选项变化
-  const optionsContainer = document.getElementById("options-container");
-  if (optionsContainer) {
-    optionsContainer.addEventListener("change", (event) => {
-      if (event.target.type === "checkbox" && activeTaskId) {
-        // 保存所有选项的勾选状态
-        const checkboxes = optionsContainer.querySelectorAll(
-          'input[type="checkbox"]',
-        );
-        const states = {};
-        checkboxes.forEach((cb) => {
-          states[cb.id] = cb.checked;
-        });
-        taskOptionsStates[activeTaskId] = states;
-      }
-    });
+  if (autosaveBindings.optionsContainer) {
     _debugLog("Enabled real-time option-state autosave");
   }
 
@@ -3909,6 +4385,104 @@ async function refreshTasksList() {
   }
 }
 
+function handleRealtimeTextareaAutosave(event) {
+  if (!activeTaskId) return;
+  const textarea =
+    event && event.currentTarget
+      ? event.currentTarget
+      : document.getElementById("feedback-text");
+  if (!textarea) return;
+  taskTextareaContents[activeTaskId] = textarea.value;
+}
+
+function handleRealtimeOptionsAutosave(event) {
+  if (!activeTaskId) return;
+  if (!event || !event.target || event.target.type !== "checkbox") return;
+  const optionsContainer =
+    event && event.currentTarget
+      ? event.currentTarget
+      : document.getElementById("options-container");
+  if (
+    !optionsContainer ||
+    typeof optionsContainer.querySelectorAll !== "function"
+  ) {
+    return;
+  }
+  const checkboxes = optionsContainer.querySelectorAll(
+    'input[type="checkbox"]',
+  );
+  const states = {};
+  checkboxes.forEach((cb) => {
+    states[cb.id] = cb.checked;
+  });
+  taskOptionsStates[activeTaskId] = states;
+}
+
+function bindRealtimeTextareaAutosave(textarea) {
+  if (realtimeTextareaAutosaveBinding !== null) {
+    if (realtimeTextareaAutosaveBinding.textarea === textarea) {
+      return realtimeTextareaAutosaveBinding;
+    }
+    if (
+      realtimeTextareaAutosaveBinding.textarea &&
+      typeof realtimeTextareaAutosaveBinding.textarea.removeEventListener ===
+        "function"
+    ) {
+      realtimeTextareaAutosaveBinding.textarea.removeEventListener(
+        "input",
+        handleRealtimeTextareaAutosave,
+      );
+    }
+    realtimeTextareaAutosaveBinding = null;
+  }
+  if (!textarea || typeof textarea.addEventListener !== "function") {
+    return null;
+  }
+  textarea.addEventListener("input", handleRealtimeTextareaAutosave);
+  realtimeTextareaAutosaveBinding = { textarea: textarea };
+  return realtimeTextareaAutosaveBinding;
+}
+
+function bindRealtimeOptionsAutosave(optionsContainer) {
+  if (realtimeOptionsAutosaveBinding !== null) {
+    if (realtimeOptionsAutosaveBinding.optionsContainer === optionsContainer) {
+      return realtimeOptionsAutosaveBinding;
+    }
+    const oldOptionsContainer =
+      realtimeOptionsAutosaveBinding.optionsContainer;
+    if (
+      oldOptionsContainer &&
+      typeof oldOptionsContainer.removeEventListener === "function"
+    ) {
+      oldOptionsContainer.removeEventListener(
+        "change",
+        handleRealtimeOptionsAutosave,
+      );
+    }
+    realtimeOptionsAutosaveBinding = null;
+  }
+  if (
+    !optionsContainer ||
+    typeof optionsContainer.addEventListener !== "function"
+  ) {
+    return null;
+  }
+  optionsContainer.addEventListener("change", handleRealtimeOptionsAutosave);
+  realtimeOptionsAutosaveBinding = {
+    optionsContainer: optionsContainer,
+  };
+  return realtimeOptionsAutosaveBinding;
+}
+
+function setupRealtimeAutosaveListeners() {
+  const textarea = document.getElementById("feedback-text");
+  const optionsContainer = document.getElementById("options-container");
+  return {
+    textarea: bindRealtimeTextareaAutosave(textarea),
+    optionsContainer: bindRealtimeOptionsAutosave(optionsContainer),
+  };
+}
+
 // 导出函数供外部使用
 if (typeof window !== "undefined") {
   window.multiTaskModule = {
@@ -3930,6 +4504,10 @@ if (typeof window !== "undefined") {
     installCountdownVisibilitySyncHandlerOnce,
     get sseConnected() {
       return _sseConnected;
+    },
+    get sseSharedMode() {
+      if (!_sseSharedChannel) return "direct";
+      return _sseSharedIsLeader ? "leader" : "follower";
     },
   };
 

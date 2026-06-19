@@ -7,5 +7,7 @@
   "config.serverUrl.description": "AI Intervention Agent server URL (recommended: full address with port, e.g. http://localhost:8080)",
   "config.logLevel.description": "Plugin log level (Output panel → AI Intervention Agent)",
   "config.i18nPseudoLocale.description": "Render the webview in the pseudo-locale (developer-only; visually tests every translatable string).",
-  "config.i18nPseudoLocale.markdownDescription": "Render the webview in the pseudo-locale `[!ňöḉőńţéńț_ńēẉẗàśǩ!]` etc. so hardcoded strings, concatenation bugs, and overflow are visible at a glance. **Developer-only** — do not enable for daily use."
+  "config.i18nPseudoLocale.markdownDescription": "Render the webview in the pseudo-locale `[!ňöḉőńţéńț_ńēẉẗàśǩ!]` etc. so hardcoded strings, concatenation bugs, and overflow are visible at a glance. **Developer-only** — do not enable for daily use.",
+  "config.webview.retainContextWhenHidden.description": "Keep the sidebar webview alive while hidden (developer/diagnostic opt-in; higher memory overhead).",
+  "config.webview.retainContextWhenHidden.markdownDescription": "Keep the sidebar webview DOM and JavaScript context alive while the view is hidden. Leave disabled for normal use: the extension already persists UI state with `getState`/`setState`, which VS Code documents as the lower-overhead persistence path. Enable only when benchmarking or diagnosing complex restore behavior."
 }

@@ -19,6 +19,8 @@
  *   - input 事件 debounce 500ms 写盘当前 task 的 draft；
  *   - 周期性（30s）把整个 ``taskTextareaContents`` reconcile 到磁盘
  *     兜底程序赋值 / clear / submit 后清空等非 input 事件路径；
+ *   - 页面隐藏 / pagehide 前同步 flush 当前 textarea，随后暂停周期 sync；
+ *     回到可见时再恢复，避免后台标签页无意义 wakeup；
  *   - TTL 7 天 + LRU 50 task 双重容量约束，避免 storage 无界增长。
  *
  * 设计原则
@@ -33,6 +35,9 @@
  *   超出时 evict 最旧。50 是经验值（典型用户 1-2 周内活跃 task ≤30）。
  * - **graceful failure** — localStorage 不可用（Safari 隐私模式 /
  *   quota 满 / cookie 禁用）时全 try/catch silent no-op，主路径不挂。
+ * - **lifecycle-aware** — ``visibilitychange`` 是主生命周期信号；
+ *   ``pagehide`` 只做最后一次同步 flush；不安装常驻 ``beforeunload``
+ *   listener，避免移动端不可靠信号和 Firefox bfcache 性能回退。
  * - **schema_version envelope** — 与 R130 quick_phrases / R137 textarea-
  *   height 同款 ``aiia.<feature>.v<schema>`` 命名约定，未来 schema
  *   升级有迁移空间。
@@ -48,6 +53,11 @@
   const MAX_DRAFTS = 50;
   const INPUT_DEBOUNCE_MS = 500;
   const SYNC_INTERVAL_MS = 30 * 1000; // 30s 周期 reconcile
+
+  let inputHandle = null;
+  let inputDebounceTimerId = null;
+  let periodicSyncIntervalId = null;
+  let lifecycleListenersInstalled = false;
 
   function _now() {
     return Date.now();
@@ -231,27 +241,107 @@
 
   function setupInputListener() {
     const textarea = document.getElementById(TARGET_ID);
-    if (!textarea) return null;
-    let timeoutId = null;
-    const handler = function () {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+    if (inputHandle !== null) {
+      if (inputHandle.textarea === textarea) return inputHandle;
+      if (inputHandle.textarea.removeEventListener) {
+        inputHandle.textarea.removeEventListener("input", inputHandle.handler);
       }
-      timeoutId = setTimeout(function () {
-        timeoutId = null;
+      inputHandle = null;
+      if (inputDebounceTimerId && typeof clearTimeout === "function") {
+        clearTimeout(inputDebounceTimerId);
+      }
+      inputDebounceTimerId = null;
+    }
+    if (!textarea) return null;
+    const handler = function () {
+      if (inputDebounceTimerId) clearTimeout(inputDebounceTimerId);
+      inputDebounceTimerId = setTimeout(function () {
+        inputDebounceTimerId = null;
         const taskId = _getActiveTaskId();
         if (taskId === null) return;
         saveDraft(taskId, textarea.value || "");
       }, INPUT_DEBOUNCE_MS);
     };
     textarea.addEventListener("input", handler);
-    return { textarea: textarea, handler: handler };
+    inputHandle = { textarea: textarea, handler: handler };
+    return inputHandle;
+  }
+
+  function flushActiveTextareaDraft() {
+    if (inputDebounceTimerId && typeof clearTimeout === "function") {
+      clearTimeout(inputDebounceTimerId);
+      inputDebounceTimerId = null;
+    }
+    const taskId = _getActiveTaskId();
+    if (taskId === null) return false;
+    let textarea =
+      typeof document !== "undefined" ? document.getElementById(TARGET_ID) : null;
+    if (!textarea && inputHandle && inputHandle.textarea) textarea = inputHandle.textarea;
+    if (!textarea) return false;
+    const text = textarea.value || "";
+    if (typeof window !== "undefined") {
+      if (
+        typeof window.taskTextareaContents !== "object" ||
+        window.taskTextareaContents === null
+      ) {
+        window.taskTextareaContents = {};
+      }
+      window.taskTextareaContents[taskId] = text;
+    }
+    return saveDraft(taskId, text);
   }
 
   function setupPeriodicSync() {
+    if (periodicSyncIntervalId !== null) return periodicSyncIntervalId;
     if (typeof setInterval !== "function") return null;
-    const intervalId = setInterval(reconcileMemoryToStorage, SYNC_INTERVAL_MS);
-    return intervalId;
+    periodicSyncIntervalId = setInterval(
+      reconcileMemoryToStorage,
+      SYNC_INTERVAL_MS,
+    );
+    return periodicSyncIntervalId;
+  }
+
+  function stopPeriodicSync() {
+    if (periodicSyncIntervalId === null) return false;
+    if (typeof clearInterval === "function") {
+      clearInterval(periodicSyncIntervalId);
+    }
+    periodicSyncIntervalId = null;
+    return true;
+  }
+
+  function flushDraftsForPageExit() {
+    reconcileMemoryToStorage();
+    return flushActiveTextareaDraft();
+  }
+
+  function handleVisibilityChange() {
+    if (typeof document === "undefined") return;
+    if (document.hidden) {
+      flushDraftsForPageExit();
+      stopPeriodicSync();
+      return;
+    }
+    hydrateMemoryCache();
+    setupPeriodicSync();
+  }
+
+  function setupLifecycleListeners() {
+    if (lifecycleListenersInstalled) return false;
+    lifecycleListenersInstalled = true;
+    if (
+      typeof document !== "undefined" &&
+      typeof document.addEventListener === "function"
+    ) {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+    if (
+      typeof window !== "undefined" &&
+      typeof window.addEventListener === "function"
+    ) {
+      window.addEventListener("pagehide", flushDraftsForPageExit);
+    }
+    return true;
   }
 
   function init() {
@@ -260,9 +350,14 @@
     // 历史 draft；如果 multi_task.js 已经初始化（罕见时序），则
     // hydrateMemoryCache 跳过既存项不覆盖。
     hydrateMemoryCache();
-    const inputHandle = setupInputListener();
-    const intervalId = setupPeriodicSync();
-    return { input: inputHandle, intervalId: intervalId };
+    const input = setupInputListener();
+    const isHidden = typeof document !== "undefined" && document.hidden === true;
+    const intervalId = isHidden ? null : setupPeriodicSync();
+    setupLifecycleListeners();
+    if (isHidden) {
+      flushDraftsForPageExit();
+    }
+    return { input: input, intervalId: intervalId };
   }
 
   if (document.readyState === "loading") {
@@ -286,6 +381,9 @@
     clearAllDrafts: clearAllDrafts,
     hydrateMemoryCache: hydrateMemoryCache,
     reconcileMemoryToStorage: reconcileMemoryToStorage,
+    flushActiveTextareaDraft: flushActiveTextareaDraft,
+    setupPeriodicSync: setupPeriodicSync,
+    stopPeriodicSync: stopPeriodicSync,
     _applyTtlAndLru: _applyTtlAndLru,
     _normalizeDraft: _normalizeDraft,
     _isStorageAvailable: _isStorageAvailable,

@@ -45,6 +45,7 @@
   const WARN_CLASS = "warn";
   const DANGER_CLASS = "danger";
   const I18N_KEY = "feedback.charCounter";
+  let activeBinding = null;
 
   function _formatCount(count) {
     // 大数字本地化：用 Intl.NumberFormat 让千位分隔符自动适配
@@ -126,18 +127,30 @@
     return count;
   }
 
+  function handleInput() {
+    if (!activeBinding) return;
+    updateCounter(activeBinding.textarea, activeBinding.counter);
+  }
+
   function init() {
     const textarea = document.getElementById(TARGET_ID);
     const counter = document.getElementById(COUNTER_ID);
     if (!textarea || !counter) return null;
-    const handler = function () {
-      updateCounter(textarea, counter);
-    };
-    textarea.addEventListener("input", handler);
+    if (activeBinding) {
+      if (activeBinding.textarea === textarea && activeBinding.counter === counter) {
+        updateCounter(textarea, counter);
+        return activeBinding;
+      }
+      if (activeBinding.textarea.removeEventListener) {
+        activeBinding.textarea.removeEventListener("input", handleInput);
+      }
+    }
+    textarea.addEventListener("input", handleInput);
+    activeBinding = { textarea: textarea, counter: counter, handler: handleInput };
     // 初次渲染：处理 R137 height restore / 外部 setValue / 表单回填
     // 等非 ``input`` 事件路径下的非空初始值。
     updateCounter(textarea, counter);
-    return { textarea: textarea, counter: counter, handler: handler };
+    return activeBinding;
   }
 
   if (document.readyState === "loading") {

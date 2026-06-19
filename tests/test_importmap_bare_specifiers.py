@@ -31,7 +31,9 @@ WEB_UI_HTML = REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_u
 VSCODE_WEBVIEW_TS = REPO_ROOT / "packages" / "vscode" / "webview.ts"
 
 EXPECTED_BARE_SPECIFIERS = {
-    "@aiia/tri-state-panel": "/static/js/tri-state-panel.js",
+    "@aiia/tri-state-panel": (
+        "/static/js/tri-state-panel.js?v={{ tri_state_panel_version }}"
+    ),
 }
 
 # VSCode webview maps the same specifier KEYS but to template-literal

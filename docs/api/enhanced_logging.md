@@ -6,6 +6,8 @@
 
 ### `_sanitize_and_escape(record: dict[str, Any]) -> None`
 
+### `_is_root_intercept_handler(handler: logging.Handler) -> bool`
+
 ### `_install_root_intercept_once() -> None`
 
 ### `get_log_level_from_config() -> int`
