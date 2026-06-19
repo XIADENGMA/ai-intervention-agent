@@ -93,7 +93,7 @@ def main() -> int:
     tag = latest_git_tag()
     if tag is None:
         # repo 没 tag — 跳过；新 repo 的合理状态
-        print("[changelog-freshness] no git tag found; skipping")
+        print("[changelog-freshness] OK — no git tag found; skipping")
         return 0
 
     version = tag.lstrip("v")

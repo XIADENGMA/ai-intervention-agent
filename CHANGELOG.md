@@ -11,8 +11,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
-- Track the failed `v1.7.12` publish attempt and prepare `v1.7.13`
-  as the replacement patch release.
+- Allow the changelog freshness invariant to report a clean `OK` skip
+  in CI checkout environments where no tags were fetched.
 
 ## [1.7.13] - 2026-06-19
 
