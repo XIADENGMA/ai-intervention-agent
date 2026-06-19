@@ -9,6 +9,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- Track the failed `v1.7.12` publish attempt and prepare `v1.7.13`
+  as the replacement patch release.
+
+## [1.7.13] - 2026-06-19
+
+> **Patch replacement for `v1.7.12`.** The `v1.7.12` tag was pushed,
+> but the release workflow stopped before publishing artifacts because
+> the changelog freshness invariant correctly rejected a missing
+> changelog section for `1.7.12`. Per the release workflow, the
+> published tag is left untouched and this patch release supersedes it.
+
 ### Added
 
 - Add a FastMCP dynamic tool registration spike covering local SDK
@@ -21,6 +34,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Fixed
 
 - Honor predefined option defaults throughout the Web UI.
+- Keep the lightweight Web UI rate limiter cold path green after module
+  pruning.
+- Harden Web UI and VS Code lifecycle handling around stale state,
+  defaults, and bundled assets.
+
+## [1.7.12] - 2026-06-19
+
+> `v1.7.12` was tagged and pushed, but its GitHub Actions release
+> workflow failed before publishing PyPI, Open VSX, VS Code Marketplace,
+> or GitHub Release artifacts. It is superseded by `v1.7.13`.
+
+### Fixed
+
+- No published artifacts. Use `1.7.13` instead.
 
 ## [1.7.11] - 2026-06-08
 
