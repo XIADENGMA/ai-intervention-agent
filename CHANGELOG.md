@@ -13,6 +13,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - Allow the changelog freshness invariant to report a clean `OK` skip
   in CI checkout environments where no tags were fetched.
+- Keep service-manager notification lazy-load state coherent on cache
+  hits, and make CI coverage performance budgets tolerate GitHub runner
+  jitter without relaxing local pytest thresholds.
 
 ## [1.7.13] - 2026-06-19
 

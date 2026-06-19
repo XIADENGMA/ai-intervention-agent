@@ -112,6 +112,7 @@ def _ensure_notification_system_loaded() -> tuple[Any, Any]:
         and _notification_manager_singleton is not None
         and _initialize_notification_system_fn is not None
     ):
+        NOTIFICATION_AVAILABLE = True
         return _notification_manager_singleton, _initialize_notification_system_fn
 
     try:

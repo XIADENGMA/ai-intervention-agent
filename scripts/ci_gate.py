@@ -26,7 +26,12 @@ def _has_cmd(name: str) -> bool:
     return shutil.which(name) is not None
 
 
-def _run(cmd: list[str], *, label: str | None = None) -> None:
+def _run(
+    cmd: list[str],
+    *,
+    label: str | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
     """跑命令；非 0 退出码 fail-fast 抛出 ``CalledProcessError``。
 
     可选 ``label``：在 ``subprocess.run(check=True)`` 抛错前先打印
@@ -35,7 +40,7 @@ def _run(cmd: list[str], *, label: str | None = None) -> None:
     non-zero exit status N`` 这种通用消息）。``_run_warn`` 已经在
     warn 级用了同名参数；这里复用以保持上下层调用接口一致。
     """
-    completed = subprocess.run(cmd, cwd=_repo_root(), check=False)
+    completed = subprocess.run(cmd, cwd=_repo_root(), check=False, env=env)
     if completed.returncode != 0:
         if label:
             print(
@@ -294,7 +299,11 @@ def _main_impl(argv: list[str]) -> int:
             "--cov-report=xml",
             "--cov-report=term-missing",
         ]
-    _run(pytest_cmd)
+    pytest_env = None
+    if args.with_coverage:
+        pytest_env = os.environ.copy()
+        pytest_env["AIIA_CI_GATE_WITH_COVERAGE"] = "1"
+    _run(pytest_cmd, env=pytest_env)
 
     # P10·B1.5·H7：两份 i18n.js 的跨特性 red-team smoke。pytest 已覆盖
     # 单特性断言，这里补一遍完整集成面（ICU/apostrophe/嵌套 # / LRU /

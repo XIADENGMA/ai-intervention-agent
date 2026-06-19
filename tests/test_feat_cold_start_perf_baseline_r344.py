@@ -42,6 +42,8 @@ R344 budget 选取依据
 
 容差选 5-12x 而非 2-3x 的原因:
 - CI 环境性能差异大 (GitHub Actions 比本地慢 2-4x)
+- CI coverage 门禁额外叠加 tracing + xdist worker 竞争, total budget 使用
+  6000ms runner 容差, 本地/普通 pytest 仍保持 5000ms
 - pytest collection overhead 可能影响 timing
 - Python import cache 在 cold start 不可用
 - 真正的性能 regression 通常是 2x+ 而非 10%
@@ -56,6 +58,7 @@ methodology lineage
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -72,6 +75,23 @@ PERF_BUDGETS = {
     "task_queue_init": 500,
     "total_cold_start": 5000,
 }
+
+GITHUB_COVERAGE_PERF_BUDGETS = {
+    "total_cold_start": 6000,
+}
+
+
+def _is_github_coverage_gate() -> bool:
+    return (
+        os.environ.get("GITHUB_ACTIONS") == "true"
+        and os.environ.get("AIIA_CI_GATE_WITH_COVERAGE") == "1"
+    )
+
+
+def _perf_budget_ms(name: str) -> int:
+    if _is_github_coverage_gate():
+        return GITHUB_COVERAGE_PERF_BUDGETS.get(name, PERF_BUDGETS[name])
+    return PERF_BUDGETS[name]
 
 
 def _reset_singletons():
@@ -203,20 +223,21 @@ NotificationManager()
 TaskQueue()
 print(f'{(time.perf_counter() - t0) * 1000:.2f}')
 """
+        budget_ms = _perf_budget_ms("total_cold_start")
         result = subprocess.run(
             [sys.executable, "-c", script],
             capture_output=True,
             text=True,
-            timeout=PERF_BUDGETS["total_cold_start"] / 1000 + 5,
+            timeout=budget_ms / 1000 + 5,
             cwd=str(REPO_ROOT),
         )
         assert result.returncode == 0, (
             f"R344-L3: cold start subprocess failed: {result.stderr!r}"
         )
         elapsed_ms = float(result.stdout.strip())
-        assert elapsed_ms < PERF_BUDGETS["total_cold_start"], (
+        assert elapsed_ms < budget_ms, (
             f"R344-L3: full cold start took {elapsed_ms:.2f}ms, exceeds "
-            f"budget {PERF_BUDGETS['total_cold_start']}ms. Investigate "
+            f"budget {budget_ms}ms. Investigate "
             f"heavy imports or eager initialization."
         )
 
