@@ -153,7 +153,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.9.3",
     "@types/vscode": "1.105.0",
-    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.34.0",
     "typescript": "^6.0.3"
