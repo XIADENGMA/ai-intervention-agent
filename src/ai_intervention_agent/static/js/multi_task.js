@@ -1173,16 +1173,12 @@ function handleFreezeCountdownClick() {
         if (typeof window.taskDeadlines === "object" && window.taskDeadlines) {
           delete window.taskDeadlines[taskId];
         }
-        if (
-          typeof window.taskCountdowns === "object" &&
-          window.taskCountdowns
-        ) {
-          var cd = window.taskCountdowns[taskId];
-          if (cd) {
-            cd.remaining = 0;
-            cd.timeout = 0;
-          }
-        }
+        // R695：必须整体移除 countdown 条目并从共享 ticker 注销。
+        // 此前只把 remaining/timeout 置 0 但保留条目，下一个 1Hz tick
+        // 看到 remaining <= 0 会触发 autoSubmitTask —— 冻结反而立即
+        // 自动提交任务，与冻结语义相反（与 VS Code 端 stopCountdown()
+        // 行为对齐）。
+        _clearTaskCountdown(taskId);
         if (typeof window.updateCountdownDisplay === "function") {
           window.updateCountdownDisplay(0);
         }
@@ -2387,7 +2383,17 @@ function updateTasksList(tasks) {
     for (let index = 0; index < addedTaskCount; index += 1) {
       if (!(index in taskDiff.addedTasks)) continue;
       const task = taskDiff.addedTasks[index];
-      if (task.status !== "completed" && !taskCountdowns[task.task_id]) {
+      // R695：auto_resubmit_timeout 显式 <= 0 表示禁用/已冻结，绝不能启动
+      // 倒计时——否则 remaining=0 的条目会在下一 tick 触发 autoSubmitTask。
+      // 字段缺失（旧后端）时仍走 240 默认值兜底。
+      const addedTimeoutDisabled =
+        typeof task.auto_resubmit_timeout === "number" &&
+        task.auto_resubmit_timeout <= 0;
+      if (
+        task.status !== "completed" &&
+        !taskCountdowns[task.task_id] &&
+        !addedTimeoutDisabled
+      ) {
         // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout；
         // 末位 fallback 用 server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240)，
         // 不是旧 MAX (250)。
@@ -3311,8 +3317,14 @@ async function loadTaskDetails(taskId) {
       }
       // 如果之前没有保存过图片，保持当前值（避免在用户正在添加图片时被轮询调用清空）
 
-      // 只在倒计时不存在时启动，避免切换标签时重置倒计时
-      if (!taskCountdowns[task.task_id]) {
+      // 只在倒计时不存在时启动，避免切换标签时重置倒计时。
+      // R695：auto_resubmit_timeout 显式 <= 0（禁用/已冻结）时绝不能重建
+      // 倒计时——否则冻结后的下一次任务详情轮询会以 remaining=0 重建
+      // 条目，下一 tick 即触发 autoSubmitTask，冻结瞬间变成自动提交。
+      const detailsTimeoutDisabled =
+        typeof task.auto_resubmit_timeout === "number" &&
+        task.auto_resubmit_timeout <= 0;
+      if (!taskCountdowns[task.task_id] && !detailsTimeoutDisabled) {
         // 使用服务器返回的 remaining_time（剩余时间），而非固定的 auto_resubmit_timeout
         // 这样刷新页面后倒计时不会重置
         const remaining = task.remaining_time ?? task.auto_resubmit_timeout;

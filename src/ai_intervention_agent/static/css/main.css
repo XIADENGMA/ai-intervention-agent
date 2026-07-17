@@ -3478,16 +3478,28 @@ h1 {
  * 头部信息容器（.header-info-container）：
  *
  * 功能说明：
- *   原本用于显示任务ID和倒计时的头部容器，现已禁用。
+ *   prompt 上方的任务头部行，承载三类子元素：
+ *   - 任务头部标签 chip（#task-header-chip，header_label 参数）
+ *   - 任务 ID 容器（.task-id-container，已被下方规则永久隐藏——
+ *     任务 ID 在标签页显示，避免重复）
+ *   - 倒计时容器（.countdown-container，含 +60s / 冻结按钮）
  *
- * 显示逻辑：
- *   display: none（隐藏）
- *
- * 原因：
- *   任务ID和倒计时现在在标签页中显示，此容器不再使用。
+ * R695 修复：此前该容器被无条件 display:none，导致 chip、+60s、
+ *   冻结按钮在 Web 端永远不可见（仅 VS Code 端可用），与 README
+ *   宣称的两端一致不符。现恢复为 flex 行，子元素各自控制显隐。
  */
 .header-info-container {
-  display: none; /* 隐藏（task_id和倒计时只在标签显示） */
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+/* 有可见子元素时与下方 prompt 拉开间距（:has 不支持时退化为无间距，
+   仅影响观感不影响功能） */
+.header-info-container:has(> .task-header-chip:not([style*="display: none"])),
+.header-info-container:has(> .countdown-container:not(.hidden)) {
+  margin-bottom: 1rem;
 }
 
 /* ========================================================================
@@ -3513,15 +3525,9 @@ h1 {
  *   - 字号：0.9rem（14.4px）
  */
 .task-id-container {
-  display: flex; /* 使用flex布局 */
-  align-items: center; /* 垂直居中 */
-  gap: 0.5rem; /* 元素间距（8px） */
-  padding: 0.75rem 1.25rem; /* 内边距（上下0.75rem，左右1.25rem） */
-  background: rgba(100, 181, 246, 0.15); /* 浅蓝色半透明背景 */
-  border-left: 3px solid rgba(100, 181, 246, 0.8); /* 蓝色左边框（强调） */
-  border-radius: 8px; /* 圆角 */
-  font-size: 0.9rem; /* 字号（14.4px） */
-  flex: 1; /* 占据剩余空间 */
+  /* R695：任务 ID 已在标签页显示，此容器永久隐藏（JS 仍会切换
+     .hidden 类，但基础规则兜底，避免与标签页信息重复）。 */
+  display: none;
 }
 
 /**

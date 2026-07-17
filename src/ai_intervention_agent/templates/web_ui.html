@@ -623,6 +623,20 @@
       <div id="content-container" class="content">
         <div class="feedback-group">
           <div class="header-info-container">
+            <!--
+              mining-cycle-3 §2.1 borrow #1 (gemini-cli ask_user.header)：
+              ≤16-char 短标签 chip，由 JS ``updateHeaderChip`` 控制显示。
+              默认 display:none，agent 提供 header_label 时 expose。
+              注意：chip 必须放在 .task-id-container 之外——后者被 CSS
+              无条件隐藏（任务 ID 已在标签页显示），chip 若嵌套其中会
+              被祖先 display:none 永久遮蔽（R695 修复）。
+            -->
+            <span
+              class="task-header-chip"
+              id="task-header-chip"
+              style="display: none"
+              role="status"
+            ></span>
             <div class="task-id-container hidden" id="task-id-container">
               <span class="task-id-label">
                 <svg
@@ -642,17 +656,6 @@
                 <span data-i18n="page.taskLabel">Task:</span>
               </span>
               <span class="task-id-text" id="task-id-text"></span>
-              <!--
-                mining-cycle-3 §2.1 borrow #1 (gemini-cli ask_user.header)：
-                ≤16-char 短标签 chip，由 JS ``updateHeaderChip`` 控制显示。
-                默认 display:none，agent 提供 header_label 时 expose。
-              -->
-              <span
-                class="task-header-chip"
-                id="task-header-chip"
-                style="display: none"
-                role="status"
-              ></span>
             </div>
 
             <div class="countdown-container hidden" id="countdown-container">
