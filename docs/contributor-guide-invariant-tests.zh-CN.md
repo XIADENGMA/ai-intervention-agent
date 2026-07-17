@@ -375,6 +375,7 @@ Code 跑不了？" 几小时的 debug 节约多了。
 | R690    | `tests/test_vscode_countdown_controls_parity_r690.py`                   | 模式 C + webview                  | **VSCode 倒计时控制对齐保护**。锁定 webview 渲染 +60s/冻结控制按钮并接通服务端 extend/freeze 端点，与 web 页面能力面保持一致。 |
 | R691    | `tests/test_webview_task_fields_parity_r691.py`                         | 模式 C + API 契约                 | **任务级字段跨端对齐保护**。锁定 `/api/config` 返回 `feedback_placeholder` / `question_type` / `header_label` 且 webview 消费它们（chip、占位覆盖、Yes/No 按钮组），与 web 页面一致。 |
 | R692    | `tests/test_submit_focus_and_notify_deeplink_r692.py`                   | 模式 C + UX 流程                  | **提交聚焦与通知直达保护**。锁定提交后自动聚焦的登记/消费流程（web + webview，带时间窗、yesno 感知）及隐藏态通知在面板重新可见时直达对应任务的深链。 |
+| R695    | `tests/test_web_countdown_header_visibility_r695.py`                     | 模式 C + CSS/JS                   | **Web 倒计时控件可见性与冻结语义保护**。锁定 `.header-info-container` 保持可见（chip / +60s / 冻结按钮锚点在其中）、冻结成功路径整体注销倒计时条目、重建倒计时前必须带显式禁用守卫——确保冻结不会触发自动提交。 |
 
 ## 7. 进一步阅读
 
