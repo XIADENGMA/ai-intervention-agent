@@ -23,6 +23,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   per-task placeholder hints, and yes/no one-click answers (R691,
   including the missing task-level fields in `GET /api/config`).
 
+### Fixed
+
+- Fix the "ghost submit" root cause (R702): after a server restart, the
+  first task/config request lazily registered the feedback hot-reload
+  callback and immediately ran a sync that overwrote every open task's
+  `auto_resubmit_timeout` — including values explicitly passed through
+  the HTTP API — with the global `frontend_countdown` config value.
+  Tasks created with a long explicit timeout would silently auto-submit
+  after the (much shorter) config countdown. Explicitly-timed tasks are
+  now marked with an internal `auto_resubmit_timeout_explicit` flag the
+  hot-reload sync always skips, and callback registration only records
+  the baseline instead of running a sync.
+- Make runtime log-level overrides actually work (R701): named loggers
+  created through `EnhancedLogger` hard-coded WARNING, so
+  `POST /api/system/log-level` and `AI_INTERVENTION_AGENT_LOG_LEVEL`
+  never affected them; they now inherit the root logger's effective
+  level.
+
+### Added
+
+- Log a submitter fingerprint (user agent, referer, option/image
+  counts, and a 60-character text preview) at INFO level whenever task
+  feedback is submitted, so unexpected auto-submissions can be traced
+  to the client that sent them (R700).
+
 ### Changed
 
 - Migrate the dark theme to a Claude-style warm charcoal palette
