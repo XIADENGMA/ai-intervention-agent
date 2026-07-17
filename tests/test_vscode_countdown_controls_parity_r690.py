@@ -134,6 +134,44 @@ class TestCssContract(unittest.TestCase):
         self.assertIn(".countdown-controls", css)
         self.assertIn(".countdown-ctrl-btn", css)
 
+    def test_controls_visually_retired_r700(self) -> None:
+        """R700（与 web 端 R699 对齐）：+60s/冻结按钮行有意下线。
+
+        typing-hold 自动延长取代手动操作；DOM/JS 保留，仅视觉隐藏。
+        隐藏规则必须带 R700 标记，防止被当作事故误"修复"。
+        """
+        css = WEBVIEW_CSS.read_text(encoding="utf-8")
+        match = re.search(r"\.countdown-controls\s*\{([^}]*)\}", css)
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertIn("display: none", match.group(1))
+        self.assertIn("R700", match.group(1))
+
+
+class TestTickTypingGuardR700(unittest.TestCase):
+    """R700：倒计时归零但用户仍在输入时，webview tick 不得触发 autoSubmit。"""
+
+    def test_tick_zero_guard_present(self) -> None:
+        js = WEBVIEW_UI_JS.read_text(encoding="utf-8")
+        idx = js.find("if (remainingSeconds <= 0) {")
+        self.assertGreater(idx, 0)
+        snippet = js[idx : idx + 600]
+        self.assertIn("isUserActivelyTyping()", snippet)
+        self.assertIn("autoSubmit()", snippet)
+
+
+class TestTabLabelPrefersHeaderLabelR700(unittest.TestCase):
+    """R700：任务标签优先显示 header_label，机器 ID 仅兜底（tooltip 保留全 ID）。"""
+
+    def test_tab_label_logic(self) -> None:
+        js = WEBVIEW_UI_JS.read_text(encoding="utf-8")
+        idx = js.find("const tabLabel =")
+        self.assertGreater(idx, 0)
+        snippet = js[idx : idx + 400]
+        self.assertIn("task.header_label", snippet)
+        self.assertIn("task.task_id", snippet)
+        self.assertIn("taskId.title = task.task_id", snippet)
+
 
 class TestLocaleKeys(unittest.TestCase):
     def test_all_locales_contain_countdown_control_keys(self) -> None:

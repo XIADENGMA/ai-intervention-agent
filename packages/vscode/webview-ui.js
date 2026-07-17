@@ -3150,7 +3150,14 @@
 
       const taskId = document.createElement('div')
       taskId.className = 'task-tab-id'
-      taskId.textContent = task.task_id
+      // R700（与 web 端优雅审计 #2 对齐）：优先显示人类可读的
+      // header_label，机器味任务 ID 只在无 label 时兜底；完整 ID 始终
+      // 保留在 tooltip，信息不丢失。
+      const tabLabel =
+        typeof task.header_label === 'string' && task.header_label.trim() !== ''
+          ? task.header_label.trim().slice(0, 16)
+          : task.task_id
+      taskId.textContent = tabLabel
       taskId.title = task.task_id // 完整ID作为tooltip
 
       tab.appendChild(taskId)
@@ -4837,6 +4844,13 @@
       maybeAutoExtendCountdownForTyping(taskId, remainingSeconds)
 
       if (remainingSeconds <= 0) {
+        // R700（与 web 端 R699 守卫对齐）：用户仍在输入时绝不提交——
+        // 即使 extend 配额耗尽、倒计时归零也保持等待，下一 tick 重查；
+        // 停止输入 TYPING_HOLD_IDLE_MS 后才走 autoSubmit（届时优先提交
+        // 已输入内容，零丢失语义不变）。
+        if (isUserActivelyTyping()) {
+          return
+        }
         autoSubmit()
       }
     }

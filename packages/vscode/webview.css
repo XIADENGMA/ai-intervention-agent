@@ -748,9 +748,11 @@ body.vscode-light .no-content-progress-bar {
 }
 
 /* R691（TODO#5 跨端一致性）：任务级 header chip（≤16 字符领域标签）。
-   与 web 端 #task-header-chip 同构；无 header_label 时保持 hidden。 */
+   与 web 端 #task-header-chip 同构；无 header_label 时保持 hidden。
+   R700：任务标签页现已优先显示 header_label（同一信息），chip 与其
+   重复，随 web 端一并有意下线；DOM/JS 保留。 */
 .task-header-chip {
-  display: inline-block;
+  display: none; /* R700：与标签页 header_label 信息重复，有意下线 */
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -803,9 +805,12 @@ body.vscode-light .no-content-progress-bar {
 }
 
 /* R690（TODO#5 web/插件功能对齐）：倒计时控制行（+60s / 冻结）。
-   使用 VSCode 主题次级按钮变量，与 insert-code/upload 按钮同一视觉层级。 */
+   使用 VSCode 主题次级按钮变量，与 insert-code/upload 按钮同一视觉层级。
+   R700（与 web 端 R699 对齐）：按用户决策下线可见入口——typing-hold
+   自动延长（输入中永不结束）取代手动按钮；DOM 与 JS 逻辑保留，仅视觉
+   隐藏。 */
 .countdown-controls {
-  display: flex;
+  display: none; /* R700：手动延长/冻结按钮下线，typing-hold 自动处理 */
   justify-content: flex-end;
   gap: 6px;
   padding: 2px 0 6px;
