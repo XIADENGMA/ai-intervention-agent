@@ -104,7 +104,9 @@
       "placeholder": "请输入反馈内容（支持粘贴图片）…",
       "insertCode": "插入代码（从剪贴板）",
       "uploadImage": "上传图片",
-      "submit": "提交反馈"
+      "submit": "提交反馈",
+      "yesnoYes": "是",
+      "yesnoNo": "否"
     },
     "toast": {
       "configFallback": "配置加载失败，已使用任务详情兜底",
@@ -119,7 +121,17 @@
       "serverStatus": "服务器连接状态"
     },
     "countdown": {
-      "remaining": "{seconds, plural, other {剩余 # 秒}}"
+      "remaining": "{seconds, plural, other {剩余 # 秒}}",
+      "extendLabel": "+60秒",
+      "extendTitle": "延长倒计时 60 秒（每个任务最多 3 次）",
+      "extendAriaLabel": "延长倒计时 60 秒",
+      "extendLimitReached": "本任务延长次数已达上限",
+      "extendFailed": "延长倒计时失败 — 请重试",
+      "freezeLabel": "冻结",
+      "freezeTitle": "永久禁用本任务的自动重提（仅本次任务）",
+      "freezeAriaLabel": "冻结自动重提倒计时（一次性）",
+      "freezeAlreadyFrozen": "任务已被冻结",
+      "freezeFailed": "冻结倒计时失败 — 请重试"
     },
     "task": {
       "switchedTo": "切换到任务: {{id}}",

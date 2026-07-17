@@ -283,6 +283,13 @@ suite('Extension Test Suite', () => {
       webviewJs.includes("connect-src ${serverUrl} ${cspSource} 'self'"),
       "CSP connect-src should include ${cspSource} and 'self'"
     )
+    // Remote/Codespaces 回归点：webview 侧 localhost 必须尽量走 VS Code 转发 URL；
+    // extension host 轮询/SSE 仍使用 direct serverUrl，避免把 host-side 快路径绕远。
+    assert.ok(webviewJs.includes('_webviewServerUrl'))
+    assert.ok(webviewJs.includes('asExternalUri'))
+    assert.ok(webviewJs.includes('_refreshWebviewServerUrl'))
+    assert.ok(extensionJs.includes('fetch(`${requestServerUrl}/api/tasks`'))
+    assert.ok(extensionJs.includes('let sseUrl = `${serverUrl}/api/events`'))
     // manifest 注入回归点：Lottie lib URL 必须通过 meta 下发（CSP-safe 懒加载）
     assert.ok(webviewJs.includes('data-lottie-lib-url'))
     assert.ok(webviewUi.includes('data-lottie-lib-url'))

@@ -92,6 +92,15 @@ function toNonEmptyString(value: unknown, fallback = ''): string {
   return t ? t : fallback
 }
 
+function stringifyArrayValues(values: unknown): string[] {
+  if (!Array.isArray(values)) return []
+  const out: string[] = []
+  for (const value of values) {
+    out.push(String(value))
+  }
+  return out
+}
+
 function makeExecError(message: string, code: string, extra?: Partial<ExecError>): ExecError {
   const err: ExecError = new Error(message)
   err.code = code
@@ -131,7 +140,7 @@ function execFileAsyncWithOutput(
                 cause: error,
                 details: {
                   file: String(file || ''),
-                  args: Array.isArray(args) ? args.map(String) : [],
+                  args: stringifyArrayValues(args),
                   exitCode,
                   signal,
                   durationMs,
@@ -151,7 +160,7 @@ function execFileAsyncWithOutput(
       const err = e instanceof Error ? e : new Error(String(e))
       reject(
         makeExecError(err.message, 'EXEC_SPAWN_FAILED', {
-          details: { file: String(file || ''), args: Array.isArray(args) ? args.map(String) : [] }
+          details: { file: String(file || ''), args: stringifyArrayValues(args) }
         })
       )
     }
@@ -181,7 +190,7 @@ function execFileAsync(
                 cause: error,
                 details: {
                   file: String(file || ''),
-                  args: Array.isArray(args) ? args.map(String) : []
+                  args: stringifyArrayValues(args)
                 }
               })
             )
@@ -455,7 +464,7 @@ export class AppleScriptNotificationProvider {
         : null
     const injectedEnvKeys =
       details && Array.isArray(details.injectedEnvKeys)
-        ? (details.injectedEnvKeys as unknown[]).map(String)
+        ? stringifyArrayValues(details.injectedEnvKeys)
         : []
     return {
       code,

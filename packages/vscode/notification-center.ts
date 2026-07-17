@@ -89,6 +89,47 @@ export class NotificationCenter {
     }
   }
 
+  private async _dispatchToProvider(
+    event: NotificationEvent,
+    delivered: Record<string, boolean>,
+    t: NotificationTypeValue
+  ): Promise<void> {
+    const type = String(t || '')
+    if (!type) return
+
+    const provider = this._providers.get(type)
+    if (!provider || typeof provider.send !== 'function') {
+      delivered[type] = false
+      try {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event('notify.provider_not_registered', { type }, { level: 'debug' })
+        } else if (this._logger && typeof this._logger.debug === 'function') {
+          this._logger.debug(`provider_not_registered: ${type}`)
+        }
+      } catch {
+        // 忽略
+      }
+      return
+    }
+
+    try {
+      const ok = await provider.send(event)
+      delivered[type] = !!ok
+    } catch (e: unknown) {
+      delivered[type] = false
+      try {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event('notify.provider_failed', { type, error: msg }, { level: 'warn' })
+        } else if (this._logger && typeof this._logger.warn === 'function') {
+          this._logger.warn(`provider_failed: ${type} ${msg ? `(${msg})` : ''}`.trim())
+        }
+      } catch {
+        // 忽略
+      }
+    }
+  }
+
   async dispatch(eventInput: unknown): Promise<DispatchResult> {
     const event = normalizeNotificationEvent(eventInput) as NotificationEvent
     const message = event && event.message ? String(event.message) : ''
@@ -113,44 +154,11 @@ export class NotificationCenter {
 
     const delivered: Record<string, boolean> = {}
 
-    await Promise.allSettled(
-      types.map(async (t: NotificationTypeValue) => {
-        const type = String(t || '')
-        if (!type) return
-
-        const provider = this._providers.get(type)
-        if (!provider || typeof provider.send !== 'function') {
-          delivered[type] = false
-          try {
-            if (this._logger && typeof this._logger.event === 'function') {
-              this._logger.event('notify.provider_not_registered', { type }, { level: 'debug' })
-            } else if (this._logger && typeof this._logger.debug === 'function') {
-              this._logger.debug(`provider_not_registered: ${type}`)
-            }
-          } catch {
-            // 忽略
-          }
-          return
-        }
-
-        try {
-          const ok = await provider.send(event)
-          delivered[type] = !!ok
-        } catch (e: unknown) {
-          delivered[type] = false
-          try {
-            const msg = e instanceof Error ? e.message : String(e)
-            if (this._logger && typeof this._logger.event === 'function') {
-              this._logger.event('notify.provider_failed', { type, error: msg }, { level: 'warn' })
-            } else if (this._logger && typeof this._logger.warn === 'function') {
-              this._logger.warn(`provider_failed: ${type} ${msg ? `(${msg})` : ''}`.trim())
-            }
-          } catch {
-            // 忽略
-          }
-        }
-      })
-    )
+    const dispatchPromises: Promise<void>[] = []
+    for (const t of types) {
+      dispatchPromises.push(this._dispatchToProvider(event, delivered, t))
+    }
+    await Promise.allSettled(dispatchPromises)
 
     return { event, delivered, skipped: false }
   }

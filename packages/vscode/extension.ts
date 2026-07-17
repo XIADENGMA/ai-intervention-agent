@@ -141,6 +141,22 @@ interface TaskData {
   prompt: string;
 }
 
+async function loadHostLocale(
+  localesDir: string,
+  loc: string,
+  hostLocales: Record<string, Record<string, unknown>>,
+): Promise<void> {
+  try {
+    const raw = await fs.promises.readFile(
+      path.join(localesDir, `${loc}.json`),
+      "utf8",
+    );
+    if (raw) hostLocales[loc] = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    /* 忽略 */
+  }
+}
+
 async function activate(context: vscode.ExtensionContext): Promise<void> {
   let outputChannel: vscode.OutputChannel;
   try {
@@ -220,20 +236,11 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   let hostLang = "en";
   try {
     const localesDir = path.join(context.extensionPath, "locales");
-    await Promise.all(
-      ["en", "zh-CN"].map(async (loc) => {
-        try {
-          const raw = await fs.promises.readFile(
-            path.join(localesDir, `${loc}.json`),
-            "utf8",
-          );
-          if (raw)
-            hostLocales[loc] = JSON.parse(raw) as Record<string, unknown>;
-        } catch {
-          /* 忽略 */
-        }
-      }),
-    );
+    const localeReads: Promise<void>[] = [];
+    for (const loc of ["en", "zh-CN"]) {
+      localeReads.push(loadHostLocale(localesDir, loc, hostLocales));
+    }
+    await Promise.all(localeReads);
     try {
       const vsLang = vscode.env.language || "";
       hostLang = vsLang.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
@@ -528,12 +535,14 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         try {
           const currentIds = new Set<string>();
           const newTaskData: TaskData[] = [];
+          const newTaskIds: string[] = [];
           for (const t of data.tasks as Array<Record<string, unknown>>) {
             if (!t || !t.task_id) continue;
             const taskId = String(t.task_id);
             currentIds.add(taskId);
             if (extTaskTrackingInitialized && !extKnownTaskIds.has(taskId)) {
               newTaskData.push({ id: taskId, prompt: String(t.prompt || "") });
+              newTaskIds.push(taskId);
             }
           }
           if (newTaskData.length > 0 && extTaskTrackingInitialized) {
@@ -545,13 +554,13 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
               if (isViewVisible) {
                 logger.event(
                   "ext.skip_dispatch_webview_visible",
-                  { ids: newTaskData.map((t) => t.id) },
+                  { ids: newTaskIds },
                   { level: "debug" },
                 );
               } else {
                 logger.event(
                   "ext.dispatch_new_task",
-                  { ids: newTaskData.map((t) => t.id), viewVisible: false },
+                  { ids: newTaskIds, viewVisible: false },
                   { level: "info" },
                 );
                 (

@@ -306,6 +306,81 @@
   const WEBVIEW_HELPERS =
     typeof window !== 'undefined' && window.AIIAWebviewHelpers ? window.AIIAWebviewHelpers : null
   let themeObserver = null
+
+  function lazyScriptIsReady(isReady) {
+    try {
+      return typeof isReady === 'function' && !!isReady()
+    } catch (e) {
+      return false
+    }
+  }
+
+  function loadLazyScriptOnce(scriptId, scriptUrl, isReady, timeoutMs) {
+    if (lazyScriptIsReady(isReady)) return Promise.resolve(true)
+    if (!scriptId || !scriptUrl) return Promise.resolve(false)
+
+    return new Promise(resolve => {
+      let done = false
+      let timer = null
+      let script = null
+
+      const finish = ok => {
+        if (done) return
+        done = true
+        if (timer) {
+          try {
+            clearTimeout(timer)
+          } catch (e) {
+            // 忽略
+          }
+        }
+        if (script) {
+          try {
+            script.removeEventListener('load', onLoad)
+            script.removeEventListener('error', onError)
+          } catch (e) {
+            // 忽略
+          }
+        }
+        resolve(!!ok)
+      }
+      const checkAndFinish = () => finish(lazyScriptIsReady(isReady))
+      const onLoad = () => checkAndFinish()
+      const onError = () => finish(false)
+
+      try {
+        script = document.getElementById(scriptId)
+        if (!script) {
+          script = document.createElement('script')
+          script.id = scriptId
+          script.defer = true
+          if (CSP_NONCE) {
+            try {
+              script.setAttribute('nonce', CSP_NONCE)
+            } catch (e) {
+              // 忽略
+            }
+          }
+          script.addEventListener('load', onLoad, { once: true })
+          script.addEventListener('error', onError, { once: true })
+          timer = setTimeout(checkAndFinish, Math.max(1, timeoutMs || 5000))
+          script.src = scriptUrl
+          document.head.appendChild(script)
+          return
+        }
+
+        script.addEventListener('load', onLoad, { once: true })
+        script.addEventListener('error', onError, { once: true })
+        timer = setTimeout(checkAndFinish, Math.max(1, timeoutMs || 5000))
+        Promise.resolve().then(() => {
+          if (!done && lazyScriptIsReady(isReady)) finish(true)
+        })
+      } catch (e) {
+        finish(false)
+      }
+    })
+  }
+
   // 无有效内容页面：Lottie 动画（默认使用 sprout.json；失败则降级为 Lucide 风格 SVG）
   let noContentHourglassAnimation = null
   let noContentLottieDisposed = false
@@ -330,18 +405,19 @@
       const head = s.slice(0, start).toLowerCase()
       if (head !== 'rgb' && head !== 'rgba') return null
 
-      const parts = s
-        .slice(start + 1, end)
-        .split(',')
-        .map(p => p.trim())
-      if (parts.length < 3) return null
+      const channels = []
+      const raw = s.slice(start + 1, end)
+      let partStart = 0
+      for (let i = 0; i <= raw.length && channels.length < 3; i += 1) {
+        if (i < raw.length && raw[i] !== ',') continue
+        const channel = Number(raw.slice(partStart, i).trim())
+        if (!Number.isFinite(channel)) return null
+        channels.push(channel)
+        partStart = i + 1
+      }
+      if (channels.length < 3) return null
 
-      const r = Number(parts[0])
-      const g = Number(parts[1])
-      const b = Number(parts[2])
-      if (![r, g, b].every(n => Number.isFinite(n))) return null
-
-      return { r, g, b }
+      return { r: channels[0], g: channels[1], b: channels[2] }
     } catch (e) {
       return null
     }
@@ -815,54 +891,12 @@
     if (!LOTTIE_LIB_URL) return Promise.resolve(false)
     if (lottieLoadPromise) return lottieLoadPromise
 
-    lottieLoadPromise = new Promise(resolve => {
-      let done = false
-      const finish = ok => {
-        if (done) return
-        done = true
-        resolve(!!ok)
-      }
-
-      const start = Date.now()
-      const tick = () => {
-        if (done) return
-        if (isReady()) {
-          finish(true)
-          return
-        }
-        if (Date.now() - start > NO_CONTENT_LOTTIE_TIMEOUT_MS) {
-          finish(false)
-          return
-        }
-        setTimeout(tick, 50)
-      }
-
-      try {
-        const SCRIPT_ID = 'aiia-lottie-script'
-        const existing = document.getElementById(SCRIPT_ID)
-        if (!existing) {
-          const s = document.createElement('script')
-          s.id = SCRIPT_ID
-          s.src = LOTTIE_LIB_URL
-          s.defer = true
-          // 关键：带 nonce，才能通过 CSP（script-src 'nonce-...'）
-          if (CSP_NONCE) {
-            try {
-              s.setAttribute('nonce', CSP_NONCE)
-            } catch (_) {
-              // 忽略
-            }
-          }
-          s.onerror = () => finish(false)
-          document.head.appendChild(s)
-        }
-      } catch (_) {
-        finish(false)
-        return
-      }
-
-      tick()
-    }).then(ok => {
+    lottieLoadPromise = loadLazyScriptOnce(
+      'aiia-lottie-script',
+      LOTTIE_LIB_URL,
+      isReady,
+      NO_CONTENT_LOTTIE_TIMEOUT_MS
+    ).then(ok => {
       // 关键：失败不应永久缓存，否则网络恢复后会“一直处于降级状态”
       if (!ok) lottieLoadPromise = null
       return ok
@@ -880,17 +914,30 @@
     if (markedOptionsConfigured) return
     if (typeof marked === 'undefined' || !marked || typeof marked.setOptions !== 'function') return
     try {
+      // R688 (TODO#2 插件页面 md 渲染不完整修复)：
+      // 禁用原生 HTML 必须走 marked.use({renderer: {...}}) —— use() 会把
+      // 部分 renderer 方法**合并**进默认 Renderer；而旧写法
+      // setOptions({renderer: {html(){}}}) 会把整个 renderer **替换**成
+      // 只有 html 方法的裸对象，marked v5+ 解析任何标题/列表/代码块/表格
+      // 时都会抛 "this.renderer.heading is not a function"，
+      // renderSimpleMarkdown 的 catch 兜底把内容降级成纯文本 —— 这正是
+      // "web 页面能渲染、插件页面显示原始 Markdown" 的根因。
+      // 与 web 端 multi_task.js::configureMarkedSecurityOnce 保持同构。
+      if (typeof marked.use === 'function') {
+        marked.use({
+          // 防御纵深：禁用 Markdown 中的原生 HTML 渲染（避免 style/iframe 等注入造成 UI 污染）
+          renderer: {
+            html() {
+              return ''
+            }
+          }
+        })
+      }
       marked.setOptions({
         breaks: true, // 支持 GFM 换行
         gfm: true, // 启用 GitHub Flavored Markdown
         headerIds: false, // 禁用标题ID（避免冲突）
-        mangle: false, // 禁用邮件地址混淆
-        // 防御纵深：禁用 Markdown 中的原生 HTML 渲染（避免 style/iframe 等注入造成 UI 污染）
-        renderer: {
-          html() {
-            return ''
-          }
-        }
+        mangle: false // 禁用邮件地址混淆
       })
       markedOptionsConfigured = true
     } catch (e) {
@@ -913,61 +960,18 @@
     }
     if (markedLoadPromise) return markedLoadPromise
 
-    markedLoadPromise = new Promise(resolve => {
-      try {
-        const existing = document.getElementById('aiia-marked-script')
-        if (existing) {
-          const start = Date.now()
-          const tick = () => {
-            try {
-              if (typeof marked !== 'undefined' && marked && typeof marked.parse === 'function') {
-                configureMarkedOnce()
-                resolve(true)
-                return
-              }
-            } catch (e) {
-              // 忽略
-            }
-            if (Date.now() - start > 5000) {
-              resolve(false)
-              return
-            }
-            setTimeout(tick, 50)
-          }
-          tick()
-          return
+    markedLoadPromise = loadLazyScriptOnce(
+      'aiia-marked-script',
+      MARKED_JS_URL,
+      () => {
+        if (typeof marked !== 'undefined' && marked && typeof marked.parse === 'function') {
+          configureMarkedOnce()
+          return true
         }
-
-        const s = document.createElement('script')
-        s.id = 'aiia-marked-script'
-        s.src = MARKED_JS_URL
-        s.defer = true
-        // 关键：带 nonce，才能通过 CSP（script-src 'nonce-...'）
-        if (CSP_NONCE) {
-          try {
-            s.setAttribute('nonce', CSP_NONCE)
-          } catch (e) {
-            // 忽略
-          }
-        }
-        s.onload = () => {
-          try {
-            if (typeof marked !== 'undefined' && marked && typeof marked.parse === 'function') {
-              configureMarkedOnce()
-              resolve(true)
-              return
-            }
-          } catch (e) {
-            // 忽略
-          }
-          resolve(false)
-        }
-        s.onerror = () => resolve(false)
-        document.head.appendChild(s)
-      } catch (e) {
-        resolve(false)
-      }
-    })
+        return false
+      },
+      5000
+    )
 
     return markedLoadPromise
   }
@@ -1001,55 +1005,13 @@
           // 忽略
         }
 
-        const existing = document.getElementById('aiia-prism-script')
-        if (existing) {
-          const start = Date.now()
-          const tick = () => {
-            try {
-              if (
-                typeof Prism !== 'undefined' &&
-                Prism &&
-                typeof Prism.highlightAllUnder === 'function'
-              ) {
-                resolve(true)
-                return
-              }
-            } catch (e) {
-              // 忽略
-            }
-            if (Date.now() - start > 5000) {
-              resolve(false)
-              return
-            }
-            setTimeout(tick, 50)
-          }
-          tick()
-          return
-        }
-
-        const s = document.createElement('script')
-        s.id = 'aiia-prism-script'
-        s.src = PRISM_JS_URL
-        s.defer = true
-        // 关键：带 nonce，才能通过 CSP（script-src 'nonce-...'）
-        if (CSP_NONCE) {
-          try {
-            s.setAttribute('nonce', CSP_NONCE)
-          } catch (e) {
-            // 忽略
-          }
-        }
-        s.onload = () => {
-          try {
-            resolve(
-              typeof Prism !== 'undefined' && Prism && typeof Prism.highlightAllUnder === 'function'
-            )
-          } catch (e) {
-            resolve(false)
-          }
-        }
-        s.onerror = () => resolve(false)
-        document.head.appendChild(s)
+        loadLazyScriptOnce(
+          'aiia-prism-script',
+          PRISM_JS_URL,
+          () =>
+            typeof Prism !== 'undefined' && Prism && typeof Prism.highlightAllUnder === 'function',
+          5000
+        ).then(resolve)
       } catch (e) {
         resolve(false)
       }
@@ -1111,48 +1073,15 @@
     if (!NOTIFY_CORE_JS_URL) return Promise.resolve(false)
     if (notifyCoreLoadPromise) return notifyCoreLoadPromise
 
-    notifyCoreLoadPromise = new Promise(resolve => {
-      try {
-        const existingScript = document.getElementById('aiia-notify-core-script')
-        if (existingScript) {
-          const start = Date.now()
-          const tick = () => {
-            const mod = getNotifyCoreModule()
-            if (mod && typeof mod.showNewTaskNotification === 'function') {
-              resolve(true)
-              return
-            }
-            if (Date.now() - start > 5000) {
-              resolve(false)
-              return
-            }
-            setTimeout(tick, 50)
-          }
-          tick()
-          return
-        }
-
-        const s = document.createElement('script')
-        s.id = 'aiia-notify-core-script'
-        s.src = NOTIFY_CORE_JS_URL
-        s.defer = true
-        if (CSP_NONCE) {
-          try {
-            s.setAttribute('nonce', CSP_NONCE)
-          } catch (e) {
-            // 忽略
-          }
-        }
-        s.onload = () => {
-          const mod = getNotifyCoreModule()
-          resolve(!!(mod && typeof mod.showNewTaskNotification === 'function'))
-        }
-        s.onerror = () => resolve(false)
-        document.head.appendChild(s)
-      } catch (e) {
-        resolve(false)
-      }
-    })
+    notifyCoreLoadPromise = loadLazyScriptOnce(
+      'aiia-notify-core-script',
+      NOTIFY_CORE_JS_URL,
+      () => {
+        const mod = getNotifyCoreModule()
+        return !!(mod && typeof mod.showNewTaskNotification === 'function')
+      },
+      5000
+    )
 
     return notifyCoreLoadPromise
   }
@@ -1170,48 +1099,15 @@
     if (!SETTINGS_UI_JS_URL) return Promise.resolve(false)
     if (settingsUiLoadPromise) return settingsUiLoadPromise
 
-    settingsUiLoadPromise = new Promise(resolve => {
-      try {
-        const existingScript = document.getElementById('aiia-settings-ui-script')
-        if (existingScript) {
-          const start = Date.now()
-          const tick = () => {
-            const mod = getSettingsUiModule()
-            if (mod && typeof mod.openSettings === 'function') {
-              resolve(true)
-              return
-            }
-            if (Date.now() - start > 5000) {
-              resolve(false)
-              return
-            }
-            setTimeout(tick, 50)
-          }
-          tick()
-          return
-        }
-
-        const s = document.createElement('script')
-        s.id = 'aiia-settings-ui-script'
-        s.src = SETTINGS_UI_JS_URL
-        s.defer = true
-        if (CSP_NONCE) {
-          try {
-            s.setAttribute('nonce', CSP_NONCE)
-          } catch (e) {
-            // 忽略
-          }
-        }
-        s.onload = () => {
-          const mod = getSettingsUiModule()
-          resolve(!!(mod && typeof mod.openSettings === 'function'))
-        }
-        s.onerror = () => resolve(false)
-        document.head.appendChild(s)
-      } catch (e) {
-        resolve(false)
-      }
-    })
+    settingsUiLoadPromise = loadLazyScriptOnce(
+      'aiia-settings-ui-script',
+      SETTINGS_UI_JS_URL,
+      () => {
+        const mod = getSettingsUiModule()
+        return !!(mod && typeof mod.openSettings === 'function')
+      },
+      5000
+    )
 
     return settingsUiLoadPromise
   }
@@ -1439,11 +1335,25 @@
   let countdownTimer = null
   // 防止超时自动重调进入“失败重试风暴”（例如 remaining=0 且提交失败/429）：对同一任务做最小退避（可重试但不过载）
   let autoSubmitAttempted = {} // task_id -> lastAttemptAt(ms)
+  // R689 (TODO#13)：输入活跃保持倒计时（与 web 端 multi_task.js 同构）
+  // - textarea input 事件刷新 lastFeedbackTypingAtMs；
+  // - 倒计时 tick 发现剩余 ≤ TYPING_HOLD_TRIGGER_S 且用户在
+  //   TYPING_HOLD_IDLE_MS 内输入过 → 自动调用 extend endpoint（+60s，
+  //   受服务端 extends_max 配额约束）；
+  // - 配额耗尽 / 用户停止输入 → 倒计时归零时 autoSubmit 优先提交
+  //   用户已输入的内容而不是 resubmit_prompt。
+  let lastFeedbackTypingAtMs = 0
+  let typingAutoExtendInFlight = false
+  let typingAutoExtendBlockedTasks = {} // task_id -> true（配额耗尽后不再尝试）
+  const TYPING_HOLD_IDLE_MS = 10 * 1000
+  const TYPING_HOLD_TRIGGER_S = 15
   let pollingTimer = null
   let remainingSeconds = 0
   let allTasks = []
   let activeTaskId = null
   let tabCountdownTimers = {}
+  let tabCountdownTickerTimer = null
+  let tabCountdownVisibilityHandlerInstalled = false
   let tabCountdownRemaining = {}
   // 【对齐服务端】server_time/deadline/remaining_time 支持（用于倒计时不漂移）
   let serverTimeOffset = 0 // 服务器时间 - 本地时间（秒）
@@ -1495,7 +1405,8 @@
       const src = contents && typeof contents === 'object' ? contents : {}
       const out = {}
       let budget = UI_STATE_TEXT_LIMIT_CHARS
-      for (const taskId of Object.keys(src)) {
+      for (const taskId in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, taskId)) continue
         if (budget <= 0) break
         const text = src[taskId]
         if (typeof text !== 'string' || !text) continue
@@ -2224,6 +2135,26 @@
         insertCodeBtn.addEventListener('click', requestInsertCodeFromClipboard)
       }
 
+      // R690（TODO#5 web/插件功能对齐）：倒计时 +60s / 冻结按钮
+      const countdownExtendBtn = document.getElementById('countdownExtendBtn')
+      if (countdownExtendBtn) {
+        countdownExtendBtn.addEventListener('click', handleCountdownExtendClick)
+      }
+      const countdownFreezeBtn = document.getElementById('countdownFreezeBtn')
+      if (countdownFreezeBtn) {
+        countdownFreezeBtn.addEventListener('click', handleCountdownFreezeClick)
+      }
+
+      // R691（TODO#5 跨端一致性）：yesno 一键提交按钮
+      const yesnoYesBtn = document.getElementById('yesnoYesBtn')
+      if (yesnoYesBtn) {
+        yesnoYesBtn.addEventListener('click', () => handleYesnoAnswerClick('yes'))
+      }
+      const yesnoNoBtn = document.getElementById('yesnoNoBtn')
+      if (yesnoNoBtn) {
+        yesnoNoBtn.addEventListener('click', () => handleYesnoAnswerClick('no'))
+      }
+
       const uploadBtn = document.getElementById('uploadBtn')
       const imageInput = document.getElementById('imageInput')
 
@@ -2239,6 +2170,8 @@
         textarea.addEventListener('paste', handlePaste)
         // 【对齐原始实现】实时保存 textarea 内容，避免轮询/切换导致内容丢失或串任务
         textarea.addEventListener('input', () => {
+          // R689 (TODO#13)：记录输入活跃时间，供倒计时 typing-hold 判定
+          lastFeedbackTypingAtMs = Date.now()
           if (activeTaskId) {
             taskTextareaContents[activeTaskId] = textarea.value || ''
           }
@@ -2640,6 +2573,13 @@
           activeTaskId = activeTask.task_id
         }
 
+        // R690：任务列表刷新后同步倒计时控制行（+60s / 冻结）可见性与配额状态
+        // typeof 守卫：部分单测 harness 只提取局部函数运行，保持与项目
+        // 其他跨函数调用一致的防御式写法。
+        if (typeof updateCountdownControls === 'function') {
+          updateCountdownControls(null)
+        }
+
         // 获取活跃任务的详细内容并更新UI（服务端会自动激活第一个 pending 任务）
         // 为 /api/config 创建独立 AbortController，避免 /api/tasks 的超时/abort 影响后续请求
         if (typeof AbortController !== 'undefined') {
@@ -2690,6 +2630,9 @@
       // success=true 且任务列表为空：这是权威空队列，才清理任务级本地草稿/缓存。
       allTasks = []
       activeTaskId = null
+      if (typeof updateCountdownControls === 'function') {
+        updateCountdownControls(null)
+      }
       clearAllTabCountdowns()
       taskDeadlines = {}
       taskTextareaContents = {}
@@ -2799,6 +2742,20 @@
     return 0
   }
 
+  function normalizeTaskImages(images) {
+    const normalizedImages = []
+    if (!Array.isArray(images)) return normalizedImages
+    for (const img of images) {
+      const data = img && img.data ? String(img.data) : ''
+      if (!data) continue
+      normalizedImages.push({
+        name: img && img.name ? String(img.name) : 'image',
+        data
+      })
+    }
+    return normalizedImages
+  }
+
   function saveLocalStateForTask(taskId) {
     if (!taskId) return
     try {
@@ -2819,12 +2776,7 @@
       }
 
       if (Array.isArray(uploadedImages)) {
-        taskImages[taskId] = uploadedImages
-          .map(img => ({
-            name: img && img.name ? String(img.name) : 'image',
-            data: img && img.data ? String(img.data) : ''
-          }))
-          .filter(x => x.data)
+        taskImages[taskId] = normalizeTaskImages(uploadedImages)
       }
     } catch (e) {
       // 忽略
@@ -2841,12 +2793,7 @@
       }
 
       // 恢复图片（使用 dataURL，不依赖 blob:，避免 CSP 额外放行）
-      uploadedImages = (taskImages[taskId] || [])
-        .map(img => ({
-          name: img && img.name ? String(img.name) : 'image',
-          data: img && img.data ? String(img.data) : ''
-        }))
-        .filter(x => x.data)
+      uploadedImages = normalizeTaskImages(taskImages[taskId] || [])
       renderUploadedImages()
     } catch (e) {
       // 忽略
@@ -2856,12 +2803,7 @@
   function syncImagesToTaskCache(taskId) {
     if (!taskId) return
     try {
-      taskImages[taskId] = (uploadedImages || [])
-        .map(img => ({
-          name: img && img.name ? String(img.name) : 'image',
-          data: img && img.data ? String(img.data) : ''
-        }))
-        .filter(x => x.data)
+      taskImages[taskId] = normalizeTaskImages(uploadedImages || [])
     } catch (e) {
       // 忽略
     }
@@ -2883,12 +2825,7 @@
   function cacheImagesForTask(taskId, images) {
     if (!taskId || !Array.isArray(images)) return
     try {
-      taskImages[taskId] = images
-        .map(img => ({
-          name: img && img.name ? String(img.name) : 'image',
-          data: img && img.data ? String(img.data) : ''
-        }))
-        .filter(x => x.data)
+      taskImages[taskId] = normalizeTaskImages(images)
       schedulePersistUiState()
     } catch (e) {
       // 忽略
@@ -2962,8 +2899,16 @@
     return ''
   }
 
-  function reconcileActiveTaskId() {
+  function reconcileActiveTaskId(taskTabsState) {
     const previous = activeTaskId ? String(activeTaskId) : ''
+    if (taskTabsState && taskTabsState.activeTaskIdSet) {
+      const next = taskTabsState.activeTaskIdSet.has(previous)
+        ? previous
+        : taskTabsState.serverActiveTaskId || taskTabsState.firstOpenTaskId || ''
+      if (previous === next) return false
+      activeTaskId = next || null
+      return true
+    }
     const next = pickOpenTaskId(previous)
     if (previous === next) return false
     activeTaskId = next || null
@@ -2985,11 +2930,13 @@
     const staleTaskIds = new Set()
     const rememberTaskIds = source => {
       try {
-        Object.keys(source || {}).forEach(taskId => {
+        if (!source) return
+        for (const taskId in source) {
+          if (!Object.prototype.hasOwnProperty.call(source, taskId)) continue
           if (taskId && !activeTaskIdSet.has(taskId)) {
             staleTaskIds.add(taskId)
           }
-        })
+        }
       } catch (e) {
         // 忽略
       }
@@ -3002,21 +2949,25 @@
     rememberTaskIds(taskOptionsStates)
     rememberTaskIds(taskImages)
     try {
-      Object.keys(pendingImageUploadCounts || {}).forEach(key => {
-        if (!key || !key.startsWith('task:')) return
-        const taskId = key.slice(5)
-        if (taskId && !activeTaskIdSet.has(taskId)) {
-          staleTaskIds.add(taskId)
+      if (pendingImageUploadCounts) {
+        for (const key in pendingImageUploadCounts) {
+          if (!Object.prototype.hasOwnProperty.call(pendingImageUploadCounts, key)) continue
+          if (!key || !key.startsWith('task:')) continue
+          const taskId = key.slice(5)
+          if (taskId && !activeTaskIdSet.has(taskId)) {
+            staleTaskIds.add(taskId)
+          }
         }
-      })
+      }
     } catch (e) {
       // 忽略
     }
 
     staleTaskIds.forEach(existingId => {
       try {
-        if (tabCountdownTimers[existingId]) {
-          clearInterval(tabCountdownTimers[existingId])
+        const entry = tabCountdownTimers[existingId]
+        if (typeof entry === 'number') {
+          clearInterval(entry)
         }
       } catch (e) {
         // 忽略
@@ -3030,7 +2981,55 @@
       delete pendingImageUploadCounts[getPendingImageUploadKey(existingId)]
     })
 
+    if (typeof stopSharedTabCountdownTickerIfIdle === 'function') {
+      stopSharedTabCountdownTickerIfIdle()
+    }
+
     return staleTaskIds.size > 0
+  }
+
+  function buildTaskTabsRenderState(tasks, previousTaskIds, collectNewTaskData) {
+    const currentTaskIds = new Set()
+    const newTaskData = []
+    const activeTasks = []
+    const activeTaskIdSet = new Set()
+    let serverActiveTaskId = ''
+    let firstOpenTaskId = ''
+    const knownTaskIds =
+      previousTaskIds && typeof previousTaskIds.has === 'function' ? previousTaskIds : new Set()
+    let currentHash = ''
+    let index = 0
+
+    for (const task of tasks) {
+      if (index > 0) currentHash += '|'
+      currentHash += task.task_id + ':' + task.status
+      index += 1
+
+      currentTaskIds.add(task.task_id)
+      if (collectNewTaskData && !knownTaskIds.has(task.task_id) && task.task_id) {
+        newTaskData.push({ id: task.task_id, prompt: task.prompt || '' })
+      }
+
+      if (task.status !== 'completed') {
+        activeTasks.push(task)
+        const taskId = getTaskIdString(task)
+        if (taskId) {
+          activeTaskIdSet.add(taskId)
+          if (!firstOpenTaskId) firstOpenTaskId = taskId
+          if (!serverActiveTaskId && task.status === 'active') serverActiveTaskId = taskId
+        }
+      }
+    }
+
+    return {
+      currentHash,
+      currentTaskIds,
+      newTaskData,
+      activeTasks,
+      activeTaskIdSet,
+      serverActiveTaskId,
+      firstOpenTaskId
+    }
   }
 
   /* 渲染任务标签栏 - 根据服务器返回的任务列表动态生成标签页DOM */
@@ -3051,24 +3050,21 @@
       return
     }
 
-    /* 计算任务列表的哈希值用于检测任务列表是否发生变化 */
-    const currentHash = allTasks.map(t => t.task_id + ':' + t.status).join('|')
-
-    /* 检测是否有新任务加入 */
-    const currentTaskIds = new Set(allTasks.map(t => t.task_id))
-    const newTasks = allTasks.filter(t => !lastTaskIds.has(t.task_id))
+    const taskTabsState = buildTaskTabsRenderState(
+      allTasks,
+      lastTaskIds,
+      hasInitializedTaskIdTracking
+    )
+    const currentHash = taskTabsState.currentHash
 
     /* 当检测到新任务时显示通知提示（传递 prompt 用于 macOS 原生通知内容） */
-    if (newTasks.length > 0 && hasInitializedTaskIdTracking) {
-      const taskData = newTasks
-        .filter(t => t && t.task_id)
-        .map(t => ({ id: t.task_id, prompt: t.prompt || '' }))
-      notifyNewTasks(taskData)
+    if (taskTabsState.newTaskData.length > 0) {
+      notifyNewTasks(taskTabsState.newTaskData)
     }
 
-    lastTaskIds = currentTaskIds
+    lastTaskIds = taskTabsState.currentTaskIds
     hasInitializedTaskIdTracking = true
-    const activeTaskChanged = reconcileActiveTaskId()
+    const activeTaskChanged = reconcileActiveTaskId(taskTabsState)
 
     if (!container) {
       lastTasksHash = ''
@@ -3082,7 +3078,7 @@
 
     /* 任务列表未变化时仅更新倒计时 + active 状态，避免不必要的DOM重建 */
     if (currentHash === lastTasksHash) {
-      updateTabCountdowns()
+      updateTabCountdowns(taskTabsState.activeTasks)
       // 只有当“本地已选择 activeTaskId”（例如用户点了标签）时，才覆盖 tab 的 active 样式；
       // 否则保持后端上报的 active 状态，避免初始渲染时把 active 清空。
       if (activeTaskId) {
@@ -3124,8 +3120,8 @@
     existingTabs.forEach(tab => tab.remove())
 
     /* 过滤已完成的任务，只显示进行中和等待中的任务 */
-    const activeTasks = allTasks.filter(task => task.status !== 'completed')
-    const activeTaskIdSet = new Set(activeTasks.map(t => getTaskIdString(t)).filter(Boolean))
+    const activeTasks = taskTabsState.activeTasks
+    const activeTaskIdSet = taskTabsState.activeTaskIdSet
     // 清理不再存在/已完成任务的本地状态，避免草稿、图片 dataURL、定时器长期滞留。
     if (activeTaskChanged || pruneTaskLocalState(activeTaskIdSet)) {
       schedulePersistUiState()
@@ -3374,77 +3370,188 @@
     }
   }
 
-  /* 启动任务标签的倒计时圆环动画 - 使用SVG圆环和数字显示剩余时间 */
-  function startTabCountdown(taskId, totalSeconds, initialRemaining = null) {
-    let remaining = initialRemaining !== null ? initialRemaining : totalSeconds
-    const radius = 9 // 与服务端一致
-    const circumference = 2 * Math.PI * radius
+  function hasTabCountdownTimers() {
+    for (const taskId in tabCountdownTimers) {
+      if (Object.prototype.hasOwnProperty.call(tabCountdownTimers, taskId)) return true
+    }
+    return false
+  }
+
+  function stopSharedTabCountdownTickerIfIdle() {
+    if (!tabCountdownTickerTimer || hasTabCountdownTimers()) return
+    clearInterval(tabCountdownTickerTimer)
+    tabCountdownTickerTimer = null
+  }
+
+  function ensureSharedTabCountdownTicker() {
+    if (tabCountdownTickerTimer) return
+    if (typeof installTabCountdownVisibilitySyncHandlerOnce === 'function') {
+      installTabCountdownVisibilitySyncHandlerOnce()
+    }
+    tabCountdownTickerTimer = setInterval(tickAllTabCountdowns, 1000)
+  }
+
+  function tickAllTabCountdowns() {
+    for (const taskId in tabCountdownTimers) {
+      if (Object.prototype.hasOwnProperty.call(tabCountdownTimers, taskId)) {
+        tickTabCountdown(taskId)
+      }
+    }
+    stopSharedTabCountdownTickerIfIdle()
+  }
+
+  function forceUpdateAllTabCountdowns() {
+    if (typeof document !== 'undefined' && document.hidden) return
+    for (const taskId in tabCountdownTimers) {
+      if (!Object.prototype.hasOwnProperty.call(tabCountdownTimers, taskId)) continue
+      const state = tabCountdownTimers[taskId]
+      if (!state || typeof state !== 'object') continue
+      const remainingInfo = computeTabCountdownRemaining(taskId, state)
+      if (remainingInfo.computedRemaining <= 0) {
+        delete tabCountdownTimers[taskId]
+        delete tabCountdownRemaining[taskId]
+        stopSharedTabCountdownTickerIfIdle()
+        continue
+      }
+      tabCountdownRemaining[taskId] = remainingInfo.computedRemaining
+      renderTabCountdown(taskId, state, remainingInfo.computedRemaining)
+    }
+  }
+
+  function installTabCountdownVisibilitySyncHandlerOnce() {
+    if (tabCountdownVisibilityHandlerInstalled) return
+    tabCountdownVisibilityHandlerInstalled = true
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        forceUpdateAllTabCountdowns()
+      }
+    })
+  }
+
+  function _getOrCacheTabCountdownDom(taskId, state) {
+    const cache = state._domCache
+    if (cache && cache.progressCircle && document.contains(cache.progressCircle)) {
+      return cache
+    }
 
     const progressCircle = document.getElementById('tab-countdown-progress-' + taskId)
     const numberSpan = document.getElementById('tab-countdown-text-' + taskId)
     const countdownRing = document.getElementById('tab-countdown-' + taskId)
 
-    if (!progressCircle || !numberSpan) return
+    if (!progressCircle || !numberSpan) return null
 
-    function update() {
-      // 优先使用 deadline 计算（避免后台节流导致倒计时不准）
-      const deadline = typeof taskDeadlines[taskId] === 'number' ? taskDeadlines[taskId] : null
-      const computedRemaining = deadline
-        ? Math.max(0, Math.floor(deadline - getAdjustedNowSeconds()))
-        : Math.max(0, remaining)
-
-      if (computedRemaining <= 0) {
-        if (tabCountdownTimers[taskId]) {
-          clearInterval(tabCountdownTimers[taskId])
-          delete tabCountdownTimers[taskId]
-          delete tabCountdownRemaining[taskId]
-        }
-        return
-      }
-
-      const progress = computedRemaining / totalSeconds
-      const offset = circumference * (1 - progress)
-
-      progressCircle.setAttribute('stroke-dashoffset', offset)
-      numberSpan.textContent = computedRemaining // 只显示数字，无"s"
-
-      if (countdownRing) {
-        countdownRing.title = t('ui.countdown.remaining', { seconds: computedRemaining })
-      }
-
-      /* 缓存剩余时间用于任务切换时保持倒计时连续性 */
-      tabCountdownRemaining[taskId] = computedRemaining
-
-      // 没有 deadline 时才使用递减方式（向后兼容）
-      if (!deadline) {
-        remaining = computedRemaining - 1
-      }
+    const nextCache = {
+      progressCircle: progressCircle,
+      numberSpan: numberSpan,
+      countdownRing: countdownRing,
     }
+    state._domCache = nextCache
+    return nextCache
+  }
+
+  function computeTabCountdownRemaining(taskId, state) {
+    const deadline = typeof taskDeadlines[taskId] === 'number' ? taskDeadlines[taskId] : null
+    const computedRemaining = deadline
+      ? Math.max(0, Math.floor(deadline - getAdjustedNowSeconds()))
+      : Math.max(0, state.remaining)
+    return {
+      deadline: deadline,
+      computedRemaining: computedRemaining,
+    }
+  }
+
+  function renderTabCountdown(taskId, state, computedRemaining) {
+    const domCache = _getOrCacheTabCountdownDom(taskId, state)
+
+    if (!domCache) return
+
+    const progress = computedRemaining / state.totalSeconds
+    const offset = state.circumference * (1 - progress)
+
+    domCache.progressCircle.setAttribute('stroke-dashoffset', offset)
+    domCache.numberSpan.textContent = computedRemaining // 只显示数字，无"s"
+
+    if (domCache.countdownRing) {
+      domCache.countdownRing.title = t('ui.countdown.remaining', { seconds: computedRemaining })
+    }
+  }
+
+  function tickTabCountdown(taskId) {
+    const state = tabCountdownTimers[taskId]
+    if (!state || typeof state !== 'object') return
+
+    // 优先使用 deadline 计算（避免后台节流导致倒计时不准）
+    const remainingInfo = computeTabCountdownRemaining(taskId, state)
+    const computedRemaining = remainingInfo.computedRemaining
+
+    if (computedRemaining <= 0) {
+      delete tabCountdownTimers[taskId]
+      delete tabCountdownRemaining[taskId]
+      stopSharedTabCountdownTickerIfIdle()
+      return
+    }
+
+    /* 缓存剩余时间用于任务切换时保持倒计时连续性 */
+    tabCountdownRemaining[taskId] = computedRemaining
+
+    // 没有 deadline 时才使用递减方式（向后兼容）
+    if (!remainingInfo.deadline) {
+      state.remaining = computedRemaining - 1
+    }
+
+    const documentHidden = typeof document !== 'undefined' && document.hidden
+    if (documentHidden) return
+
+    renderTabCountdown(taskId, state, computedRemaining)
+  }
+
+  /* 启动任务标签的倒计时圆环动画 - 使用SVG圆环和数字显示剩余时间 */
+  function startTabCountdown(taskId, totalSeconds, initialRemaining = null) {
+    const radius = 9 // 与服务端一致
+    const circumference = 2 * Math.PI * radius
+    const state = {
+      totalSeconds,
+      remaining: initialRemaining !== null ? initialRemaining : totalSeconds,
+      circumference,
+    }
+
+    if (!_getOrCacheTabCountdownDom(taskId, state)) return
+
+    tabCountdownTimers[taskId] = state
 
     /* 立即执行第一次更新 */
-    update()
+    tickTabCountdown(taskId)
 
-    /* 清除该任务的旧定时器，避免重复计时 */
     if (tabCountdownTimers[taskId]) {
-      clearInterval(tabCountdownTimers[taskId])
+      ensureSharedTabCountdownTicker()
     }
-
-    /* 启动新的定时器，每秒更新一次 */
-    tabCountdownTimers[taskId] = setInterval(update, 1000)
   }
 
   /* 清除所有任务标签的倒计时定时器和缓存数据 */
   function clearAllTabCountdowns() {
-    Object.keys(tabCountdownTimers).forEach(taskId => {
-      clearInterval(tabCountdownTimers[taskId])
-    })
+    for (const taskId in tabCountdownTimers) {
+      if (!Object.prototype.hasOwnProperty.call(tabCountdownTimers, taskId)) continue
+      try {
+        const entry = tabCountdownTimers[taskId]
+        if (typeof entry === 'number') {
+          clearInterval(entry)
+        }
+      } catch (e) {
+        // 忽略
+      }
+    }
+    if (typeof tabCountdownTickerTimer !== 'undefined' && tabCountdownTickerTimer) {
+      clearInterval(tabCountdownTickerTimer)
+      tabCountdownTickerTimer = null
+    }
     tabCountdownTimers = {}
     tabCountdownRemaining = {}
   }
 
   /* 更新所有任务标签的倒计时显示 - 仅更新数值，不重建DOM结构 */
-  function updateTabCountdowns() {
-    allTasks.forEach(task => {
+  function updateTabCountdowns(tasks = allTasks) {
+    const tasksForCountdown = Array.isArray(tasks) ? tasks : allTasks
+    tasksForCountdown.forEach(task => {
       if (task.auto_resubmit_timeout > 0) {
         const progressCircle = document.getElementById('tab-countdown-progress-' + task.task_id)
         /* 检查倒计时元素和定时器状态，必要时启动倒计时 */
@@ -3774,12 +3881,13 @@
               if (checked) savedSelections.push(idx)
             })
           } else if (typeof savedState === 'object') {
-            Object.keys(savedState).forEach(k => {
+            for (const k in savedState) {
+              if (!Object.prototype.hasOwnProperty.call(savedState, k)) continue
               if (savedState[k]) {
                 const n = parseInt(k, 10)
                 if (!Number.isNaN(n)) savedSelections.push(n)
               }
-            })
+            }
           }
         } else if (isSameTask) {
           config.predefined_options.forEach((option, index) => {
@@ -3860,6 +3968,22 @@
       stopCountdown()
     }
 
+    // R690：/api/config 驱动的单任务路径也同步倒计时控制行状态
+    if (typeof updateCountdownControls === 'function') {
+      updateCountdownControls(null)
+    }
+
+    // R691（TODO#5 跨端一致性）：任务级 header chip / placeholder / yesno
+    if (typeof updateHeaderChip === 'function') {
+      updateHeaderChip(config.header_label)
+    }
+    if (typeof updateFeedbackPlaceholder === 'function') {
+      updateFeedbackPlaceholder(config.feedback_placeholder)
+    }
+    if (typeof updateYesnoButtonGroup === 'function') {
+      updateYesnoButtonGroup(config.question_type)
+    }
+
     // 【对齐原始实现】任务切换时恢复输入/图片，避免串任务；同任务轮询不覆盖用户输入
     if (!isSameTask && config.task_id) {
       restoreLocalStateForTask(config.task_id)
@@ -3903,13 +4027,17 @@
   // 新任务通知：委托给 notify-core（HTML 直接加载 + 按需回退）
   // taskData: Array<{ id, prompt }> 或 Array<string>（向后兼容）
   function notifyNewTasks(taskData) {
-    const items = Array.isArray(taskData) ? taskData.filter(Boolean) : [taskData].filter(Boolean)
-    if (!items || items.length === 0) return
-
-    const normalized = items.map(item =>
-      typeof item === 'string' ? { id: item, prompt: '' } : item
-    )
-    const ids = normalized.map(t => t.id || t).filter(Boolean)
+    const sourceItems = Array.isArray(taskData) ? taskData : [taskData]
+    const normalized = []
+    const ids = []
+    for (const item of sourceItems) {
+      if (!item) continue
+      const normalizedItem = typeof item === 'string' ? { id: item, prompt: '' } : item
+      normalized.push(normalizedItem)
+      const id = normalizedItem.id || normalizedItem
+      if (id) ids.push(id)
+    }
+    if (normalized.length === 0) return
     if (ids.length === 0) return
 
     // 快速路径：notify-core 已通过 HTML <script> 同步加载
@@ -4117,37 +4245,46 @@
       }
 
       // 逆序遍历，避免 DOM 结构变化影响遍历
-      const all = Array.from(container.querySelectorAll('*')).reverse()
-      all.forEach(el => {
+      const all = container.querySelectorAll('*')
+      for (let allIndex = all.length - 1; allIndex >= 0; allIndex -= 1) {
+        const el =
+          all[allIndex] ||
+          (typeof all.item === 'function' ? all.item(allIndex) : null)
+        if (!el) continue
         const tag = String(el.tagName || '').toLowerCase()
-        if (!tag) return
+        if (!tag) continue
 
         if (DROP_TAGS.has(tag)) {
           el.remove()
-          return
+          continue
         }
 
         if (!ALLOWED_TAGS.has(tag)) {
           unwrapElement(el)
-          return
+          continue
         }
 
         // 清理属性
         const allowed = ALLOWED_ATTR[tag] || new Set(['class'])
-        Array.from(el.attributes || []).forEach(attr => {
+        const attributes = el.attributes || []
+        for (let attrIndex = attributes.length - 1; attrIndex >= 0; attrIndex -= 1) {
+          const attr =
+            attributes[attrIndex] ||
+            (typeof attributes.item === 'function' ? attributes.item(attrIndex) : null)
+          if (!attr) continue
           const name = String(attr.name || '').toLowerCase()
           const value = String(attr.value || '')
 
           // 移除所有 on* 事件与 style
           if (name.startsWith('on') || name === 'style') {
             el.removeAttribute(attr.name)
-            return
+            continue
           }
 
           // 仅允许白名单属性
           if (!allowed.has(name)) {
             el.removeAttribute(attr.name)
-            return
+            continue
           }
 
           // URL 属性进一步校验 + 归一化
@@ -4160,7 +4297,7 @@
               el.setAttribute('target', '_blank')
               el.setAttribute('rel', 'noopener noreferrer')
             }
-            return
+            continue
           }
           if (tag === 'img' && name === 'src') {
             const safe = normalizeUrl(value, 'img')
@@ -4170,13 +4307,13 @@
             } else {
               el.setAttribute('src', safe)
             }
-            return
+            continue
           }
 
           // 其它属性：保留（setAttribute 已安全处理）
           el.setAttribute(attr.name, value)
-        })
-      })
+        }
+      }
 
       return container.innerHTML
     } catch (e) {
@@ -4373,6 +4510,263 @@
     document.head.appendChild(script)
   }
 
+  // R691（TODO#5 跨端一致性）：任务级 header chip。
+  // 与 web 端 multi_task.js::updateHeaderChip 同构：非空字符串 → 显示
+  // （截断 16 字符），否则隐藏。
+  function updateHeaderChip(label) {
+    const chip = document.getElementById('taskHeaderChip')
+    if (!chip) return
+    if (typeof label === 'string' && label.trim() !== '') {
+      const text = label.trim().slice(0, 16)
+      chip.textContent = text
+      chip.classList.remove('hidden')
+      chip.setAttribute('aria-label', text)
+    } else {
+      chip.textContent = ''
+      chip.classList.add('hidden')
+      chip.removeAttribute('aria-label')
+    }
+  }
+
+  // R691（TODO#5 跨端一致性）：任务级 textarea placeholder 覆盖。
+  // 与 web 端 updateFeedbackPlaceholder 同构：task 提供 → 覆盖；
+  // 未提供 → 恢复 i18n 默认（不动 data-i18n-placeholder，语言切换仍生效）。
+  function updateFeedbackPlaceholder(placeholder) {
+    const textarea = document.getElementById('feedbackText')
+    if (!textarea) return
+    if (typeof placeholder === 'string' && placeholder.trim() !== '') {
+      textarea.setAttribute('placeholder', placeholder)
+    } else {
+      const defaultText = t('ui.form.placeholder')
+      if (typeof defaultText === 'string' && defaultText) {
+        textarea.setAttribute('placeholder', defaultText)
+      }
+    }
+  }
+
+  // R691（TODO#5 跨端一致性）：question_type="yesno" 时隐藏 textarea 输入区，
+  // 显示一行 Yes/No 按钮（点击直接提交字面 "yes"/"no"）。
+  // 与 web 端 updateYesnoButtonGroup 语义一致；按钮为静态 HTML（webview.ts），
+  // 这里只负责显隐切换。
+  function updateYesnoButtonGroup(questionType) {
+    const group = document.getElementById('yesnoButtonGroup')
+    const wrapper = document.querySelector('.textarea-wrapper')
+    if (!group) return
+    if (questionType === 'yesno') {
+      group.classList.remove('hidden')
+      if (wrapper && wrapper.classList) wrapper.classList.add('hidden')
+    } else {
+      group.classList.add('hidden')
+      if (wrapper && wrapper.classList) wrapper.classList.remove('hidden')
+    }
+  }
+
+  async function handleYesnoAnswerClick(answer) {
+    const literal = answer === 'yes' ? 'yes' : 'no'
+    const taskId =
+      activeTaskId || (currentConfig && currentConfig.task_id) || null
+    await submitWithData(literal, [], taskId)
+    setTimeout(() => requestImmediateRefresh(), 500)
+  }
+
+  // R690（TODO#5 web/插件功能对齐）：倒计时控制行（+60s / 冻结）。
+  // 与 web 端 updateCountdownExtendButton / updateFreezeCountdownButton 同构：
+  // - 仅当 active 任务 auto_resubmit_timeout > 0 且未完成时显示；
+  // - +60s 在 extends_used >= extends_max 时置灰并提示已达上限。
+  function findActiveTaskFromAllTasks() {
+    try {
+      if (!Array.isArray(allTasks)) return null
+      if (activeTaskId) {
+        const byId = allTasks.find(t => t && t.task_id === activeTaskId)
+        if (byId) return byId
+      }
+      return allTasks.find(t => t && t.status === 'active') || null
+    } catch (e) {
+      return null
+    }
+  }
+
+  function updateCountdownControls(task) {
+    const controls = document.getElementById('countdownControls')
+    if (!controls) return
+    const extendBtn = document.getElementById('countdownExtendBtn')
+    const freezeBtn = document.getElementById('countdownFreezeBtn')
+
+    const target = task || findActiveTaskFromAllTasks()
+    const hasCountdown =
+      target &&
+      target.status !== 'completed' &&
+      typeof target.auto_resubmit_timeout === 'number' &&
+      target.auto_resubmit_timeout > 0
+
+    if (!hasCountdown) {
+      controls.classList.add('hidden')
+      if (extendBtn) extendBtn.disabled = true
+      if (freezeBtn) freezeBtn.disabled = true
+      return
+    }
+
+    controls.classList.remove('hidden')
+    if (freezeBtn) freezeBtn.disabled = false
+    if (extendBtn) {
+      const atLimit =
+        typeof target.extends_used === 'number' &&
+        typeof target.extends_max === 'number' &&
+        target.extends_used >= target.extends_max
+      extendBtn.disabled = atLimit
+      extendBtn.title = atLimit
+        ? t('ui.countdown.extendLimitReached')
+        : t('ui.countdown.extendTitle')
+    }
+  }
+
+  function handleCountdownExtendClick() {
+    const extendBtn = document.getElementById('countdownExtendBtn')
+    if (!extendBtn || extendBtn.disabled) return
+    const target = findActiveTaskFromAllTasks()
+    const taskId = (target && target.task_id) || activeTaskId
+    if (!taskId) return
+    extendBtn.disabled = true
+    fetch(SERVER_URL + '/api/tasks/' + encodeURIComponent(taskId) + '/extend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seconds: 60 })
+    })
+      .then(resp => resp.json().then(data => ({ ok: resp.ok, data })))
+      .then(res => {
+        if (!res.ok || !res.data || !res.data.success) {
+          const code = (res.data && res.data.code) || 'unknown'
+          if (code !== 'extends_limit_reached') {
+            showToast(t('ui.countdown.extendFailed'), { kind: 'error' })
+            extendBtn.disabled = false
+          }
+          if (target && res.data && typeof res.data.extends_used === 'number') {
+            target.extends_used = res.data.extends_used
+            target.extends_max = res.data.extends_max || target.extends_max
+          }
+          updateCountdownControls(target)
+          return
+        }
+        const data = res.data
+        const newRemaining = data.new_remaining_time
+        if (typeof newRemaining === 'number') {
+          taskDeadlines[taskId] = getAdjustedNowSeconds() + newRemaining
+          if (lastCountdownTaskId === taskId) {
+            remainingSeconds = Math.max(0, Math.floor(newRemaining))
+          }
+        }
+        if (target) {
+          target.extends_used = data.extends_used
+          target.extends_max = data.extends_max
+          target.auto_resubmit_timeout = data.new_auto_resubmit_timeout
+          target.remaining_time = newRemaining
+        }
+        updateCountdownControls(target)
+        log('Countdown extended for ' + taskId + ': +60s')
+      })
+      .catch(e => {
+        log('Extend countdown network error: ' + e)
+        showToast(t('ui.countdown.extendFailed'), { kind: 'error' })
+        extendBtn.disabled = false
+      })
+  }
+
+  function handleCountdownFreezeClick() {
+    const freezeBtn = document.getElementById('countdownFreezeBtn')
+    if (!freezeBtn || freezeBtn.disabled) return
+    const target = findActiveTaskFromAllTasks()
+    const taskId = (target && target.task_id) || activeTaskId
+    if (!taskId) return
+    freezeBtn.disabled = true
+    fetch(SERVER_URL + '/api/tasks/' + encodeURIComponent(taskId) + '/freeze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+      .then(resp => resp.json().then(data => ({ ok: resp.ok, data })))
+      .then(res => {
+        if (!res.ok || !res.data || !res.data.success) {
+          const code = (res.data && res.data.code) || 'unknown'
+          showToast(
+            code === 'already_frozen'
+              ? t('ui.countdown.freezeAlreadyFrozen')
+              : t('ui.countdown.freezeFailed'),
+            { kind: 'error' }
+          )
+          freezeBtn.disabled = false
+          return
+        }
+        if (target) {
+          target.auto_resubmit_timeout = 0
+          target.remaining_time = 0
+        }
+        try {
+          delete taskDeadlines[taskId]
+        } catch (e) {
+          // 忽略
+        }
+        if (lastCountdownTaskId === taskId) {
+          stopCountdown()
+        }
+        updateCountdownControls(target)
+        log('Countdown frozen for ' + taskId)
+        setTimeout(() => requestImmediateRefresh(), 300)
+      })
+      .catch(e => {
+        log('Freeze countdown network error: ' + e)
+        showToast(t('ui.countdown.freezeFailed'), { kind: 'error' })
+        freezeBtn.disabled = false
+      })
+  }
+
+  // R689 (TODO#13)：用户是否在 typing-hold 窗口内输入过
+  function isUserActivelyTyping() {
+    return lastFeedbackTypingAtMs > 0 && Date.now() - lastFeedbackTypingAtMs < TYPING_HOLD_IDLE_MS
+  }
+
+  // R689 (TODO#13)：剩余时间进入触发窗口且用户正在输入 → 自动延长倒计时。
+  // 复用服务端 extend endpoint（+60s，受 extends_max 配额约束）；失败/
+  // 配额耗尽则放行，归零时由 autoSubmit 提交用户已输入内容兜底。
+  function maybeAutoExtendCountdownForTyping(taskId, remaining) {
+    if (!taskId) return
+    if (remaining <= 0 || remaining > TYPING_HOLD_TRIGGER_S) return
+    if (!isUserActivelyTyping()) return
+    if (typingAutoExtendInFlight) return
+    if (typingAutoExtendBlockedTasks[taskId]) return
+
+    typingAutoExtendInFlight = true
+    fetch(SERVER_URL + '/api/tasks/' + encodeURIComponent(taskId) + '/extend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seconds: 60 })
+    })
+      .then(resp => resp.json().then(data => ({ ok: resp.ok, data })))
+      .then(res => {
+        if (!res.ok || !res.data || !res.data.success) {
+          const code = (res.data && res.data.code) || 'unknown'
+          if (code === 'extends_limit_reached') {
+            // 配额耗尽：本任务不再尝试，避免每秒重复请求
+            typingAutoExtendBlockedTasks[taskId] = true
+          }
+          log('Typing auto-extend rejected for ' + taskId + ': ' + code)
+          return
+        }
+        const newRemaining = res.data.new_remaining_time
+        if (typeof newRemaining === 'number') {
+          taskDeadlines[taskId] = getAdjustedNowSeconds() + newRemaining
+          if (lastCountdownTaskId === taskId) {
+            remainingSeconds = Math.max(0, Math.floor(newRemaining))
+          }
+        }
+        log('Typing auto-extend applied for ' + taskId + ': +60s')
+      })
+      .catch(e => {
+        log('Typing auto-extend network error: ' + e)
+      })
+      .finally(() => {
+        typingAutoExtendInFlight = false
+      })
+  }
+
   // 倒计时
   // 启动倒计时（后台运行，不显示UI）
   function startCountdown(totalSeconds, taskId, initialRemaining, deadline) {
@@ -4413,6 +4807,9 @@
       } else {
         remainingSeconds = remainingSeconds - 1
       }
+
+      // R689 (TODO#13)：用户正在输入时自动延长倒计时，避免输入中被归零
+      maybeAutoExtendCountdownForTyping(taskId, remainingSeconds)
 
       if (remainingSeconds <= 0) {
         autoSubmit()
@@ -4459,6 +4856,32 @@
 
     if (taskId) {
       autoSubmitAttempted[taskId] = now
+    }
+
+    // R689 (TODO#13)：倒计时归零时优先提交用户已输入的内容——
+    // 即使没点发送按钮，输入框文本 / 已勾选选项也不能丢。
+    const typedText = collectTypedFeedbackForAutoSubmit(taskId)
+    const typedOptions = collectSelectedOptionsForAutoSubmit()
+    if ((typedText && typedText.trim()) || typedOptions.length > 0) {
+      log(
+        'Auto-submitting user-typed content for ' +
+          (taskId || '(unknown)') +
+          ' (' +
+          (typedText || '').length +
+          ' chars, ' +
+          typedOptions.length +
+          ' options)'
+      )
+      const okTyped = await submitWithData(typedText || '', typedOptions, taskId)
+      if (okTyped === null && taskId) {
+        try {
+          delete autoSubmitAttempted[taskId]
+        } catch (e) {
+          // 忽略
+        }
+      }
+      setTimeout(() => requestImmediateRefresh(), 500)
+      return
     }
 
     // Refetch feedback config right before auto-submit so hot-reloaded
@@ -4510,6 +4933,45 @@
 
     // 提交后立即重新轮询，更新任务状态
     setTimeout(() => requestImmediateRefresh(), 500)
+  }
+
+  // R689 (TODO#13)：自动提交前收集用户已输入的文本。
+  // 优先级：实时 textarea 值 > taskTextareaContents 自动保存值。
+  function collectTypedFeedbackForAutoSubmit(taskId) {
+    try {
+      const feedbackTextEl = document.getElementById('feedbackText')
+      if (
+        feedbackTextEl &&
+        typeof feedbackTextEl.value === 'string' &&
+        feedbackTextEl.value.trim()
+      ) {
+        return feedbackTextEl.value
+      }
+      if (taskId && typeof taskTextareaContents[taskId] === 'string') {
+        return taskTextareaContents[taskId]
+      }
+    } catch (e) {
+      // 收集失败按无输入处理，走 resubmit_prompt 原路径
+    }
+    return ''
+  }
+
+  // R689 (TODO#13)：自动提交前收集已勾选的预定义选项（label 数组）。
+  function collectSelectedOptionsForAutoSubmit() {
+    const selected = []
+    try {
+      if (currentConfig && currentConfig.predefined_options) {
+        currentConfig.predefined_options.forEach((option, index) => {
+          const checkbox = document.getElementById('option-' + index)
+          if (checkbox && checkbox.checked) {
+            selected.push(option)
+          }
+        })
+      }
+    } catch (e) {
+      // 收集失败按无选项处理
+    }
+    return selected
   }
 
   // 提交反馈
@@ -5130,10 +5592,11 @@
 
   // 图片处理
   function handleImageSelect(e) {
-    const files = Array.from(e.target.files || [])
+    const target = e && e.target
+    const files = target && target.files ? target.files : []
     processImages(files)
     // 清空 input，允许重复选择同一文件
-    e.target.value = ''
+    if (target) target.value = ''
   }
 
   function handlePaste(e) {
@@ -5179,8 +5642,15 @@
   async function processImages(files) {
     const targetTaskId = activeTaskId || (currentConfig && currentConfig.task_id) || ''
     const initialTargetImages = Array.isArray(uploadedImages) ? uploadedImages : []
+    const fileCount =
+      files && typeof files.length === 'number' && Number.isFinite(files.length)
+        ? Math.max(0, Math.floor(files.length))
+        : 0
 
-    for (const file of files || []) {
+    for (let fileIndex = 0; fileIndex < fileCount; fileIndex += 1) {
+      const file =
+        files[fileIndex] ||
+        (files && typeof files.item === 'function' ? files.item(fileIndex) : null)
       if (!file) continue
       const imagesForLimit = getImageUploadTargetImages(targetTaskId, initialTargetImages)
       if (imagesForLimit.length + getPendingImageUploadCount(targetTaskId) >= MAX_IMAGE_COUNT) {

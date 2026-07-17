@@ -103,12 +103,24 @@ export type I18nKey =
   | "ui.copy.failed"
   | "ui.copy.label"
   | "ui.copy.success"
+  | "ui.countdown.extendAriaLabel"
+  | "ui.countdown.extendFailed"
+  | "ui.countdown.extendLabel"
+  | "ui.countdown.extendLimitReached"
+  | "ui.countdown.extendTitle"
+  | "ui.countdown.freezeAlreadyFrozen"
+  | "ui.countdown.freezeAriaLabel"
+  | "ui.countdown.freezeFailed"
+  | "ui.countdown.freezeLabel"
+  | "ui.countdown.freezeTitle"
   | "ui.countdown.remaining"
   | "ui.form.insertCode"
   | "ui.form.optionsLabel"
   | "ui.form.placeholder"
   | "ui.form.submit"
   | "ui.form.uploadImage"
+  | "ui.form.yesnoNo"
+  | "ui.form.yesnoYes"
   | "ui.image.decodeFailed"
   | "ui.image.invalid"
   | "ui.image.processingFailedReason"
@@ -249,12 +261,24 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "ui.copy.failed",
   "ui.copy.label",
   "ui.copy.success",
+  "ui.countdown.extendAriaLabel",
+  "ui.countdown.extendFailed",
+  "ui.countdown.extendLabel",
+  "ui.countdown.extendLimitReached",
+  "ui.countdown.extendTitle",
+  "ui.countdown.freezeAlreadyFrozen",
+  "ui.countdown.freezeAriaLabel",
+  "ui.countdown.freezeFailed",
+  "ui.countdown.freezeLabel",
+  "ui.countdown.freezeTitle",
   "ui.countdown.remaining",
   "ui.form.insertCode",
   "ui.form.optionsLabel",
   "ui.form.placeholder",
   "ui.form.submit",
   "ui.form.uploadImage",
+  "ui.form.yesnoNo",
+  "ui.form.yesnoYes",
   "ui.image.decodeFailed",
   "ui.image.invalid",
   "ui.image.processingFailedReason",

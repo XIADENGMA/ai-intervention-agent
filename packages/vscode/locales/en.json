@@ -104,7 +104,9 @@
       "placeholder": "Enter feedback (paste images supported)…",
       "insertCode": "Insert code (from clipboard)",
       "uploadImage": "Upload image",
-      "submit": "Submit feedback"
+      "submit": "Submit feedback",
+      "yesnoYes": "Yes",
+      "yesnoNo": "No"
     },
     "toast": {
       "configFallback": "Config load failed, using task detail fallback",
@@ -119,7 +121,17 @@
       "serverStatus": "Server connection status"
     },
     "countdown": {
-      "remaining": "{seconds, plural, one {#s remaining} other {#s remaining}}"
+      "remaining": "{seconds, plural, one {#s remaining} other {#s remaining}}",
+      "extendLabel": "+60s",
+      "extendTitle": "Extend countdown by 60 seconds (max 3 times per task)",
+      "extendAriaLabel": "Extend countdown by 60 seconds",
+      "extendLimitReached": "Extension limit reached for this task",
+      "extendFailed": "Failed to extend countdown — please retry",
+      "freezeLabel": "Freeze",
+      "freezeTitle": "Permanently disable auto-resubmit for this task",
+      "freezeAriaLabel": "Freeze auto-resubmit countdown (one-time)",
+      "freezeAlreadyFrozen": "Task already frozen",
+      "freezeFailed": "Failed to freeze countdown — please retry"
     },
     "task": {
       "switchedTo": "Switched to task: {{id}}",

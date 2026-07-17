@@ -126,7 +126,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _cachedLocales: Record<string, Record<string, unknown>>;
   private _cachedStaticAssets: {
     activityIconSvg: string;
-    lottieData: unknown;
   } | null;
   // R20.13-E：``inlineAllLocalesLiteral`` 是 ``_getHtmlContent`` 每次都要序列化
   // 一次的 ~10 KB JSON。对单个 webview 生命周期内 ``_cachedLocales`` 内容很少
@@ -141,6 +140,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _prefetchServerLangAbortController: AbortController | null;
   private _visibilityBenchmarkSeq: number;
   private _retainContextWhenHidden: boolean;
+  private _webviewServerUrl: string;
 
   constructor(
     extensionUri: vscode.Uri,
@@ -196,6 +196,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       this._macosNativeNotificationProvider,
     );
     this._serverUrl = serverUrl;
+    this._webviewServerUrl = this._normalizeWebviewServerUrl(serverUrl);
     // R20.13-B/F：从 host 端 ``activate`` 一次性传入版本号，免得每次
     // ``_getHtmlContent`` 都掏 ``vscode.extensions.getExtension`` 注册表查表
     // （macOS M1 实测每次 ~1-3 ms，热路径 1-2 次 / 会话）。
@@ -236,29 +237,61 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._retainContextWhenHidden = retainContextWhenHidden === true;
   }
 
+  private _normalizeWebviewServerUrl(serverUrl: string): string {
+    const fallback = "http://localhost:8080";
+    const raw =
+      typeof serverUrl === "string" && serverUrl.trim()
+        ? serverUrl.trim()
+        : fallback;
+    return raw.replace(/\/+$/, "");
+  }
+
+  private async _refreshWebviewServerUrl(): Promise<void> {
+    const fallback = this._normalizeWebviewServerUrl(this._serverUrl);
+    this._webviewServerUrl = fallback;
+
+    // R453: VS Code webviews execute on the user's local UI side even when
+    // the extension host is remote. A literal localhost URL in webview JS can
+    // therefore point at the wrong machine in Remote SSH / Dev Containers /
+    // Codespaces. Keep extension-host fetches on _serverUrl, but forward the
+    // browser-facing webview URL through asExternalUri when VS Code can provide
+    // one. If forwarding is unavailable, retain the direct URL so desktop-local
+    // sessions and older hosts keep working.
+    try {
+      const forwarded = await vscode.env.asExternalUri(vscode.Uri.parse(fallback));
+      const forwardedText = forwarded.toString();
+      if (forwardedText) {
+        this._webviewServerUrl = this._normalizeWebviewServerUrl(forwardedText);
+      }
+    } catch {
+      this._webviewServerUrl = fallback;
+    }
+  }
+
   private async _preloadResources(): Promise<void> {
-    // R24.1: 4 个 disk read 并行化。
+    // R24.1/R462: critical disk reads 并行化。
     //
     // why
-    // - pre-fix 是「en locale → await → zh-CN locale → await → svg →
-    //   await → lottie → await」纯串行 4 次 disk read（每次 ~50-200 µs，
+    // - R24.1 pre-fix 是「en locale → await → zh-CN locale → await → svg →
+    //   await → lottie → await」纯串行 disk read（每次 ~50-200 µs，
     //   含 ``vscode.workspace.fs.readFile`` 的 IPC overhead）。在
     //   ``resolveWebviewView`` 的 hot path 上累计 ~50 ms（已在 line 426
     //   的注释里量化），是 webview 首屏渲染前**唯一**的同步阻塞点。
-    // - 4 个 read 之间**没有任何数据依赖**：locale en 不依赖 zh-CN，
-    //   svg 不依赖 lottie，lottie 不依赖任何 locale。串行只是 historical
+    // - critical read 之间**没有任何数据依赖**：locale en 不依赖 zh-CN，
+    //   SVG 不依赖 locale。串行只是 historical
     //   accident（早期单文件版本逐步加进来时没有重构）。
-    // - ``Promise.all`` 把 wall-clock 缩到 ``max(read_a, read_b, read_c,
-    //   read_d)`` —— 约从 4 × 12.5 ms = 50 ms 降到 ~15 ms（最慢的
-    //   lottie/sprout.json 是 ~12 KB，最大的那个），实测 dev box 上
-    //   首次 ``resolveWebviewView`` 从 52 ms ± 4 降到 16 ms ± 3，**省
-    //   ~35 ms** 直接体现在用户看到 webview 内容前的等待时间。
+    // - R462 后，445KB ``lottie/sprout.json`` 不再由 host 端读取/JSON.parse：
+    //   ``_getHtmlContent`` 已经固定内联 null，并把 ``data-no-content-lottie-json-url``
+    //   交给 webview-ui 按需 fetch + force-cache。保留 host 预读只会拖慢
+    //   resolveWebviewView 的首屏路径，而且解析结果没有消费者。
+    // - ``Promise.all`` 把 wall-clock 缩到 ``max(read_a, read_b, read_c)``，
+    //   R462 再移除最大的 JSON read/parse，直接降低 cold-open IO 与 CPU。
     // - 二次以后的 ``resolveWebviewView`` 走 ``_cachedLocales[loc]`` /
     //   ``_cachedStaticAssets`` 的 fast-path（line 235 / 264 的 cache
     //   guard），所以 R24.1 主要改善 cold-open / window reload 这种
     //   首屏 critical path 场景。
     //
-    // 容错保留：每个文件保留原有的 ``safeReadTextFile`` ``vscode.workspace.fs``
+    // 容错保留：critical 文件保留原有的 ``safeReadTextFile`` ``vscode.workspace.fs``
     // → ``fs.readFileSync`` fallback chain，所以 ``Promise.all`` 中即便
     // 某一个 read fail，``catch`` 内部的兜底会把它降级到同步 fs，整体
     // ``_preloadResources`` 的成功率与 pre-fix 完全一致。
@@ -298,39 +331,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const loadStaticAssets = async (): Promise<void> => {
       if (this._cachedStaticAssets) return;
       let svgText = "";
-      let lottieData: unknown = null;
-      const svgPromise = (async (): Promise<void> => {
-        try {
-          const svgBytes = await vscode.workspace.fs.readFile(
-            vscode.Uri.joinPath(this._extensionUri, "activity-icon.svg"),
-          );
-          svgText = decoder.decode(svgBytes);
-        } catch {
-          svgText = safeReadTextFile(
-            vscode.Uri.joinPath(this._extensionUri, "activity-icon.svg"),
-          );
-        }
-      })();
-      const lottiePromise = (async (): Promise<void> => {
-        try {
-          const lottieBytes = await vscode.workspace.fs.readFile(
-            vscode.Uri.joinPath(this._extensionUri, "lottie", "sprout.json"),
-          );
-          const raw = decoder.decode(lottieBytes);
-          lottieData = raw ? JSON.parse(raw) : null;
-        } catch {
-          try {
-            const raw = safeReadTextFile(
-              vscode.Uri.joinPath(this._extensionUri, "lottie", "sprout.json"),
-            );
-            lottieData = raw ? JSON.parse(raw) : null;
-          } catch {
-            /* 忽略 */
-          }
-        }
-      })();
-      await Promise.all([svgPromise, lottiePromise]);
-      this._cachedStaticAssets = { activityIconSvg: svgText, lottieData };
+      try {
+        const svgBytes = await vscode.workspace.fs.readFile(
+          vscode.Uri.joinPath(this._extensionUri, "activity-icon.svg"),
+        );
+        svgText = decoder.decode(svgBytes);
+      } catch {
+        svgText = safeReadTextFile(
+          vscode.Uri.joinPath(this._extensionUri, "activity-icon.svg"),
+        );
+      }
+      this._cachedStaticAssets = { activityIconSvg: svgText };
     };
 
     // cr32 §3.2 fix [medium]：补 zh-TW.json 预加载。否则用户系统
@@ -613,12 +624,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   }
 
   async resolveWebviewView(webviewView: vscode.WebviewView): Promise<void> {
-    // 只阻塞本地资源预加载（locales/svg/lottie，首次 ~50ms，二次 ~0ms）
+    // 只阻塞本地 critical 资源预加载（locales/svg，首次 ~50ms，二次 ~0ms）
     // 服务器语言预取改为 fire-and-forget，避免服务器不可达时首屏最坏 7.5s 空白
     // 语言纠偏有两条备份链路：
     //   1) _getHtmlContent 先用 vscode.env.language 兜底
     //   2) 前端 checkServerStatus 拿到 language 后通过 langDetected 回传
-    await this._preloadResources();
+    await Promise.all([this._preloadResources(), this._refreshWebviewServerUrl()]);
     this._prefetchServerLanguage().catch(() => {
       /* 忽略：失败不影响首屏 */
     });
@@ -801,6 +812,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
   updateServerUrl(serverUrl: string): void {
     this._serverUrl = serverUrl;
+    this._webviewServerUrl = this._normalizeWebviewServerUrl(serverUrl);
     this._notificationConfig = null;
     this._notificationConfigFetchedAt = 0;
     this._notificationConfigFetchPromise = null;
@@ -823,7 +835,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       this._prefetchServerLanguage().catch(() => {
         /* 忽略：失败不影响 UI */
       });
-      this._preloadResources()
+      Promise.all([this._preloadResources(), this._refreshWebviewServerUrl()])
         .catch(() => {})
         .finally(() => {
           // R18.2 dispose-race guard：``_preloadResources`` 是 async（通常含
@@ -1485,10 +1497,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
   async dispatchNewTaskNotification(taskData: TaskData[]): Promise<void> {
     try {
-      const items = Array.isArray(taskData) ? taskData.filter(Boolean) : [];
+      const items: TaskData[] = [];
+      const ids: string[] = [];
+      if (Array.isArray(taskData)) {
+        for (const item of taskData) {
+          if (!item) continue;
+          items.push(item);
+          const taskId = item.id || "";
+          if (taskId) {
+            ids.push(taskId);
+          }
+        }
+      }
       if (items.length === 0) return;
-
-      const ids = items.map((t) => (t && t.id) || "").filter(Boolean);
       if (ids.length === 0) return;
 
       try {
@@ -1618,7 +1639,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   }
 
   _getHtmlContent(webview: vscode.Webview): string {
-    const serverUrl = this._serverUrl || "http://localhost:8080";
+    const serverUrl =
+      this._webviewServerUrl ||
+      this._normalizeWebviewServerUrl(this._serverUrl) ||
+      "http://localhost:8080";
     const cspSource = webview.cspSource;
     const markedJsUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, "marked.min.js"),
@@ -1822,9 +1846,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     // 变化；不靠完整 deep equal，因为 ``_cachedLocales`` 写入路径是 readFile +
     // JSON.parse，正常生命周期内不会原地 mutate。
     const localeNames = Object.keys(allLocales).sort();
-    const localeSignature = localeNames
-      .map((n) => `${n}:${Object.keys(allLocales[n] || {}).length}`)
-      .join("|");
+    let localeSignature = "";
+    for (let i = 0; i < localeNames.length; i += 1) {
+      const name = localeNames[i];
+      if (i > 0) localeSignature += "|";
+      localeSignature += `${name}:${Object.keys(allLocales[name] || {}).length}`;
+    }
     let inlineAllLocalesLiteral: string;
     if (
       localeNames.length > 0 &&
@@ -2015,6 +2042,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
             <div class="feedback-form hidden" id="feedbackForm">
                 <div class="scrollable-content">
+                    <!-- R691（TODO#5 跨端一致性）：任务级 header chip（≤16 字符领域标签），
+                         与 web 端 #task-header-chip 同构；无 header_label 时隐藏。 -->
+                    <div class="task-header-chip hidden" id="taskHeaderChip" aria-hidden="false"></div>
                     <div class="markdown-content" id="markdownContent"></div>
 
                     <div class="form-section hidden" id="optionsSection">
@@ -2025,7 +2055,26 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 </div>
 
                 <div class="fixed-input-area">
+                    <!-- R690（TODO#5 web/插件功能对齐）：倒计时控制行。
+                         与 web 端 countdown-extend-btn / countdown-freeze-btn 同构：
+                         仅当 active 任务 auto_resubmit_timeout > 0 时显示；
+                         +60s 受服务端 extends_max 配额约束（达到上限置灰）。 -->
+                    <div class="countdown-controls hidden" id="countdownControls">
+                        <button type="button" class="countdown-ctrl-btn" id="countdownExtendBtn" title="${tl("ui.countdown.extendTitle")}" aria-label="${tl("ui.countdown.extendAriaLabel")}" data-i18n-title="ui.countdown.extendTitle">
+                            <span data-i18n="ui.countdown.extendLabel">${tl("ui.countdown.extendLabel")}</span>
+                        </button>
+                        <button type="button" class="countdown-ctrl-btn" id="countdownFreezeBtn" title="${tl("ui.countdown.freezeTitle")}" aria-label="${tl("ui.countdown.freezeAriaLabel")}" data-i18n-title="ui.countdown.freezeTitle">
+                            <span data-i18n="ui.countdown.freezeLabel">${tl("ui.countdown.freezeLabel")}</span>
+                        </button>
+                    </div>
                     <div class="uploaded-images" id="uploadedImages"></div>
+
+                    <!-- R691（TODO#5 跨端一致性）：question_type="yesno" 时替代
+                         textarea 的一行 Yes/No 按钮组，点击直接提交字面 yes/no。 -->
+                    <div class="yesno-button-group hidden" id="yesnoButtonGroup">
+                        <button type="button" class="yesno-btn yesno-btn-yes" id="yesnoYesBtn" data-i18n="ui.form.yesnoYes">${tl("ui.form.yesnoYes")}</button>
+                        <button type="button" class="yesno-btn yesno-btn-no" id="yesnoNoBtn" data-i18n="ui.form.yesnoNo">${tl("ui.form.yesnoNo")}</button>
+                    </div>
 
                     <div class="textarea-wrapper">
                         <div class="textarea-resize-handle" id="resizeHandle"></div>

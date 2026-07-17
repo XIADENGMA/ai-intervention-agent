@@ -29,11 +29,12 @@
         : 0
 
     const haystacks = [uaDataPlatform, platform, userAgent]
-      .filter(Boolean)
-      .map((value) => value.toLowerCase())
-
-    if (haystacks.some((value) => value.includes('mac'))) return true
-    if (haystacks.some((value) => /iphone|ipad|ipod/.test(value))) return true
+    for (const value of haystacks) {
+      if (!value) continue
+      const normalized = value.toLowerCase()
+      if (normalized.includes('mac')) return true
+      if (/iphone|ipad|ipod/.test(normalized)) return true
+    }
 
     // iPadOS 桌面模式经常暴露为 MacIntel，但同时存在触摸点。
     if (platform === 'MacIntel' && maxTouchPoints > 1) return true
@@ -59,25 +60,42 @@
     target.push(file)
   }
 
+  function forEachClipboardEntry(collection, callback) {
+    if (!collection) return
+
+    const iterator =
+      typeof Symbol !== 'undefined' ? collection[Symbol.iterator] : null
+    if (typeof iterator === 'function') {
+      for (const entry of collection) {
+        callback(entry)
+      }
+      return
+    }
+
+    const length = Number(collection.length)
+    if (!Number.isFinite(length) || length <= 0) return
+    for (let i = 0; i < length; i += 1) {
+      callback(collection[i])
+    }
+  }
+
   function collectImageFilesFromClipboard(clipboardData) {
     const files = []
     const seenKeys = new Set()
     if (!clipboardData) return files
 
-    const items = Array.from(clipboardData.items || [])
-    for (const item of items) {
-      if (!item || item.kind !== 'file') continue
-      if (!item.type || !String(item.type).startsWith('image/')) continue
+    forEachClipboardEntry(clipboardData.items, (item) => {
+      if (!item || item.kind !== 'file') return
+      if (!item.type || !String(item.type).startsWith('image/')) return
       const file = typeof item.getAsFile === 'function' ? item.getAsFile() : null
       pushUniqueImageFile(files, seenKeys, file)
-    }
+    })
 
     if (files.length > 0) return files
 
-    const clipboardFiles = Array.from(clipboardData.files || [])
-    for (const file of clipboardFiles) {
+    forEachClipboardEntry(clipboardData.files, (file) => {
       pushUniqueImageFile(files, seenKeys, file)
-    }
+    })
     return files
   }
 
@@ -87,11 +105,18 @@
     if (!value) return null
     const match = value.match(/^rgba?\(([^)]+)\)$/i)
     if (!match) return null
-    const parts = match[1].split(',').map((part) => Number(part.trim()))
-    if (parts.length < 3 || parts.slice(0, 3).some((part) => !Number.isFinite(part))) {
-      return null
+    const channels = []
+    const raw = match[1]
+    let start = 0
+    for (let i = 0; i <= raw.length && channels.length < 3; i += 1) {
+      if (i < raw.length && raw[i] !== ',') continue
+      const channel = Number(raw.slice(start, i).trim())
+      if (!Number.isFinite(channel)) return null
+      channels.push(channel)
+      start = i + 1
     }
-    return { r: parts[0], g: parts[1], b: parts[2] }
+    if (channels.length < 3) return null
+    return { r: channels[0], g: channels[1], b: channels[2] }
   }
 
   function resolveThemeKind(doc) {

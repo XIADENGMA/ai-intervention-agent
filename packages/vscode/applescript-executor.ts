@@ -107,12 +107,13 @@ export class AppleScriptExecutor {
     const osascriptArgs = ['-']
     const envExtra =
       runOptions && runOptions.env && typeof runOptions.env === 'object' ? runOptions.env : null
-    const injectedEnvKeys = envExtra
-      ? Object.keys(envExtra)
-          .filter(Boolean)
-          .map(k => String(k))
-          .sort()
-      : []
+    const injectedEnvKeys: string[] = []
+    if (envExtra) {
+      for (const key of Object.keys(envExtra)) {
+        if (key) injectedEnvKeys.push(String(key))
+      }
+      injectedEnvKeys.sort()
+    }
     const env = envExtra ? { ...process.env, ...envExtra } : process.env
     const startedAt = Date.now()
 

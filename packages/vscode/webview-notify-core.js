@@ -184,14 +184,18 @@
   // taskData: Array<{ id, prompt }> 或 Array<string>（向后兼容纯 ID 数组）
   async function showNewTaskNotification(taskData) {
     try {
-      var items = Array.isArray(taskData) ? taskData.filter(Boolean) : [taskData].filter(Boolean)
-      if (!items || items.length === 0) return
-
-      // 兼容：纯字符串数组 → { id, prompt } 格式
-      var normalized = items.map(function (item) {
-        return typeof item === 'string' ? { id: item, prompt: '' } : item
-      })
-      var ids = normalized.map(function (t) { return t.id || '' }).filter(Boolean)
+      var sourceItems = Array.isArray(taskData) ? taskData : [taskData]
+      var normalized = []
+      var ids = []
+      for (var i = 0; i < sourceItems.length; i += 1) {
+        var item = sourceItems[i]
+        if (!item) continue
+        var normalizedItem = typeof item === 'string' ? { id: item, prompt: '' } : item
+        normalized.push(normalizedItem)
+        var id = normalizedItem.id || ''
+        if (id) ids.push(id)
+      }
+      if (normalized.length === 0) return
       if (ids.length === 0) return
 
       // 构建通知内容：优先使用第一个任务的 prompt 摘要
