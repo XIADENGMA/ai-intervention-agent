@@ -659,7 +659,25 @@
             </div>
 
             <div class="countdown-container hidden" id="countdown-container">
-              <span class="countdown-label">⏰</span>
+              <!-- R696：时钟图标改为 stroke:currentColor 的内联 SVG，
+                   跟随主题色（暗色琥珀 / 浅色深陶土橙），替换 emoji -->
+              <span class="countdown-label" aria-hidden="true">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 3" />
+                </svg>
+              </span>
               <span
                 class="countdown-text"
                 id="countdown-text"
@@ -2179,6 +2197,16 @@
     <script
       defer
       src="/static/js/image-upload.js?v={{ image_upload_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
+    <!-- R696：lottie 运行时随首屏 defer 预加载（在 app.js 之前），
+         空态动画直接以 Lottie 呈现，消除「SVG 降级动画 → Lottie」的
+         可见切换。app.js 侧仍保留 AIIA_LOTTIE_JS_URL 动态加载兜底
+         （本标签加载失败时走 renderSproutFallback）。 -->
+    <script
+      defer
+      src="/static/js/lottie.min.js?v={{ lottie_min_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 

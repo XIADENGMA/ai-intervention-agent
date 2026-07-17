@@ -311,16 +311,26 @@ def test_markdown_loading_state_uses_timeout_when_animation_frame_is_missing() -
 
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
-def test_lottie_fallback_cleanup_uses_timeout_and_parent_remove_fallback() -> None:
+def test_lottie_inits_directly_without_fallback_swap() -> None:
+    """R696：lottie 运行时已随首屏 defer 预加载 → init 直接创建动画。
+
+    锁定契约：
+    - 不再先渲染 SVG 降级动画（容器保持无 SVG 子节点）；
+    - 不再有 500ms 首绘延迟 / 2000ms 降级清理定时器；
+    - lottie.loadAnimation 在微任务内被调用恰好一次；
+    - DOMLoaded 后主题色同步（filter 被设置）。
+    """
     script = _app_harness(
         """
         const listeners = {};
+        let loadAnimationCalls = 0;
         const container = sandbox.document.createElement('div');
         container.id = 'hourglass-lottie';
         sandbox.document.body.appendChild(container);
         sandbox.document.readyState = 'complete';
         sandbox.lottie = {
           loadAnimation() {
+            loadAnimationCalls += 1;
             return {
               addEventListener(type, handler) {
                 if (!listeners[type]) listeners[type] = [];
@@ -332,32 +342,25 @@ def test_lottie_fallback_cleanup_uses_timeout_and_parent_remove_fallback() -> No
         };
 
         vm.runInContext('initHourglassAnimation()', sandbox);
-        sandbox.__runTimer('timer-1', false);
-        sandbox.__runTimer('timer-2', false);
+        await Promise.resolve();
         await Promise.resolve();
 
-        const afterLoad = {
+        const afterInit = {
           childTags: container.children.map((child) => child.tagName),
-          opacity: container.style.opacity,
-          timers: sandbox.__timers.map(({ delay, cleared }) => ({ delay, cleared })),
+          loadAnimationCalls,
           domLoadedListeners: (listeners.DOMLoaded || []).length,
+          swapTimers: sandbox.__timers
+            .filter(({ delay }) => delay === 500 || delay === 2000)
+            .length,
         };
 
         for (const handler of listeners.DOMLoaded || []) handler();
-        const afterDomLoaded = {
-          childTags: container.children.map((child) => child.tagName),
-          opacity: container.style.opacity,
-          timers: sandbox.__timers.map(({ delay, cleared }) => ({ delay, cleared })),
-        };
-
-        sandbox.__runTimer('timer-4', false);
         process.stdout.write(
           JSON.stringify({
-            afterLoad,
-            afterDomLoaded,
-            afterFrame: {
-              childTags: container.children.map((child) => child.tagName),
-              opacity: container.style.opacity,
+            afterInit,
+            afterDomLoaded: {
+              filterSet: typeof container.style.filter === 'string' &&
+                container.style.filter.length > 0,
             },
           })
         );
@@ -365,27 +368,13 @@ def test_lottie_fallback_cleanup_uses_timeout_and_parent_remove_fallback() -> No
     )
 
     assert json.loads(_run_node(script)) == {
-        "afterLoad": {
-            "childTags": ["SVG"],
-            "opacity": "0",
-            "timers": [
-                {"delay": 500, "cleared": False},
-                {"delay": 0, "cleared": False},
-                {"delay": 2000, "cleared": False},
-            ],
-            "domLoadedListeners": 2,
-        },
-        "afterDomLoaded": {
+        "afterInit": {
             "childTags": [],
-            "opacity": "0",
-            "timers": [
-                {"delay": 500, "cleared": False},
-                {"delay": 0, "cleared": False},
-                {"delay": 2000, "cleared": False},
-                {"delay": 16, "cleared": False},
-            ],
+            "loadAnimationCalls": 1,
+            "domLoadedListeners": 1,
+            "swapTimers": 0,
         },
-        "afterFrame": {"childTags": [], "opacity": "1"},
+        "afterDomLoaded": {"filterSet": True},
     }
 
 

@@ -3599,24 +3599,38 @@ h1 {
   align-items: center; /* 垂直居中 */
   gap: 0.5rem; /* 元素间距（8px） */
   padding: 0.75rem 1.25rem; /* 内边距（上下0.75rem，左右1.25rem） */
-  background: rgba(255, 107, 107, 0.15); /* 浅红色半透明背景 */
-  border-left: 3px solid rgba(255, 107, 107, 0.8); /* 红色左边框（强调） */
+  /* R696：改用主题 warning 令牌（暗色琥珀 / 浅色由下方 override 走
+     Anthropic 陶土橙），替换与两套主题都不搭的硬编码粉红。 */
+  background: var(--warning-bg, rgba(245, 158, 11, 0.15));
+  border-left: 3px solid var(--warning-500, #f59e0b);
   border-radius: 8px; /* 圆角 */
   font-size: 0.9rem; /* 字号（14.4px） */
   white-space: nowrap; /* 不换行 */
+}
+
+/* 浅色主题：Anthropic 陶土橙（与 +60s 按钮、品牌强调色同脉） */
+[data-theme="light"] .countdown-container {
+  background: rgba(217, 119, 87, 0.1);
+  border-left-color: #d97757;
 }
 
 /**
  * 倒计时标签（.countdown-label）：
  *
  * 功能说明：
- *   倒计时容器中的图标或标签（如"⏰"）。
+ *   倒计时容器中的时钟图标（R696：内联 SVG，stroke:currentColor）。
  *
  * 排版设计：
- *   - 字号：1.1rem（17.6px，较大）
+ *   - 颜色与 .countdown-text 同源（暗色琥珀 / 浅色深陶土橙）
  */
 .countdown-label {
-  font-size: 1.1rem; /* 字号（17.6px） */
+  display: inline-flex;
+  align-items: center;
+  color: var(--warning-500, #f59e0b);
+}
+
+[data-theme="light"] .countdown-label {
+  color: #b35a3c;
 }
 
 /**
@@ -3632,7 +3646,9 @@ h1 {
  *   - 字重：600（半粗体）
  */
 .countdown-text {
-  color: rgba(255, 150, 150, 0.95); /* 浅红色 */
+  /* R696：跟随主题 warning 令牌（暗色琥珀），浅色由下方 override 用
+     深陶土橙保证对比度。 */
+  color: var(--warning-500, #f59e0b);
   font-family: var(--font-mono); /* 等宽字体 */
   font-size: 0.85rem; /* 字号（13.6px） */
   font-weight: 600; /* 半粗体 */
@@ -3670,10 +3686,11 @@ h1 {
   justify-content: center;
   margin-left: 6px;
   padding: 2px 8px;
-  border: 1px solid rgba(255, 150, 150, 0.4);
+  /* R696：与倒计时条同用主题琥珀（warning）色系，替换硬编码粉红 */
+  border: 1px solid rgba(245, 158, 11, 0.4);
   border-radius: 10px;
-  background-color: rgba(255, 150, 150, 0.08);
-  color: rgba(255, 150, 150, 0.95);
+  background-color: rgba(245, 158, 11, 0.08);
+  color: var(--warning-500, #f59e0b);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   font-weight: 600;
@@ -3689,17 +3706,17 @@ h1 {
 }
 
 .countdown-extend-btn:hover:not(:disabled) {
-  background-color: rgba(255, 150, 150, 0.15);
-  border-color: rgba(255, 150, 150, 0.55);
+  background-color: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.55);
 }
 
 .countdown-extend-btn:focus-visible {
-  outline: 2px solid rgba(255, 150, 150, 0.55);
+  outline: 2px solid var(--focus-ring-color, var(--primary-500, #a855f7));
   outline-offset: 2px;
 }
 
 .countdown-extend-btn:active:not(:disabled) {
-  background-color: rgba(255, 150, 150, 0.22);
+  background-color: rgba(245, 158, 11, 0.22);
 }
 
 .countdown-extend-btn:disabled {
@@ -3765,7 +3782,7 @@ h1 {
 }
 
 .countdown-freeze-btn:focus-visible {
-  outline: 2px solid rgba(120, 160, 220, 0.55);
+  outline: 2px solid var(--focus-ring-color, var(--primary-500, #a855f7));
   outline-offset: 2px;
 }
 
@@ -3782,14 +3799,16 @@ h1 {
   display: none;
 }
 
+/* R696：浅色主题改用 Anthropic 品牌蓝 #6a9bcc（rgb 106,155,204）色系，
+   文字用 WCAG AA 验证过的深品牌蓝（同 light --info-500 #2e5e8c）。 */
 [data-theme="light"] .countdown-freeze-btn {
-  border-color: rgba(59, 130, 246, 0.45);
-  background-color: rgba(59, 130, 246, 0.08);
-  color: rgba(29, 78, 216, 1);
+  border-color: rgba(106, 155, 204, 0.55);
+  background-color: rgba(106, 155, 204, 0.1);
+  color: #2e5e8c;
 }
 [data-theme="light"] .countdown-freeze-btn:hover:not(:disabled) {
-  background-color: rgba(59, 130, 246, 0.16);
-  border-color: rgba(59, 130, 246, 0.65);
+  background-color: rgba(106, 155, 204, 0.2);
+  border-color: rgba(106, 155, 204, 0.75);
 }
 
 /* feat-remove-pwa-install (cycle-22)：``.pwa-install-btn`` /
@@ -8176,7 +8195,9 @@ code,
 }
 
 [data-theme="light"] .countdown-text {
-  color: var(--text-primary);
+  /* R696：深陶土橙（同 --focus-ring-color light 值，WCAG 已验证），
+     与倒计时条的 Anthropic 橙色系保持同脉。 */
+  color: #b35a3c;
 }
 
 /* 浅色主题 - 按钮组件 (btn 系列) */
@@ -9142,7 +9163,8 @@ code,
 }
 
 .quick-phrases-form-error {
-  color: rgba(255, 100, 100, 0.95);
+  /* R696：跟随主题错误色令牌（dark #f87171 / light #b03d38，均已过 WCAG） */
+  color: var(--error-500, #f87171);
   font-size: 0.8rem;
   min-height: 1em;
 }
@@ -9211,6 +9233,20 @@ code,
 [data-theme="light"] .quick-phrases-export-btn:hover:not(:disabled),
 [data-theme="light"] .quick-phrases-import-btn:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.08);
+}
+
+/* R696：chip 容器浅色 override —— 暗色紫 chip 在 Anthropic 米白底上
+   突兀，浅色改走品牌陶土橙色系（与 --bg-hover / --accent-primary 同脉）。 */
+:root[data-theme="light"] .quick-phrase-chip-wrap,
+[data-theme="light"] .quick-phrase-chip-wrap {
+  background: rgba(217, 119, 87, 0.1);
+  border-color: rgba(217, 119, 87, 0.35);
+}
+
+:root[data-theme="light"] .quick-phrase-chip-wrap:hover,
+[data-theme="light"] .quick-phrase-chip-wrap:hover {
+  background: rgba(217, 119, 87, 0.18);
+  border-color: rgba(217, 119, 87, 0.55);
 }
 
 :root[data-theme="light"] .quick-phrase-chip,

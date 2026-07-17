@@ -460,8 +460,13 @@ function _createLottieAnimation(container, token) {
 /**
  * 初始化嫩芽生长 Lottie 动画
  *
- * 策略：首屏先渲染零依赖 SVG fallback；只有容器进入视口、用户未开启
- * prefers-reduced-motion、且浏览器空闲时才加载 lottie.min.js。
+ * 策略（R696）：lottie.min.js 已随首屏 ``<script defer>`` 预加载（见
+ * web_ui.html），本函数直接创建 Lottie 动画——空态从第一帧起就是
+ * Lottie，不再先渲染 SVG 降级动画再热切换（旧流程的可见跳变即由
+ * 该切换引起）。仅两种情形回退到零依赖 SVG：
+ *   1. 用户开启 prefers-reduced-motion（保持静态、尊重系统偏好）；
+ *   2. lottie 运行时加载失败（离线/CDN 故障，走 AIIA_LOTTIE_JS_URL
+ *      动态加载兜底后仍失败）。
  */
 function initHourglassAnimation() {
   installHourglassAnimationLifecycleHandlers();
@@ -482,97 +487,23 @@ function initHourglassAnimation() {
   const token = _hourglassLifecycleToken + 1;
   _hourglassLifecycleToken = token;
 
-  renderSproutFallback(container);
-
   const prefersReducedMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (prefersReducedMotion) return;
-
-  const loadWhenIdle = () => {
-    const run = () => {
-      _hourglassIdleCallbackId = null;
-      if (!_isHourglassLifecycleActive(container, token)) return;
-      _ensureLottieLoaded().then((ok) => {
-        if (!ok || !_isHourglassLifecycleActive(container, token)) return;
-        const fallbackSvgs = container.querySelectorAll("svg");
-        const fallbackSvgCount = fallbackSvgs.length;
-        if (fallbackSvgCount) {
-          container.style.opacity = "0";
-          container.style.transition = "opacity .25s ease";
-        }
-        _createLottieAnimation(container, token);
-        if (fallbackSvgCount && hourglassAnimation) {
-          var removeFallback = () => {
-            if (!_isHourglassLifecycleActive(container, token)) return;
-            for (let i = 0; i < fallbackSvgCount; i += 1) {
-              _removeElement(fallbackSvgs[i]);
-            }
-          };
-          hourglassAnimation.addEventListener("DOMLoaded", () => {
-            if (!_isHourglassLifecycleActive(container, token)) return;
-            removeFallback();
-            _scheduleNextFrame(() => {
-              if (!_isHourglassLifecycleActive(container, token)) return;
-              container.style.opacity = "1";
-            });
-          });
-          _hourglassFallbackRemovalTimer = setTimeout(() => {
-            _hourglassFallbackRemovalTimer = null;
-            if (!_isHourglassLifecycleActive(container, token)) return;
-            removeFallback();
-            container.style.opacity = "1";
-          }, 2000);
-        }
-      });
-    };
-
-    if (typeof window.requestIdleCallback === "function") {
-      _hourglassIdleCallbackId = window.requestIdleCallback(run, {
-        timeout: 1500,
-      });
-    } else {
-      _hourglassDelayTimer = setTimeout(() => {
-        _hourglassDelayTimer = null;
-        run();
-      }, 0);
-    }
-  };
-
-  const loadAfterInitialPaint = () => {
-    const schedule = () => {
-      _hourglassLoadHandler = null;
-      if (!_isHourglassLifecycleActive(container, token)) return;
-      _hourglassDelayTimer = setTimeout(() => {
-        _hourglassDelayTimer = null;
-        loadWhenIdle();
-      }, 500);
-    };
-    if (document.readyState === "complete") {
-      schedule();
-    } else {
-      _hourglassLoadHandler = schedule;
-      window.addEventListener("load", _hourglassLoadHandler, { once: true });
-    }
-  };
-
-  if (typeof IntersectionObserver === "function") {
-    _hourglassObserver = new IntersectionObserver(
-      (entries) => {
-        if (!_isHourglassLifecycleActive(container, token)) return;
-        const visible = entries.some(
-          (entry) => entry.isIntersecting || entry.intersectionRatio > 0,
-        );
-        if (!visible) return;
-        _disconnectHourglassObserver();
-        loadAfterInitialPaint();
-      },
-      { rootMargin: "120px" },
-    );
-    _hourglassObserver.observe(container);
-  } else {
-    loadAfterInitialPaint();
+  if (prefersReducedMotion) {
+    renderSproutFallback(container);
+    return;
   }
+
+  _ensureLottieLoaded().then((ok) => {
+    if (!_isHourglassLifecycleActive(container, token)) return;
+    if (!ok) {
+      renderSproutFallback(container);
+      return;
+    }
+    _createLottieAnimation(container, token);
+    updateLottieAnimationColor();
+  });
 }
 
 /**
