@@ -36,6 +36,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Make the header chip, `+60s` extend button, and freeze button actually
+  visible on the web page (R695): their DOM anchors sat inside
+  `.header-info-container`, which the stylesheet hid unconditionally, so
+  the features only worked in the VS Code webview despite the README
+  advertising parity.
+- Stop the freeze button from auto-submitting the task it was meant to
+  protect (R695): the freeze success path left a zeroed countdown entry
+  behind and detail polling re-created countdowns for frozen tasks, so
+  the next 1 Hz tick fired the auto-submit path within seconds.
 - Stop losing the user's feedback when `config.toml` changes while a
   session is waiting: the feedback wait loop now re-acquires the pooled
   HTTP client per request instead of holding a reference that the
