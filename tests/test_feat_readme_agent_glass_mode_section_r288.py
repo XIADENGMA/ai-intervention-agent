@@ -50,7 +50,8 @@ AGENT_MODE_PARAMS_FOR_TABLE = [
 USER_SIDE_FEATURES_EN = [
     "Multi-task tabs",
     "Per-task draft autosave",
-    "Countdown extend",
+    # R700：+60s/freeze 按钮下线，特性改述为 typing-hold 自动延长
+    "Typing-hold auto-extension",
     "Quick reply phrases",
     "Custom notification sound",
     "Per-task images",
@@ -60,7 +61,7 @@ USER_SIDE_FEATURES_EN = [
 USER_SIDE_FEATURES_ZH = [
     "多任务标签页",
     "每任务草稿自动保存",
-    "倒计时延长",
+    "输入即延长",  # R700：freeze/+60s 下线后的 typing-hold 述法
     "常用回复短语",
     "自定义通知音效",
     "每任务图片",

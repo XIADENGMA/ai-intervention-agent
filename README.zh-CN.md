@@ -193,7 +193,7 @@ ai-intervention-agent 工具使用细节：
 - ⚡ **实时介入** —— AI 在关键节点暂停，等待你的指示（通过 `interactive_feedback`）
 - 🖥️ **Web UI** —— Markdown / 代码高亮 / 数学公式开箱即用
 - 🗂️ **多任务标签页** —— 多个并发请求各自独立倒计时
-- 🔁 **自动重调** —— 倒计时到点自动提交，保持长会话不被客户端硬超时切断；**正在输入时自动延长倒计时**（复用 `+60s` 配额），归零时**优先提交已输入的文本与勾选项**而不是空提示，后端等待会跟随延长，输入内容零丢失
+- 🔁 **自动重调** —— 倒计时到点自动提交，保持长会话不被客户端硬超时切断；**正在输入时自动延长倒计时且归零也不打断**，归零时**优先提交已输入的文本与勾选项**而不是空提示，后端等待会跟随延长，输入内容零丢失
 - 🔔 **通知** —— Web UI / 声音 / 系统通知 / Bark（loopback URL 自动过滤；设置面板会推荐对应的 LAN IP）
 - 🌐 **SSH / 局域网友好** —— 适配 SSH 端口转发；本地网络支持时会通过 mDNS 自动发布 `<host>.local` 入口
 - 🏷️ **Header 标签 & Yes/No 按钮** —— Agent 可以为任务附加 ≤16 字符的 `header_label` 短标签（如 "Auth"/"DB"/"i18n"）提供上下文 cue；或者用 `question_type='yesno'` 让 UI 渲染一键确认/拒绝按钮（代替长文本框）。来自 `gemini-cli` `ask_user` 模式借鉴
@@ -202,7 +202,7 @@ ai-intervention-agent 工具使用细节：
 - ⚡ **生产力快捷键** —— 按 `?` 弹出键盘快捷键速查表；反馈输入框 **per-task 草稿自动保存**（reload 不丢）；可配置 **提交模式**（Ctrl/Cmd+Enter vs Enter）；带三阶段配色阈值的实时 **字符计数器**
 - 💬 **常用回复 / 快捷短语** —— 把常用反馈保存到 `localStorage`，支持编辑 / 删除 / 一键插入；JSON 导出 + 导入，便于跨设备 / 跨浏览器迁移
 - 🔊 **自定义通知音效** —— 上传自己的音频文件（mp3/wav/ogg/m4a/flac，≤ 700 KB，≤ 30s）替代默认提示音；base64 持久化到 `localStorage`，session 之间不丢
-- ⏱️ **倒计时延长** —— 一键 `+60s` 按钮，让你需要多想一会儿时不必慌张；外加 ❄️ **永久冻结** 按钮，让你真正需要暂时离开时直接关停自动重调，回来再继续（Web 页面与 VS Code 插件两端一致提供）
+- ⏱️ **输入即延长** —— 正在输入时倒计时自动延长、归零也绝不打断（无需任何手动按钮；两端一致的 typing-hold 语义，替代旧版 `+60s`/❄️ 冻结按钮）
 - 🟢 **SSE 实时状态指示** —— 角落 3 态徽章（绿/橙/红）提示与后端的同步状况
 - 📱 **PWA 安装支持** —— 提供 `manifest.webmanifest` + Service Worker，Web UI 可通过浏览器原生入口安装（Chrome / Edge 地址栏图标，或 iOS Safari 分享 → 添加到主屏幕）；为 iOS Safari 单独提供引导横幅指向系统原生入口（iOS 不触发 `beforeinstallprompt`，需要单独提示）；支持永久关闭
 - 📡 **离线可用** —— Service Worker 预缓存品牌化 `offline.html`，含中英双语重连提示、深浅色主题 + `prefers-reduced-motion` 支持，以及服务恢复后自动 reload 的后台 ping（替代浏览器默认 "无法访问此网站" 错误页）
@@ -318,8 +318,8 @@ sequenceDiagram
 ### 异常路径 & 恢复流程
 
 除了上面的正常路径外，三个边界场景让长时间 Agent / Glass 模式会话保持
-韧性：**auto-resubmit**（人离开）、**SSE 重连**（网络断开）、**❄️ 冻结**
-（跨页面刷新的深度审阅）。
+韧性：**auto-resubmit**（人离开）、**SSE 重连**（网络断开）、
+**typing-hold**（人在输入，绝不打断）。
 
 ```mermaid
 sequenceDiagram
@@ -332,7 +332,7 @@ sequenceDiagram
     Note over Agent,Human: ① Auto-resubmit（人离开了）
     Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=120)
     AIIA->>UI: SSE task.created（倒计时=120s）
-    Note over UI: 倒计时归零<br/>（未点 ❄️ 冻结）
+    Note over UI: 倒计时归零<br/>（人未在输入）
     UI->>AIIA: POST /api/tasks/{id}/auto-resubmit
     AIIA->>Agent: SSE task.completed<br/>（带 "auto-resubmit" 标记）
 
@@ -342,12 +342,12 @@ sequenceDiagram
     UI->>AIIA: SSE 重连（指数退避）
     AIIA-->>UI: SSE 恢复
 
-    Note over Agent,Human: ③ ❄️ 冻结（跨刷新长审阅）
+    Note over Agent,Human: ③ typing-hold（人在输入，绝不打断）
     Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=60)
     UI->>Human: 倒计时显示 60s
-    Human->>UI: 点 ❄️ 冻结
-    Note over UI: 冻结状态持久化到 localStorage<br/>（页面刷新不丢）
-    Human->>UI: 解冻 + 提交
+    Human->>UI: 开始输入反馈
+    Note over UI: 输入中自动延长倒计时<br/>归零也不提交（typing-hold）
+    Human->>UI: 停止输入 + 提交
     UI->>AIIA: POST /api/tasks/{id}/complete
     AIIA->>Agent: SSE task.completed（完整回复）
 ```
@@ -371,8 +371,8 @@ sequenceDiagram
 - **多任务标签页** — agent 并发 3+ 个请求时（典型 Cursor Composer
   multi-edit），每个独立 tab + 独立倒计时圆环；切换 tab 保留文本框草稿
 - **每任务草稿自动保存** — 在一个 tab 打字后切换到另一个，草稿不丢
-- **倒计时延长（`+60s`）+ 永久冻结（`❄️`）** — 需要走开或多想一会儿
-  时，延长（有次数上限）或冻结自动重调
+- **输入即延长（typing-hold）** — 正在输入时倒计时自动延长、归零也
+  绝不打断；需要走开时就交给自动重调
 - **常用回复短语** — 常用回复（`"yes do that"`、`"先 diff 再 apply"`）
   保存到 `localStorage`，一键插入
 - **自定义通知音效** — 上传你自己的短音频（`.mp3`/`.wav`/...），让

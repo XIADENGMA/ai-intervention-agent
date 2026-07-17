@@ -57,14 +57,16 @@ R311_FAILURE_PARTICIPANTS = ["Agent", "AIIA", "UI", "Human"]
 R311_BOUNDARY_KEYWORDS_EN = [
     "auto-resubmit",
     "SSE",
-    "freeze",
+    # R700：手动 freeze 按钮下线，第三个边界场景改为 typing-hold
+    # （输入中自动延长、归零不打断）
+    "typing-hold",
 ]
 
-# 3 个边界场景关键词 — 中文版用语言对应词 + 视觉 emoji (❄️ 是 freeze 的视觉锚)
+# 3 个边界场景关键词 — 中文版用语言对应词 + 协议缩写
 R311_BOUNDARY_KEYWORDS_ZH = [
     "auto-resubmit",  # 跨语言 endpoint 名称, 中英文 mermaid 都保留
     "SSE",  # 同上, 协议缩写
-    "❄️",  # 中文版用 emoji 代替 freeze (UI 中也是 emoji)
+    "typing-hold",  # R700：freeze 按钮下线后的第三边界场景（中英同词）
 ]
 
 

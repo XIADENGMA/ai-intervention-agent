@@ -194,7 +194,7 @@ ai-intervention-agent usage details:
 - ⚡ **Real-time intervention** — the agent pauses and waits for your input via `interactive_feedback`
 - 🖥️ **Web UI** — Markdown, code highlighting, and math rendering out of the box
 - 🗂️ **Multi-task tabs** — switch between concurrent requests, each with its own countdown
-- 🔁 **Auto re-submit** — keep long-running sessions alive past client hard timeouts; the countdown **auto-extends while you are typing** (reusing the `+60s` quota), and when it hits zero your **typed text and checked options are submitted** instead of an empty prompt — the backend wait follows the extension, so no input is ever lost
+- 🔁 **Auto re-submit** — keep long-running sessions alive past client hard timeouts; the countdown **auto-extends while you are typing and never fires mid-input**, and when it hits zero your **typed text and checked options are submitted** instead of an empty prompt — the backend wait follows the extension, so no input is ever lost
 - 🔔 **Notifications** — web / sound / system / Bark (loopback URLs auto-suppressed; LAN-IP suggestion in settings)
 - 🌐 **SSH / LAN friendly** — works behind port forwarding; mDNS publishes a `<host>.local` URL when supported
 - 🏷️ **Header chips & Yes/No buttons** — agents can attach a ≤16-char `header_label` chip ("Auth", "DB", "i18n") for instant context, or set `question_type='yesno'` to render a one-click binary decision instead of a free-text textarea (borrowed from `gemini-cli` `ask_user`)
@@ -203,7 +203,7 @@ ai-intervention-agent usage details:
 - ⚡ **Productivity shortcuts** — keyboard cheatsheet overlay (press `?`), per-textarea **draft autosave** (per-task; survives reload), configurable **submit mode** (Ctrl/Cmd+Enter vs Enter), and a live **character counter** with three-color thresholds
 - 💬 **Quick reply phrases** — save / edit / reuse canned responses in `localStorage`; JSON export + import for cross-device migration; one-click insert into the feedback textarea
 - 🔊 **Custom notification sound** — upload your own audio file (mp3/wav/ogg/m4a/flac, ≤ 700 KB, ≤ 30 s) to replace the built-in beep; persisted in `localStorage` (base64) so it survives across sessions
-- ⏱️ **Countdown extension** — `+60s` button to delay auto-resubmit when you need a bit more thinking time, plus a permanent ❄️ **freeze** button to disable auto-resubmit entirely for sessions where you genuinely need to step away (available in both the web page and the VS Code extension)
+- ⏱️ **Typing-hold** — the countdown auto-extends while you type and never fires mid-input, even at zero (no manual buttons needed; consistent semantics on both the web page and the VS Code extension, replacing the legacy `+60s`/❄️ freeze buttons)
 - 🟢 **SSE liveness indicator** — 3-state corner badge (good / degraded / offline) so you always know whether the page is in sync with the backend
 - 📱 **PWA install support** — `manifest.webmanifest` + Service Worker so the Web UI is installable from the browser's native menu (Chrome / Edge address-bar icon, or iOS Safari Share → Add to Home Screen); a dedicated iOS Safari hint banner reminds users where the native option lives (since iOS doesn't fire `beforeinstallprompt`); permanently dismissable
 - 📡 **Offline-aware** — service worker pre-caches a branded `offline.html` shell with bilingual reconnect hints, dark/light theme + reduced-motion respect, and an auto-recovery ping that reloads when service returns (replaces the default browser "site can't be reached" screen)
@@ -330,8 +330,8 @@ sequenceDiagram
 
 Beyond the happy path above, three boundary cases keep long-running
 Agent / Glass-mode sessions resilient: **auto-resubmit** (human steps
-away), **SSE reconnect** (network drop), and **❄️ freeze** (deep review
-across page refreshes).
+away), **SSE reconnect** (network drop), and **typing-hold** (human is
+typing — never interrupt).
 
 ```mermaid
 sequenceDiagram
@@ -344,7 +344,7 @@ sequenceDiagram
     Note over Agent,Human: ① Auto-resubmit (human stepped away)
     Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=120)
     AIIA->>UI: SSE task.created (countdown=120s)
-    Note over UI: countdown hits 0<br/>(no ❄️ freeze clicked)
+    Note over UI: countdown hits 0<br/>(human not typing)
     UI->>AIIA: POST /api/tasks/{id}/auto-resubmit
     AIIA->>Agent: SSE task.completed<br/>(with "auto-resubmit" marker)
 
@@ -354,12 +354,12 @@ sequenceDiagram
     UI->>AIIA: SSE reconnect (exponential backoff)
     AIIA-->>UI: SSE resumed
 
-    Note over Agent,Human: ③ ❄️ Freeze (long review across refreshes)
+    Note over Agent,Human: ③ Typing-hold (human typing — never interrupt)
     Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=60)
     UI->>Human: countdown shows 60s
-    Human->>UI: click ❄️ freeze
-    Note over UI: persist freeze to localStorage<br/>(survives page refresh)
-    Human->>UI: unfreeze + submit
+    Human->>UI: starts typing feedback
+    Note over UI: countdown auto-extends while typing<br/>never fires mid-input (typing-hold)
+    Human->>UI: stops typing + submits
     UI->>AIIA: POST /api/tasks/{id}/complete
     AIIA->>Agent: SSE task.completed (full reply)
 ```
@@ -385,9 +385,9 @@ Full parameter reference + a single complete Agent-mode call example
   countdown ring; switching tabs preserves textarea drafts
 - **Per-task draft autosave** — typing into one task tab and switching
   to another doesn't lose your in-progress reply
-- **Countdown extend (`+60s`) + permanent freeze (`❄️`)** — when you
-  need to step away or think longer, extend (limited reps) or freeze
-  the auto-resubmit
+- **Typing-hold auto-extension** — the countdown extends itself while
+  you type and never fires mid-input; stepping away simply lets
+  auto-resubmit do its job
 - **Quick reply phrases** — common replies (`"yes do that"`,
   `"diff first then apply"`) saved to `localStorage`, one-click insert
 - **Custom notification sound** — upload your own short audio file
