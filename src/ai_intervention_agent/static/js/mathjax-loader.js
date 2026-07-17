@@ -47,9 +47,13 @@ window.MathJax = {
       console.debug('MathJax loaded')
       MathJax.startup.defaultReady()
       if (window._mathJaxPendingElements) {
-        window._mathJaxPendingElements.forEach(el => {
+        const pendingElements = window._mathJaxPendingElements
+        const pendingElementCount = pendingElements.length
+        for (let index = 0; index < pendingElementCount; index += 1) {
+          if (!(index in pendingElements)) continue
+          const el = pendingElements[index]
           MathJax.typesetPromise([el]).catch(err => console.warn('MathJax render failed:', err))
-        })
+        }
         window._mathJaxPendingElements = []
       }
     }

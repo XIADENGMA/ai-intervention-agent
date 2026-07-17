@@ -79,11 +79,14 @@ const KeyboardShortcuts = (function () {
    * @returns {{ modifiers: Set, key: string }}
    */
   function parseShortcut(shortcut) {
-    const parts = shortcut.toLowerCase().split('+').map(p => p.trim());
+    const normalized = shortcut.toLowerCase();
     const modifiers = new Set();
     let key = '';
 
-    for (const part of parts) {
+    for (let start = 0, i = 0; i <= normalized.length; i += 1) {
+      if (i < normalized.length && normalized.charCodeAt(i) !== 43) continue;
+      const part = normalized.slice(start, i).trim();
+      start = i + 1;
       if (MODIFIER_KEYS[part]) {
         modifiers.add(MODIFIER_KEYS[part]);
       } else {
@@ -139,6 +142,20 @@ const KeyboardShortcuts = (function () {
     parts.push(normalizeKeyForId(event.key));
 
     return parts.join('+');
+  }
+
+  /**
+   * Find the active visible task tab index without materializing the NodeList.
+   * @param {NodeList} tabs - Visible task tabs from querySelectorAll()
+   * @returns {number}
+   */
+  function getActiveTaskTabIndex(tabs) {
+    for (let i = 0; i < tabs.length; i += 1) {
+      if (tabs[i].classList.contains('active')) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   /**
@@ -354,9 +371,7 @@ const KeyboardShortcuts = (function () {
         const tabs = document.querySelectorAll('.task-tab:not(.hidden)');
         if (tabs.length > 1) {
           event.preventDefault();
-          const currentIndex = Array.from(tabs).findIndex(
-            tab => tab.classList.contains('active')
-          );
+          const currentIndex = getActiveTaskTabIndex(tabs);
           const nextIndex = (currentIndex + 1) % tabs.length;
           tabs[nextIndex].click();
         }
@@ -367,9 +382,7 @@ const KeyboardShortcuts = (function () {
         const tabs = document.querySelectorAll('.task-tab:not(.hidden)');
         if (tabs.length > 1) {
           event.preventDefault();
-          const currentIndex = Array.from(tabs).findIndex(
-            tab => tab.classList.contains('active')
-          );
+          const currentIndex = getActiveTaskTabIndex(tabs);
           const prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
           tabs[prevIndex].click();
         }

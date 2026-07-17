@@ -890,12 +890,16 @@ class LazyLoader {
     // 创建观察器
     const observer = new IntersectionObserver(
       (entries, obs) => {
-        entries.forEach((entry) => {
+        const entryCount =
+          entries && Number.isFinite(entries.length) ? entries.length : 0;
+        for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
+          const entry = entries[entryIndex];
+          if (!entry) continue;
           if (entry.isIntersecting) {
             this.loadImage(entry.target, config);
             obs.unobserve(entry.target);
           }
-        });
+        }
       },
       {
         rootMargin: config.rootMargin,
@@ -904,14 +908,20 @@ class LazyLoader {
     );
 
     // 观察所有懒加载图片
-    document.querySelectorAll(selector).forEach((img) => {
-      observer.observe(img);
-    });
+    const images = document.querySelectorAll(selector);
+    const imageCount =
+      images && Number.isFinite(images.length) ? images.length : 0;
+    for (let imageIndex = 0; imageIndex < imageCount; imageIndex += 1) {
+      const img = images[imageIndex];
+      if (img) {
+        observer.observe(img);
+      }
+    }
 
     // 保存观察器引用
     this._observer = observer;
     console.debug(
-      `Lazy loader initialized, watching ${document.querySelectorAll(selector).length} images`,
+      `Lazy loader initialized, watching ${imageCount} images`,
     );
   }
 
@@ -953,9 +963,15 @@ class LazyLoader {
    * @param {string} selector - 图片选择器
    */
   static loadAllImages(selector) {
-    document.querySelectorAll(selector).forEach((img) => {
-      this.loadImage(img);
-    });
+    const images = document.querySelectorAll(selector);
+    const imageCount =
+      images && Number.isFinite(images.length) ? images.length : 0;
+    for (let imageIndex = 0; imageIndex < imageCount; imageIndex += 1) {
+      const img = images[imageIndex];
+      if (img) {
+        this.loadImage(img);
+      }
+    }
   }
 
   /**
@@ -1075,12 +1091,16 @@ class VirtualScroller {
       Math.ceil((scrollTop + containerHeight) / this.itemHeight) + this.buffer,
     );
 
-    const visibleItems = this.items.slice(startIndex, endIndex);
-
     this.content.style.transform = `translateY(${startIndex * this.itemHeight}px)`;
-    this.content.innerHTML = visibleItems
-      .map((item, i) => this.renderItem(item, startIndex + i))
-      .join("");
+    let html = "";
+    for (let index = startIndex; index < endIndex; index += 1) {
+      if (!(index in this.items)) continue;
+      const rendered = this.renderItem(this.items[index], index);
+      if (rendered !== undefined && rendered !== null) {
+        html += rendered;
+      }
+    }
+    this.content.innerHTML = html;
   }
 
   /**

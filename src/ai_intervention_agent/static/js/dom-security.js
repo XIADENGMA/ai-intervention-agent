@@ -178,11 +178,15 @@ class DOMSecurity {
     }
 
     // 安全地设置属性
-    Object.entries(attributes).forEach(([key, value]) => {
+    const attributeEntries = Object.entries(attributes)
+    const attributeEntryCount = attributeEntries.length
+    for (let index = 0; index < attributeEntryCount; index += 1) {
+      if (!(index in attributeEntries)) continue
+      const [key, value] = attributeEntries[index]
       if (typeof value === 'string' || typeof value === 'number') {
         element.setAttribute(key, String(value))
       }
-    })
+    }
 
     return element
   }

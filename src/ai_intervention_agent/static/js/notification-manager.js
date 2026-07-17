@@ -48,6 +48,10 @@ function isMobileDevice() {
 }
 
 const DEFAULT_NOTIFICATION_SOUND_URL = '/sounds/deng.wav'
+const AUTO_PERMISSION_REQUEST_LISTENER_OPTIONS = {
+  once: true,
+  passive: true
+}
 
 // ============================================================================
 // feat-custom-sound (mining-cycle-1 §3.4) — 自定义通知音效
@@ -247,14 +251,16 @@ class NotificationManager {
         this.bindAutoPermissionRequest()
       })
     }
-    ;['click', 'keydown', 'touchstart'].forEach(eventName => {
-      document.addEventListener(eventName, this.boundPermissionRequestHandler, {
-        once: true,
-        passive: true
-      })
-    })
+    this.addAutoPermissionRequestListeners()
 
     this.autoPermissionListenersBound = true
+  }
+
+  addAutoPermissionRequestListeners() {
+    const handler = this.boundPermissionRequestHandler
+    document.addEventListener('click', handler, AUTO_PERMISSION_REQUEST_LISTENER_OPTIONS)
+    document.addEventListener('keydown', handler, AUTO_PERMISSION_REQUEST_LISTENER_OPTIONS)
+    document.addEventListener('touchstart', handler, AUTO_PERMISSION_REQUEST_LISTENER_OPTIONS)
   }
 
   removeAutoPermissionRequestListeners() {
@@ -262,12 +268,17 @@ class NotificationManager {
       return
     }
 
-    ;['click', 'keydown', 'touchstart'].forEach(eventName => {
-      document.removeEventListener(eventName, this.boundPermissionRequestHandler)
-    })
+    this.removeBoundAutoPermissionRequestListeners()
 
     this.autoPermissionListenersBound = false
     this.boundPermissionRequestHandler = null
+  }
+
+  removeBoundAutoPermissionRequestListeners() {
+    const handler = this.boundPermissionRequestHandler
+    document.removeEventListener('click', handler)
+    document.removeEventListener('keydown', handler)
+    document.removeEventListener('touchstart', handler)
   }
 
   async requestPermission({ requireUserGesture = true } = {}) {
@@ -975,19 +986,32 @@ class NotificationManager {
     const countRaw = event && typeof event === 'object' ? event.count : null
     const taskIdsRaw = event && typeof event === 'object' ? event.taskIds : null
 
-    const taskIds = Array.isArray(taskIdsRaw) ? taskIdsRaw.filter(Boolean) : []
+    let taskIds = null
+    let taskIdCount = 0
+    if (Array.isArray(taskIdsRaw)) {
+      for (let i = 0; i < taskIdsRaw.length; i += 1) {
+        if (!(i in taskIdsRaw)) continue
+        const taskId = taskIdsRaw[i]
+        if (taskId) {
+          if (taskIds === null) taskIds = []
+          taskIds.push(taskId)
+          taskIdCount += 1
+        }
+      }
+    }
     const count =
       typeof countRaw === 'number' && Number.isFinite(countRaw)
         ? Math.max(0, Math.floor(countRaw))
-        : taskIds.length
+        : taskIdCount
 
     if (!count || count <= 0) return null
     if (this.config && this.config.enabled === false) return null
+    if (taskIds === null) taskIds = []
 
     const title =
       typeof event.title === 'string' && event.title ? event.title : 'AI Intervention Agent'
     const message =
-      count === 1 && taskIds.length === 1 ? `New task added: ${taskIds[0]}` : `Received ${count} new task(s)`
+      count === 1 && taskIdCount === 1 ? `New task added: ${taskIds[0]}` : `Received ${count} new task(s)`
 
     // 1) 桌面端：Visual Hint（不依赖系统通知权限）
     try {
@@ -1227,6 +1251,23 @@ class NotificationManager {
     return notification
   }
 
+  _collectRecentFallbackEvents(events, cutoffTimestamp, maxEvents) {
+    if (!Array.isArray(events)) {
+      throw new TypeError('fallback events payload is not an array')
+    }
+
+    const kept = []
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      if (!(i in events)) continue
+      const event = events[i]
+      if (event.timestamp > cutoffTimestamp && kept.length < maxEvents) {
+        kept.push(event)
+      }
+    }
+    kept.reverse()
+    return kept
+  }
+
   recordFallbackEvent(type, data) {
     // 记录降级事件用于分析和改进
     const event = {
@@ -1244,14 +1285,9 @@ class NotificationManager {
 
       // 性能优化：清理过期事件
       const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
-      const validEvents = events.filter(e => e.timestamp > sevenDaysAgo)
+      const validEvents = this._collectRecentFallbackEvents(events, sevenDaysAgo, 49)
 
       validEvents.push(event)
-
-      // 性能优化：只保留最近50个事件
-      if (validEvents.length > 50) {
-        validEvents.splice(0, validEvents.length - 50)
-      }
 
       localStorage.setItem(storageKey, JSON.stringify(validEvents))
 
@@ -1298,12 +1334,7 @@ class NotificationManager {
 
       // 只保留最近24小时的事件
       const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000
-      const recentEvents = events.filter(e => e.timestamp > oneDayAgo)
-
-      // 进一步限制到最多20个事件
-      if (recentEvents.length > 20) {
-        recentEvents.splice(0, recentEvents.length - 20)
-      }
+      const recentEvents = this._collectRecentFallbackEvents(events, oneDayAgo, 20)
 
       localStorage.setItem(storageKey, JSON.stringify(recentEvents))
       console.debug(`localStorage pruning complete; kept ${recentEvents.length} events`)

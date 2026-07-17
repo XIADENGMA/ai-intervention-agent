@@ -5,11 +5,11 @@
  * 1. **通知点击路由**（既有功能，``notificationclick`` 事件）—— 接住系统
  *    通知中心的点击，把焦点切到已存在的 Web UI 标签页或新开一个窗口。
  *
- * 2. **静态资源缓存（R21.2）** —— 对 ``/static/css/*`` / ``/static/js/*`` /
+ * 2. **静态资源缓存（R21.2/R459）** —— 对 ``/static/css/*`` / ``/static/js/*`` /
  *    ``/static/lottie/*`` / ``/static/locales/*`` / ``/icons/*`` /
  *    ``/sounds/*`` / ``/fonts/*`` 等"内容寻址"（``?v=hash`` 版本化）的静态
- *    资源走 **cache-first**：第一次走网络存进 cache，后续重复访问全部命中
- *    本地 IndexedDB-backed cache，零 RTT。``/api/*`` 与 HTML 路径绕过缓存。
+ *    资源走 **stale-while-revalidate**：cache hit 立刻返回本地副本，同时后台
+ *    拉网络刷新 cache；cache miss 才阻塞等待网络。``/api/*`` 与 HTML 路径绕过缓存。
  *
  * 3. **导航离线兜底（R249）** —— 对 ``request.mode === 'navigate'`` 的 HTML
  *    导航请求走 **network-first**：有网时永远返回最新页面；网络失败时只兜底
@@ -18,10 +18,10 @@
  *
  * 设计要点
  * --------
- * - **Cache 名带版本号**（``aiia-static-v1``）：当 SW 升级（比如重构 fetch
+ * - **Cache 名带版本号**（``aiia-static-v2``）：当 SW 升级（比如重构 fetch
  *   逻辑），把版本号 bump 到 ``-v2``，``activate`` 阶段会清理所有旧版本
  *   ``aiia-static-*`` cache，避免 "升级后旧 cache 卡死"。
- * - **白名单 cache-first**：只缓存"内容稳定 + 带版本号"的资源；任何
+ * - **白名单 stale-while-revalidate**：只缓存"内容稳定 + 带版本号"的资源；任何
  *   ``/api/*``、``/sse``、HTML 路径（``/`` / 任何 200 但 ``Content-Type:
  *   text/html``）都不缓存，避免会话状态被冻结。
  * - **导航 network-first**：HTML 导航请求永远先走网络；只有网络失败才返回
@@ -51,7 +51,7 @@
  *   端点状态高度动态，缓存反而错误地展示陈旧任务列表。永远 fall-through。
  */
 
-const STATIC_CACHE_NAME = 'aiia-static-v1'
+const STATIC_CACHE_NAME = 'aiia-static-v2'
 // R249 / mining-9 Track B：offline shell 单独 cache，名字带 ``-offline``
 // 后缀让 activate 阶段的 ``startsWith('aiia-static-')`` 清理不会误杀。
 const OFFLINE_CACHE_NAME = 'aiia-offline-v1'
@@ -61,7 +61,7 @@ const OFFLINE_FALLBACK_URL = '/offline.html'
 // 累积。超过即异步 FIFO 淘汰。
 const MAX_ENTRIES = 200
 
-// cache-first 策略适用的路径。``new RegExp`` 在 SW activate 阶段构造一次，
+// 静态缓存策略适用的路径。``new RegExp`` 在 SW activate 阶段构造一次，
 // 后续 fetch 事件直接复用，零 per-request 编译开销。
 const CACHE_FIRST_PATTERNS = [
   /^\/static\/css\//,
@@ -112,18 +112,19 @@ self.addEventListener('activate', event => {
       // R249：同款清理也清理旧 ``aiia-offline-*`` 版本，保留当前 OFFLINE_CACHE_NAME。
       try {
         const cacheNames = await caches.keys()
-        await Promise.all(
-          cacheNames
-            .filter(
-              name =>
-                typeof name === 'string' &&
-                ((name.startsWith('aiia-static-') &&
-                  name !== STATIC_CACHE_NAME) ||
-                  (name.startsWith('aiia-offline-') &&
-                    name !== OFFLINE_CACHE_NAME))
-            )
-            .map(name => caches.delete(name).catch(() => false))
-        )
+        const deletions = []
+        for (const name of cacheNames) {
+          if (
+            typeof name === 'string' &&
+            ((name.startsWith('aiia-static-') &&
+              name !== STATIC_CACHE_NAME) ||
+              (name.startsWith('aiia-offline-') &&
+                name !== OFFLINE_CACHE_NAME))
+          ) {
+            deletions.push(caches.delete(name).catch(() => false))
+          }
+        }
+        await Promise.all(deletions)
       } catch (e) {
         // 忽略：cache.keys() 失败不影响 SW 接管
       }
@@ -138,7 +139,7 @@ self.addEventListener('activate', event => {
 })
 
 /* R21.2 / R249：fetch event handler
- *   - 静态资源：cache-first（whitelisted 路径）
+ *   - 静态资源：stale-while-revalidate（whitelisted 路径）
  *   - 导航请求（HTML）：network-first + offline.html 兜底（R249 mining-9 Track B）
  *   - 其他：fall through 到浏览器默认 */
 self.addEventListener('fetch', event => {
@@ -171,10 +172,10 @@ self.addEventListener('fetch', event => {
     return
   }
 
-  // 白名单路径走 cache-first
+  // 白名单路径走 stale-while-revalidate
   if (!CACHE_FIRST_PATTERNS.some(re => re.test(url.pathname))) return
 
-  event.respondWith(handleCacheFirst(request))
+  event.respondWith(handleCacheFirst(request, event))
 })
 
 /* R249：navigation 请求 network-first + offline.html 兜底
@@ -203,7 +204,8 @@ async function handleNavigationWithOfflineFallback(request) {
   }
 }
 
-/* cache-first 策略：先查 cache，命中直接返回；未命中走网络并异步写 cache。
+/* stale-while-revalidate 策略：先查 cache，命中直接返回并后台刷新；
+ * 未命中走网络并异步写 cache。
  *
  * BUG4 修复（offline-resilient）：
  * 历史实现里 ``const networkResponse = await fetch(request)`` 在后端服务
@@ -219,7 +221,7 @@ async function handleNavigationWithOfflineFallback(request) {
  *   3. 503 Response 让浏览器知道"这次拿不到，但不要把资源永久标记为坏的"，
  *      下次后端恢复后浏览器仍会重新请求。
  */
-async function handleCacheFirst(request) {
+async function handleCacheFirst(request, event) {
   let cache
   try {
     cache = await caches.open(STATIC_CACHE_NAME)
@@ -230,7 +232,13 @@ async function handleCacheFirst(request) {
 
   try {
     const cached = await cache.match(request)
-    if (cached) return cached
+    if (cached) {
+      const refreshPromise = refreshStaticCache(request, cache)
+      if (event && typeof event.waitUntil === 'function') {
+        event.waitUntil(refreshPromise)
+      }
+      return cached
+    }
   } catch (e) {
     // cache.match 失败不致命，继续走网络
   }
@@ -254,6 +262,21 @@ async function handleCacheFirst(request) {
     return makeOfflineResponse(request)
   }
 
+  maybeCacheStaticResponse(request, cache, networkResponse).catch(() => {})
+
+  return networkResponse
+}
+
+async function refreshStaticCache(request, cache) {
+  try {
+    const networkResponse = await fetch(request)
+    await maybeCacheStaticResponse(request, cache, networkResponse)
+  } catch (_e) {
+    /* 忽略：stale hit 已经返回；后台刷新失败不应影响页面 */
+  }
+}
+
+async function maybeCacheStaticResponse(request, cache, networkResponse) {
   // 只缓存 200 OK 响应。redirect / 4xx / 5xx 都不该写 cache。
   // ``response.type === 'basic'`` 是同源响应；我们已经在 fetch handler 里
   // 验证过同源，但 ``Response.type`` 在 SW spec 里仍可能是 'opaqueredirect'
@@ -267,7 +290,7 @@ async function handleCacheFirst(request) {
     // 异步写 cache：``response.clone()`` 同步执行（cheap），``cache.put``
     // 走异步 promise，不阻塞响应返回给页面。
     const responseClone = networkResponse.clone()
-    cache.put(request, responseClone).then(
+    await cache.put(request, responseClone).then(
       () => {
         trimCache(cache).catch(() => {})
       },
@@ -276,8 +299,6 @@ async function handleCacheFirst(request) {
       }
     )
   }
-
-  return networkResponse
 }
 
 /* BUG4：构造一个用于离线兜底的 Response。
@@ -309,8 +330,12 @@ async function trimCache(cache) {
   // ``cache.keys()`` 按写入顺序返回（spec: "the order they were added"），
   // 所以 ``keys[0]`` 是最早写的，``keys[keys.length - 1]`` 是最晚写的。
   // 削减到 MAX_ENTRIES 大小：保留最后 MAX_ENTRIES 条，删除前面所有。
-  const toDelete = keys.slice(0, keys.length - MAX_ENTRIES)
-  await Promise.all(toDelete.map(req => cache.delete(req).catch(() => false)))
+  const deletions = []
+  const overflowCount = keys.length - MAX_ENTRIES
+  for (let i = 0; i < overflowCount; i += 1) {
+    deletions.push(cache.delete(keys[i]).catch(() => false))
+  }
+  await Promise.all(deletions)
 }
 
 /* 既有功能：通知点击路由，原样保留 */

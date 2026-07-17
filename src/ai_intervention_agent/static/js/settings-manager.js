@@ -1329,13 +1329,19 @@ class SettingsManager {
     const focusables = panel.querySelectorAll(
       'button:not([disabled]),[href],input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
     );
-    const visible = Array.prototype.filter.call(
-      focusables,
-      (el) => el.offsetParent !== null && !el.hasAttribute("aria-hidden"),
-    );
-    if (visible.length === 0) return;
-    const first = visible[0];
-    const last = visible[visible.length - 1];
+    let first = null;
+    let last = null;
+    const focusableCount =
+      focusables && Number.isFinite(focusables.length) ? focusables.length : 0;
+    for (let i = 0; i < focusableCount; i += 1) {
+      const el = focusables[i];
+      if (!el || el.offsetParent === null || el.hasAttribute("aria-hidden")) {
+        continue;
+      }
+      if (!first) first = el;
+      last = el;
+    }
+    if (!first || !last) return;
     const active = document.activeElement;
     if (event.shiftKey && active === first) {
       event.preventDefault();

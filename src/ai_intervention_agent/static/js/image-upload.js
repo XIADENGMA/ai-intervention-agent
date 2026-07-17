@@ -35,6 +35,25 @@ function dataTransferHasFiles(event) {
   return Array.prototype.indexOf.call(types, "Files") !== -1;
 }
 
+function forEachClipboardEntry(collection, callback) {
+  if (!collection) return;
+
+  const iterator =
+    typeof Symbol !== "undefined" ? collection[Symbol.iterator] : null;
+  if (typeof iterator === "function") {
+    for (const entry of collection) {
+      callback(entry);
+    }
+    return;
+  }
+
+  const length = Number(collection.length);
+  if (!Number.isFinite(length) || length <= 0) return;
+  for (let i = 0; i < length; i += 1) {
+    callback(collection[i]);
+  }
+}
+
 // 性能优化工具函数
 
 // 防抖函数
@@ -217,13 +236,13 @@ function cleanupAllObjectURLs() {
   console.debug(`Cleaning up ${objectURLs.size} object URLs`);
   const startTime = performance.now();
 
-  objectURLs.forEach((url) => {
+  for (const url of objectURLs) {
     try {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error(`Revoke URL failed: ${url}`, error);
     }
-  });
+  }
 
   objectURLs.clear();
   urlCreationTime.clear();
@@ -238,15 +257,18 @@ function cleanupAllObjectURLs() {
 function cleanupExpiredObjectURLs(now = Date.now()) {
   const expiredUrls = [];
 
-  urlCreationTime.forEach((creationTime, url) => {
+  for (const [url, creationTime] of urlCreationTime) {
     if (now - creationTime > OBJECT_URL_MAX_AGE_MS) {
       expiredUrls.push(url);
     }
-  });
+  }
 
   if (expiredUrls.length > 0) {
     console.debug(`Periodic cleanup: ${expiredUrls.length} expired object URLs`);
-    expiredUrls.forEach((url) => revokeObjectURL(url));
+    const expiredUrlCount = expiredUrls.length;
+    for (let index = 0; index < expiredUrlCount; index += 1) {
+      revokeObjectURL(expiredUrls[index]);
+    }
   }
 
   stopPeriodicCleanupIfIdle();
@@ -698,8 +720,10 @@ async function addImageToList(file) {
     showStatus(t("status.imageError", { reason: error.message }), "error");
 
     // 释放可能已创建的预览 URL
+    let failureRemoval = null;
     try {
-      const failed = selectedImages.find((img) => img.id === imageId);
+      failureRemoval = prepareImageRemoval(imageId, true);
+      const failed = failureRemoval ? failureRemoval.imageToRemove : null;
       if (
         failed &&
         failed.previewUrl &&
@@ -712,7 +736,7 @@ async function addImageToList(file) {
     }
 
     // 从列表中移除失败的图片
-    selectedImages = selectedImages.filter((img) => img.id !== imageId);
+    if (failureRemoval) selectedImages = failureRemoval.nextImages;
     const previewElement = document.getElementById(`preview-${imageId}`);
     if (previewElement) {
       previewElement.remove();
@@ -797,9 +821,27 @@ function sanitizeText(text) {
 }
 
 // 删除图片
+function prepareImageRemoval(imageId, strictId = false) {
+  let nextImages = null;
+  let imageToRemove = null;
+  for (let i = 0; i < selectedImages.length; i += 1) {
+    const image = selectedImages[i];
+    const matches = strictId ? image.id === imageId : image.id == imageId;
+    if (matches) {
+      if (imageToRemove === null) imageToRemove = image;
+      if (nextImages === null) nextImages = selectedImages.slice(0, i);
+    } else if (nextImages !== null) {
+      nextImages.push(image);
+    }
+  }
+  if (nextImages === null) return null;
+  return { imageToRemove, nextImages };
+}
+
 function removeImage(imageId) {
   // 找到要删除的图片并安全释放 URL
-  const imageToRemove = selectedImages.find((img) => img.id == imageId);
+  const removal = prepareImageRemoval(imageId);
+  const imageToRemove = removal ? removal.imageToRemove : null;
   if (
     imageToRemove &&
     imageToRemove.previewUrl &&
@@ -808,7 +850,7 @@ function removeImage(imageId) {
     revokeObjectURL(imageToRemove.previewUrl);
   }
 
-  selectedImages = selectedImages.filter((img) => img.id != imageId);
+  if (removal) selectedImages = removal.nextImages;
   const previewElement = document.getElementById(`preview-${imageId}`);
   if (previewElement) {
     previewElement.remove();
@@ -820,11 +862,14 @@ function removeImage(imageId) {
 // 清除所有图片
 function clearAllImages() {
   // 清理内存中的 Object URLs
-  selectedImages.forEach((img) => {
+  const selectedImageCount = selectedImages.length;
+  for (let index = 0; index < selectedImageCount; index += 1) {
+    if (!(index in selectedImages)) continue;
+    const img = selectedImages[index];
     if (img.previewUrl && img.previewUrl.startsWith("blob:")) {
       revokeObjectURL(img.previewUrl);
     }
-  });
+  }
 
   selectedImages = [];
   const previewContainer = document.getElementById("image-previews");
@@ -898,53 +943,59 @@ function updateImagePreviewVisibility() {
 
 // 优化的批量文件处理
 async function handleFileUpload(files) {
-  const fileArray = Array.from(files);
+  const fileCount = files.length;
   const maxConcurrent = 3; // 限制并发处理数量
   let processed = 0;
   let successful = 0;
 
   // 显示批量处理进度
-  if (fileArray.length > 1) {
+  if (fileCount > 1) {
     showStatus(
-      t("status.processingBatch", { count: fileArray.length }),
+      t("status.processingBatch", { count: fileCount }),
       "info",
     );
   }
 
   // 分批处理文件，避免内存溢出
-  for (let i = 0; i < fileArray.length; i += maxConcurrent) {
-    const batch = fileArray.slice(i, i + maxConcurrent);
+  for (let i = 0; i < fileCount; i += maxConcurrent) {
+    const batchEnd = Math.min(i + maxConcurrent, fileCount);
+    const batchPromises = [];
 
-    const batchPromises = batch.map(async (file) => {
-      try {
-        const success = await addImageToList(file);
-        if (success) successful++;
-        processed++;
+    for (let j = i; j < batchEnd; j += 1) {
+      const file = files[j];
+      batchPromises.push(
+        (async () => {
+          try {
+            const success = await addImageToList(file);
+            if (success) successful++;
+            processed++;
 
-        // 更新进度
-        if (fileArray.length > 1) {
-          showStatus(
-            t("status.processProgress", {
-              done: processed,
-              total: fileArray.length,
-            }),
-            "info",
-          );
-        }
+            // 更新进度
+            if (fileCount > 1) {
+              showStatus(
+                t("status.processProgress", {
+                  done: processed,
+                  total: fileCount,
+                }),
+                "info",
+              );
+            }
 
-        return success;
-      } catch (error) {
-        console.error("File processing failed:", file.name, error);
-        processed++;
-        return false;
-      }
-    });
+            return success;
+          } catch (error) {
+            console.error("File processing failed:", file.name, error);
+            processed++;
+            return false;
+          }
+        })(),
+      );
+    }
 
     // 等待当前批次完成
     await Promise.all(batchPromises);
 
     // 批次间添加小延迟，避免阻塞UI
-    if (i + maxConcurrent < fileArray.length) {
+    if (batchEnd < fileCount) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
@@ -952,13 +1003,13 @@ async function handleFileUpload(files) {
   updateImagePreviewVisibility();
 
   // 显示最终结果
-  if (fileArray.length > 1) {
+  if (fileCount > 1) {
     showStatus(
-      t("status.batchComplete", { successful, total: fileArray.length }),
+      t("status.batchComplete", { successful, total: fileCount }),
       successful > 0 ? "success" : "error",
     );
-  } else if (fileArray.length === 1) {
-    const file = fileArray[0];
+  } else if (fileCount === 1) {
+    const file = files[0];
     const filename = file && file.name ? file.name : "";
     showStatus(
       successful > 0
@@ -1002,9 +1053,11 @@ function initializeDragAndDrop() {
   };
 
   // 阻止默认的拖放行为
-  ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
-    addDocumentListener(eventName, preventDefaults, { passive: false });
-  });
+  const preventDefaultListenerOptions = { passive: false };
+  addDocumentListener("dragenter", preventDefaults, preventDefaultListenerOptions);
+  addDocumentListener("dragover", preventDefaults, preventDefaultListenerOptions);
+  addDocumentListener("dragleave", preventDefaults, preventDefaultListenerOptions);
+  addDocumentListener("drop", preventDefaults, preventDefaultListenerOptions);
 
   function preventDefaults(e) {
     if (!dataTransferHasFiles(e)) return;
@@ -1083,9 +1136,12 @@ function initializeDragAndDrop() {
   addDocumentListener("drop", dropHandler);
 
   function cleanupDragAndDrop() {
-    listenerEntries.forEach((entry) => {
+    const listenerEntryCount = listenerEntries.length;
+    for (let index = 0; index < listenerEntryCount; index += 1) {
+      if (!(index in listenerEntries)) continue;
+      const entry = listenerEntries[index];
       document.removeEventListener(entry.type, entry.handler, entry.options);
-    });
+    }
     clearTimeout(dragTimer);
     dragCounter = 0;
     dragOverlay.style.display = "none";
@@ -1165,27 +1221,25 @@ function initializePasteFunction() {
     let matches = [];
 
     // 方案 A：优先从 clipboardData.items 获取图片文件（大多数桌面浏览器）
-    const items = Array.from(clipboardData.items || []);
-    for (const item of items) {
-      if (!item) continue;
-      if (item.kind !== "file") continue;
-      if (!item.type || !item.type.startsWith("image/")) continue;
+    forEachClipboardEntry(clipboardData.items, (item) => {
+      if (!item) return;
+      if (item.kind !== "file") return;
+      if (!item.type || !item.type.startsWith("image/")) return;
 
       const file = item.getAsFile();
       if (file) filesToAdd.push(file);
-    }
+    });
 
     // 方案 B：部分浏览器只在 clipboardData.files 暴露文件
     // 注意：很多浏览器同时在 items 和 files 中暴露同一张图片。
     // 若我们两边都收集，会导致“一次粘贴出现两张重复图片”。
     // 因此仅当方案 A 没拿到图片时，才回退到 files。
     if (filesToAdd.length === 0) {
-      const files = Array.from(clipboardData.files || []);
-      for (const file of files) {
+      forEachClipboardEntry(clipboardData.files, (file) => {
         if (file && file.type && file.type.startsWith("image/")) {
           filesToAdd.push(file);
         }
-      }
+      });
     }
 
     // 方案 C：兜底解析 text/html 或 text/plain 中的 data:image;base64（某些移动端/特殊场景）
@@ -1493,13 +1547,16 @@ function setupFeatureFallbacks() {
   // Object.assign降级
   if (!Object.assign) {
     Object.assign = function (target, ...sources) {
-      sources.forEach((source) => {
+      for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+        const source = sources[sourceIndex];
         if (source) {
-          Object.keys(source).forEach((key) => {
-            target[key] = source[key];
-          });
+          for (const key in source) {
+            if (Object.prototype.hasOwnProperty.call(source, key)) {
+              target[key] = source[key];
+            }
+          }
         }
-      });
+      }
       return target;
     };
   }

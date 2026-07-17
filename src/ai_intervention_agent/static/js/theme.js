@@ -227,12 +227,15 @@ const ThemeManager = (function () {
     };
     const label = labels[currentTheme] || labels[THEMES.AUTO];
 
-    buttons.forEach(button => {
+    const buttonCount = buttons.length;
+    for (let index = 0; index < buttonCount; index += 1) {
+      const button = buttons[index];
+      if (!button) continue;
       button.classList.toggle('is-light', effectiveTheme === THEMES.LIGHT);
       button.classList.toggle('is-auto', currentTheme === THEMES.AUTO);
       button.setAttribute('aria-label', label);
       button.setAttribute('title', label);
-    });
+    }
   }
 
   /**
@@ -241,12 +244,15 @@ const ThemeManager = (function () {
    */
   function bindExistingButtons() {
     const buttons = document.querySelectorAll('.theme-toggle-btn');
-    buttons.forEach(button => {
+    const buttonCount = buttons.length;
+    for (let index = 0; index < buttonCount; index += 1) {
+      const button = buttons[index];
+      if (!button) continue;
       if (!button.hasAttribute('data-theme-bound')) {
         button.addEventListener('click', toggleThemeInternal);
         button.setAttribute('data-theme-bound', 'true');
       }
-    });
+    }
   }
 
   function handleStorageChange(event) {

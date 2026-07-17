@@ -180,41 +180,43 @@
     if (!parsed || typeof parsed !== "object") return [];
     if (parsed.schema_version !== SCHEMA_VERSION) return [];
     if (!Array.isArray(parsed.phrases)) return [];
-    return parsed.phrases
-      .filter(function (p) {
-        return (
-          p &&
-          typeof p === "object" &&
-          typeof p.id === "string" &&
-          typeof p.label === "string" &&
-          typeof p.text === "string"
-        );
-      })
-      .map(function (p) {
-        // R131c：``last_used_at`` / ``use_count`` 是 v1 内的可选字段，
-        // 老数据可能没有 → 兜底 0，让排序逻辑统一处理「从未用过」的
-        // phrase（沉到列表尾部）。SCHEMA_VERSION 不变，无需 migrator。
-        var lastUsed =
-          typeof p.last_used_at === "number" && isFinite(p.last_used_at)
-            ? p.last_used_at
-            : 0;
-        var useCount =
-          typeof p.use_count === "number" && isFinite(p.use_count)
-            ? p.use_count
-            : 0;
-        var createdAt =
-          typeof p.created_at === "number" && isFinite(p.created_at)
-            ? p.created_at
-            : 0;
-        return {
-          id: p.id,
-          label: p.label,
-          text: p.text,
-          created_at: createdAt,
-          last_used_at: lastUsed,
-          use_count: useCount,
-        };
+    var result = [];
+    for (var i = 0; i < parsed.phrases.length; i += 1) {
+      var p = parsed.phrases[i];
+      if (
+        !p ||
+        typeof p !== "object" ||
+        typeof p.id !== "string" ||
+        typeof p.label !== "string" ||
+        typeof p.text !== "string"
+      ) {
+        continue;
+      }
+      // R131c：``last_used_at`` / ``use_count`` 是 v1 内的可选字段，
+      // 老数据可能没有 → 兜底 0，让排序逻辑统一处理「从未用过」的
+      // phrase（沉到列表尾部）。SCHEMA_VERSION 不变，无需 migrator。
+      var lastUsed =
+        typeof p.last_used_at === "number" && isFinite(p.last_used_at)
+          ? p.last_used_at
+          : 0;
+      var useCount =
+        typeof p.use_count === "number" && isFinite(p.use_count)
+          ? p.use_count
+          : 0;
+      var createdAt =
+        typeof p.created_at === "number" && isFinite(p.created_at)
+          ? p.created_at
+          : 0;
+      result.push({
+        id: p.id,
+        label: p.label,
+        text: p.text,
+        created_at: createdAt,
+        last_used_at: lastUsed,
+        use_count: useCount,
       });
+    }
+    return result;
   }
 
   /**
@@ -371,7 +373,11 @@
     // R131c：渲染前按使用频率排序，让常用的 chip 出现在列表前列
     phrases = _sortPhrasesByUsage(phrases);
 
-    phrases.forEach(function (p, idx) {
+    var phraseCount =
+      phrases && Number.isFinite(phrases.length) ? phrases.length : 0;
+    for (let idx = 0; idx < phraseCount; idx += 1) {
+      if (!(idx in phrases)) continue;
+      let p = phrases[idx];
       var chip = document.createElement("button");
       chip.type = "button";
       chip.className = "quick-phrase-chip";
@@ -437,7 +443,7 @@
       wrap.appendChild(edit);
       wrap.appendChild(del);
       listEl.appendChild(wrap);
-    });
+    }
   }
 
   /**
@@ -574,9 +580,15 @@
   }
 
   function openEditForm(id) {
-    var phrase = loadPhrases().find(function (p) {
-      return p.id === id;
-    });
+    var phrases = loadPhrases();
+    var phrase = null;
+    for (var i = 0; i < phrases.length; i += 1) {
+      var p = phrases[i];
+      if (p.id === id) {
+        phrase = p;
+        break;
+      }
+    }
     if (!phrase) return;
     _openForm("edit", phrase);
   }
@@ -609,10 +621,16 @@
 
   function deletePhrase(id) {
     var phrases = loadPhrases();
-    var filtered = phrases.filter(function (p) {
-      return p.id !== id;
-    });
-    if (filtered.length === phrases.length) return false;
+    var filtered = null;
+    for (var i = 0; i < phrases.length; i += 1) {
+      var p = phrases[i];
+      if (p.id === id) {
+        if (filtered === null) filtered = phrases.slice(0, i);
+      } else if (filtered !== null) {
+        filtered.push(p);
+      }
+    }
+    if (filtered === null) return false;
     var ok = savePhrases(filtered);
     if (ok) renderList();
     return ok;
@@ -840,22 +858,25 @@
       return { ok: false, message: _t("quickPhrases.importErrorSchema") };
     }
     var clean = [];
-    parsed.phrases.forEach(function (p) {
-      if (!p || typeof p !== "object") return;
-      if (typeof p.id !== "string" || !p.id) return;
-      if (typeof p.label !== "string") return;
-      if (typeof p.text !== "string") return;
+    var phraseCount = parsed.phrases.length;
+    for (var idx = 0; idx < phraseCount; idx += 1) {
+      if (!(idx in parsed.phrases)) continue;
+      var p = parsed.phrases[idx];
+      if (!p || typeof p !== "object") continue;
+      if (typeof p.id !== "string" || !p.id) continue;
+      if (typeof p.label !== "string") continue;
+      if (typeof p.text !== "string") continue;
       var label = p.label.trim();
       var text = p.text.trim();
-      if (!label || !text) return;
-      if (label.length > LABEL_MAX_LEN) return;
-      if (text.length > TEXT_MAX_LEN) return;
+      if (!label || !text) continue;
+      if (label.length > LABEL_MAX_LEN) continue;
+      if (text.length > TEXT_MAX_LEN) continue;
       var createdAt =
         typeof p.created_at === "number" && isFinite(p.created_at)
           ? p.created_at
           : Date.now();
       clean.push({ id: p.id, label: label, text: text, created_at: createdAt });
-    });
+    }
     if (clean.length === 0) {
       return { ok: false, message: _t("quickPhrases.importErrorEmpty") };
     }
@@ -892,33 +913,39 @@
 
     var existing = loadPhrases();
     var existingKey = {};
-    existing.forEach(function (p) {
+    var existingCount = existing.length;
+    for (var existingIdx = 0; existingIdx < existingCount; existingIdx += 1) {
+      if (!(existingIdx in existing)) continue;
+      var p = existing[existingIdx];
       existingKey[p.label + "\u0000" + p.text] = true;
-    });
+    }
     var added = 0;
     var skipped = 0;
-    incoming.forEach(function (p) {
+    var incomingCount = incoming.length;
+    for (var incomingIdx = 0; incomingIdx < incomingCount; incomingIdx += 1) {
+      if (!(incomingIdx in incoming)) continue;
+      var p2 = incoming[incomingIdx];
       if (existing.length >= MAX_PHRASES) {
         skipped += 1;
-        return;
+        continue;
       }
-      var key = p.label + "\u0000" + p.text;
+      var key = p2.label + "\u0000" + p2.text;
       if (existingKey[key]) {
         skipped += 1;
-        return;
+        continue;
       }
       existing.push({
         id: generateId(),
-        label: p.label,
-        text: p.text,
-        created_at: p.created_at,
+        label: p2.label,
+        text: p2.text,
+        created_at: p2.created_at,
         // R131c 字段：导入的 phrase 视为「未在本设备用过」
         last_used_at: 0,
         use_count: 0,
       });
       existingKey[key] = true;
       added += 1;
-    });
+    }
     var ok2 = savePhrases(existing);
     if (!ok2) return { ok: false, message: _t("quickPhrases.importErrorEmpty") };
     renderList();
@@ -1087,12 +1114,13 @@
       window.KeyboardShortcuts &&
       typeof window.KeyboardShortcuts.register === "function"
     ) {
-      SHORTCUT_INDICES.forEach(function (i) {
+      for (var shortcutIdx = 0; shortcutIdx < SHORTCUT_INDICES.length; shortcutIdx += 1) {
+        let shortcutIndex = SHORTCUT_INDICES[shortcutIdx];
         try {
           window.KeyboardShortcuts.register(
-            SHORTCUT_PREFIX + String(i),
+            SHORTCUT_PREFIX + String(shortcutIndex),
             function () {
-              _activateShortcut(i);
+              _activateShortcut(shortcutIndex);
             },
             { preventDefault: true, allowInInputs: true }
           );
@@ -1100,7 +1128,7 @@
           /* register 失败（同名冲突 / 模块状态异常）静默忽略，
              不让快捷键问题影响 chip 单击主路径 */
         }
-      });
+      }
       _keyboardShortcutsBound = true;
       return true;
     }

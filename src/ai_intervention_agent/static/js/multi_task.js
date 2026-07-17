@@ -66,6 +66,9 @@ if (typeof window.activeTaskId === "undefined") {
 if (typeof window.taskCountdowns === "undefined") {
   window.taskCountdowns = {}; // 每个任务的独立倒计时
 }
+if (typeof window.tasksCountdownTickerTimer === "undefined") {
+  window.tasksCountdownTickerTimer = null; // 所有任务倒计时共享的 1Hz ticker
+}
 if (typeof window.tasksPollingTimer === "undefined") {
   window.tasksPollingTimer = null; // 任务轮询定时器
 }
@@ -116,17 +119,46 @@ function _t(key, params) {
   return key;
 }
 
+function _debugLogEnabled() {
+  return (
+    !!window.AIIA_DEBUG &&
+    typeof console !== "undefined" &&
+    typeof console.debug === "function"
+  );
+}
+
 function _debugLog() {
-  if (
-    !window.AIIA_DEBUG ||
-    typeof console === "undefined" ||
-    typeof console.debug !== "function"
-  ) {
+  if (!_debugLogEnabled()) {
     return;
   }
   try {
     console.debug.apply(console, arguments);
   } catch (_e) {
+    /* noop */
+  }
+}
+
+function _debugSseTaskChanged(data) {
+  if (!_debugLogEnabled()) return;
+  try {
+    var detail = JSON.parse(data || "{}");
+    _debugLog(
+      "SSE task_changed:",
+      detail.task_id,
+      detail.old_status,
+      "→",
+      detail.new_status,
+    );
+  } catch (_) {
+    /* noop */
+  }
+}
+
+function _debugSseDetail(label, data) {
+  if (!_debugLogEnabled()) return;
+  try {
+    _debugLog(label, JSON.parse(data || "{}"));
+  } catch (_) {
     /* noop */
   }
 }
@@ -148,6 +180,26 @@ if (typeof window.feedbackPrompts === "undefined") {
 if (typeof window.autoSubmitAttempted === "undefined") {
   window.autoSubmitAttempted = {}; // task_id -> lastAttemptAt(ms)
 }
+
+// ============================================================
+// R689 (TODO#13) — 输入活跃保持倒计时 + 归零自动提交已输入内容
+// ============================================================
+// 设计：
+// 1. textarea 每次 input 事件刷新 ``lastFeedbackTypingAtMs``；
+// 2. 1Hz ticker 里发现 active 任务剩余 ≤ TYPING_HOLD_TRIGGER_S 且用户
+//    在 TYPING_HOLD_IDLE_MS 内输入过 → 自动调用既有 extend endpoint
+//    （+60s，复用 extends_max 配额，服务端可见，MCP backend 的 R689
+//    探测循环会跟随延长，避免 ghost-close）；
+// 3. 倒计时真正归零（extend 配额耗尽或用户已停止输入）→ autoSubmitTask
+//    优先提交用户已输入的文本 / 已勾选选项，而不是 resubmit_prompt。
+if (typeof window.lastFeedbackTypingAtMs === "undefined") {
+  window.lastFeedbackTypingAtMs = 0;
+}
+if (typeof window.__aiiaTypingAutoExtendInFlight === "undefined") {
+  window.__aiiaTypingAutoExtendInFlight = false;
+}
+var TYPING_HOLD_IDLE_MS = 10 * 1000;
+var TYPING_HOLD_TRIGGER_S = 15;
 
 // ============================================================
 // mining-cycle-2 §3.4 — Task ID one-click copy helper
@@ -268,7 +320,10 @@ function _flashCopyOnSourceElement(taskId, ok) {
     const elements = document.querySelectorAll(
       `[data-copyable-task-id="${CSS.escape(String(taskId || ""))}"]`,
     );
-    elements.forEach((el) => {
+    const elementCount = elements.length;
+    for (let index = 0; index < elementCount; index += 1) {
+      const el = elements[index];
+      if (!el) continue;
       const cls = ok ? "copy-flash-ok" : "copy-flash-err";
       el.classList.remove("copy-flash-ok", "copy-flash-err");
       // 强制 reflow 让 transition 重新触发
@@ -281,7 +336,7 @@ function _flashCopyOnSourceElement(taskId, ok) {
           // ignore
         }
       }, 600);
-    });
+    }
   } catch (_e) {
     // CSS.escape 不可用 / querySelector 异常时静默；不影响主功能
   }
@@ -368,6 +423,7 @@ configureMarkedSecurityOnce();
 var currentTasks = window.currentTasks;
 var activeTaskId = window.activeTaskId;
 var taskCountdowns = window.taskCountdowns;
+var tasksCountdownTickerTimer = window.tasksCountdownTickerTimer;
 var tasksPollingTimer = window.tasksPollingTimer;
 var taskTextareaContents = window.taskTextareaContents;
 var taskOptionsStates = window.taskOptionsStates;
@@ -392,40 +448,174 @@ function getTaskIdString(task) {
   return normalizeTaskIdValue(task.task_id) || "";
 }
 
+function findTaskById(tasks, taskId) {
+  const taskCount = tasks && Number.isFinite(tasks.length) ? tasks.length : 0;
+  for (let taskIndex = 0; taskIndex < taskCount; taskIndex += 1) {
+    const task = tasks[taskIndex];
+    if (task && task.task_id === taskId) {
+      return task;
+    }
+  }
+  return null;
+}
+
+function findOpenTaskById(tasks, taskId) {
+  const taskCount = tasks && Number.isFinite(tasks.length) ? tasks.length : 0;
+  for (let taskIndex = 0; taskIndex < taskCount; taskIndex += 1) {
+    const task = tasks[taskIndex];
+    if (task && task.task_id === taskId && task.status !== "completed") {
+      return task;
+    }
+  }
+  return null;
+}
+
+function findFirstOpenTask(tasks, excludedTaskId) {
+  const taskCount = tasks && Number.isFinite(tasks.length) ? tasks.length : 0;
+  for (let taskIndex = 0; taskIndex < taskCount; taskIndex += 1) {
+    const task = tasks[taskIndex];
+    if (!task || task.status === "completed") {
+      continue;
+    }
+    if (
+      typeof excludedTaskId !== "undefined" &&
+      task.task_id === excludedTaskId
+    ) {
+      continue;
+    }
+    return task;
+  }
+  return null;
+}
+
 function setActiveTaskId(nextTaskId) {
   activeTaskId = normalizeTaskIdValue(nextTaskId);
   window.activeTaskId = activeTaskId;
   return activeTaskId;
 }
 
-function getOpenTaskId(taskId, tasksList) {
-  const preferredTaskId = normalizeTaskIdValue(taskId);
-  if (!preferredTaskId || !Array.isArray(tasksList)) return null;
-  const task = tasksList.find(
-    (candidate) =>
-      candidate &&
-      candidate.status !== "completed" &&
-      getTaskIdString(candidate) === preferredTaskId,
-  );
-  return task ? getTaskIdString(task) : null;
+function cloneTaskImagesForState(images) {
+  const imageCount = images && Number.isFinite(images.length) ? images.length : 0;
+  const clonedImages = new Array(imageCount);
+  for (let imageIndex = 0; imageIndex < imageCount; imageIndex += 1) {
+    if (!(imageIndex in images)) continue;
+    clonedImages[imageIndex] = { ...images[imageIndex] };
+  }
+  return clonedImages;
 }
 
-function pickOpenTaskId(preferredTaskId, tasksList) {
-  const currentOpenTaskId = getOpenTaskId(preferredTaskId, tasksList);
-  if (currentOpenTaskId) return currentOpenTaskId;
-  if (!Array.isArray(tasksList)) return null;
-  const firstOpenTask = tasksList.find(
-    (task) => task && task.status !== "completed" && getTaskIdString(task),
-  );
-  return firstOpenTask ? getTaskIdString(firstOpenTask) : null;
+function _buildTaskListDiff(previousTasks, nextTasks) {
+  const oldTaskIds = [];
+  const oldTaskIdSet = new Set();
+  if (Array.isArray(previousTasks)) {
+    for (const task of previousTasks) {
+      const taskId = task && task.task_id;
+      oldTaskIds.push(taskId);
+      oldTaskIdSet.add(taskId);
+    }
+  }
+
+  const newTaskIdSet = new Set();
+  const addedTaskIds = [];
+  const addedTasks = [];
+  if (Array.isArray(nextTasks)) {
+    for (const task of nextTasks) {
+      const taskId = task && task.task_id;
+      newTaskIdSet.add(taskId);
+      if (!oldTaskIdSet.has(taskId)) {
+        addedTaskIds.push(taskId);
+        addedTasks.push(task);
+      }
+    }
+  }
+
+  const removedTaskIds = [];
+  for (const taskId of oldTaskIds) {
+    if (!newTaskIdSet.has(taskId)) {
+      removedTaskIds.push(taskId);
+    }
+  }
+
+  return {
+    addedTaskIds,
+    addedTasks,
+    removedTaskIds,
+  };
+}
+
+function _buildTaskRefreshState(tasks, preferredTaskId) {
+  const preferredOpenTaskId = normalizeTaskIdValue(preferredTaskId);
+  const completedTaskIds = [];
+  let hasActiveTasks = false;
+  let serverActiveTask = null;
+  let preferredOpenTask = null;
+  let firstOpenTask = null;
+
+  if (Array.isArray(tasks)) {
+    for (const task of tasks) {
+      if (!task) continue;
+      const taskId = getTaskIdString(task);
+      if (task.status === "completed") {
+        if (taskId) completedTaskIds.push(taskId);
+        continue;
+      }
+
+      hasActiveTasks = true;
+      if (!firstOpenTask && taskId) {
+        firstOpenTask = task;
+      }
+      if (
+        !preferredOpenTask &&
+        preferredOpenTaskId &&
+        taskId === preferredOpenTaskId
+      ) {
+        preferredOpenTask = task;
+      }
+      if (!serverActiveTask && task.status === "active") {
+        serverActiveTask = task;
+      }
+    }
+  }
+
+  const fallbackOpenTask = preferredOpenTask || firstOpenTask;
+  const nextActiveTaskId =
+    (serverActiveTask && getTaskIdString(serverActiveTask)) ||
+    (fallbackOpenTask && getTaskIdString(fallbackOpenTask)) ||
+    null;
+  let activeTaskForControls = null;
+  if (nextActiveTaskId) {
+    if (
+      serverActiveTask &&
+      getTaskIdString(serverActiveTask) === nextActiveTaskId
+    ) {
+      activeTaskForControls = serverActiveTask;
+    } else if (
+      preferredOpenTask &&
+      getTaskIdString(preferredOpenTask) === nextActiveTaskId
+    ) {
+      activeTaskForControls = preferredOpenTask;
+    } else if (
+      firstOpenTask &&
+      getTaskIdString(firstOpenTask) === nextActiveTaskId
+    ) {
+      activeTaskForControls = firstOpenTask;
+    }
+  }
+
+  return {
+    completedTaskIds,
+    hasActiveTasks,
+    serverActiveTask,
+    nextActiveTaskId,
+    activeTaskForControls,
+  };
 }
 
 function clearTaskLocalState(taskId) {
   const normalizedTaskId = normalizeTaskIdValue(taskId);
   if (!normalizedTaskId) return;
   if (taskCountdowns[normalizedTaskId]) {
-    clearInterval(taskCountdowns[normalizedTaskId].timer);
-    delete taskCountdowns[normalizedTaskId];
+    _clearTaskCountdown(normalizedTaskId);
     _debugLog(`Cleared countdown for task ${normalizedTaskId}`);
   }
   if (window.taskDeadlines[normalizedTaskId] !== undefined) {
@@ -459,7 +649,7 @@ function clearTaskLocalState(taskId) {
  * R63a：识别 `aiia_test=1` sentinel —— 后端 `/api/test-bark` 渲染出来
  * 的 URL 上会强制带这个 query，命中时跳过 deep-link 并给用户一个 toast，
  * 避免 `pendingDeepLinkedTaskId` 永久挂着虚假的 `test-task-id` 让每轮轮询
- * 都白调 `currentTasks.find(...)`。
+ * 都扫描一次 current task 列表。
  */
 function getDeepLinkedTaskIdFromUrl() {
   try {
@@ -494,12 +684,7 @@ function tryApplyDeepLinkedTask(tasks) {
     return false;
   }
 
-  const target = tasks.find(
-    (task) =>
-      task &&
-      task.task_id === pendingDeepLinkedTaskId &&
-      task.status !== "completed",
-  );
+  const target = findOpenTaskById(tasks, pendingDeepLinkedTaskId);
   if (!target) {
     // 任务可能还没从后端快照恢复出来，保留 pending，下一轮轮询继续尝试。
     return false;
@@ -790,9 +975,7 @@ function handleExtendCountdownClick() {
           }
           // 即便失败也要重新计算 disabled 状态（可能是上限触发的 422）
           if (res.data && typeof res.data.extends_used === "number") {
-            var task = (window.currentTasks || []).find(function (t) {
-              return t.task_id === taskId;
-            });
+            var task = findTaskById(window.currentTasks || [], taskId);
             if (task) {
               task.extends_used = res.data.extends_used;
               task.extends_max = res.data.extends_max || task.extends_max;
@@ -824,9 +1007,7 @@ function handleExtendCountdownClick() {
           }
         }
         // 同步 currentTasks 数据让 updateCountdownExtendButton 立即生效。
-        var task = (window.currentTasks || []).find(function (t) {
-          return t.task_id === taskId;
-        });
+        var task = findTaskById(window.currentTasks || [], taskId);
         if (task) {
           task.extends_used = data.extends_used;
           task.extends_max = data.extends_max;
@@ -978,9 +1159,7 @@ function handleFreezeCountdownClick() {
           return;
         }
         // 成功路径：把 task 的本地 cache + UI 同步成 frozen 状态
-        var task = (window.currentTasks || []).find(function (t) {
-          return t.task_id === taskId;
-        });
+        var task = findTaskById(window.currentTasks || [], taskId);
         if (task) {
           task.auto_resubmit_timeout = 0;
           task.remaining_time = 0;
@@ -1188,18 +1367,7 @@ function _connectDirectSSE(sharedLeaderMode) {
     if (e && typeof e.lastEventId === "string" && e.lastEventId !== "") {
       _lastEventId = e.lastEventId;
     }
-    try {
-      var detail = JSON.parse(e.data);
-      _debugLog(
-        "SSE task_changed:",
-        detail.task_id,
-        detail.old_status,
-        "→",
-        detail.new_status,
-      );
-    } catch (_) {
-      /* noop */
-    }
+    _debugSseTaskChanged(e && typeof e.data === "string" ? e.data : "{}");
     if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
     _sseDebounceTimer = setTimeout(function () {
       _sseDebounceTimer = null;
@@ -1221,12 +1389,10 @@ function _connectDirectSSE(sharedLeaderMode) {
   source.addEventListener("gap_warning", function (e) {
     if (_sseSource !== source) return;
     _debugLog("SSE gap_warning received, fetching tasks for full resync");
-    try {
-      var detail = JSON.parse(e.data);
-      _debugLog("SSE gap_warning detail:", detail);
-    } catch (_) {
-      /* noop */
-    }
+    _debugSseDetail(
+      "SSE gap_warning detail:",
+      e && typeof e.data === "string" ? e.data : "{}",
+    );
     if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
     _sseDebounceTimer = setTimeout(function () {
       _sseDebounceTimer = null;
@@ -1319,12 +1485,10 @@ function _connectDirectSSE(sharedLeaderMode) {
   // 工具可以基于它估算 RTT、检测连接健康。
   source.addEventListener("heartbeat", function (e) {
     if (_sseSource !== source) return;
-    try {
-      var detail = JSON.parse(e && e.data ? e.data : "{}");
-      _debugLog("SSE heartbeat:", detail);
-    } catch (_) {
-      /* noop */
-    }
+    _debugSseDetail(
+      "SSE heartbeat:",
+      e && typeof e.data === "string" ? e.data : "{}",
+    );
     if (sharedLeaderMode) {
       _postSseSharedMessage({
         kind: "event",
@@ -1482,27 +1646,11 @@ function _consumeSharedSseEvent(message) {
 
   if (eventType === "task_changed") {
     _updateSharedLastEventId(lastEventId);
-    try {
-      var detail = JSON.parse(data || "{}");
-      _debugLog(
-        "SSE task_changed:",
-        detail.task_id,
-        detail.old_status,
-        "→",
-        detail.new_status,
-      );
-    } catch (_) {
-      /* noop */
-    }
+    _debugSseTaskChanged(data);
     _scheduleSharedSseFetch("sse", 80);
   } else if (eventType === "gap_warning") {
     _debugLog("SSE gap_warning received, fetching tasks for full resync");
-    try {
-      var gapDetail = JSON.parse(data || "{}");
-      _debugLog("SSE gap_warning detail:", gapDetail);
-    } catch (_) {
-      /* noop */
-    }
+    _debugSseDetail("SSE gap_warning detail:", data);
     _scheduleSharedSseFetch("sse-gap", 0);
   } else if (eventType === "config_changed") {
     // Reuse a tiny synthetic EventSource path by temporarily calling the
@@ -1541,12 +1689,7 @@ function _consumeSharedSseEvent(message) {
       }
     }
   } else if (eventType === "heartbeat") {
-    try {
-      var hbDetail = JSON.parse(data || "{}");
-      _debugLog("SSE heartbeat:", hbDetail);
-    } catch (_) {
-      /* noop */
-    }
+    _debugSseDetail("SSE heartbeat:", data);
   }
 }
 
@@ -1847,7 +1990,10 @@ async function fetchAndApplyTasks(reason) {
 
       // 【优化】保存每个任务的 deadline
       if (data.tasks) {
-        data.tasks.forEach((task) => {
+        const taskCount = data.tasks.length;
+        for (let index = 0; index < taskCount; index += 1) {
+          if (!(index in data.tasks)) continue;
+          const task = data.tasks[index];
           if (task.deadline) {
             window.taskDeadlines[task.task_id] = task.deadline;
           }
@@ -1862,14 +2008,7 @@ async function fetchAndApplyTasks(reason) {
             if (typeof task.auto_resubmit_timeout === "number") {
               // <=0 语义：禁用自动提交（清理倒计时）
               if (task.auto_resubmit_timeout <= 0) {
-                try {
-                  if (taskCountdowns[task.task_id].timer) {
-                    clearInterval(taskCountdowns[task.task_id].timer);
-                  }
-                } catch (e) {
-                  // 忽略：定时器可能已被清理
-                }
-                delete taskCountdowns[task.task_id];
+                _clearTaskCountdown(task.task_id);
                 delete window.taskDeadlines[task.task_id];
               } else {
                 taskCountdowns[task.task_id].timeout =
@@ -1883,7 +2022,7 @@ async function fetchAndApplyTasks(reason) {
               taskCountdowns[task.task_id].remaining = task.remaining_time;
             }
           }
-        });
+        }
       }
 
       updateTasksList(data.tasks);
@@ -2208,12 +2347,11 @@ Object.defineProperty(window, "isManualSwitching", {
  * - 倒计时是独立的，每个任务有自己的计时器
  */
 function updateTasksList(tasks) {
-  const oldTaskIds = currentTasks.map((t) => t.task_id);
-  const newTaskIds = tasks.map((t) => t.task_id);
+  const taskDiff = _buildTaskListDiff(currentTasks, tasks);
   const isInitialTaskSnapshot = !hasLoadedTaskSnapshot;
 
   // 检测新任务
-  const addedTasks = newTaskIds.filter((id) => !oldTaskIds.includes(id));
+  const addedTasks = taskDiff.addedTaskIds;
   if (addedTasks.length > 0) {
     _debugLog(`Detected ${addedTasks.length} new task(s)`);
 
@@ -2245,43 +2383,50 @@ function updateTasksList(tasks) {
     // 为所有新任务启动倒计时（包括pending任务）
     // 使用服务器返回的 remaining_time（剩余时间），而非固定的 auto_resubmit_timeout
     // 这样刷新页面后倒计时不会重置
-    tasks
-      .filter((t) => addedTasks.includes(t.task_id))
-      .forEach((task) => {
-        if (task.status !== "completed" && !taskCountdowns[task.task_id]) {
-          // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout；
-          // 末位 fallback 用 server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240)，
-          // 不是旧 MAX (250)。
-          const timeout =
-            task.remaining_time ?? task.auto_resubmit_timeout ?? 240;
-          startTaskCountdown(
-            task.task_id,
-            timeout,
-            task.auto_resubmit_timeout || 240,
-          );
-          _debugLog(
-            `Started countdown for new task: ${task.task_id}, remaining ${timeout}s`,
-          );
-        }
-      });
+    const addedTaskCount = taskDiff.addedTasks.length;
+    for (let index = 0; index < addedTaskCount; index += 1) {
+      if (!(index in taskDiff.addedTasks)) continue;
+      const task = taskDiff.addedTasks[index];
+      if (task.status !== "completed" && !taskCountdowns[task.task_id]) {
+        // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout；
+        // 末位 fallback 用 server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240)，
+        // 不是旧 MAX (250)。
+        const timeout = task.remaining_time ?? task.auto_resubmit_timeout ?? 240;
+        startTaskCountdown(
+          task.task_id,
+          timeout,
+          task.auto_resubmit_timeout || 240,
+        );
+        _debugLog(
+          `Started countdown for new task: ${task.task_id}, remaining ${timeout}s`,
+        );
+      }
+    }
   }
 
   // 检测已删除的任务并清理倒计时
-  const removedTasks = oldTaskIds.filter((id) => !newTaskIds.includes(id));
+  const removedTasks = taskDiff.removedTaskIds;
   if (removedTasks.length > 0) {
     _debugLog(`Detected ${removedTasks.length} removed task(s)`);
-    removedTasks.forEach((taskId) => {
+    const removedTaskCount = removedTasks.length;
+    for (let index = 0; index < removedTaskCount; index += 1) {
+      if (!(index in removedTasks)) continue;
+      const taskId = removedTasks[index];
       clearTaskLocalState(taskId);
-    });
+    }
   }
 
-  tasks
-    .filter((task) => task && task.status === "completed")
-    .forEach((task) => clearTaskLocalState(getTaskIdString(task)));
+  const taskRefreshState = _buildTaskRefreshState(tasks, activeTaskId);
+  const completedTaskIds = taskRefreshState.completedTaskIds;
+  const completedTaskCount = completedTaskIds.length;
+  for (let index = 0; index < completedTaskCount; index += 1) {
+    if (!(index in completedTaskIds)) continue;
+    const taskId = completedTaskIds[index];
+    clearTaskLocalState(taskId);
+  }
 
   // 检测当前页面状态和任务状态
-  const hasActiveTasks =
-    tasks.length > 0 && tasks.some((t) => t.status !== "completed");
+  const hasActiveTasks = taskRefreshState.hasActiveTasks;
 
   currentTasks = tasks;
   window.currentTasks = tasks;
@@ -2290,8 +2435,11 @@ function updateTasksList(tasks) {
 
   // 【热更新兜底】确保所有未完成任务都有倒计时
   // 场景：配置变更将 auto_resubmit_timeout 从 0（禁用）切回 >0（启用）
-  tasks.forEach((task) => {
-    if (task.status === "completed") return;
+  const taskCount = tasks.length;
+  for (let index = 0; index < taskCount; index += 1) {
+    if (!(index in tasks)) continue;
+    const task = tasks[index];
+    if (task.status === "completed") continue;
     // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240).
     const total =
       typeof task.auto_resubmit_timeout === "number"
@@ -2300,16 +2448,9 @@ function updateTasksList(tasks) {
     if (total <= 0) {
       // 禁用：确保不启动倒计时
       if (taskCountdowns[task.task_id]) {
-        try {
-          if (taskCountdowns[task.task_id].timer) {
-            clearInterval(taskCountdowns[task.task_id].timer);
-          }
-        } catch (e) {
-          // 忽略：定时器可能已被清理
-        }
-        delete taskCountdowns[task.task_id];
+        _clearTaskCountdown(task.task_id);
       }
-      return;
+      continue;
     }
     const existingCountdown = taskCountdowns[task.task_id];
     // 关键：如果任务已变为 active，但其倒计时 timer 之前因“pending 超时被暂停”而停止，需要兜底恢复
@@ -2330,14 +2471,13 @@ function updateTasksList(tasks) {
         startTaskCountdown(task.task_id, remaining, total);
       }
     }
-  });
+  }
 
-  // 从任务列表中找到active任务，同步activeTaskId
-  const activeTask = tasks.find((t) => t.status === "active");
+  // 从任务列表快照中同步 activeTaskId。Server-side active 任务优先；
+  // 否则保留当前 open task，最后退到第一个 open task。
+  const activeTask = taskRefreshState.serverActiveTask;
   const oldActiveTaskId = activeTaskId;
-  const nextActiveTaskId = activeTask
-    ? getTaskIdString(activeTask) || pickOpenTaskId(activeTaskId, tasks)
-    : pickOpenTaskId(activeTaskId, tasks);
+  const nextActiveTaskId = taskRefreshState.nextActiveTaskId;
   const activeTaskChanged = nextActiveTaskId !== oldActiveTaskId;
   if (activeTaskChanged) {
     setActiveTaskId(nextActiveTaskId);
@@ -2361,9 +2501,7 @@ function updateTasksList(tasks) {
   // auto_resubmit_timeout 同步可见性与可点击状态。**不**专门 hook
   // task_changed SSE 事件，因为 SSE 接收路径下游也走 updateTasksList。
   if (typeof updateCountdownExtendButton === "function") {
-    var _activeTask = tasks.find(function (t) {
-      return getTaskIdString(t) === activeTaskId;
-    });
+    var _activeTask = taskRefreshState.activeTaskForControls;
     updateCountdownExtendButton(_activeTask);
     if (typeof updateFreezeCountdownButton === "function") {
       updateFreezeCountdownButton(_activeTask);
@@ -2454,6 +2592,74 @@ function updateTasksStats(_stats) {
 
 // ==================== 标签页渲染 ====================
 
+function _buildTaskTabRenderState(tasks, tabsContainer) {
+  const incompleteTasks = [];
+  const incompleteTaskIds = [];
+  const incompleteTaskIdSet = new Set();
+
+  if (Array.isArray(tasks)) {
+    for (const task of tasks) {
+      if (!task || task.status === "completed") continue;
+      const taskId = task.task_id;
+      incompleteTasks.push(task);
+      incompleteTaskIds.push(taskId);
+      incompleteTaskIdSet.add(taskId);
+    }
+  }
+
+  const existingTabs =
+    incompleteTasks.length > 0 &&
+    tabsContainer &&
+    typeof tabsContainer.querySelectorAll === "function"
+      ? tabsContainer.querySelectorAll(".task-tab:not(.task-tab-exit)")
+      : [];
+  const existingTaskIds = [];
+  const existingTaskIdSet = new Set();
+  const existingTabCount = existingTabs.length;
+  for (let index = 0; index < existingTabCount; index += 1) {
+    if (!(index in existingTabs)) continue;
+    const tab = existingTabs[index];
+    const taskId = tab && tab.dataset ? tab.dataset.taskId : undefined;
+    existingTaskIds.push(taskId);
+    existingTaskIdSet.add(taskId);
+  }
+
+  let needsRebuild = existingTaskIds.length !== incompleteTaskIds.length;
+  if (!needsRebuild) {
+    for (let i = 0; i < existingTaskIds.length; i += 1) {
+      if (existingTaskIds[i] !== incompleteTaskIds[i]) {
+        needsRebuild = true;
+        break;
+      }
+    }
+  }
+
+  const removedIds = [];
+  const addedTasks = [];
+  if (needsRebuild) {
+    for (const id of existingTaskIds) {
+      if (!incompleteTaskIdSet.has(id)) {
+        removedIds.push(id);
+      }
+    }
+    for (const task of incompleteTasks) {
+      if (!existingTaskIdSet.has(task.task_id)) {
+        addedTasks.push(task);
+      }
+    }
+  }
+
+  return {
+    incompleteTasks,
+    incompleteTaskIds,
+    existingTabs,
+    existingTaskIds,
+    needsRebuild,
+    removedIds,
+    addedTasks,
+  };
+}
+
 /**
  * 渲染任务标签页
  *
@@ -2465,12 +2671,12 @@ function updateTasksStats(_stats) {
  * - 构建已存在标签的ID映射
  * - 遍历当前任务列表，创建/更新标签页
  * - 删除不再存在的标签页
- * - 使用 DocumentFragment 批量添加新标签（性能优化）
+ * - 用 Set-backed diff 判断新增/删除/顺序变化
  *
  * ## 优化策略
  *
  * - **增量更新**：只更新变化的部分，不重新渲染整个列表
- * - **DOM批量操作**：使用 DocumentFragment 减少重排
+ * - **线性 diff**：用 Set.has 避免任务数增长时的 nested includes 扫描
  * - **标签复用**：保留已存在的标签，只更新内容
  * - **删除清理**：移除不再需要的标签
  *
@@ -2480,8 +2686,8 @@ function updateTasksStats(_stats) {
  * 2. 构建当前DOM中标签的映射
  * 3. 遍历任务列表：
  *    - 标签已存在：跳过（复用）
- *    - 标签不存在：创建新标签并添加到 Fragment
- * 4. 批量添加新标签到容器
+ *    - 标签不存在：创建新标签并添加到容器
+ * 4. 增量添加或按需重建标签
  * 5. 删除不再存在的标签
  *
  * ## 标签顺序
@@ -2493,7 +2699,7 @@ function updateTasksStats(_stats) {
  * ## 性能考虑
  *
  * - 避免全量DOM重建（使用增量更新）
- * - 使用 DocumentFragment 减少重排次数
+ * - 使用 Set-backed membership 减少重复线性扫描
  * - 标签复用避免重复创建
  * - 适合频繁更新的场景
  *
@@ -2525,10 +2731,8 @@ function renderTaskTabs() {
     return;
   }
 
-  // 过滤出未完成的任务
-  const incompleteTasks = currentTasks.filter(
-    (task) => task.status !== "completed",
-  );
+  const tabState = _buildTaskTabRenderState(currentTasks, tabsContainer);
+  const incompleteTasks = tabState.incompleteTasks;
 
   if (incompleteTasks.length === 0) {
     container.classList.add("hidden");
@@ -2537,34 +2741,16 @@ function renderTaskTabs() {
 
   container.classList.remove("hidden");
 
-  // 优化：排除正在退出动画的标签，避免虚假重建
-  const existingTabs = tabsContainer.querySelectorAll(
-    ".task-tab:not(.task-tab-exit)",
-  );
-  const existingTaskIds = Array.from(existingTabs).map(
-    (tab) => tab.dataset.taskId,
-  );
-
-  // 只比较未完成的任务
-  const incompleteTaskIds = incompleteTasks.map((t) => t.task_id);
-
-  // 检查是否需要重建（任务列表变化）
-  const needsRebuild =
-    existingTaskIds.length !== incompleteTaskIds.length ||
-    existingTaskIds.some((id, i) => id !== incompleteTaskIds[i]);
-
-  if (needsRebuild) {
-    const removedIds = existingTaskIds.filter(
-      (id) => !incompleteTaskIds.includes(id),
-    );
-    const addedIds = incompleteTaskIds.filter(
-      (id) => !existingTaskIds.includes(id),
-    );
+  if (tabState.needsRebuild) {
     const isIncremental =
-      removedIds.length + addedIds.length <= 2 && existingTaskIds.length > 0;
+      tabState.removedIds.length + tabState.addedTasks.length <= 2 &&
+      tabState.existingTaskIds.length > 0;
 
     if (isIncremental) {
-      removedIds.forEach((id) => {
+      const removedTabCount = tabState.removedIds.length;
+      for (let index = 0; index < removedTabCount; index += 1) {
+        if (!(index in tabState.removedIds)) continue;
+        const id = tabState.removedIds[index];
         const el = tabsContainer.querySelector(`[data-task-id="${id}"]`);
         if (el) {
           el.classList.add("task-tab-exit");
@@ -2575,28 +2761,31 @@ function renderTaskTabs() {
             if (el.parentNode) el.remove();
           }, 300);
         }
-      });
-      addedIds.forEach((id) => {
-        const task = incompleteTasks.find((t) => t.task_id === id);
-        if (task) {
-          const tab = createTaskTab(task);
-          tab.classList.add("task-tab-enter");
-          tab.addEventListener(
-            "animationend",
-            () => tab.classList.remove("task-tab-enter"),
-            {
-              once: true,
-            },
-          );
-          tabsContainer.appendChild(tab);
-        }
-      });
-    } else {
-      tabsContainer.innerHTML = "";
-      incompleteTasks.forEach((task, i) => {
+      }
+      const addedTabCount = tabState.addedTasks.length;
+      for (let index = 0; index < addedTabCount; index += 1) {
+        if (!(index in tabState.addedTasks)) continue;
+        const task = tabState.addedTasks[index];
         const tab = createTaskTab(task);
         tab.classList.add("task-tab-enter");
-        tab.style.animationDelay = i * 60 + "ms";
+        tab.addEventListener(
+          "animationend",
+          () => tab.classList.remove("task-tab-enter"),
+          {
+            once: true,
+          },
+        );
+        tabsContainer.appendChild(tab);
+      }
+    } else {
+      tabsContainer.innerHTML = "";
+      const incompleteTaskCount = incompleteTasks.length;
+      for (let index = 0; index < incompleteTaskCount; index += 1) {
+        if (!(index in incompleteTasks)) continue;
+        const task = incompleteTasks[index];
+        const tab = createTaskTab(task);
+        tab.classList.add("task-tab-enter");
+        tab.style.animationDelay = index * 60 + "ms";
         tab.addEventListener(
           "animationend",
           () => {
@@ -2606,25 +2795,32 @@ function renderTaskTabs() {
           { once: true },
         );
         tabsContainer.appendChild(tab);
-      });
+      }
     }
-    tabsContainer
-      .querySelectorAll(".task-tab:not(.task-tab-exit)")
-      .forEach((tab) => {
-        const taskId = tab.dataset.taskId;
-        const isActive = taskId === activeTaskId;
-        tab.classList.toggle("active", isActive);
-        tab.setAttribute("aria-selected", isActive ? "true" : "false");
-        tab.setAttribute("tabindex", isActive ? "0" : "-1");
-      });
-  } else {
-    existingTabs.forEach((tab) => {
+    const activeTabs = tabsContainer.querySelectorAll(
+      ".task-tab:not(.task-tab-exit)",
+    );
+    const activeTabCount = activeTabs.length;
+    for (let index = 0; index < activeTabCount; index += 1) {
+      if (!(index in activeTabs)) continue;
+      const tab = activeTabs[index];
       const taskId = tab.dataset.taskId;
       const isActive = taskId === activeTaskId;
       tab.classList.toggle("active", isActive);
       tab.setAttribute("aria-selected", isActive ? "true" : "false");
       tab.setAttribute("tabindex", isActive ? "0" : "-1");
-    });
+    }
+  } else {
+    const syncedTabCount = tabState.existingTabs.length;
+    for (let index = 0; index < syncedTabCount; index += 1) {
+      if (!(index in tabState.existingTabs)) continue;
+      const tab = tabState.existingTabs[index];
+      const taskId = tab.dataset.taskId;
+      const isActive = taskId === activeTaskId;
+      tab.classList.toggle("active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+      tab.setAttribute("tabindex", isActive ? "0" : "-1");
+    }
   }
 }
 
@@ -2845,19 +3041,20 @@ async function switchTask(taskId) {
         'input[type="checkbox"]',
       );
       const optionsStates = [];
-      checkboxes.forEach((checkbox, index) => {
+      const optionCheckboxCount = checkboxes.length;
+      for (let index = 0; index < optionCheckboxCount; index += 1) {
+        if (!(index in checkboxes)) continue;
+        const checkbox = checkboxes[index];
         optionsStates[index] = checkbox.checked;
-      });
+      }
       taskOptionsStates[activeTaskId] = optionsStates;
       _debugLog(`Saved option selection state for task ${activeTaskId}`);
     }
 
     // 保存图片列表（深拷贝，避免引用问题）
     // 注意：不能简单浅拷贝，因为图片对象包含 blob URL，需要独立管理
-    taskImages[activeTaskId] = selectedImages.map((img) => ({
-      ...img,
-      // 保留所有字段，包括 blob URL（每个任务独立管理）
-    }));
+    // 保留所有字段，包括 blob URL（每个任务独立管理）
+    taskImages[activeTaskId] = cloneTaskImagesForState(selectedImages);
     _debugLog(
       `Saved image list for task ${activeTaskId} (${selectedImages.length} images)`,
     );
@@ -2880,7 +3077,7 @@ async function switchTask(taskId) {
   updateCountdownRingColors(oldActiveTaskId, taskId);
 
   // 立即从 currentTasks 获取任务信息并更新内容（不等待 API）
-  const cachedTask = currentTasks.find((t) => t.task_id === taskId);
+  const cachedTask = findTaskById(currentTasks, taskId);
   if (cachedTask && cachedTask.prompt) {
     _debugLog(`Updating UI from cached task info immediately: ${taskId}`);
 
@@ -3090,14 +3287,21 @@ async function loadTaskDetails(taskId) {
       // 恢复该任务之前保存的图片列表
       if (taskImages[taskId] && taskImages[taskId].length > 0) {
         // 深拷贝图片对象，避免引用问题
-        selectedImages = taskImages[taskId].map((img) => ({ ...img }));
+        selectedImages = cloneTaskImagesForState(taskImages[taskId]);
         // 重新渲染图片预览
         const previewContainer = document.getElementById("image-previews");
         if (previewContainer) {
           previewContainer.innerHTML = "";
-          selectedImages.forEach((imageItem) => {
+          const restoredImageCount = selectedImages.length;
+          for (
+            let imageIndex = 0;
+            imageIndex < restoredImageCount;
+            imageIndex += 1
+          ) {
+            if (!(imageIndex in selectedImages)) continue;
+            const imageItem = selectedImages[imageIndex];
             renderImagePreview(imageItem, false);
-          });
+          }
           updateImageCounter();
           updateImagePreviewVisibility();
         }
@@ -3158,6 +3362,24 @@ async function updateDescriptionDisplay(prompt) {
   const descriptionElement = document.getElementById("description");
   if (!descriptionElement) return;
 
+  // R687 (TODO#1 渲染抽搐修复)：2s 轮询 / SSE 刷新路径会以相同 prompt 反复
+  // 调用本函数（updateTasksList → loadTaskDetails → 这里）。每次
+  // innerHTML 整体替换 + Prism 重高亮 + MathJax 重排都会引发可见闪烁
+  // （原始 TeX → 渲染态来回切换）、布局抖动、用户文本选区丢失。
+  // 内容未变化时幂等短路——dataset 签名挂在容器节点上；容器被外部清空
+  // （childNodes 为空）时即使 prompt 相同也必须重渲染。
+  // dataset 兜底：Node 测试桩的假元素可能没有 dataset 属性
+  const descriptionDataset = descriptionElement.dataset || null;
+  if (
+    descriptionDataset &&
+    descriptionDataset.renderedPrompt === prompt &&
+    descriptionElement.childNodes &&
+    descriptionElement.childNodes.length > 0
+  ) {
+    _debugLog("Description unchanged; skipping re-render (R687)");
+    return;
+  }
+
   try {
     // 同步渲染（立即显示，不使用 requestAnimationFrame）
     let htmlContent = prompt;
@@ -3173,6 +3395,10 @@ async function updateDescriptionDisplay(prompt) {
 
     // 直接更新 DOM（同步）
     descriptionElement.innerHTML = htmlContent;
+    // R687：渲染成功后记录签名，供幂等短路比较
+    if (descriptionDataset) {
+      descriptionDataset.renderedPrompt = prompt;
+    }
 
     // Prism.js 代码高亮（同步）
     if (typeof Prism !== "undefined") {
@@ -3205,6 +3431,10 @@ async function updateDescriptionDisplay(prompt) {
   } catch (error) {
     console.error("Update description failed:", error);
     descriptionElement.textContent = prompt;
+    // R687：降级渲染也记录签名，避免每个轮询周期重复降级重渲染造成闪烁
+    if (descriptionDataset) {
+      descriptionDataset.renderedPrompt = prompt;
+    }
   }
 }
 
@@ -3398,6 +3628,31 @@ function updateOptionsDisplay(options, optionDefaults) {
   const optionsContainer = document.getElementById("options-container");
   if (!optionsContainer) return;
 
+  // R687 (TODO#1 渲染抽搐修复)：轮询路径以相同 options 反复调用时短路。
+  // 每次重建 checkbox 都会丢失 hover / focus / 键盘导航状态，即使勾选
+  // 状态能从 taskOptionsStates 恢复，也会造成每 2 秒一次的可感知抖动。
+  // 签名 = 当前任务 + 选项文案 + 默认勾选位图；三者都未变则跳过重建。
+  // dataset 兜底：Node 测试桩的假元素可能没有 dataset 属性
+  const optionsDataset = optionsContainer.dataset || null;
+  const renderSignature =
+    String(activeTaskId) +
+    "\u0000" +
+    JSON.stringify(options || []) +
+    "\u0000" +
+    JSON.stringify(optionDefaults || []);
+  if (
+    optionsDataset &&
+    optionsDataset.renderedSignature === renderSignature &&
+    ((optionsContainer.childNodes && optionsContainer.childNodes.length > 0) ||
+      !(options && options.length > 0))
+  ) {
+    _debugLog("Options unchanged; skipping re-render (R687)");
+    return;
+  }
+  if (optionsDataset) {
+    optionsDataset.renderedSignature = renderSignature;
+  }
+
   // 优先使用该任务之前保存的勾选状态（支持新格式：{id: checked} 和旧格式：[index: checked]）
   // 注意：这里需要区分"用户从未交互过"与"用户已显式取消默认值"——
   //   - 已经为该 task 保存过 selection state 的，按用户的最新意图渲染（包括"取消默认勾选"）
@@ -3413,9 +3668,12 @@ function updateOptionsDisplay(options, optionDefaults) {
     const existingCheckboxes = optionsContainer.querySelectorAll(
       'input[type="checkbox"]',
     );
-    existingCheckboxes.forEach((checkbox) => {
+    const existingCheckboxCount = existingCheckboxes.length;
+    for (let index = 0; index < existingCheckboxCount; index += 1) {
+      if (!(index in existingCheckboxes)) continue;
+      const checkbox = existingCheckboxes[index];
       selectedStates[checkbox.id] = checkbox.checked;
-    });
+    }
     // existingCheckboxes 可能来自上一次渲染（task 切换后场景）；
     // 这里用 length>0 近似判断为"已经存在 UI 状态"，避免被默认值覆盖
     if (existingCheckboxes.length > 0) {
@@ -3428,7 +3686,10 @@ function updateOptionsDisplay(options, optionDefaults) {
 
   if (options && options.length > 0) {
     const defaults = Array.isArray(optionDefaults) ? optionDefaults : [];
-    options.forEach((option, index) => {
+    const optionCount = options.length;
+    for (let index = 0; index < optionCount; index += 1) {
+      if (!(index in options)) continue;
+      const option = options[index];
       const optionDiv = document.createElement("div");
       optionDiv.className = "option-item";
 
@@ -3455,7 +3716,7 @@ function updateOptionsDisplay(options, optionDefaults) {
       optionDiv.appendChild(checkbox);
       optionDiv.appendChild(label);
       optionsContainer.appendChild(optionDiv);
-    });
+    }
 
     optionsContainer.classList.remove("hidden");
     optionsContainer.classList.add("visible");
@@ -3469,6 +3730,34 @@ function updateOptionsDisplay(options, optionDefaults) {
     optionsContainer.classList.add("hidden");
     optionsContainer.classList.remove("visible");
   }
+}
+
+function removeTaskFromCurrentTasks(tasks, taskId) {
+  const taskCount = tasks && Number.isFinite(tasks.length) ? tasks.length : 0;
+  let keptTasks = null;
+
+  for (let taskIndex = 0; taskIndex < taskCount; taskIndex += 1) {
+    if (!(taskIndex in tasks)) {
+      continue;
+    }
+    const task = tasks[taskIndex];
+    if (task.task_id === taskId) {
+      if (keptTasks === null) {
+        keptTasks = [];
+        for (let copyIndex = 0; copyIndex < taskIndex; copyIndex += 1) {
+          if (copyIndex in tasks) {
+            keptTasks.push(tasks[copyIndex]);
+          }
+        }
+      }
+      continue;
+    }
+    if (keptTasks !== null) {
+      keptTasks.push(task);
+    }
+  }
+
+  return keptTasks === null ? tasks : keptTasks;
 }
 
 /**
@@ -3545,8 +3834,7 @@ async function closeTask(taskId) {
 
     // 服务端已移除，清理前端状态
     if (taskCountdowns[taskId]) {
-      clearInterval(taskCountdowns[taskId].timer);
-      delete taskCountdowns[taskId];
+      _clearTaskCountdown(taskId);
     }
     if (window.taskDeadlines[taskId] !== undefined) {
       delete window.taskDeadlines[taskId];
@@ -3558,12 +3846,12 @@ async function closeTask(taskId) {
       delete autoSubmitAttempted[taskId];
     }
 
-    currentTasks = currentTasks.filter((t) => t.task_id !== taskId);
+    currentTasks = removeTaskFromCurrentTasks(currentTasks, taskId);
     window.currentTasks = currentTasks;
     renderTaskTabs();
 
     if (activeTaskId === taskId) {
-      const nextTask = currentTasks.find((t) => t.status !== "completed");
+      const nextTask = findFirstOpenTask(currentTasks);
       if (nextTask) {
         switchTask(nextTask.task_id);
       } else {
@@ -3639,12 +3927,13 @@ function forceUpdateAllTaskCountdowns() {
   if (typeof document === "undefined" || document.hidden) return;
   if (!taskCountdowns || typeof taskCountdowns !== "object") return;
 
-  Object.keys(taskCountdowns).forEach((tid) => {
+  for (const tid in taskCountdowns) {
+    if (!Object.prototype.hasOwnProperty.call(taskCountdowns, tid)) continue;
     const entry = taskCountdowns[tid];
-    if (!entry || !entry.timer) return; // 已结束或未启动的不刷
+    if (!entry || !entry.timer) continue; // 已结束或未启动的不刷
 
     const remaining = Math.max(0, Math.floor(entry.remaining || 0));
-    const total = entry.timeout || 240; // 与 setInterval body 同步
+    const total = entry.timeout || 240; // 与 tickTaskCountdown 同步
     const progress = total > 0 ? remaining / total : 0;
     const radius = 9;
     const circumference = 2 * Math.PI * radius;
@@ -3665,7 +3954,7 @@ function forceUpdateAllTaskCountdowns() {
         console.debug("forceUpdateAllTaskCountdowns: skip main display", err);
       }
     }
-  });
+  }
 }
 
 if (typeof window.tasksCountdownVisibilityHandlerInstalled === "undefined") {
@@ -3699,10 +3988,257 @@ function installCountdownVisibilitySyncHandlerOnce() {
   });
 }
 
+const TASK_COUNTDOWN_SHARED_TIMER_SENTINEL = "shared-countdown-ticker";
+
+function calculateTaskCountdownRemaining(taskId, entry) {
+  const deadline = window.taskDeadlines[taskId];
+  if (deadline) {
+    // 使用服务器时间偏移校正本地时间
+    const adjustedNow = Date.now() / 1000 + (window.serverTimeOffset || 0);
+    return Math.max(0, Math.floor(deadline - adjustedNow));
+  }
+  // 没有 deadline 信息，使用递减方式（向后兼容）
+  return entry.remaining - 1;
+}
+
+function hasRunningTaskCountdowns() {
+  for (const tid in taskCountdowns) {
+    if (!Object.prototype.hasOwnProperty.call(taskCountdowns, tid)) continue;
+    const entry = taskCountdowns[tid];
+    if (entry && entry.timer === TASK_COUNTDOWN_SHARED_TIMER_SENTINEL) return true;
+  }
+  return false;
+}
+
+function stopSharedTaskCountdownTickerIfIdle() {
+  if (hasRunningTaskCountdowns()) return;
+  if (tasksCountdownTickerTimer) {
+    clearInterval(tasksCountdownTickerTimer);
+    tasksCountdownTickerTimer = null;
+    window.tasksCountdownTickerTimer = null;
+  }
+}
+
+function ensureSharedTaskCountdownTicker() {
+  if (tasksCountdownTickerTimer) return;
+  tasksCountdownTickerTimer = setInterval(tickAllTaskCountdowns, 1000);
+  window.tasksCountdownTickerTimer = tasksCountdownTickerTimer;
+}
+
+function _clearTaskCountdown(taskId) {
+  const normalizedTaskId = normalizeTaskIdValue(taskId);
+  if (!normalizedTaskId || !taskCountdowns[normalizedTaskId]) return;
+  const timer = taskCountdowns[normalizedTaskId].timer;
+  if (timer && timer !== TASK_COUNTDOWN_SHARED_TIMER_SENTINEL) {
+    clearInterval(timer);
+  }
+  taskCountdowns[normalizedTaskId].timer = null;
+  delete taskCountdowns[normalizedTaskId];
+  stopSharedTaskCountdownTickerIfIdle();
+}
+
+// R689 (TODO#13)：用户是否在 typing-hold 窗口内输入过。
+function isUserActivelyTyping() {
+  return (
+    typeof window.lastFeedbackTypingAtMs === "number" &&
+    window.lastFeedbackTypingAtMs > 0 &&
+    Date.now() - window.lastFeedbackTypingAtMs < TYPING_HOLD_IDLE_MS
+  );
+}
+
+/**
+ * R689 (TODO#13)：active 任务剩余时间进入触发窗口且用户正在输入时，
+ * 自动调用既有 extend endpoint 延长倒计时（+60s）。
+ *
+ * 设计要点：
+ * - 复用 ``POST /api/tasks/<id>/extend``：服务端可见、受 extends_max
+ *   配额约束（默认 3 次），MCP backend 的 R689 探测循环会跟随延长；
+ * - ``__aiiaTypingAutoExtendInFlight`` 防止 1Hz ticker 并发重复请求；
+ * - 配额耗尽 / 请求失败：静默放行，倒计时自然归零后由
+ *   ``autoSubmitTask`` 提交用户已输入的内容（内容不丢失）。
+ */
+function maybeAutoExtendCountdownForTyping(taskId, remaining) {
+  if (typeof fetch === "undefined") return;
+  if (taskId !== activeTaskId) return;
+  if (remaining <= 0 || remaining > TYPING_HOLD_TRIGGER_S) return;
+  if (!isUserActivelyTyping()) return;
+  if (window.__aiiaTypingAutoExtendInFlight) return;
+
+  var task = findTaskById(window.currentTasks || [], taskId);
+  if (!task) return;
+  if ((task.auto_resubmit_timeout || 0) <= 0) return;
+  if (
+    typeof task.extends_used === "number" &&
+    typeof task.extends_max === "number" &&
+    task.extends_used >= task.extends_max
+  ) {
+    return;
+  }
+
+  window.__aiiaTypingAutoExtendInFlight = true;
+  fetch("/api/tasks/" + encodeURIComponent(taskId) + "/extend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ seconds: 60 }),
+  })
+    .then(function (resp) {
+      return resp.json().then(function (data) {
+        return { ok: resp.ok, data: data };
+      });
+    })
+    .then(function (res) {
+      if (!res.ok || !res.data || !res.data.success) {
+        // 失败（含配额耗尽 422）：同步 extends_used 让按钮态一致，随后放行
+        if (res.data && typeof res.data.extends_used === "number") {
+          var failedTask = findTaskById(window.currentTasks || [], taskId);
+          if (failedTask) {
+            failedTask.extends_used = res.data.extends_used;
+            failedTask.extends_max =
+              res.data.extends_max || failedTask.extends_max;
+            if (typeof updateCountdownExtendButton === "function") {
+              updateCountdownExtendButton(failedTask);
+            }
+          }
+        }
+        _debugLog(
+          "Typing auto-extend rejected for " +
+            taskId +
+            ": " +
+            ((res.data && res.data.code) || "unknown"),
+        );
+        return;
+      }
+      var data = res.data;
+      var newRemaining = data.new_remaining_time;
+      var newTimeout = data.new_auto_resubmit_timeout;
+      var adjustedNow = Date.now() / 1000 + (window.serverTimeOffset || 0);
+      if (typeof window.taskDeadlines === "object" && window.taskDeadlines) {
+        window.taskDeadlines[taskId] = adjustedNow + newRemaining;
+      }
+      var cd = taskCountdowns[taskId];
+      if (cd) {
+        cd.remaining = newRemaining;
+        cd.timeout = newTimeout;
+      }
+      var okTask = findTaskById(window.currentTasks || [], taskId);
+      if (okTask) {
+        okTask.extends_used = data.extends_used;
+        okTask.extends_max = data.extends_max;
+        okTask.auto_resubmit_timeout = newTimeout;
+        okTask.remaining_time = newRemaining;
+        if (typeof updateCountdownExtendButton === "function") {
+          updateCountdownExtendButton(okTask);
+        }
+      }
+      _debugLog(
+        "Typing auto-extend applied for " +
+          taskId +
+          ": +60s (remaining " +
+          newRemaining +
+          "s)",
+      );
+    })
+    .catch(function (e) {
+      console.warn("Typing auto-extend network error:", e);
+    })
+    .finally(function () {
+      window.__aiiaTypingAutoExtendInFlight = false;
+    });
+}
+
+function tickTaskCountdown(taskId) {
+  const entry = taskCountdowns[taskId];
+  if (!entry || entry.timer !== TASK_COUNTDOWN_SHARED_TIMER_SENTINEL) return;
+
+  // 【优化】使用基于 deadline 的计算方式，而非简单递减
+  // 这样即使标签页被切换（导致 JS 定时器不准确），恢复后也能显示正确的剩余时间
+  const newRemaining = calculateTaskCountdownRemaining(taskId, entry);
+  entry.remaining = newRemaining;
+
+  // R128/R460：页面隐藏时跳过所有 DOM 写入，但仍保留 deadline 计算 +
+  // autoSubmit 触发逻辑。R460 把原先 N 个 per-task interval 收敛为单个
+  // 共享 1Hz ticker；隐藏页仍然只做每个任务必要的 deadline 检查，避免
+  // N 条 chained timers 争用浏览器后台 timer budget。
+  const documentHidden = typeof document !== "undefined" && document.hidden;
+
+  // 更新SVG圆环倒计时
+  // R266 cache: 走 _getOrCacheCountdownDom，避免 1Hz × N task 反复
+  // getElementById + querySelector × 2（详细 rationale 见该 helper 注释）。
+  if (!documentHidden) {
+    const cache = _getOrCacheCountdownDom(taskId, entry);
+    if (cache) {
+      const remaining = entry.remaining;
+      // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240); the
+      // historical 250/290 were stale "MAX" values, not "DEFAULT".
+      const total = entry.timeout || 240;
+      const progress = remaining / total; // 进度（0-1）
+
+      // 更新SVG circle的stroke-dashoffset
+      const radius = 9;
+      const circumference = 2 * Math.PI * radius;
+      const offset = circumference * (1 - progress);
+
+      if (cache.circle) {
+        cache.circle.setAttribute("stroke-dashoffset", offset);
+      }
+      if (cache.numberSpan) {
+        cache.numberSpan.textContent = remaining;
+      }
+
+      cache.ring.title = _t("page.countdown", { seconds: remaining });
+    }
+
+    // 如果是活动任务，也更新主倒计时
+    if (taskId === activeTaskId) {
+      updateCountdownDisplay(entry.remaining);
+    }
+  }
+
+  // R689 (TODO#13)：剩余时间进入触发窗口且用户正在输入 → 自动延长倒计时
+  maybeAutoExtendCountdownForTyping(taskId, entry.remaining);
+
+  // 倒计时结束
+  if (entry.remaining <= 0) {
+    // 关键：标记该任务的 timer 已停止，便于后续在任务变为 active 时重启倒计时/触发自动提交
+    entry.timer = null;
+    stopSharedTaskCountdownTickerIfIdle();
+    // 智能自动提交逻辑：
+    // 1. 如果是当前激活的任务 → 立即自动提交
+    // 2. 如果不是激活任务，检查是否有其他活动任务在处理
+    //    - 如果没有活动任务（用户无响应），也自动提交当前任务
+    //    - 如果有活动任务，说明用户正在处理其他任务，暂不自动提交
+    if (taskId === activeTaskId) {
+      // 当前激活任务超时，直接自动提交
+      autoSubmitTask(taskId);
+    } else {
+      // 非激活任务超时：检查是否真的没有用户活动
+      // 如果当前没有任何激活任务，说明用户完全无响应，也自动提交
+      if (!activeTaskId) {
+        _debugLog(
+          `Non-active task ${taskId} timed out with no active task; auto-submitting`,
+        );
+        autoSubmitTask(taskId);
+      } else {
+        _debugLog(
+          `Task ${taskId} timed out but user is working on ${activeTaskId}; deferring auto-submit`,
+        );
+      }
+    }
+  }
+}
+
+function tickAllTaskCountdowns() {
+  for (const taskId in taskCountdowns) {
+    if (!Object.prototype.hasOwnProperty.call(taskCountdowns, taskId)) continue;
+    tickTaskCountdown(taskId);
+  }
+  stopSharedTaskCountdownTickerIfIdle();
+}
+
 /**
  * 启动任务倒计时
  *
- * 为指定任务启动独立的倒计时计时器，支持自动提交。
+ * 为指定任务注册倒计时，实际 1Hz tick 由页面级共享 ticker 驱动，支持自动提交。
  *
  * @param {string} taskId - 任务ID
  * @param {number} remaining - 剩余倒计时秒数（可能是服务器计算的剩余时间）
@@ -3710,8 +4246,8 @@ function installCountdownVisibilitySyncHandlerOnce() {
  *
  * ## 功能说明
  *
- * 1. **清理旧计时器**：如果已存在则先清除
- * 2. **创建计时器**：每秒递减剩余时间
+ * 1. **清理旧计时器**：如果已存在则先移除旧 entry
+ * 2. **共享计时器**：所有任务复用一个 1Hz ticker
  * 3. **更新UI**：更新圆环进度和倒计时文本
  * 4. **自动提交**：倒计时结束时自动提交任务
  *
@@ -3719,7 +4255,7 @@ function installCountdownVisibilitySyncHandlerOnce() {
  *
  * - `remaining`: 剩余秒数
  * - `timeout`: 总秒数（用于计算进度百分比）
- * - `timer`: 定时器ID
+ * - `timer`: 运行标记（共享 ticker sentinel）
  *
  * ## UI更新
  *
@@ -3741,17 +4277,15 @@ function installCountdownVisibilitySyncHandlerOnce() {
  *
  * ## 注意事项
  *
- * - 每个任务有独立的倒计时
+ * - 每个任务有独立的倒计时状态，但共享一个页面级 ticker
  * - 计时器ID存储在 `taskCountdowns` 对象中
  * - 任务删除时需要清理计时器（防止内存泄漏）
  */
 function startTaskCountdown(taskId, remaining, total = null) {
   // 如果没有指定 total，使用 remaining 作为 total（向后兼容）
   const timeout = total || remaining;
-  // 停止该任务的旧倒计时
-  if (taskCountdowns[taskId] && taskCountdowns[taskId].timer) {
-    clearInterval(taskCountdowns[taskId].timer);
-  }
+  // 停止该任务的旧倒计时状态
+  _clearTaskCountdown(taskId);
 
   // R128：在第一次启动倒计时时一次性安装 visibility-aware DOM 同步。
   //
@@ -3759,7 +4293,7 @@ function startTaskCountdown(taskId, remaining, total = null) {
   // 用户切回标签页时 SVG 圆环 / 数字显示会停留在"切走那一刻"的状态，
   // 等下一个 1Hz tick 才更新——肉眼可见的 0-1s 延迟。本 handler 在
   // visible 分支立刻给所有 alive countdown timer 强制刷新一次 UI，
-  // 让用户切回的瞬间看到正确数字。``calculateRemainingFromDeadline``
+  // 让用户切回的瞬间看到正确数字。``calculateTaskCountdownRemaining``
   // 仍然是 single source of truth，无须额外算账。
   installCountdownVisibilitySyncHandlerOnce();
 
@@ -3769,7 +4303,7 @@ function startTaskCountdown(taskId, remaining, total = null) {
   taskCountdowns[taskId] = {
     remaining: remaining,
     timeout: timeout, // 总超时时间，用于计算进度百分比
-    timer: null,
+    timer: TASK_COUNTDOWN_SHARED_TIMER_SENTINEL,
   };
 
   // 如果是活动任务，更新主倒计时显示
@@ -3777,112 +4311,7 @@ function startTaskCountdown(taskId, remaining, total = null) {
     updateCountdownDisplay(remaining);
   }
 
-  // 【优化】基于服务器时间计算剩余时间的辅助函数
-  // 解决切换标签页后 JavaScript 定时器不准确的问题
-  function calculateRemainingFromDeadline() {
-    const deadline = window.taskDeadlines[taskId];
-    if (deadline) {
-      // 使用服务器时间偏移校正本地时间
-      const adjustedNow = Date.now() / 1000 + (window.serverTimeOffset || 0);
-      return Math.max(0, Math.floor(deadline - adjustedNow));
-    }
-    // 没有 deadline 信息，使用递减方式（向后兼容）
-    return taskCountdowns[taskId].remaining - 1;
-  }
-
-  // 启动定时器
-  taskCountdowns[taskId].timer = setInterval(() => {
-    // 【优化】使用基于 deadline 的计算方式，而非简单递减
-    // 这样即使标签页被切换（导致 JS 定时器不准确），恢复后也能显示正确的剩余时间
-    const newRemaining = calculateRemainingFromDeadline();
-    taskCountdowns[taskId].remaining = newRemaining;
-
-    // R128：页面隐藏时跳过所有 DOM 写入，但仍保留 deadline 计算 +
-    // autoSubmit 触发逻辑。
-    //
-    // why：每个并发 task 的 1 Hz tick 都做 5+ 次 DOM 操作
-    // (`getElementById` / `querySelector` ×2 / `setAttribute` /
-    //  `textContent` / `_t(...)` / `title` setter)。在 N 个 task 并发
-    // + 用户切走标签页的场景，浏览器把 setInterval 节流到 ~1 Hz 但
-    // 不会停 callback——每次 tick 仍走 Layout phase。隐藏时 DOM 不
-    // 可见，做这些写入 100% 是浪费。把 DOM 更新框在 `if
-    // (!document.hidden)` 里能直接削掉这部分浪费，对长时间挂在后
-    // 台等待 AI 反馈的"侧边栏式" workflow 尤其有意义。
-    //
-    // 关键不变量：``calculateRemainingFromDeadline`` 必须在 hidden 时
-    // **仍然执行** ——deadline 是绝对时间，timeout=0 触发 autoSubmit
-    // 的判定不能依赖"DOM 是否已经渲染到 0"，否则隐藏期间到期的任务
-    // 会被推迟到可见时才提交，引入用户感知延迟。autoSubmit 分支保
-    // 持原有路径不动。
-    const documentHidden =
-      typeof document !== "undefined" && document.hidden;
-
-    // 更新SVG圆环倒计时
-    // R266 cache: 走 _getOrCacheCountdownDom，避免 1Hz × N task 反复
-    // getElementById + querySelector × 2（详细 rationale 见该 helper 注释）。
-    if (!documentHidden) {
-      const cache = _getOrCacheCountdownDom(taskId, taskCountdowns[taskId]);
-      if (cache) {
-        const remaining = taskCountdowns[taskId].remaining;
-        // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240); the
-        // historical 250/290 were stale "MAX" values, not "DEFAULT".
-        const total = taskCountdowns[taskId].timeout || 240;
-        const progress = remaining / total; // 进度（0-1）
-
-        // 更新SVG circle的stroke-dashoffset
-        const radius = 9;
-        const circumference = 2 * Math.PI * radius;
-        const offset = circumference * (1 - progress);
-
-        if (cache.circle) {
-          cache.circle.setAttribute("stroke-dashoffset", offset);
-        }
-        if (cache.numberSpan) {
-          cache.numberSpan.textContent = remaining;
-        }
-
-        cache.ring.title = _t("page.countdown", { seconds: remaining });
-      }
-
-      // 如果是活动任务，也更新主倒计时
-      if (taskId === activeTaskId) {
-        updateCountdownDisplay(taskCountdowns[taskId].remaining);
-      }
-    }
-
-    // 倒计时结束
-    if (taskCountdowns[taskId].remaining <= 0) {
-      try {
-        clearInterval(taskCountdowns[taskId].timer);
-      } catch (e) {
-        // 忽略：定时器可能已被清理
-      }
-      // 关键：标记该任务的 timer 已停止，便于后续在任务变为 active 时重启倒计时/触发自动提交
-      taskCountdowns[taskId].timer = null;
-      // 智能自动提交逻辑：
-      // 1. 如果是当前激活的任务 → 立即自动提交
-      // 2. 如果不是激活任务，检查是否有其他活动任务在处理
-      //    - 如果没有活动任务（用户无响应），也自动提交当前任务
-      //    - 如果有活动任务，说明用户正在处理其他任务，暂不自动提交
-      if (taskId === activeTaskId) {
-        // 当前激活任务超时，直接自动提交
-        autoSubmitTask(taskId);
-      } else {
-        // 非激活任务超时：检查是否真的没有用户活动
-        // 如果当前没有任何激活任务，说明用户完全无响应，也自动提交
-        if (!activeTaskId) {
-          _debugLog(
-            `Non-active task ${taskId} timed out with no active task; auto-submitting`,
-          );
-          autoSubmitTask(taskId);
-        } else {
-          _debugLog(
-            `Task ${taskId} timed out but user is working on ${activeTaskId}; deferring auto-submit`,
-          );
-        }
-      }
-    }
-  }, 1000);
+  ensureSharedTaskCountdownTicker();
 
   _debugLog(
     `Started task countdown: ${taskId}, remaining ${remaining}s / total ${timeout}s`,
@@ -3960,6 +4389,21 @@ async function autoSubmitTask(taskId) {
     // 忽略：退避记录失败不应阻塞自动提交
   }
   _debugLog(`Task ${taskId} countdown ended; auto-submitting`);
+
+  // R689 (TODO#13)：倒计时归零时优先提交用户已输入的内容——
+  // 即使没点发送按钮，输入框文本 / 已勾选选项也不能丢。
+  const typedText = collectTypedFeedbackForTask(taskId);
+  const selectedOpts = collectSelectedOptionsForTask(taskId);
+  if ((typedText && typedText.trim()) || selectedOpts.length > 0) {
+    _debugLog(
+      `Auto-submitting user-typed content for ${taskId} ` +
+        `(${(typedText || "").length} chars, ${selectedOpts.length} options)`,
+    );
+    await submitTaskFeedback(taskId, typedText || "", selectedOpts);
+    return;
+  }
+
+  // 无任何用户输入：沿用原路径，提交配置的 resubmit 提示语。
   // 使用配置的提示语（运行中热更新）：自动提交前实时拉取一次
   // 若后端未提供（如网络故障），退出而不是发送硬编码字符串，由下一轮轮询/用户手动触发重试
   const prompts = await fetchFeedbackPromptsFresh();
@@ -3972,6 +4416,74 @@ async function autoSubmitTask(taskId) {
     return;
   }
   await submitTaskFeedback(taskId, defaultMessage, []);
+}
+
+/**
+ * R689 (TODO#13)：收集指定任务的用户已输入文本。
+ *
+ * 优先级：active 任务的实时 textarea 值 > taskTextareaContents 自动保存值。
+ * 收集失败一律返回空串（调用方按"无输入"处理，走 resubmit_prompt 原路径）。
+ */
+function collectTypedFeedbackForTask(taskId) {
+  try {
+    if (taskId === activeTaskId && typeof document !== "undefined") {
+      const liveTextarea = document.getElementById("feedback-text");
+      if (
+        liveTextarea &&
+        typeof liveTextarea.value === "string" &&
+        liveTextarea.value.trim()
+      ) {
+        return liveTextarea.value;
+      }
+    }
+    const saved = taskTextareaContents && taskTextareaContents[taskId];
+    if (typeof saved === "string") {
+      return saved;
+    }
+  } catch (e) {
+    _debugLog(`collectTypedFeedbackForTask failed for ${taskId}: ${e}`);
+  }
+  return "";
+}
+
+/**
+ * R689 (TODO#13)：收集指定任务已勾选的预定义选项（label 数组）。
+ *
+ * 优先级：active 任务的实时 checkbox 状态 > taskOptionsStates 自动保存值
+ * （"option-N" / N 两种 key 形态都兼容，映射回 predefined_options 文案）。
+ */
+function collectSelectedOptionsForTask(taskId) {
+  const labels = [];
+  try {
+    if (taskId === activeTaskId && typeof document !== "undefined") {
+      const container = document.getElementById("options-container");
+      if (container && typeof container.querySelectorAll === "function") {
+        const boxes = container.querySelectorAll('input[type="checkbox"]');
+        const boxCount = boxes.length;
+        for (let index = 0; index < boxCount; index += 1) {
+          if (!(index in boxes)) continue;
+          const box = boxes[index];
+          if (box.checked) labels.push(box.value);
+        }
+        if (labels.length > 0) return labels;
+      }
+    }
+    const states = taskOptionsStates && taskOptionsStates[taskId];
+    const task = findTaskById(window.currentTasks || [], taskId);
+    const options = task && task.predefined_options;
+    if (states && options && options.length) {
+      const optionCount = options.length;
+      for (let index = 0; index < optionCount; index += 1) {
+        if (!(index in options)) continue;
+        if (states["option-" + index] || states[index]) {
+          labels.push(options[index]);
+        }
+      }
+    }
+  } catch (e) {
+    _debugLog(`collectSelectedOptionsForTask failed for ${taskId}: ${e}`);
+  }
+  return labels;
 }
 
 /**
@@ -4016,11 +4528,17 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
     formData.append("selected_options", JSON.stringify(selectedOptions));
 
     // 添加图片文件
-    selectedImages.forEach((img, index) => {
+    const selectedImageCount =
+      selectedImages && Number.isFinite(selectedImages.length)
+        ? selectedImages.length
+        : 0;
+    for (let imageIndex = 0; imageIndex < selectedImageCount; imageIndex += 1) {
+      if (!(imageIndex in selectedImages)) continue;
+      const img = selectedImages[imageIndex];
       if (img.file) {
-        formData.append(`image_${index}`, img.file);
+        formData.append(`image_${imageIndex}`, img.file);
       }
-    });
+    }
 
     const response = await fetchWithTimeout(
       `/api/tasks/${taskId}/submit`,
@@ -4037,8 +4555,7 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       _debugLog(`Task ${taskId} submitted successfully`);
       // 停止该任务的倒计时
       if (taskCountdowns[taskId]) {
-        clearInterval(taskCountdowns[taskId].timer);
-        delete taskCountdowns[taskId];
+        _clearTaskCountdown(taskId);
       }
       // 清除该任务保存的所有状态
       if (taskTextareaContents[taskId] !== undefined) {
@@ -4059,9 +4576,7 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       if (!_sseConnected) {
         setTimeout(async () => {
           await refreshTasksList();
-          const nextTask = currentTasks.find(
-            (t) => t.task_id !== taskId && t.status !== "completed",
-          );
+          const nextTask = findFirstOpenTask(currentTasks, taskId);
           if (nextTask) {
             _debugLog(`Auto-switching to next task: ${nextTask.task_id}`);
             switchTask(nextTask.task_id);
@@ -4386,6 +4901,10 @@ async function refreshTasksList() {
 }
 
 function handleRealtimeTextareaAutosave(event) {
+  // R689 (TODO#13)：记录输入活跃时间，供倒计时 typing-hold 判定使用。
+  // 放在 activeTaskId 判空之前——即使任务状态短暂不同步，输入活跃信号
+  // 也应生效。
+  window.lastFeedbackTypingAtMs = Date.now();
   if (!activeTaskId) return;
   const textarea =
     event && event.currentTarget
@@ -4412,9 +4931,12 @@ function handleRealtimeOptionsAutosave(event) {
     'input[type="checkbox"]',
   );
   const states = {};
-  checkboxes.forEach((cb) => {
-    states[cb.id] = cb.checked;
-  });
+  const checkboxCount = checkboxes.length;
+  for (let index = 0; index < checkboxCount; index += 1) {
+    if (!(index in checkboxes)) continue;
+    const checkbox = checkboxes[index];
+    states[checkbox.id] = checkbox.checked;
+  }
   taskOptionsStates[activeTaskId] = states;
 }
 

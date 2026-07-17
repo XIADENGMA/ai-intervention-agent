@@ -495,18 +495,19 @@ function initHourglassAnimation() {
       if (!_isHourglassLifecycleActive(container, token)) return;
       _ensureLottieLoaded().then((ok) => {
         if (!ok || !_isHourglassLifecycleActive(container, token)) return;
-        const fallbackSvgs = Array.from(container.querySelectorAll("svg"));
-        if (fallbackSvgs.length) {
+        const fallbackSvgs = container.querySelectorAll("svg");
+        const fallbackSvgCount = fallbackSvgs.length;
+        if (fallbackSvgCount) {
           container.style.opacity = "0";
           container.style.transition = "opacity .25s ease";
         }
         _createLottieAnimation(container, token);
-        if (fallbackSvgs.length && hourglassAnimation) {
+        if (fallbackSvgCount && hourglassAnimation) {
           var removeFallback = () => {
             if (!_isHourglassLifecycleActive(container, token)) return;
-            fallbackSvgs.forEach((s) => {
-              _removeElement(s);
-            });
+            for (let i = 0; i < fallbackSvgCount; i += 1) {
+              _removeElement(fallbackSvgs[i]);
+            }
           };
           hourglassAnimation.addEventListener("DOMLoaded", () => {
             if (!_isHourglassLifecycleActive(container, token)) return;
@@ -624,6 +625,21 @@ window.addEventListener("theme-changed", (event) => {
 // 高性能markdown渲染函数
 // isMarkdown: 是否为 Markdown 源文本（需要 marked.js 解析）
 function renderMarkdownContent(element, content, isMarkdown = false) {
+  // R687 (TODO#1 渲染抽搐修复，与 multi_task.js::updateDescriptionDisplay
+  // 同构)：SSE auto-refresh 路径可能以相同内容重入 loadConfig →
+  // renderMarkdownContent。内容未变化时幂等短路，避免 innerHTML 重建 +
+  // MathJax 重排造成的闪烁与选区丢失。dataset 兜底：测试桩元素可能没有
+  // dataset 属性。
+  const renderedDataset = element && element.dataset ? element.dataset : null;
+  if (
+    renderedDataset &&
+    content &&
+    renderedDataset.renderedContent === content &&
+    element.childNodes &&
+    element.childNodes.length > 0
+  ) {
+    return;
+  }
   // 使用requestAnimationFrame优化渲染时机
   _scheduleNextFrame(() => {
     if (content) {
@@ -651,6 +667,10 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
       // 一次性更新DOM
       element.innerHTML = "";
       element.appendChild(fragment);
+      // R687：渲染成功后记录签名，供幂等短路比较
+      if (renderedDataset) {
+        renderedDataset.renderedContent = content;
+      }
 
       // 处理代码块，添加复制按钮
       processCodeBlocks(element);
@@ -689,13 +709,17 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
 function processCodeBlocks(container) {
   const codeBlocks = container.querySelectorAll("pre");
 
-  codeBlocks.forEach((pre) => {
+  const codeBlockCount =
+    codeBlocks && Number.isFinite(codeBlocks.length) ? codeBlocks.length : 0;
+  for (let codeBlockIndex = 0; codeBlockIndex < codeBlockCount; codeBlockIndex += 1) {
+    const pre = codeBlocks[codeBlockIndex];
+    if (!pre) continue;
     // 检查是否已经被处理过
     if (
       pre.parentElement &&
       pre.parentElement.classList.contains("code-block-container")
     ) {
-      return;
+      continue;
     }
 
     // 创建代码块容器
@@ -735,7 +759,7 @@ function processCodeBlocks(container) {
 
     // 将工具栏添加到容器中
     codeContainer.appendChild(toolbar);
-  });
+  }
 }
 
 const COPY_BUTTON_RESTORE_DELAY_MS = 2000;
@@ -886,14 +910,15 @@ function processStrikethrough(container) {
   }
 
   // 处理每个文本节点（使用 DOM API 避免 innerHTML 注入风险）
-  textNodes.forEach((textNode) => {
+  for (let textNodeIndex = 0; textNodeIndex < textNodes.length; textNodeIndex += 1) {
+    const textNode = textNodes[textNodeIndex];
     const text = textNode.textContent;
     const strikethroughRegex = /~~([^~\n]+?)~~/g;
 
-    if (!strikethroughRegex.test(text)) return;
+    if (!strikethroughRegex.test(text)) continue;
 
     const parts = text.split(/~~([^~\n]+?)~~/);
-    if (parts.length <= 1) return;
+    if (parts.length <= 1) continue;
 
     const fragment = document.createDocumentFragment();
     for (let i = 0; i < parts.length; i++) {
@@ -907,7 +932,7 @@ function processStrikethrough(container) {
     }
 
     textNode.parentNode.replaceChild(fragment, textNode);
-  });
+  }
 }
 
 // 加载配置
@@ -963,7 +988,10 @@ async function loadConfig() {
         const optionDefaults = Array.isArray(config.predefined_options_defaults)
           ? config.predefined_options_defaults
           : [];
-        config.predefined_options.forEach((option, index) => {
+        const predefinedOptionCount = config.predefined_options.length;
+        for (let index = 0; index < predefinedOptionCount; index += 1) {
+          if (!(index in config.predefined_options)) continue;
+          const option = config.predefined_options[index];
           const optionDiv = document.createElement("div");
           optionDiv.className = "option-item";
 
@@ -983,7 +1011,7 @@ async function loadConfig() {
             optionDiv.classList.add("selected");
           }
           optionsContainer.appendChild(optionDiv);
-        });
+        }
 
         optionsContainer.style.display = "block";
         separator.style.display = "block";
@@ -1277,10 +1305,13 @@ function buildMarkdownCodeFence(text, lang = "") {
   if (!normalizedText.trim()) return null;
 
   const backtickRuns = normalizedText.match(/`+/g) || [];
-  const longestRun = backtickRuns.reduce(
-    (max, run) => Math.max(max, run.length),
-    0,
-  );
+  let longestRun = 0;
+  const backtickRunCount = backtickRuns.length;
+  for (let index = 0; index < backtickRunCount; index += 1) {
+    if (!(index in backtickRuns)) continue;
+    const runLength = backtickRuns[index].length;
+    if (runLength > longestRun) longestRun = runLength;
+  }
   const fence = "`".repeat(Math.max(3, longestRun + 1));
   const fenceHead = lang ? `${fence}${lang}` : fence;
   const codeBody = normalizedText.endsWith("\n")
@@ -1563,13 +1594,19 @@ function _modalFocusTrap(panel, event) {
   const focusables = panel.querySelectorAll(
     'button:not([disabled]),[href],input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
   );
-  const visible = Array.prototype.filter.call(
-    focusables,
-    (el) => el.offsetParent !== null && !el.hasAttribute("aria-hidden"),
-  );
-  if (visible.length === 0) return;
-  const first = visible[0];
-  const last = visible[visible.length - 1];
+  let first = null;
+  let last = null;
+  const focusableCount =
+    focusables && Number.isFinite(focusables.length) ? focusables.length : 0;
+  for (let i = 0; i < focusableCount; i += 1) {
+    const el = focusables[i];
+    if (!el || el.offsetParent === null || el.hasAttribute("aria-hidden")) {
+      continue;
+    }
+    if (!first) first = el;
+    last = el;
+  }
+  if (!first || !last) return;
   const active = document.activeElement;
   if (event.shiftKey && active === first) {
     event.preventDefault();
@@ -1731,12 +1768,16 @@ async function submitFeedback() {
     const checkboxes = optionsContainer.querySelectorAll(
       'input[type="checkbox"]:checked',
     );
-    checkboxes.forEach((checkbox) => {
+    const checkboxCount =
+      checkboxes && Number.isFinite(checkboxes.length) ? checkboxes.length : 0;
+    for (let checkboxIndex = 0; checkboxIndex < checkboxCount; checkboxIndex += 1) {
+      const checkbox = checkboxes[checkboxIndex];
+      if (!checkbox) continue;
       // 使用 checkbox 的 value 属性获取选项文本
       if (checkbox.value) {
         selectedOptions.push(checkbox.value);
       }
-    });
+    }
   }
 
   if (
@@ -1767,11 +1808,17 @@ async function submitFeedback() {
     formData.append("selected_options", JSON.stringify(selectedOptions));
 
     // 添加图片文件（直接使用原始文件，不需要base64）
-    selectedImages.forEach((img, index) => {
+    const selectedImageCount =
+      selectedImages && Number.isFinite(selectedImages.length)
+        ? selectedImages.length
+        : 0;
+    for (let imageIndex = 0; imageIndex < selectedImageCount; imageIndex += 1) {
+      if (!(imageIndex in selectedImages)) continue;
+      const img = selectedImages[imageIndex];
       if (img.file) {
-        formData.append(`image_${index}`, img.file);
+        formData.append(`image_${imageIndex}`, img.file);
       }
-    });
+    }
 
     // 获取当前活动任务ID（由 multi_task.js 管理）
     submitTargetTaskId = window.activeTaskId;
@@ -1807,9 +1854,21 @@ async function submitFeedback() {
         if (fbTextEl) {
           fbTextEl.value = "";
         }
-        document
-          .querySelectorAll('input[type="checkbox"]')
-          .forEach((cb) => (cb.checked = false));
+        const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+        const allCheckboxCount =
+          allCheckboxes && Number.isFinite(allCheckboxes.length)
+            ? allCheckboxes.length
+            : 0;
+        for (
+          let checkboxIndex = 0;
+          checkboxIndex < allCheckboxCount;
+          checkboxIndex += 1
+        ) {
+          const checkbox = allCheckboxes[checkboxIndex];
+          if (checkbox) {
+            checkbox.checked = false;
+          }
+        }
         clearAllImages();
       } else {
         console.debug(
@@ -2028,26 +2087,23 @@ function initializeShortcutTooltip() {
   }
 }
 
+function setShortcutText(id, shortcut) {
+  const element = document.getElementById(id);
+  if (element) {
+    element.textContent = shortcut;
+  }
+}
+
 function updateShortcutDisplay(platform) {
   const isMac = platform === "mac";
   const ctrlOrCmd = isMac ? "Cmd" : "Ctrl";
   const altOrOption = isMac ? "Option" : "Alt";
 
-  // 更新各个快捷键显示
-  const shortcuts = {
-    "shortcut-submit": `${ctrlOrCmd}+Enter`,
-    "shortcut-code": `${altOrOption}+C`,
-    "shortcut-paste": `${ctrlOrCmd}+V`,
-    "shortcut-upload": `${ctrlOrCmd}+U`,
-    "shortcut-delete": "Delete",
-  };
-
-  Object.entries(shortcuts).forEach(([id, shortcut]) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.textContent = shortcut;
-    }
-  });
+  setShortcutText("shortcut-submit", `${ctrlOrCmd}+Enter`);
+  setShortcutText("shortcut-code", `${altOrOption}+C`);
+  setShortcutText("shortcut-paste", `${ctrlOrCmd}+V`);
+  setShortcutText("shortcut-upload", `${ctrlOrCmd}+U`);
+  setShortcutText("shortcut-delete", "Delete");
 }
 
 function _isElementEventWired(element, wireFlag) {
