@@ -705,13 +705,17 @@ def launch_feedback_ui(
 
         try:
             client = service_manager.get_sync_client(config)
+            # R702：不再把 config 默认倒计时显式塞进 payload——路由会把
+            # 显式传入的 timeout 标记为 per-task explicit（config 热更新
+            # 永不覆盖）。MCP 侧的值本来就来自 config（get_web_ui_config），
+            # 省略后路由取同一 config 默认值，且任务保持「跟随热更新」的
+            # 历史语义（用户运行中改 frontend_countdown 仍即时生效）。
             response = client.post(
                 api_url,
                 json={
                     "task_id": task_id,
                     "prompt": cleaned_summary,
                     "predefined_options": cleaned_options,
-                    "auto_resubmit_timeout": auto_resubmit_timeout,
                 },
                 timeout=5,
             )
@@ -1206,6 +1210,8 @@ async def interactive_feedback(
         api_url = f"http://{target_host}:{config.port}/api/tasks"
 
         try:
+            # R702：同 sync 路径——config 默认倒计时不显式入 payload，
+            # 避免任务被误标 per-task explicit 而脱离 config 热更新同步。
             response = await client.post(
                 api_url,
                 json={
@@ -1213,7 +1219,6 @@ async def interactive_feedback(
                     "prompt": cleaned_message,
                     "predefined_options": predefined_options_list,
                     "predefined_options_defaults": predefined_options_defaults,
-                    "auto_resubmit_timeout": auto_resubmit_timeout,
                     "feedback_placeholder": feedback_placeholder,
                     "question_type": question_type,
                     "header_label": header_label,

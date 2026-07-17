@@ -115,6 +115,21 @@ class TestRouteMarksExplicitTimeout(unittest.TestCase):
         )
 
 
+class TestMcpPayloadOmitsConfigTimeout(unittest.TestCase):
+    """MCP 侧（server_feedback）创建任务不显式传 config 默认倒计时。
+
+    显式传入会被路由标记为 per-task explicit（config 热更新永不覆盖），
+    而 MCP 的值本来就来自 config——必须省略，让任务保持「跟随热更新」
+    的历史语义。
+    """
+
+    def test_payload_has_no_auto_resubmit_timeout(self) -> None:
+        src = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "server_feedback.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn('"auto_resubmit_timeout": auto_resubmit_timeout,', src)
+
+
 class TestRegistrationDoesNotSync(unittest.TestCase):
     """方案 B：回调注册时只记录基准，不执行覆盖（源码契约）。
 
