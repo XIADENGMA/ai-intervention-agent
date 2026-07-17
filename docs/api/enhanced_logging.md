@@ -54,7 +54,7 @@
 
 #### Methods
 
-##### `setup_logger(self, name: str, level: int = logging.WARNING) -> logging.Logger`
+##### `setup_logger(self, name: str, level: int = logging.NOTSET) -> logging.Logger`
 
 ### `class EnhancedLogger`
 

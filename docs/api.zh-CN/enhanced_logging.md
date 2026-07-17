@@ -254,9 +254,20 @@ URL basic auth 是唯一保留 username 的特殊形态，用反向引用把
 
 #### 方法
 
-##### `setup_logger(self, name: str, level: int = logging.WARNING) -> logging.Logger`
+##### `setup_logger(self, name: str, level: int = logging.NOTSET) -> logging.Logger`
 
-返回已配置的 logger，首次调用时安装 InterceptHandler 路由到 Loguru
+返回已配置的 logger，首次调用时安装 InterceptHandler 路由到 Loguru。
+
+R701 修复：named logger 默认 ``NOTSET``（跟随 root 的 effective
+level），而不是历史上的硬编码 ``WARNING``。旧行为导致
+``apply_runtime_log_level``（``POST /api/system/log-level``）与
+``AI_INTERVENTION_AGENT_LOG_LEVEL`` env var 只对 root/原生 logger
+生效——所有走 ``EnhancedLogger`` 的模块因显式 ``WARNING`` 级别
+把 ``isEnabledFor(INFO)`` 判 False，INFO/DEBUG 日志无论怎么调级
+都不输出（运行时诊断旋钮形同虚设）。``propagate=False`` 只影响
+handler 传播，不影响 ``isEnabledFor`` 的父链 effective-level 查
+找，所以 ``NOTSET`` 下 named logger 正确继承 root 级别，输出仍
+由自身的 ``InterceptHandler`` 路由到 Loguru（不会双重输出）。
 
 ### `class EnhancedLogger`
 
