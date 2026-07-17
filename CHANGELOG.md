@@ -34,7 +34,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   after the (much shorter) config countdown. Explicitly-timed tasks are
   now marked with an internal `auto_resubmit_timeout_explicit` flag the
   hot-reload sync always skips, and callback registration only records
-  the baseline instead of running a sync.
+  the baseline instead of running a sync. Two follow-up patches complete
+  the loop: the MCP server no longer passes the config-derived countdown
+  explicitly when creating tasks (so MCP tasks keep following config
+  hot-reload), and the explicit flag now round-trips through the task
+  persistence snapshot so the guard survives server restarts — the
+  exact scenario the ghost submits originally appeared in.
 - Make runtime log-level overrides actually work (R701): named loggers
   created through `EnhancedLogger` hard-coded WARNING, so
   `POST /api/system/log-level` and `AI_INTERVENTION_AGENT_LOG_LEVEL`
@@ -47,6 +52,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   counts, and a 60-character text preview) at INFO level whenever task
   feedback is submitted, so unexpected auto-submissions can be traced
   to the client that sent them (R700).
+- The quick-phrases overflow menu now follows dropdown conventions
+  (R700): it auto-closes after choosing export/import or clicking
+  outside, and pressing Escape closes it and returns focus to the "⋯"
+  trigger.
 
 ### Changed
 
