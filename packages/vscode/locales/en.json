@@ -10,7 +10,7 @@
     "testBark": "Test Bark",
     "feedback": {
       "title": "Feedback",
-      "countdown": "Auto-reschedule (seconds)",
+      "countdown": "Auto-resubmit countdown (seconds)",
       "countdownHint": "Auto-resubmit when countdown expires. Range 10-3600 seconds, 0 to disable.",
       "resubmitPrompt": "Resubmit prompt",
       "resubmitPromptPlaceholder": "Content auto-submitted on countdown expiry",

@@ -176,7 +176,7 @@ service_name = "AI Intervention Agent"
 # 后端最大等待时间(秒) / Backend max wait time (seconds) - range [10, 7200]
 # 限制后端轮询最大时间 / Limits max backend polling time to prevent indefinite wait
 backend_max_wait = 600
-# 前端自动重调倒计时(秒) / Frontend auto-reschedule countdown (seconds) - range [10, 3600], 0=disabled
+# 前端自动重调倒计时(秒) / Frontend auto-resubmit countdown (seconds) - range [10, 3600], 0=disabled
 # 参考 Cursor 5分钟超时 / Based on Cursor 5-min session timeout, recommend 4 min (240s)
 frontend_countdown = 240
 # 错误/超时时的提示语 / Prompt on error/timeout (guides AI to re-invoke the tool)

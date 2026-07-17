@@ -5,7 +5,7 @@
       "description": "Waiting for new feedback requests…",
       "newTasks": "Received {count, plural, one {# new feedback request} other {# new feedback requests}}"
     },
-    "countdown": "{seconds, plural, one {#s until auto-reschedule} other {#s until auto-reschedule}}",
+    "countdown": "{seconds, plural, one {#s until auto-resubmit} other {#s until auto-resubmit}}",
     "loading": "Loading…",
     "dragDrop": "Drop images here",
     "dragFormat": "Supports JPG, PNG, GIF, WEBP",
@@ -195,7 +195,7 @@
     "shortcutClearImage": "Clear images:",
     "shortcutsFullHelpHint": "Press Ctrl+/ (or Cmd+/) anywhere to print the full keyboard shortcut reference to the browser console.",
     "feedbackTitle": "Feedback",
-    "autoResubmitTimeout": "Auto-reschedule countdown (seconds)",
+    "autoResubmitTimeout": "Auto-resubmit countdown (seconds)",
     "autoResubmitTimeoutHint": "Automatically resubmit feedback request when countdown expires. Range 10-3600 seconds, set to 0 to disable.",
     "resubmitPrompt": "Resubmit prompt",
     "resubmitPromptHint": "Content auto-submitted when countdown expires (max 100000 chars)",
