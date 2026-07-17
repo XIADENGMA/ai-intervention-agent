@@ -206,8 +206,14 @@ const ThemeManager = (function () {
   }
 
   function toggleThemeInternal() {
-    const cycle = { [THEMES.AUTO]: THEMES.LIGHT, [THEMES.LIGHT]: THEMES.DARK, [THEMES.DARK]: THEMES.AUTO };
-    currentTheme = cycle[currentTheme] || THEMES.AUTO;
+    // R700 修复「点击无效需要点两次」：旧实现是 auto→light→dark 三态
+    // 循环——处于 auto 且系统偏好恰为浅色时，第一次点击（auto→light）
+    // 视觉零变化，用户必须点第二次才见效。改为基于**当前生效主题**
+    // 直接取反：点击永远立即产生可见切换；auto 仍是未存偏好时的初始
+    // 默认（跟随系统），点击后进入显式 light/dark。
+    const effective =
+      currentTheme === THEMES.AUTO ? systemPreference : currentTheme;
+    currentTheme = effective === THEMES.LIGHT ? THEMES.DARK : THEMES.LIGHT;
     savePreference(currentTheme);
     applyTheme(currentTheme);
     updateToggleButton();
@@ -328,12 +334,15 @@ const ThemeManager = (function () {
     },
 
     /**
-     * 切换主题（auto → light → dark → auto 三态循环）
+     * 切换主题（R700：基于当前生效主题取反，点击立即可见切换；
+     * auto 仅作为未存偏好时的初始默认）
      */
     toggle: function () {
-      const cycle = { [THEMES.AUTO]: THEMES.LIGHT, [THEMES.LIGHT]: THEMES.DARK, [THEMES.DARK]: THEMES.AUTO };
-      const newTheme = cycle[currentTheme] || THEMES.AUTO;
-      this.setTheme(newTheme);
+      const effective =
+        currentTheme === THEMES.AUTO ? systemPreference : currentTheme;
+      this.setTheme(
+        effective === THEMES.LIGHT ? THEMES.DARK : THEMES.LIGHT
+      );
     },
 
     /**

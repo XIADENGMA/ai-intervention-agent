@@ -89,6 +89,7 @@
     "errorTextTooLong": "Content is longer than 2000 characters",
     "errorTooMany": "At most 20 quick replies can be saved",
     "confirmDelete": "Delete '{{label}}'?",
+    "moreAriaLabel": "More actions (export / import)",
     "exportBtn": "Export",
     "exportBtnAriaLabel": "Export quick replies as a JSON file",
     "importBtn": "Import",

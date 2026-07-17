@@ -28,8 +28,15 @@ CSS_PATH = STATIC_DIR / "css" / "main.css"
 HTML_PATH = REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
 
 
-class TestHeaderContainerVisible(unittest.TestCase):
-    """``.header-info-container`` 不得再被无条件隐藏。"""
+class TestHeaderContainerIntentionallyRetired(unittest.TestCase):
+    """R700：头部信息行经用户决策整行下线（与标签页圆环信息重复）。
+
+    与 R695 的历史区别：R695 修的是「误藏在售功能」（当时 +60s/冻结
+    按钮是在售功能却被祖先 display:none 遮蔽）；R699 按用户决策下线
+    按钮；R700 用户进一步确认 chip/倒计时文字与标签页圆环重复，整行
+    有意隐藏。本测试锁定「有意下线」状态必须带 R700 注释标记，防止
+    未来把它当作 R695 式事故误"修复"回来。
+    """
 
     def setUp(self) -> None:
         self.css = CSS_PATH.read_text(encoding="utf-8")
@@ -40,13 +47,14 @@ class TestHeaderContainerVisible(unittest.TestCase):
         end = self.css.find("}", idx)
         return self.css[idx:end]
 
-    def test_header_info_container_not_display_none(self) -> None:
+    def test_header_info_container_intentionally_hidden(self) -> None:
         body = self._rule_body(".header-info-container")
-        self.assertNotIn("display: none", body)
-
-    def test_header_info_container_is_flex_row(self) -> None:
-        body = self._rule_body(".header-info-container")
-        self.assertIn("display: flex", body)
+        self.assertIn("display: none", body)
+        self.assertIn(
+            "R700",
+            body,
+            "隐藏规则必须带 R700 决策标记（区别于 R695 式实现事故）",
+        )
 
     def test_task_id_container_stays_hidden(self) -> None:
         """任务 ID 在标签页展示，容器本体保持隐藏避免重复。"""

@@ -279,12 +279,17 @@ def test_submit_success_after_task_switch_preserves_current_form_state() -> None
         "currentTaskId": "task-b",
         "taskBText": "Task B draft",
         "taskBChecked": True,
-        "taskBSubmit": {"innerHTML": "Task B submit", "disabled": True},
+        # R700：提交按钮是跨任务共享的单例 DOM——finally 无条件还原为
+        # 首次渲染快照并重新启用，否则真实应用里（任务切换不重建按钮）
+        # 按钮会永远卡在「提交中…」。表单内容/勾选仍受 stale-task 守卫
+        # 保护（见上方 taskBText/taskBChecked 断言）。
+        "taskBSubmit": {"innerHTML": "Task A submit", "disabled": False},
         "selectedImages": [{"id": "image-b", "file": "file-b"}],
         "taskTextareaContents": {"task-b": "Task B cached"},
         "taskOptionsStates": {"task-b": ["b"]},
         "taskImages": {"task-b": ["image-b"]},
-        "translations": [],
+        # R700：finally 无条件还原路径会对按钮跑一次 translateDOM
+        "translations": ["Task A submit"],
     }
 
 
@@ -413,7 +418,9 @@ def test_no_task_submit_preserves_new_task_that_appears_before_success() -> None
         "clearAllImagesCalls": 0,
         "currentTaskId": "new-task",
         "newTaskText": "New task draft",
-        "newTaskSubmit": {"innerHTML": "New task submit", "disabled": True},
+        # R700：同上——共享提交按钮在 finally 无条件还原（快照为首次
+        # 渲染时捕获的 innerHTML）并重新启用，避免卡「提交中…」。
+        "newTaskSubmit": {"innerHTML": "Legacy submit", "disabled": False},
         "debugMessages": [
             "Using submit endpoint: /api/submit",
             "submitFeedback: submitted task changed before success cleanup; preserving current form state",

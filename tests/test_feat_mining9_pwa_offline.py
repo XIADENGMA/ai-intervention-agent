@@ -139,8 +139,9 @@ class TestOfflineHtml(unittest.TestCase):
         self.assertIn("无法连接", self.html)
         self.assertIn("Retry", self.html)
 
-    def test_brand_purple_accent(self) -> None:
-        self.assertIn("#8b5cf6", self.html.lower())
+    def test_brand_accent(self) -> None:
+        # R697：品牌强调色统一为 Anthropic 陶土橙（原紫色随主题迁移退役）
+        self.assertIn("#d97757", self.html.lower())
 
 
 # ---------------------------------------------------------------------------

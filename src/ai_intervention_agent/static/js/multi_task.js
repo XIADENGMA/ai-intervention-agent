@@ -2886,18 +2886,28 @@ function createTaskTab(task) {
   const textSpan = document.createElement("span");
   textSpan.className = "task-tab-text";
 
-  // 智能显示：前缀截断 + 完整数字
-  // 例如: "ai-intervention-agent-2822" → "ai-interven... 2822"
-  const taskParts = task.task_id.split("-");
-  const lastPart = taskParts[taskParts.length - 1]; // 最后的数字
-  const prefixParts = taskParts.slice(0, -1).join("-"); // 前面部分
-
+  // R700 优雅审计 #2：优先显示人类可读的 header_label（如「效果演示」），
+  // 机器味的任务 ID 只在没有 label 时兜底展示；完整 ID 始终可通过
+  // tooltip / 双击复制获得，信息不丢失。
   let displayName;
-  if (prefixParts.length > 12) {
-    // 前缀过长，截断
-    displayName = `${prefixParts.substring(0, 11)}... ${lastPart}`;
+  if (
+    typeof task.header_label === "string" &&
+    task.header_label.trim() !== ""
+  ) {
+    displayName = task.header_label.trim().slice(0, 16);
   } else {
-    displayName = `${prefixParts} ${lastPart}`;
+    // 兜底：前缀截断 + 完整数字
+    // 例如: "ai-intervention-agent-2822" → "ai-interven... 2822"
+    const taskParts = task.task_id.split("-");
+    const lastPart = taskParts[taskParts.length - 1]; // 最后的数字
+    const prefixParts = taskParts.slice(0, -1).join("-"); // 前面部分
+
+    if (prefixParts.length > 12) {
+      // 前缀过长，截断
+      displayName = `${prefixParts.substring(0, 11)}... ${lastPart}`;
+    } else {
+      displayName = `${prefixParts} ${lastPart}`;
+    }
   }
 
   textSpan.textContent = displayName;
@@ -2962,7 +2972,7 @@ function createTaskTab(task) {
     const isActive = task.task_id === activeTaskId;
     const strokeColor = isActive
       ? "rgba(255, 255, 255, 0.9)"
-      : "rgba(139, 92, 246, 0.9)";
+      : "rgba(217, 119, 87, 0.9)";
 
     countdownRing.innerHTML = `
       <svg width="22" height="22" viewBox="0 0 22 22">
@@ -3187,7 +3197,7 @@ function updateCountdownRingColors(oldActiveTaskId, newActiveTaskId) {
     if (oldRing) {
       const oldCircle = oldRing.querySelector("circle");
       if (oldCircle) {
-        oldCircle.setAttribute("stroke", "rgba(139, 92, 246, 0.9)");
+        oldCircle.setAttribute("stroke", "rgba(217, 119, 87, 0.9)");
       }
     }
   }
@@ -4216,6 +4226,13 @@ function tickTaskCountdown(taskId) {
 
   // 倒计时结束
   if (entry.remaining <= 0) {
+    // R699：用户正在输入时绝不结束任务——即使 extend 配额耗尽、倒计时
+    // 已归零，也保持 timer 存活并跳过提交，下一个 1Hz tick 重新检查；
+    // 直到用户停止输入（TYPING_HOLD_IDLE_MS 静默）才走自动提交（届时
+    // autoSubmitTask 会优先提交已输入的内容，R689 零丢失语义不变）。
+    if (taskId === activeTaskId && isUserActivelyTyping()) {
+      return;
+    }
     // 关键：标记该任务的 timer 已停止，便于后续在任务变为 active 时重启倒计时/触发自动提交
     entry.timer = null;
     stopSharedTaskCountdownTickerIfIdle();

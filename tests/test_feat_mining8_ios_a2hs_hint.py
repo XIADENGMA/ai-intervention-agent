@@ -152,12 +152,13 @@ class TestCssStyles(unittest.TestCase):
         )
         assert m is not None, "prefers-reduced-motion 必须 disable 上滑动画"
 
-    def test_uses_brand_purple_accent(self) -> None:
-        # accent purple 139,92,246 在 border / focus shadow
+    def test_uses_brand_accent(self) -> None:
+        # R697：品牌强调色统一为 Anthropic 陶土橙 217,119,87（原紫色
+        # 139,92,246 随 Claude 暖炭主题迁移一并退役）
         m = re.search(r"\.ios-a2hs-banner \{[^}]+\}", self.css, re.DOTALL)
         assert m is not None
         block = m.group(0)
-        self.assertIn("139, 92, 246", block, "border 必须用紫色 accent")
+        self.assertIn("217, 119, 87", block, "border 必须用品牌陶土橙 accent")
 
 
 # ---------------------------------------------------------------------------

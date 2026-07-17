@@ -82,9 +82,9 @@ from pathlib import Path
 DEFAULT_ROOT = "src/ai_intervention_agent/static/css"
 # R66 baseline 锁定的是「strip 注释后」的实际 CSS 属性值里的硬编码数。
 # R66 commit 时手测 64 处含注释引用，剥离注释后剩 34 处实际样式漂移。
-# 后续若有 PR 重构这 34 处中的某些用 ``var(--brand-accent-rgb)`` 替换，
-# 脚本会 warn 提示同步把 baseline 数字降下来。
-DEFAULT_BASELINE = 34
+# R697（Claude 暖炭主题迁移）把全部 34 处 rgba decimal 形式替换为品牌
+# 色令牌/字面量，baseline 归零——此后任何新增 iOS 蓝直接 fail。
+DEFAULT_BASELINE = 0
 
 # R99 / R109 baseline：iOS 系统蓝家族的 hex 形式。R66 设计时只考虑了
 # ``rgba(0, 122, 255, X)`` decimal 形式作为漂移源，R99 补了 ``#007aff``
@@ -96,7 +96,8 @@ DEFAULT_BASELINE = 34
 #   * ``#0a84ff`` × 1（``.btn-primary-enabled`` 背景）
 #   * ``#0056cc`` × 1（``.btn-primary:hover`` 背景）
 # = 9 处真硬编码，全部为真实样式漂移源，light mode 显示成 iOS 蓝。
-DEFAULT_HEX_BASELINE = 9
+# R697（Claude 暖炭主题迁移）把 hex 家族全部替换为品牌色，baseline 归零。
+DEFAULT_HEX_BASELINE = 0
 
 # iOS 系统蓝 RGB 字面量。tolerant 于：
 #   - 任意空白（rgba( 0 , 122 , 255 ...）

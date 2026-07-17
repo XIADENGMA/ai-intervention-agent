@@ -89,6 +89,7 @@
     "errorTextTooLong": "内容长度超过 2000 字",
     "errorTooMany": "最多保存 20 条常用回复",
     "confirmDelete": "确认删除「{{label}}」？",
+    "moreAriaLabel": "更多操作（导出/导入）",
     "exportBtn": "导出",
     "exportBtnAriaLabel": "把常用回复导出为 JSON 文件",
     "importBtn": "导入",

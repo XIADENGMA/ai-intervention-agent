@@ -271,39 +271,26 @@ class TestIosBlueHexFamilyR109(unittest.TestCase):
         count_0056cc = len(_re.findall(r"#0056cc\b", stripped, _re.IGNORECASE))
         count_0045a0 = len(_re.findall(r"#0045a0\b", stripped, _re.IGNORECASE))
 
-        self.assertEqual(
-            count_007aff,
-            6,
-            f"R99/R109/R259h 锁定 ``#007aff`` 应为 6 处实际硬编码"
-            f"（剥注释后；cycle-5 Track D R259h 把 ``.btn-primary`` 默认背景"
-            f"从 ``#007aff`` 升级到 ``#0056cc`` 修 WCAG 1.4.3 AA-normal "
-            f"FAIL，故计数 7→6），实际 {count_007aff}。"
-            f"若变化，请同步 R109 docstring 的拆解数字。",
-        )
-        self.assertEqual(
-            count_0045a0,
-            1,
-            f"R259h 锁定 ``#0045a0`` 应为 1 处（``.btn-primary:hover`` 新背景，"
-            f"contrast 8.90:1 AAA-ish），实际 {count_0045a0}。",
-        )
-        self.assertEqual(
-            count_0a84ff,
-            1,
-            f"R109 锁定 ``#0a84ff`` 应为 1 处（``.btn-primary-enabled`` 背景），实际 {count_0a84ff}。"
-            f"若被重构掉了，请把 ``DEFAULT_HEX_BASELINE`` 从 9 降到 8。",
-        )
-        self.assertEqual(
-            count_0056cc,
-            1,
-            f"R109 锁定 ``#0056cc`` 应为 1 处（``.btn-primary:hover`` 背景），实际 {count_0056cc}。"
-            f"若被重构掉了，请把 ``DEFAULT_HEX_BASELINE`` 从 9 降到 8。",
-        )
+        # R697：Claude 暖炭主题迁移把 iOS 蓝家族全部替换为品牌色
+        # （陶土橙 #d97757 家族 / 品牌蓝 #6a9bcc 家族），四个 variant
+        # 归零且 baseline 锁 0——此后任何新增 iOS 蓝直接 fail。
+        for label, count in (
+            ("#007aff", count_007aff),
+            ("#0a84ff", count_0a84ff),
+            ("#0056cc", count_0056cc),
+            ("#0045a0", count_0045a0),
+        ):
+            self.assertEqual(
+                count,
+                0,
+                f"R697 已根除 iOS 蓝家族：``{label}`` 应为 0 处，"
+                f"实际 {count}。请改用品牌色令牌（--primary-*/--accent-*）。",
+            )
         self.assertEqual(
             count_007aff + count_0a84ff + count_0056cc + count_0045a0,
             guard.DEFAULT_HEX_BASELINE,
             f"四个 variant 总和必须 == DEFAULT_HEX_BASELINE "
-            f"({guard.DEFAULT_HEX_BASELINE})；cycle-5 R259h 把 #0045a0 "
-            f"加入 iOS 蓝家族 baseline，总数仍为 9 (6+1+1+1)。",
+            f"({guard.DEFAULT_HEX_BASELINE})；R697 起为 0。",
         )
 
 
@@ -381,13 +368,25 @@ class TestCliExitCodes(unittest.TestCase):
         self.assertIn("✅", out, f"应该有成功提示\nstdout: {out}")
 
     def test_exit_1_when_above_baseline(self) -> None:
-        """count > baseline → exit 1 + ❌ + 文件列表。"""
-        code, _out, err = self._run_main(
-            "--root",
-            str(self.css_dir),
-            "--baseline",
-            "0",  # 极低 baseline 强制触发 fail
-        )
+        """count > baseline → exit 1 + ❌ + 文件列表。
+
+        R697 后真实 main.css 的 iOS 蓝计数为 0，无法再用真实目录触发
+        fail 路径——改用临时目录里的合成样式验证。
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            synth = Path(tmp_dir) / "synth.css"
+            synth.write_text(
+                ".x { color: rgba(0, 122, 255, 0.5); }\n",
+                encoding="utf-8",
+            )
+            code, _out, err = self._run_main(
+                "--root",
+                tmp_dir,
+                "--baseline",
+                "0",
+            )
         self.assertEqual(code, 1, "exit code 应为 1（超过 baseline）")
         self.assertIn("❌", err)
         self.assertIn("baseline", err)

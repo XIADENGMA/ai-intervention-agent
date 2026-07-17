@@ -131,14 +131,15 @@ class TestCountdownLabelIsThemedSvg(unittest.TestCase):
         self.assertIn('aria-hidden="true"', snippet)
 
     def test_label_color_follows_theme_tokens(self) -> None:
+        """R698：倒计时行降级为 quiet 元信息，图标随次要文字色令牌。"""
         match = re.search(r"\.countdown-label\s*\{([^}]*)\}", self.css)
         self.assertIsNotNone(match)
         assert match is not None
-        self.assertIn("--warning-500", match.group(1))
+        self.assertIn("--text-secondary", match.group(1))
         self.assertIn(
             '[data-theme="light"] .countdown-label',
             self.css,
-            "浅色主题必须覆盖 countdown-label 颜色（深陶土橙）",
+            "浅色主题必须有 countdown-label 覆盖（quiet 次要文字色）",
         )
 
 

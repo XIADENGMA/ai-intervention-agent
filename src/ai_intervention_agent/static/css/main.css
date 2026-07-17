@@ -98,29 +98,31 @@
  *   color: var(--text-primary);
  */
 
-/* 暗色主题（默认）*/
+/* 暗色主题（默认）——R697：Claude 暖炭色系
+   与浅色主题共用 Anthropic 品牌色板（陶土橙 #d97757 / 品牌蓝 #6a9bcc），
+   背景从冷紫灰 (#1a1a1f 家族) 迁移到 Claude 深色的暖炭家族
+   (#1f1e1d / #262624 / #30302e)。所有文本/强调色均通过 WCAG AA 验证
+   （见 tests/test_feat_a11y_cycle2_wcag_contrast.py 等）。 */
 :root {
-  /* 背景色 */
-  --bg-primary: #1a1a1f; /* 主背景 */
-  --bg-secondary: #25252d; /* 次级背景 */
-  --bg-tertiary: #2d2d3c; /* 三级背景 */
-  --bg-elevated: rgba(45, 45, 60, 0.9); /* 悬浮/弹窗背景 */
+  /* 背景色（暖炭家族） */
+  --bg-primary: #1f1e1d; /* 主背景（页面底层） */
+  --bg-secondary: #262624; /* 次级背景（内容卡片） */
+  --bg-tertiary: #30302e; /* 三级背景（Header/嵌套面板） */
+  --bg-elevated: rgba(48, 48, 46, 0.95); /* 悬浮/弹窗背景 */
   --bg-overlay: rgba(0, 0, 0, 0.6); /* 遮罩层 */
   --bg-hover: rgba(255, 255, 255, 0.08); /* 悬停背景 */
   --bg-active: rgba(255, 255, 255, 0.12); /* 激活背景 */
 
-  /* 文本色 */
-  --text-primary: #f5f5f7; /* 主文本 */
-  --text-secondary: #a1a1aa; /* 次级文本 */
-  /* 三级文本 — a11y-audit-cycle-2 Track A (R257) 把 #71717a (AA-large 3.59:1
-     on bg-primary / FAIL AA-normal) 提升到 #98989e
-     (AA-normal 6.04:1 on bg-primary, 5.30:1 on bg-secondary)。
-     仍保留视觉"muted"分层（vs primary 的 15.92:1）。 */
-  --text-tertiary: #98989e;
+  /* 文本色（暖灰阶；对比度 vs bg-primary/bg-secondary：
+     primary 15.8/14.4，secondary 8.1/7.3，tertiary 6.7/6.1 —— 全部
+     ≥ AA-normal 4.5:1） */
+  --text-primary: #faf9f5; /* 主文本（Anthropic Light） */
+  --text-secondary: #b8b4ab; /* 次级文本 */
+  --text-tertiary: #a8a49b;
   /* 弱化文本 —— 仅用于 background-color 非 foreground text。
      R257 invariant test 守住此用途。 */
-  --text-muted: #52525b;
-  --text-inverse: #1a1a1f; /* 反色文本（用于亮色按钮） */
+  --text-muted: #57544e;
+  --text-inverse: #1f1e1d; /* 反色文本（用于亮色按钮） */
 
   /* 字体（合规：仅使用系统默认字体栈，避免打包第三方字体引发版权风险） */
   --font-sans:
@@ -135,35 +137,35 @@
   --border-primary: rgba(255, 255, 255, 0.15); /* 主边框 */
   --border-secondary: rgba(255, 255, 255, 0.08); /* 次级边框 */
   --border-hover: rgba(255, 255, 255, 0.25); /* 悬停边框 */
-  --border-focus: rgba(139, 92, 246, 0.5); /* 焦点边框 */
+  --border-focus: rgba(217, 119, 87, 0.5); /* 焦点边框（陶土橙） */
 
-  /* 主题色（紫色系） */
-  --primary-50: #faf5ff;
-  --primary-100: #f3e8ff;
-  --primary-200: #e9d5ff;
-  --primary-300: #d8b4fe;
-  --primary-400: #c084fc;
-  --primary-500: #a855f7; /* 主色 */
-  --primary-600: #9333ea;
+  /* 主题色（R697：Anthropic 陶土橙系，与浅色主题同脉） */
+  --primary-50: #fdf3ef;
+  --primary-100: #fae4dc;
+  --primary-200: #f4c9b8;
+  --primary-300: #ecab92;
+  --primary-400: #e08b6f;
+  --primary-500: #d97757; /* 主色：Anthropic Orange */
+  --primary-600: #c56a4c;
   /* a11y-audit-cycle-3 Track A (R258) · WCAG 1.4.11 Non-text Contrast
-     ≥ 3:1 for focus indicators。dark primary-500 #a855f7 自身已达 4.38
-     / 3.84 on bg-primary/secondary，复用即可。 */
-  --focus-ring-color: #a855f7;
-  --primary-700: #7c3aed;
-  --primary-800: #6b21a8;
-  --primary-900: #581c87;
+     ≥ 3:1 for focus indicators。R697 dark primary-500 #d97757 在
+     bg-primary/bg-secondary 上为 5.33/4.86，直接复用。 */
+  --focus-ring-color: #d97757;
+  --primary-700: #b35730;
+  --primary-800: #9a4929;
+  --primary-900: #7d3a20;
 
-  /* 强调色（蓝紫色系） */
-  --accent-50: #eef2ff;
-  --accent-100: #e0e7ff;
-  --accent-200: #c7d2fe;
-  --accent-300: #a5b4fc;
-  --accent-400: #818cf8;
-  --accent-500: #6366f1; /* 强调色 */
-  --accent-600: #4f46e5;
-  --accent-700: #4338ca;
-  --accent-800: #3730a3;
-  --accent-900: #312e81;
+  /* 强调色（R697：Anthropic 品牌蓝系，dark 5.69/5.18 on bg1/bg2） */
+  --accent-50: #eef4fa;
+  --accent-100: #dde8f3;
+  --accent-200: #c2d6ea;
+  --accent-300: #a3c2e0;
+  --accent-400: #85aed7;
+  --accent-500: #6a9bcc; /* 强调色：Anthropic Blue */
+  --accent-600: #517fae;
+  --accent-700: #40668c;
+  --accent-800: #32506e;
+  --accent-900: #263c52;
 
   /* 状态色 */
   --success-500: #22c55e;
@@ -179,10 +181,10 @@
   --info-bg: rgba(96, 165, 250, 0.15);
 
   /* 阴影 */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.6);
-  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.7);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 6px 12px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 12px 20px rgba(0, 0, 0, 0.35);
 
   /* 过渡时间 */
   --transition-fast: 0.15s ease;
@@ -492,18 +494,18 @@ body.no-content-mode {
  *   - 移除悬停效果（:hover）
  *
  * 视觉设计：
- *   - 背景：rgba(45, 45, 60, 0.9)（半透明深色）
+ *   - 背景：rgba(48, 48, 46, 0.9)（半透明深色）
  *   - 边框：rgba(255, 255, 255, 0.12)（浅色半透明）
  *   - 阴影：0 8px 16px rgba(0, 0, 0, 0.2)（柔和阴影）
  */
 .container {
   max-width: 720px; /* 最大宽度 */
   margin: 0 auto; /* 水平居中 */
-  background: rgba(45, 45, 60, 0.9); /* 半透明深色背景 */
-  border: 1px solid rgba(255, 255, 255, 0.12); /* 浅色边框 */
+  background: rgba(48, 48, 46, 0.9); /* 半透明深色背景 */
+  border: 1px solid rgba(255, 255, 255, 0.07); /* 浅色边框 */
   border-radius: 32px; /* 大圆角 */
   padding: 0; /* 无内边距（由子元素控制） */
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2); /* 柔和阴影 */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); /* 柔和阴影 */
   overflow: hidden; /* 隐藏溢出（圆角裁剪） */
   position: relative; /* 相对定位（用于伪元素） */
 }
@@ -579,7 +581,7 @@ body.no-content-mode .container {
  *   - 右侧：设置按钮
  *
  * 视觉设计：
- *   - 背景：rgba(30, 30, 40, 0.8)（半透明深色）
+ *   - 背景：rgba(38, 38, 36, 0.8)（半透明深色）
  *   - 边框：0.5px solid rgba(255, 255, 255, 0.1)（细线边框）
  *   - 内边距：1rem 1.75rem（上下1rem，左右1.75rem）
  *
@@ -588,7 +590,7 @@ body.no-content-mode .container {
  *   - 简化背景，使用单色半透明
  */
 .header {
-  background: rgba(30, 30, 40, 0.8); /* 半透明深色背景 */
+  background: rgba(38, 38, 36, 0.8); /* 半透明深色背景 */
   padding: 1rem 1.75rem; /* 内边距 */
   border-bottom: 0.5px solid rgba(255, 255, 255, 0.1); /* 底部边框 */
   position: relative; /* 相对定位（用于伪元素） */
@@ -696,7 +698,7 @@ h1 {
  *   - 装饰性图标（按钮、通知等）
  *
  * 颜色说明：
- *   - 紫色系：从亮紫（#a855f7）到深紫（#312e81），渐变opacity
+ *   - 紫色系：从亮紫（#d97757）到深紫（#312e81），渐变opacity
  *   - 黄色系：从亮黄（#fde047）到深黄（#ca8a04），全opacity
  */
 
@@ -708,21 +710,21 @@ h1 {
   stop-color: #dee4f1; /* 中浅灰蓝色 */
 }
 
-/* 紫色系渐变（主题色） */
+/* 品牌色系渐变（R697：陶土橙 → 品牌蓝） */
 .svg-stop-3 {
-  stop-color: #a855f7; /* 亮紫色 */
+  stop-color: #d97757; /* 陶土橙 */
   stop-opacity: 1; /* 全不透明 */
 }
 .svg-stop-4 {
-  stop-color: #8b5cf6; /* 中紫色 */
+  stop-color: #d97757; /* 陶土橙 */
   stop-opacity: 0.95; /* 95%不透明 */
 }
 .svg-stop-5 {
-  stop-color: #6366f1; /* 蓝紫色 */
+  stop-color: #6a9bcc; /* 品牌蓝 */
   stop-opacity: 0.9; /* 90%不透明 */
 }
 .svg-stop-6 {
-  stop-color: #312e81; /* 深紫色 */
+  stop-color: #32506e; /* 深品牌蓝 */
   stop-opacity: 0.85; /* 85%不透明 */
 }
 
@@ -953,11 +955,11 @@ h1 {
  * 无障碍支持：
  *   - 移除浏览器默认outline
  *   - 添加自定义蓝色阴影边框
- *   - 阴影：0 0 0 2px rgba(0, 122, 255, 0.3)
+ *   - 阴影：0 0 0 2px rgba(217, 119, 87, 0.3)
  */
 .settings-btn:focus {
   outline: none; /* 移除默认outline */
-  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3); /* 蓝色聚焦边框 */
+  box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3); /* 蓝色聚焦边框 */
 }
 
 /* ========================================================================
@@ -1182,11 +1184,11 @@ h1 {
  *   主要操作按钮的启用样式（如"提交"按钮）。
  *
  * 视觉效果：
- *   - 背景：#0a84ff（iOS蓝色）
+ *   - 背景：#b35730（iOS蓝色）
  *   - 文字：#ffffff（白色）
  */
 .btn-primary-enabled {
-  background-color: #0a84ff !important; /* iOS蓝色背景 */
+  background-color: #b35730 !important; /* iOS蓝色背景 */
   color: #ffffff !important; /* 白色文字 */
 }
 
@@ -1297,7 +1299,7 @@ h1 {
  *   - .hide：translateX(100%) + opacity: 0（滑出屏幕并淡出）
  *
  * 视觉设计：
- *   - 背景：rgba(30, 30, 40, 0.95)（半透明深色）
+ *   - 背景：rgba(38, 38, 36, 0.95)（半透明深色）
  *   - 边框：1px solid rgba(255, 255, 255, 0.2)
  *   - 圆角：12px
  *   - 毛玻璃效果：backdrop-filter: blur(10px)
@@ -1312,7 +1314,7 @@ h1 {
   position: fixed; /* 固定定位 */
   top: 20px; /* 距顶部20px */
   right: 20px; /* 距右侧20px */
-  background: rgba(30, 30, 40, 0.95); /* 半透明深色背景 */
+  background: rgba(38, 38, 36, 0.95); /* 半透明深色背景 */
   border: 1px solid rgba(255, 255, 255, 0.2); /* 边框 */
   border-radius: 12px; /* 圆角 */
   padding: 1rem; /* 内边距 */
@@ -1585,13 +1587,13 @@ h1 {
  *   - 水平滑动效果（由@keyframes loading定义）
  *
  * 视觉设计：
- *   - 背景：#007aff（iOS蓝色）
+ *   - 背景：#d97757（iOS蓝色）
  *   - 圆角：8px
  */
 .no-content-progress-bar {
   width: 100%; /* 全宽 */
   height: 100%; /* 全高 */
-  background: #5a8dbf; /* 深色模式：深蓝色（与复选框和滑块一致） */
+  background: #517fae; /* 深色模式：深蓝色（与复选框和滑块一致） */
   animation: loading 1.5s linear infinite; /* 加载动画 */
   border-radius: 8px; /* 圆角 */
 }
@@ -1691,7 +1693,7 @@ h1 {
  *   - 相对定位（position: relative），用于伪元素定位
  *
  * 视觉设计：
- *   - 背景：线性渐变（rgba(30, 30, 40, 0.98) → rgba(25, 25, 35, 0.95)）
+ *   - 背景：线性渐变（rgba(38, 38, 36, 0.98) → rgba(31, 30, 29, 0.95)）
  *   - 边框：1px solid rgba(255, 255, 255, 0.15)
  *   - 圆角：20px（大圆角）
  *   - 毛玻璃效果：backdrop-filter: blur(20px)
@@ -1700,8 +1702,8 @@ h1 {
 .settings-content {
   background: linear-gradient(
     145deg,
-    rgba(30, 30, 40, 0.98),
-    rgba(25, 25, 35, 0.95)
+    rgba(38, 38, 36, 0.98),
+    rgba(31, 30, 29, 0.95)
   ); /* 渐变背景 */
   border: 1px solid rgba(255, 255, 255, 0.15); /* 边框 */
   border-radius: 20px; /* 大圆角 */
@@ -1878,7 +1880,7 @@ h1 {
  *
  * 视觉效果：
  *   - 高度1px，左右留出2.5rem边距
- *   - 渐变色：transparent → rgba(0, 122, 255, 0.3) → transparent
+ *   - 渐变色：transparent → rgba(217, 119, 87, 0.3) → transparent
  */
 .settings-header::after {
   content: ""; /* 必需 */
@@ -1890,7 +1892,7 @@ h1 {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(0, 122, 255, 0.3),
+    rgba(217, 119, 87, 0.3),
     transparent
   ); /* 蓝色渐变装饰线 */
 }
@@ -2173,13 +2175,13 @@ h1 {
  *   - 隐藏溢出（overflow: hidden），圆角裁剪
  *
  * 视觉设计：
- *   - 背景：rgba(45, 45, 60, 0.9)（半透明深色）
+ *   - 背景：rgba(48, 48, 46, 0.9)（半透明深色）
  *   - 边框：1px solid rgba(255, 255, 255, 0.12)
  *   - 阴影：0 8px 16px rgba(0, 0, 0, 0.2)（柔和阴影）
  */
 .setting-group {
   margin-bottom: 2rem; /* 外边距底部 */
-  background: rgba(45, 45, 60, 0.9); /* 半透明深色背景 */
+  background: rgba(48, 48, 46, 0.9); /* 半透明深色背景 */
   border: 1px solid rgba(255, 255, 255, 0.12); /* 边框 */
   border-radius: 24px; /* 大圆角 */
   padding: 1.5rem; /* 内边距 */
@@ -2245,7 +2247,7 @@ h1 {
  *   - 字间距：-0.01em（紧凑）
  *
  * 渐变文字效果：
- *   - 背景：线性渐变（#f5f5f7 → rgba(0, 122, 255, 0.8)）
+ *   - 背景：线性渐变（#f5f5f7 → rgba(217, 119, 87, 0.8)）
  *   - 使用background-clip: text和-webkit-text-fill-color: transparent实现渐变文字
  *   - 降级方案：color: #f5f5f7（不支持渐变时显示纯白色）
  */
@@ -2259,7 +2261,7 @@ h1 {
   background: linear-gradient(
     135deg,
     #f5f5f7,
-    rgba(0, 122, 255, 0.8)
+    rgba(217, 119, 87, 0.8)
   ); /* 渐变背景 */
   -webkit-background-clip: text; /* WebKit前缀：背景裁剪到文字 */
   -webkit-text-fill-color: transparent; /* WebKit前缀：文字颜色透明 */
@@ -2280,7 +2282,7 @@ h1 {
  * 视觉效果：
  *   - 宽度：40%（左对齐，不占满整个宽度）
  *   - 高度：2px（较粗）
- *   - 渐变色：#007aff → rgba(0, 122, 255, 0.4) → transparent
+ *   - 渐变色：#d97757 → rgba(217, 119, 87, 0.4) → transparent
  *   - 圆角：1px
  */
 .setting-group-title::after {
@@ -2292,8 +2294,8 @@ h1 {
   height: 2px; /* 线高2px */
   background: linear-gradient(
     90deg,
-    #007aff,
-    rgba(0, 122, 255, 0.4),
+    #d97757,
+    rgba(217, 119, 87, 0.4),
     transparent
   ); /* 蓝色渐变装饰线 */
   border-radius: 1px; /* 圆角 */
@@ -2434,7 +2436,7 @@ h1 {
  *   - 相对定位（position: relative），用于自定义样式
  *
  * 视觉设计：
- *   - accent-color: #007aff（现代浏览器复选框主题色）
+ *   - accent-color: #d97757（现代浏览器复选框主题色）
  *   - 圆角：4px
  *
  * 交互效果：
@@ -2449,7 +2451,7 @@ h1 {
 .setting-label input[type="checkbox"] {
   width: 20px; /* 固定宽度 */
   height: 20px; /* 固定高度 */
-  accent-color: #5a8dbf; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
+  accent-color: #517fae; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
   cursor: pointer; /* 可点击 */
   border-radius: 4px; /* 圆角 */
   transition: all 0.2s ease; /* 过渡动画 */
@@ -2461,11 +2463,11 @@ h1 {
  *
  * 交互效果：
  *   - 放大1.1倍（transform: scale(1.1)）
- *   - 添加蓝色发光阴影（0 0 10px rgba(0, 122, 255, 0.3)）
+ *   - 添加蓝色发光阴影（0 0 10px rgba(217, 119, 87, 0.3)）
  */
 .setting-label input[type="checkbox"]:checked {
   transform: scale(1.1); /* 放大1.1倍 */
-  box-shadow: 0 0 10px rgba(90, 141, 191, 0.4); /* 深蓝色发光阴影 */
+  box-shadow: none; /* R698：移除发光 */
 }
 
 /**
@@ -2649,7 +2651,7 @@ h1 {
 .custom-sound-btn:focus-visible {
   /* a11y-audit-cycle-5 Track C (R259g): 从硬绑 var(--primary-500) 切到
    * var(--focus-ring-color)，自动继承 cycle-3 R258 的 WCAG 1.4.11
-   * AA-compliant focus 色（light = #b35a3c 3.78:1, dark = #a855f7）。
+   * AA-compliant focus 色（light = #b35a3c 3.78:1, dark = #d97757）。
    */
   outline: 2px solid
     var(--focus-ring-color, var(--primary-500, currentColor));
@@ -2674,7 +2676,7 @@ h1 {
   margin: 0 1rem; /* 左右外边距 */
   height: 6px; /* 高度（窄轨道） */
   /* 使用浏览器原生样式实现左右颜色区分 */
-  accent-color: #5a8dbf; /* 深色模式：深蓝色（与复选框一致） */
+  accent-color: #517fae; /* 深色模式：深蓝色（与复选框一致） */
   border-radius: 3px; /* 圆角 */
   outline: none; /* 移除焦点outline */
   cursor: pointer;
@@ -2707,7 +2709,7 @@ h1 {
  *   - appearance: none（移除浏览器默认样式）
  *
  * 视觉设计：
- *   - 背景：线性渐变（#007aff → #0056cc）
+ *   - 背景：线性渐变（#d97757 → #b35730）
  *   - 圆角：50%（圆形）
  *   - 双重阴影：0 2px 8px（蓝色阴影）+ 0 0 0 2px（白色边框阴影）
  *
@@ -2724,14 +2726,14 @@ h1 {
   margin-top: -5px; /* 垂直居中：(轨道高度6px - 球高度16px) / 2 = -5px */
   background: linear-gradient(
     135deg,
-    #5a8dbf,
+    #517fae,
     #4a7daf
   ); /* 渐变背景（深蓝色） */
   border-radius: 50%; /* 圆形 */
   cursor: pointer; /* 可点击 */
   border: none; /* 移除边框 */
   box-shadow:
-    0 2px 8px rgba(90, 141, 191, 0.4),
+    0 2px 8px rgba(81, 127, 174, 0.4),
     0 0 0 2px rgba(255, 255, 255, 0.1); /* 双重阴影（深蓝色） */
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* 流畅过渡动画 */
 }
@@ -2746,9 +2748,9 @@ h1 {
 .volume-slider::-webkit-slider-thumb:hover {
   transform: scale(1.2); /* 放大1.2倍 */
   box-shadow:
-    0 4px 15px rgba(90, 141, 191, 0.5),
+    0 4px 15px rgba(81, 127, 174, 0.5),
     0 0 0 3px rgba(255, 255, 255, 0.2),
-    0 0 20px rgba(90, 141, 191, 0.3); /* 三重增强阴影（深蓝色） */
+    0 0 20px rgba(81, 127, 174, 0.3); /* 三重增强阴影（深蓝色） */
 }
 
 /**
@@ -2761,10 +2763,10 @@ h1 {
  *   - 固定尺寸：20x20px（圆形）
  *
  * 视觉设计：
- *   - 背景：线性渐变（#007aff → #0056cc）
+ *   - 背景：线性渐变（#d97757 → #b35730）
  *   - 圆角：50%（圆形）
  *   - 边框：2px solid rgba(255, 255, 255, 0.1)
- *   - 阴影：0 2px 8px rgba(0, 122, 255, 0.3)
+ *   - 阴影：0 2px 8px rgba(217, 119, 87, 0.3)
  *
  * 交互效果：
  *   - cursor: pointer（可点击）
@@ -2778,13 +2780,13 @@ h1 {
   height: 16px; /* 固定高度 */
   background: linear-gradient(
     135deg,
-    #5a8dbf,
+    #517fae,
     #4a7daf
   ); /* 渐变背景（深蓝色） */
   border-radius: 50%; /* 圆形 */
   cursor: pointer; /* 可点击 */
   border: none; /* 移除边框 */
-  box-shadow: 0 2px 8px rgba(90, 141, 191, 0.4); /* 深蓝色阴影 */
+  box-shadow: 0 2px 8px rgba(81, 127, 174, 0.4); /* 深蓝色阴影 */
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* 流畅过渡动画 */
 }
 
@@ -2803,26 +2805,26 @@ h1 {
  *   - 字重：700（粗体）
  *
  * 渐变文字效果：
- *   - 背景：线性渐变（#007aff → rgba(0, 122, 255, 0.8)）
+ *   - 背景：线性渐变（#d97757 → rgba(217, 119, 87, 0.8)）
  *   - 使用background-clip: text和-webkit-text-fill-color: transparent实现渐变文字
- *   - 降级方案：color: #007aff（不支持渐变时显示纯蓝色）
- *   - 文字阴影：0 0 10px rgba(0, 122, 255, 0.3)（发光效果）
+ *   - 降级方案：color: #d97757（不支持渐变时显示纯蓝色）
+ *   - 文字阴影：0 0 10px rgba(217, 119, 87, 0.3)（发光效果）
  */
 .volume-value {
-  color: #5a8dbf; /* 深蓝色（深色模式，与复选框和滑块一致） */
+  color: #517fae; /* 深蓝色（深色模式，与复选框和滑块一致） */
   font-size: 1rem; /* 字号（16px） */
   font-weight: 700; /* 粗体 */
   min-width: 50px; /* 最小宽度 */
   text-align: right; /* 文字右对齐 */
   background: linear-gradient(
     135deg,
-    #5a8dbf,
-    rgba(90, 141, 191, 0.8)
+    #517fae,
+    rgba(81, 127, 174, 0.8)
   ); /* 渐变背景（深蓝色） */
   -webkit-background-clip: text; /* WebKit前缀：背景裁剪到文字 */
   -webkit-text-fill-color: transparent; /* WebKit前缀：文字颜色透明 */
   background-clip: text; /* 标准语法：背景裁剪到文字 */
-  text-shadow: 0 0 10px rgba(90, 141, 191, 0.3); /* 深蓝色发光效果 */
+  text-shadow: 0 0 10px rgba(81, 127, 174, 0.3); /* 深蓝色发光效果 */
 }
 
 /* ========================================================================
@@ -2872,15 +2874,15 @@ h1 {
  *
  * 交互效果：
  *   - 移除默认outline（outline: none）
- *   - 边框变蓝（border-color: #007aff）
+ *   - 边框变蓝（border-color: #d97757）
  *   - 背景变亮（rgba(255, 255, 255, 0.08)）
- *   - 添加蓝色外轮廓（box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1)）
+ *   - 添加蓝色外轮廓（box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1)）
  */
 .setting-input:focus {
   outline: none; /* 移除默认outline */
-  border-color: #007aff; /* 边框变蓝 */
+  border-color: #d97757; /* 边框变蓝 */
   background: rgba(255, 255, 255, 0.08); /* 背景变亮 */
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1); /* 蓝色外轮廓 */
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1); /* 蓝色外轮廓 */
 }
 
 /**
@@ -2958,15 +2960,15 @@ h1 {
  *
  * 交互效果：
  *   - 移除默认outline（outline: none）
- *   - 边框变蓝（border-color: #007aff）
+ *   - 边框变蓝（border-color: #d97757）
  *   - 背景变亮（background-color: rgba(255, 255, 255, 0.08)）
- *   - 添加蓝色外轮廓（box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1)）
+ *   - 添加蓝色外轮廓（box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1)）
  */
 .setting-select:focus {
   outline: none; /* 移除默认outline */
-  border-color: #007aff; /* 边框变蓝 */
+  border-color: #d97757; /* 边框变蓝 */
   background-color: rgba(255, 255, 255, 0.08); /* 背景变亮 */
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1); /* 蓝色外轮廓 */
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1); /* 蓝色外轮廓 */
 }
 
 /**
@@ -3094,12 +3096,12 @@ h1 {
  *   - 圆角：10px
  *
  * 视觉设计：
- *   - 背景：rgba(0, 122, 255, 0.8)（半透明iOS蓝色）
- *   - 边框：1px solid rgba(0, 122, 255, 0.3)
+ *   - 背景：rgba(217, 119, 87, 0.8)（半透明iOS蓝色）
+ *   - 边框：1px solid rgba(217, 119, 87, 0.3)
  *   - 文字颜色：#ffffff（白色）
  *   - 字号：0.95rem（15.2px）
  *   - 字重：600（半粗体）
- *   - 阴影：0 2px 8px rgba(0, 122, 255, 0.2)
+ *   - 阴影：0 2px 8px rgba(217, 119, 87, 0.2)
  *
  * 交互效果：
  *   - cursor: pointer（可点击）
@@ -3108,8 +3110,8 @@ h1 {
  *   - 按下时取消位移、背景变暗（由:active规则控制）
  */
 .btn {
-  background: rgba(0, 122, 255, 0.8); /* 半透明iOS蓝色背景 */
-  border: 1px solid rgba(0, 122, 255, 0.3); /* 边框 */
+  background: rgba(217, 119, 87, 0.8); /* 半透明iOS蓝色背景 */
+  border: 1px solid rgba(217, 119, 87, 0.3); /* 边框 */
   border-radius: 10px; /* 圆角 */
   color: #ffffff; /* 白色文字 */
   padding: 0.75rem 1.5rem; /* 内边距（上下0.75rem，左右1.5rem） */
@@ -3117,23 +3119,23 @@ h1 {
   font-weight: 600; /* 半粗体 */
   cursor: pointer; /* 可点击 */
   transition: all 0.2s ease; /* 过渡动画 */
-  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2); /* 阴影 */
+  box-shadow: 0 2px 8px rgba(217, 119, 87, 0.2); /* 阴影 */
 }
 
 /**
  * 通用按钮悬停效果（.btn:hover）：
  *
  * 交互效果：
- *   - 背景变亮（rgba(0, 122, 255, 0.9)）
- *   - 边框变深（rgba(0, 122, 255, 0.5)）
+ *   - 背景变亮（rgba(217, 119, 87, 0.9)）
+ *   - 边框变深（rgba(217, 119, 87, 0.5)）
  *   - 向上位移1px（transform: translateY(-1px)）
  *   - 阴影增强（0 4px 12px）
  */
 .btn:hover {
-  background: rgba(0, 122, 255, 0.9); /* 背景变亮 */
-  border-color: rgba(0, 122, 255, 0.5); /* 边框变深 */
+  background: rgba(217, 119, 87, 0.9); /* 背景变亮 */
+  border-color: rgba(217, 119, 87, 0.5); /* 边框变深 */
   transform: translateY(-1px); /* 向上位移1px */
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3); /* 阴影增强 */
+  box-shadow: 0 4px 12px rgba(217, 119, 87, 0.3); /* 阴影增强 */
 }
 
 /**
@@ -3141,11 +3143,11 @@ h1 {
  *
  * 交互效果：
  *   - 取消位移（transform: translateY(0)）
- *   - 背景变暗（rgba(0, 122, 255, 0.7)）
+ *   - 背景变暗（rgba(217, 119, 87, 0.7)）
  */
 .btn:active {
   transform: translateY(0); /* 取消位移 */
-  background: rgba(0, 122, 255, 0.7); /* 背景变暗 */
+  background: rgba(217, 119, 87, 0.7); /* 背景变暗 */
 }
 
 /**
@@ -3350,7 +3352,7 @@ h1 {
 }
 
 .version-link:focus-visible {
-  outline: 2px solid var(--accent-500, rgba(139, 92, 246, 0.8));
+  outline: 2px solid var(--accent-500, rgba(217, 119, 87, 0.8));
   outline-offset: 2px;
 }
 
@@ -3478,28 +3480,22 @@ h1 {
  * 头部信息容器（.header-info-container）：
  *
  * 功能说明：
- *   prompt 上方的任务头部行，承载三类子元素：
- *   - 任务头部标签 chip（#task-header-chip，header_label 参数）
- *   - 任务 ID 容器（.task-id-container，已被下方规则永久隐藏——
- *     任务 ID 在标签页显示，避免重复）
- *   - 倒计时容器（.countdown-container，含 +60s / 冻结按钮）
+ *   prompt 上方的任务头部行（chip / 任务 ID / 倒计时文字 / 历史控制
+ *   按钮的 DOM 锚点）。
  *
- * R695 修复：此前该容器被无条件 display:none，导致 chip、+60s、
- *   冻结按钮在 Web 端永远不可见（仅 VS Code 端可用），与 README
- *   宣称的两端一致不符。现恢复为 flex 行，子元素各自控制显隐。
+ * 演进历史：
+ *   - R695：修复该容器误藏 chip/+60s/冻结按钮的实现事故（当时按钮
+ *     是在售功能，被祖先 display:none 永久遮蔽）；
+ *   - R699：+60s / 冻结按钮按用户决策下线（typing-hold 自动延长取代
+ *     手动操作）；
+ *   - R700：用户确认 chip 与倒计时文字和任务标签页圆环信息重复，
+ *     整行**有意**下线——倒计时唯一展示位为标签页圆环。
+ *   DOM 锚点与 JS 逻辑全部保留（typing-hold / 自动提交 / VS Code 端
+ *   仍消费这些字段），仅 Web 端视觉隐藏。与 R695 的区别：R695 是
+ *   "误藏在售功能"，R700 是"经用户决策的信息去重"。
  */
 .header-info-container {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-/* 有可见子元素时与下方 prompt 拉开间距（:has 不支持时退化为无间距，
-   仅影响观感不影响功能） */
-.header-info-container:has(> .task-header-chip:not([style*="display: none"])),
-.header-info-container:has(> .countdown-container:not(.hidden)) {
-  margin-bottom: 1rem;
+  display: none; /* R700：与标签页倒计时圆环信息重复，整行有意下线 */
 }
 
 /* ========================================================================
@@ -3595,23 +3591,21 @@ h1 {
  *   - 字号：0.9rem（14.4px）
  */
 .countdown-container {
-  display: flex; /* 使用flex布局 */
-  align-items: center; /* 垂直居中 */
-  gap: 0.5rem; /* 元素间距（8px） */
-  padding: 0.75rem 1.25rem; /* 内边距（上下0.75rem，左右1.25rem） */
-  /* R696：改用主题 warning 令牌（暗色琥珀 / 浅色由下方 override 走
-     Anthropic 陶土橙），替换与两套主题都不搭的硬编码粉红。 */
-  background: var(--warning-bg, rgba(245, 158, 11, 0.15));
-  border-left: 3px solid var(--warning-500, #f59e0b);
-  border-radius: 8px; /* 圆角 */
-  font-size: 0.9rem; /* 字号（14.4px） */
-  white-space: nowrap; /* 不换行 */
+  /* R698：极简元信息行——去掉底色块与强调边框，倒计时降级为
+     次要文字（Claude 风格：大部分逻辑走默认，不抢视觉焦点）。 */
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.125rem 0;
+  background: transparent;
+  border: none;
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
-/* 浅色主题：Anthropic 陶土橙（与 +60s 按钮、品牌强调色同脉） */
+/* 浅色主题同样保持无底色（占位规则，与深色一致） */
 [data-theme="light"] .countdown-container {
-  background: rgba(217, 119, 87, 0.1);
-  border-left-color: #d97757;
+  background: transparent;
 }
 
 /**
@@ -3620,17 +3614,17 @@ h1 {
  * 功能说明：
  *   倒计时容器中的时钟图标（R696：内联 SVG，stroke:currentColor）。
  *
- * 排版设计：
- *   - 颜色与 .countdown-text 同源（暗色琥珀 / 浅色深陶土橙）
+ * 排版设计（R698）：
+ *   - 跟随次要文字色（quiet 元信息，不用警示色抢焦点）
  */
 .countdown-label {
   display: inline-flex;
   align-items: center;
-  color: var(--warning-500, #f59e0b);
+  color: var(--text-secondary);
 }
 
 [data-theme="light"] .countdown-label {
-  color: #b35a3c;
+  color: var(--text-secondary);
 }
 
 /**
@@ -3646,12 +3640,11 @@ h1 {
  *   - 字重：600（半粗体）
  */
 .countdown-text {
-  /* R696：跟随主题 warning 令牌（暗色琥珀），浅色由下方 override 用
-     深陶土橙保证对比度。 */
-  color: var(--warning-500, #f59e0b);
+  /* R698：quiet 元信息文字——次要文字色，正常字重，不抢视觉焦点 */
+  color: var(--text-secondary);
   font-family: var(--font-mono); /* 等宽字体 */
-  font-size: 0.85rem; /* 字号（13.6px） */
-  font-weight: 600; /* 半粗体 */
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 
 /**
@@ -3681,19 +3674,20 @@ h1 {
  *   - margin-left: 6px 让按钮与 countdown-text 视觉分组（共享 ⏰ 锚点）
  */
 .countdown-extend-btn {
+  /* R698：幽灵按钮——常态低调（无底色、透明边框、次要文字色），
+     hover 才轻微浮现；辅助操作不与主流程抢注意力。 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
   margin-left: 6px;
   padding: 2px 8px;
-  /* R696：与倒计时条同用主题琥珀（warning）色系，替换硬编码粉红 */
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  border-radius: 10px;
-  background-color: rgba(245, 158, 11, 0.08);
-  color: var(--warning-500, #f59e0b);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-color: transparent;
+  color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 500;
   line-height: 1;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -3702,21 +3696,23 @@ h1 {
   transition:
     background-color 200ms ease,
     border-color 200ms ease,
+    color 200ms ease,
     opacity 200ms ease;
 }
 
 .countdown-extend-btn:hover:not(:disabled) {
-  background-color: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.55);
+  background-color: var(--bg-hover);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
 }
 
 .countdown-extend-btn:focus-visible {
-  outline: 2px solid var(--focus-ring-color, var(--primary-500, #a855f7));
+  outline: 2px solid var(--focus-ring-color, var(--primary-500, #d97757));
   outline-offset: 2px;
 }
 
 .countdown-extend-btn:active:not(:disabled) {
-  background-color: rgba(245, 158, 11, 0.22);
+  background-color: var(--bg-active);
 }
 
 .countdown-extend-btn:disabled {
@@ -3728,15 +3724,25 @@ h1 {
   display: none;
 }
 
-/* 浅色主题适配：调亮文字 + 用更可读的边框 */
+/* R699：按用户决策下线 +60s / 冻结的可见入口——正在输入时倒计时由
+   typing-hold 逻辑（R689，自动调用 extend 端点）保证不中断，无需
+   手动按钮。DOM 与 JS 逻辑保留（typing-hold 复用 extend 端点、
+   多端兼容），仅视觉隐藏。 */
+.countdown-extend-btn,
+.countdown-freeze-btn {
+  display: none !important;
+}
+
+/* 浅色主题适配：同样保持幽灵态（quiet 元信息行的一部分） */
 [data-theme="light"] .countdown-extend-btn {
-  border-color: rgba(217, 119, 87, 0.45);
-  background-color: rgba(217, 119, 87, 0.08);
-  color: rgba(180, 83, 9, 1);
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--text-secondary);
 }
 [data-theme="light"] .countdown-extend-btn:hover:not(:disabled) {
-  background-color: rgba(217, 119, 87, 0.16);
-  border-color: rgba(217, 119, 87, 0.65);
+  background-color: var(--bg-hover);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
 }
 
 /* ========================================================================
@@ -3754,18 +3760,20 @@ h1 {
  *   - 浅色主题下用更深的蓝色保证对比度
  */
 .countdown-freeze-btn {
+  /* R698：幽灵按钮（同 +60s）；保留一丝冷蓝 rgba(120, 160, 220) 文字
+     色调以区分「冻结=停止」与「+60s=继续等待」的语义。 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
   margin-left: 4px;
   padding: 2px 8px;
-  border: 1px solid rgba(120, 160, 220, 0.4);
-  border-radius: 10px;
-  background-color: rgba(120, 160, 220, 0.08);
-  color: rgba(150, 190, 240, 0.95);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-color: transparent;
+  color: rgba(120, 160, 220, 0.75);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 500;
   line-height: 1;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -3773,21 +3781,23 @@ h1 {
   transition:
     background-color 200ms ease,
     border-color 200ms ease,
+    color 200ms ease,
     opacity 200ms ease;
 }
 
 .countdown-freeze-btn:hover:not(:disabled) {
-  background-color: rgba(120, 160, 220, 0.15);
-  border-color: rgba(120, 160, 220, 0.55);
+  background-color: var(--bg-hover);
+  border-color: var(--border-secondary);
+  color: rgba(150, 190, 240, 0.95);
 }
 
 .countdown-freeze-btn:focus-visible {
-  outline: 2px solid var(--focus-ring-color, var(--primary-500, #a855f7));
+  outline: 2px solid var(--focus-ring-color, var(--primary-500, #d97757));
   outline-offset: 2px;
 }
 
 .countdown-freeze-btn:active:not(:disabled) {
-  background-color: rgba(120, 160, 220, 0.22);
+  background-color: var(--bg-active);
 }
 
 .countdown-freeze-btn:disabled {
@@ -3799,16 +3809,16 @@ h1 {
   display: none;
 }
 
-/* R696：浅色主题改用 Anthropic 品牌蓝 #6a9bcc（rgb 106,155,204）色系，
-   文字用 WCAG AA 验证过的深品牌蓝（同 light --info-500 #2e5e8c）。 */
+/* R698：浅色主题同样幽灵态；文字保留深品牌蓝（light --info-500）
+   以维持「冷色=停止」语义。 */
 [data-theme="light"] .countdown-freeze-btn {
-  border-color: rgba(106, 155, 204, 0.55);
-  background-color: rgba(106, 155, 204, 0.1);
-  color: #2e5e8c;
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--info-500);
 }
 [data-theme="light"] .countdown-freeze-btn:hover:not(:disabled) {
-  background-color: rgba(106, 155, 204, 0.2);
-  border-color: rgba(106, 155, 204, 0.75);
+  background-color: var(--bg-hover);
+  border-color: var(--border-secondary);
 }
 
 /* feat-remove-pwa-install (cycle-22)：``.pwa-install-btn`` /
@@ -3836,9 +3846,9 @@ h1 {
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem 0.9rem;
-  background: rgba(28, 28, 32, 0.92);
+  background: rgba(38, 38, 36, 0.92);
   color: #f5f5f7;
-  border: 1px solid rgba(139, 92, 246, 0.55);
+  border: 1px solid rgba(217, 119, 87, 0.55);
   border-radius: 14px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
   backdrop-filter: blur(14px);
@@ -3903,14 +3913,14 @@ h1 {
 }
 .ios-a2hs-banner__dismiss:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.55);
+  box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.55);
 }
 
 /* light theme overrides — 用 backdrop-filter 浅底 + 紫色 accent 边框 */
 [data-theme="light"] .ios-a2hs-banner {
   background: rgba(255, 255, 255, 0.94);
   color: rgba(28, 28, 30, 0.95);
-  border-color: rgba(139, 92, 246, 0.45);
+  border-color: rgba(217, 119, 87, 0.45);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) inset;
 }
 [data-theme="light"] .ios-a2hs-banner__icon {
@@ -3955,12 +3965,12 @@ h1 {
  *
  * 视觉设计：
  *   - 背景：线性渐变（蓝色到紫色系）
- *     - 0%: rgba(0, 122, 255, 0.08)
+ *     - 0%: rgba(217, 119, 87, 0.08)
  *     - 50%: rgba(88, 86, 214, 0.06)
  *     - 100%: rgba(175, 82, 222, 0.05)
- *   - 边框：1px solid rgba(0, 122, 255, 0.25)
+ *   - 边框：1px solid rgba(217, 119, 87, 0.25)
  *   - 文字颜色：#f5f5f7（浅灰白色）
- *   - 阴影：0 4px 8px rgba(0, 122, 255, 0.1)
+ *   - 阴影：0 4px 8px rgba(217, 119, 87, 0.1)
  *
  * 排版设计：
  *   - 字号：1rem（16px）
@@ -3971,19 +3981,15 @@ h1 {
   font-size: 1rem; /* 字号（16px） */
   margin-bottom: 1.5rem; /* 外边距底部 */
   padding: 1.5rem 1.75rem; /* 内边距（上下1.5rem，左右1.75rem） */
-  background: linear-gradient(
-    135deg,
-    rgba(0, 122, 255, 0.08) 0%,
-    rgba(88, 86, 214, 0.06) 50%,
-    rgba(175, 82, 222, 0.05) 100%
-  ); /* 蓝色到紫色渐变背景 */
-  border: 1px solid rgba(0, 122, 255, 0.25); /* 边框 */
+  /* R698：中性平底卡片——去掉彩色渐变与品牌色边框，降低光感 */
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-secondary); /* 边框 */
   border-radius: 24px; /* 大圆角 */
   color: #f5f5f7; /* 浅灰白色文字 */
   line-height: 1.6; /* 行高 */
   letter-spacing: -0.022em; /* 紧凑字间距 */
   position: relative; /* 相对定位（用于伪元素） */
-  box-shadow: 0 4px 8px rgba(0, 122, 255, 0.1); /* 阴影 */
+  box-shadow: none; /* R698：去掉品牌色阴影 */
 }
 
 /**
@@ -4103,7 +4109,7 @@ h1 {
  *
  * 交互效果：
  *   - 背景变亮（rgba(255, 255, 255, 0.1) → rgba(255, 255, 255, 0.06) → rgba(255, 255, 255, 0.08)）
- *   - 边框变蓝（rgba(0, 122, 255, 0.4)）
+ *   - 边框变蓝（rgba(217, 119, 87, 0.4)）
  *   - 阴影增强（0 4px 8px）
  */
 .option-item:hover {
@@ -4113,7 +4119,7 @@ h1 {
     rgba(255, 255, 255, 0.06) 50%,
     rgba(255, 255, 255, 0.08) 100%
   ); /* 背景变亮 */
-  border-color: rgba(0, 122, 255, 0.4); /* 边框变蓝 */
+  border-color: rgba(217, 119, 87, 0.4); /* 边框变蓝 */
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12); /* 阴影增强 */
 }
 
@@ -4174,7 +4180,7 @@ h1 {
  *   - 右外边距：1rem（与标签分离）
  *
  * 视觉设计：
- *   - accent-color: #007aff（现代浏览器复选框主题色）
+ *   - accent-color: #d97757（现代浏览器复选框主题色）
  *
  * 交互效果：
  *   - cursor: pointer（可点击）
@@ -4183,7 +4189,7 @@ h1 {
   margin-right: 1rem; /* 右外边距（与标签分离） */
   width: 18px; /* 固定宽度 */
   height: 18px; /* 固定高度 */
-  accent-color: #5a8dbf; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
+  accent-color: #517fae; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
   cursor: pointer; /* 可点击 */
 }
 
@@ -4317,14 +4323,14 @@ h1 {
  *
  * 交互效果：
  *   - 移除默认outline（outline: none）
- *   - 边框变蓝（border-color: rgba(0, 122, 255, 0.5)）
- *   - 添加蓝色外轮廓（box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3)）
+ *   - 边框变蓝（border-color: rgba(217, 119, 87, 0.5)）
+ *   - 添加蓝色外轮廓（box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3)）
  *   - 背景变亮（background: rgba(255, 255, 255, 0.08)）
  */
 .feedback-textarea:focus {
   outline: none; /* 移除默认outline */
-  border-color: rgba(0, 122, 255, 0.5); /* 边框变蓝 */
-  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3); /* 蓝色外轮廓 */
+  border-color: rgba(217, 119, 87, 0.5); /* 边框变蓝 */
+  box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3); /* 蓝色外轮廓 */
   background: rgba(255, 255, 255, 0.08); /* 背景变亮 */
 }
 
@@ -4608,43 +4614,43 @@ h1 {
  *   反馈表单中的主要按钮（如"提交"按钮）。
  *
  * 视觉设计：
- *   - 背景：#007aff（iOS蓝色）
+ *   - 背景：#d97757（iOS蓝色）
  *   - 文字颜色：white（白色）
- *   - 边框：1px solid rgba(0, 122, 255, 0.3)
- *   - 阴影：0 4px 8px rgba(0, 122, 255, 0.2)
+ *   - 边框：1px solid rgba(217, 119, 87, 0.3)
+ *   - 阴影：0 4px 8px rgba(217, 119, 87, 0.2)
  *
  * 交互效果：
  *   - 悬停时背景变深、阴影增强（由:hover规则控制）
  */
 .btn-primary {
   /* a11y-audit-cycle-5 Track D (R259h) WCAG 1.4.3 fix:
-   * 旧 #007aff 与白色文字 contrast = 4.02:1 (AA-normal FAIL)。
-   * 切到 #0056cc (6.56:1 AA-normal pass)，是原 :hover 色，
+   * 旧 #d97757 与白色文字 contrast = 4.02:1 (AA-normal FAIL)。
+   * 切到 #b35730 (6.56:1 AA-normal pass)，是原 :hover 色，
    * 已被 R109 baseline 接受为 iOS 蓝家族成员。border-color
-   * 和 box-shadow 用 rgba(0, 122, 255, X) 保持装饰品牌色不变
+   * 和 box-shadow 用 rgba(217, 119, 87, X) 保持装饰品牌色不变
    * （alpha < 1 用于阴影/边框装饰，非主前景，contrast 要求不同）。
    */
-  background: #0056cc; /* iOS 蓝深色变种（WCAG 1.4.3 AA-normal） */
+  background: #b35730; /* iOS 蓝深色变种（WCAG 1.4.3 AA-normal） */
   color: white; /* 白色文字 */
-  border: 1px solid rgba(0, 122, 255, 0.3); /* 边框 */
-  box-shadow: 0 4px 8px rgba(0, 122, 255, 0.2); /* 阴影 */
+  border: 1px solid rgba(217, 119, 87, 0.3); /* 边框 */
+  box-shadow: 0 4px 8px rgba(217, 119, 87, 0.2); /* 阴影 */
 }
 
 /**
  * 主要按钮悬停效果（.btn-primary:hover）：
  *
  * 交互效果：
- *   - 背景变深（#0056cc）
+ *   - 背景变深（#b35730）
  *   - 阴影增强（0 6px 12px）
  */
 .btn-primary:hover {
   /* a11y-audit-cycle-5 Track D (R259h) WCAG 1.4.3 fix:
-   * 默认色升级到 #0056cc 后，hover 需更深以保持视觉差异。
-   * #0045a0 与白色 contrast = 8.90:1 (AAA pass)，纳入 R109
+   * 默认色升级到 #b35730 后，hover 需更深以保持视觉差异。
+   * #9a4929 与白色 contrast = 8.90:1 (AAA pass)，纳入 R109
    * iOS 蓝家族 baseline。
    */
-  background: #0045a0; /* 更深 iOS 蓝（hover 状态，WCAG AAA） */
-  box-shadow: 0 6px 12px rgba(0, 122, 255, 0.3); /* 阴影增强 */
+  background: #9a4929; /* 更深 iOS 蓝（hover 状态，WCAG AAA） */
+  box-shadow: 0 6px 12px rgba(217, 119, 87, 0.3); /* 阴影增强 */
 }
 
 /**
@@ -5581,8 +5587,8 @@ h1 {
 }
 
 .code-paste-textarea:focus {
-  border-color: rgba(10, 132, 255, 0.8);
-  box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.45);
+  border-color: rgba(106, 155, 204, 0.9);
+  box-shadow: 0 0 0 1px rgba(106, 155, 204, 0.45);
 }
 
 /**
@@ -5640,17 +5646,17 @@ h1 {
  *   - 圆角：20px
  *
  * 视觉设计：
- *   - 背景：rgba(0, 122, 255, 0.1)（半透明蓝色）
- *   - 边框：2px dashed rgba(0, 122, 255, 0.5)（虚线边框）
+ *   - 背景：rgba(217, 119, 87, 0.1)（半透明蓝色）
+ *   - 边框：2px dashed rgba(217, 119, 87, 0.5)（虚线边框）
  *   - 文字颜色：#f5f5f7（浅灰白色）
  */
 .drag-overlay-content {
   text-align: center; /* 文字居中 */
   color: #f5f5f7; /* 浅灰白色文字 */
   padding: 2rem; /* 内边距 */
-  border: 2px dashed rgba(0, 122, 255, 0.5); /* 虚线边框 */
+  border: 2px dashed rgba(217, 119, 87, 0.5); /* 虚线边框 */
   border-radius: 20px; /* 圆角 */
-  background: rgba(0, 122, 255, 0.1); /* 半透明蓝色背景 */
+  background: rgba(217, 119, 87, 0.1); /* 半透明蓝色背景 */
   max-width: 400px; /* 最大宽度 */
 }
 
@@ -5710,17 +5716,17 @@ h1 {
  *   当拖拽图片到文本框上方时的高亮效果。
  *
  * 视觉设计：
- *   - 边框颜色：rgba(0, 122, 255, 0.6)（蓝色）
- *   - 背景：rgba(0, 122, 255, 0.05)（浅蓝色）
- *   - 外轮廓：0 0 0 2px rgba(0, 122, 255, 0.3)（蓝色发光）
+ *   - 边框颜色：rgba(217, 119, 87, 0.6)（蓝色）
+ *   - 背景：rgba(217, 119, 87, 0.05)（浅蓝色）
+ *   - 外轮廓：0 0 0 2px rgba(217, 119, 87, 0.3)（蓝色发光）
  *
  * 注意：
  *   使用 !important 以确保样式优先级。
  */
 .textarea-drag-over {
-  border-color: rgba(0, 122, 255, 0.6) !important; /* 边框颜色（蓝色） */
-  background: rgba(0, 122, 255, 0.05) !important; /* 背景（浅蓝色） */
-  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3) !important; /* 外轮廓（蓝色发光） */
+  border-color: rgba(217, 119, 87, 0.6) !important; /* 边框颜色（蓝色） */
+  background: rgba(217, 119, 87, 0.05) !important; /* 背景（浅蓝色） */
+  box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3) !important; /* 外轮廓（蓝色发光） */
 }
 
 /**
@@ -5767,7 +5773,7 @@ h1 {
  *
  * 视觉设计：
  *   - 边框：2px solid rgba(255, 255, 255, 0.3)（浅色边框）
- *   - 顶部边框：2px solid #007aff（蓝色边框）
+ *   - 顶部边框：2px solid #d97757（蓝色边框）
  *
  * 动画效果：
  *   - animation: spin 1s linear infinite（无限旋转）
@@ -5776,7 +5782,7 @@ h1 {
   width: 20px; /* 宽度 */
   height: 20px; /* 高度 */
   border: 2px solid rgba(255, 255, 255, 0.3); /* 浅色边框 */
-  border-top: 2px solid #007aff; /* 顶部蓝色边框 */
+  border-top: 2px solid #d97757; /* 顶部蓝色边框 */
   border-radius: 50%; /* 圆形 */
   animation: spin 1s linear infinite; /* 旋转动画 */
   margin-right: 0.5rem; /* 右外边距 */
@@ -6088,15 +6094,15 @@ h1 {
  *   - 内边距：0.75rem 1rem
  *
  * 视觉设计：
- *   - 背景：rgba(0, 122, 255, 0.08)（半透明蓝色）
- *   - 左边框：3px solid #007aff（蓝色强调边框）
+ *   - 背景：rgba(217, 119, 87, 0.08)（半透明蓝色）
+ *   - 左边框：3px solid #d97757（蓝色强调边框）
  *   - 文字颜色：#f5f5f7（浅灰白色）
  */
 .markdown-content blockquote {
   margin: 1rem 0; /* 外边距 */
   padding: 0.75rem 1rem; /* 内边距 */
-  background: rgba(0, 122, 255, 0.08); /* 半透明蓝色背景 */
-  border-left: 3px solid #007aff; /* 蓝色强调边框 */
+  background: rgba(217, 119, 87, 0.08); /* 半透明蓝色背景 */
+  border-left: 3px solid #d97757; /* 蓝色强调边框 */
   color: #f5f5f7; /* 浅灰白色文字 */
 }
 
@@ -6162,7 +6168,7 @@ h1 {
   border-radius: 20px; /* 圆角 */
   background: linear-gradient(
     135deg,
-    rgba(15, 15, 25, 0.95) 0%,
+    rgba(24, 23, 22, 0.95) 0%,
     rgba(25, 25, 40, 0.9) 50%,
     rgba(20, 20, 35, 0.95) 100%
   ); /* 渐变背景 */
@@ -6353,28 +6359,30 @@ code,
  * 交互：悬停时向上平移1px、阴影增强、边框变深
  */
 .language-label {
-  background: linear-gradient(
-    135deg,
-    rgba(0, 122, 255, 0.25),
-    rgba(88, 86, 214, 0.2)
-  );
-  border: 1px solid rgba(0, 122, 255, 0.4);
-  border-radius: 8px;
-  padding: 5px 10px;
-  font-size: 0.7rem;
-  color: #4fc3f7;
-  font-weight: 700;
+  /* R700：quiet 中性小徽标——去掉渐变/毛玻璃/彩色阴影，随主题文字色 */
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-secondary);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  font-weight: 600;
   font-family: inherit;
-  backdrop-filter: blur(15px);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+  box-shadow: none;
   transition: none; /* 按需求：移除 hover 动效 */
 }
 .language-label:hover {
   transform: none;
-  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
-  border-color: rgba(0, 122, 255, 0.4);
+  box-shadow: none;
+  border-color: var(--border-secondary);
+}
+
+[data-theme="light"] .language-label {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: var(--text-secondary);
 }
 
 /**
@@ -6446,6 +6454,32 @@ code,
   box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);
 }
 
+/* R700：浅色主题复制按钮——修复 hover 文字变白的缺陷。
+   根因：`[data-theme="light"] button { color: var(--text-primary) }`
+   （0,1,1）覆盖了 .copy-button 基础色（0,1,0），但 .copy-button:hover
+   （0,2,0）优先级更高，hover 时又落回按暗色底设计的白色文字——在
+   浅色代码块上不可读。此处以 (0,2,0)/(0,3,0) 显式锁定浅色样式。 */
+[data-theme="light"] .copy-button {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+[data-theme="light"] .copy-button:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.18);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+[data-theme="light"] .copy-button.copied {
+  background: rgba(52, 199, 89, 0.15);
+  border-color: rgba(52, 199, 89, 0.45);
+  color: var(--success-500);
+  box-shadow: none;
+}
+
 /** Markdown表格：全宽，边框合并，外边距1rem 0，极浅色背景 */
 .markdown-content table {
   width: 100%;
@@ -6465,13 +6499,13 @@ code,
 
 /** Markdown表头（th）：半透明蓝色背景，半粗体 */
 .markdown-content th {
-  background: rgba(0, 122, 255, 0.1);
+  background: rgba(217, 119, 87, 0.1);
   font-weight: 600;
 }
 
 /** Markdown链接：蓝色文字，无装饰 */
 .markdown-content a {
-  color: #007aff;
+  color: #d97757;
   text-decoration: none;
 }
 
@@ -7071,7 +7105,7 @@ code,
     margin: 0;
     border-radius: 0;
     border: none;
-    background: rgba(30, 30, 40, 0.98);
+    background: rgba(38, 38, 36, 0.98);
     display: flex;
     flex-direction: column;
   }
@@ -7080,7 +7114,7 @@ code,
     padding: 1rem 1rem 0.75rem;
     position: sticky;
     top: 0;
-    background: rgba(30, 30, 40, 0.98);
+    background: rgba(38, 38, 36, 0.98);
     z-index: 10;
   }
   .settings-header h3 {
@@ -7205,7 +7239,7 @@ code,
   gap: 0;
   padding: 0 1.75rem;
   min-height: 44px;
-  background: rgba(45, 45, 60, 0.9);
+  background: rgba(48, 48, 46, 0.9);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   overflow-x: auto;
   overflow-y: hidden;
@@ -7230,7 +7264,7 @@ code,
   padding: 8px 0;
   overflow-x: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(139, 92, 246, 0.2) transparent;
+  scrollbar-color: rgba(217, 119, 87, 0.2) transparent;
 }
 /** task-tabs滚动条样式（WebKit）：高度5px */
 .task-tabs::-webkit-scrollbar {
@@ -7243,13 +7277,13 @@ code,
 }
 /** 滚动条滑块：半透明紫色，圆角3px，过渡动画 */
 .task-tabs::-webkit-scrollbar-thumb {
-  background: rgba(139, 92, 246, 0.25);
+  background: rgba(217, 119, 87, 0.25);
   border-radius: 3px;
   transition: background 0.2s;
 }
 /** 滚动条滑块悬停：颜色变深 */
 .task-tabs::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 92, 246, 0.4);
+  background: rgba(217, 119, 87, 0.4);
 }
 
 /**
@@ -7265,7 +7299,7 @@ code,
   align-items: center;
   gap: 10px;
   padding: 7px 14px;
-  background: rgba(40, 40, 55, 0.4);
+  background: rgba(48, 48, 46, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
   cursor: pointer;
@@ -7350,15 +7384,15 @@ code,
 }
 /** task-tab悬停：背景变亮，边框变紫，文字变深 */
 .task-tab:hover {
-  background: rgba(50, 50, 65, 0.5);
-  border-color: rgba(139, 92, 246, 0.15);
+  background: rgba(57, 56, 54, 0.5);
+  border-color: rgba(217, 119, 87, 0.15);
   color: rgba(245, 245, 247, 0.9);
 }
 /** task-tab激活：背景变紫，文字变白，边框变紫，字重500 */
 .task-tab.active {
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(217, 119, 87, 0.15);
   color: rgba(255, 255, 255, 0.9);
-  border-color: rgba(139, 92, 246, 0.3);
+  border-color: rgba(217, 119, 87, 0.3);
   font-weight: 500;
 }
 
@@ -7417,7 +7451,7 @@ code,
 /** 激活标签关闭按钮：opacity 0.6，颜色变紫 */
 .task-tab.active .task-tab-close {
   opacity: 0.6;
-  color: rgba(139, 92, 246, 1);
+  color: rgba(217, 119, 87, 1);
 }
 /** 激活标签关闭按钮悬停：opacity 1，颜色变红
  *
@@ -7442,7 +7476,7 @@ code,
   justify-content: center;
   width: 32px;
   height: 28px;
-  background: rgba(45, 45, 60, 0.5);
+  background: rgba(48, 48, 46, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   cursor: pointer;
@@ -7453,7 +7487,7 @@ code,
 
 /** task-tab-new悬停：背景变深，文字变亮 */
 .task-tab-new:hover {
-  background: rgba(45, 45, 60, 0.7);
+  background: rgba(48, 48, 46, 0.7);
   color: rgba(245, 245, 247, 0.8);
 }
 
@@ -7519,7 +7553,7 @@ code,
   transform: translate(-50%, -50%);
   font-size: 7px;
   font-weight: 600;
-  color: rgba(139, 92, 246, 0.95);
+  color: rgba(217, 119, 87, 0.95);
   font-family: var(--font-mono);
   z-index: 2;
   line-height: 1;
@@ -8025,7 +8059,7 @@ code,
 [data-theme="light"] textarea:focus,
 [data-theme="light"] select:focus {
   border-color: var(--primary-500);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.2);
 }
 
 /* 浅色主题 - 状态栏 */
@@ -8038,6 +8072,25 @@ code,
 /* 浅色主题 - 进度条 */
 [data-theme="light"] .progress-bar {
   background: var(--bg-tertiary);
+}
+
+/* R700 优雅审计 #1：空态页的「关闭 Web UI」按钮弱化为幽灵按钮——
+   破坏性操作不应是宁静空态里唯一的强视觉元素（深浅主题同规则）。 */
+#no-content-buttons #close-btn,
+[data-theme="light"] #no-content-buttons #close-btn {
+  background: transparent;
+  border: 1px solid var(--border-secondary);
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+
+#no-content-buttons #close-btn:hover,
+[data-theme="light"] #no-content-buttons #close-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-primary);
+  color: var(--text-primary);
+  box-shadow: none;
+  transform: none;
 }
 
 /**
@@ -8195,9 +8248,8 @@ code,
 }
 
 [data-theme="light"] .countdown-text {
-  /* R696：深陶土橙（同 --focus-ring-color light 值，WCAG 已验证），
-     与倒计时条的 Anthropic 橙色系保持同脉。 */
-  color: #b35a3c;
+  /* R698：quiet 元信息——浅色主题同样用次要文字色 */
+  color: var(--text-secondary);
 }
 
 /* 浅色主题 - 按钮组件 (btn 系列) */
@@ -8256,7 +8308,7 @@ code,
    ========================================================================
 
    背景：
-     早期开发时 ``main.css`` 内大量组件硬编码 ``rgba(0, 122, 255, X)``
+     早期开发时 ``main.css`` 内大量组件硬编码 ``rgba(217, 119, 87, X)``
      （iOS system blue），随后引入 light/dark 主题变量时只覆盖了高频
      按钮（btn 系列、option-item、scrollbar 等），但 7 个 high-traffic
      组件在浅色模式下仍然漏出 iOS 蓝，与 Anthropic Orange (#d97757)
@@ -8343,80 +8395,59 @@ code,
 }
 
 /* ========================================================================
-   深色主题按钮颜色配置
+   深色主题按钮颜色配置（R697：Claude 暖炭色系）
    ========================================================================
 
    设计理念：
-     在深色模式下，三个功能按钮采用不同色调以区分功能优先级。
-     颜色递进：灰白 → 灰蓝 → 亮蓝（次要 → 辅助 → 主要）
+     与浅色主题共用同一套语义色（Mid Gray / Anthropic Blue / Orange），
+     深色下选用各自的深档变体，保证白字 WCAG AA。
+     颜色递进：暖灰 → 品牌蓝 → 陶土橙（次要 → 辅助 → 主要 CTA）
 
-   颜色方案（来自 Claude 设计系统）：
-     - 插入代码：#CACADB（灰白色）- 辅助功能，最低视觉优先级
-     - 上传图片：#99B6D3（灰蓝色）- 辅助功能，中等视觉优先级
-     - 发送请求：#61AAF2（亮蓝色）- 主要操作，最高视觉优先级
-
-   渐变效果：使用 linear-gradient(135deg) 增加层次感
-   悬停效果：渐变颜色整体提亮，提供视觉反馈
+   对比度（white-on-bg）：
+     - 插入代码 #4a4843: 8.67:1（文字 #faf9f5）
+     - 上传图片 #40668c: 6.00:1
+     - 发送请求 #b35730: 4.86:1（hover #9a4929: 6.25:1）
    ======================================================================== */
 
-/* 深色模式 - 插入代码按钮 - 灰白色（最低优先级辅助功能） */
+/* R700 优雅审计 #3：插入代码 / 上传图片降级为幽灵次级按钮——
+   低频辅助操作不与主 CTA（提交反馈）抢视觉权重，页面只保留一个
+   陶土橙主操作。 */
 #insert-code-btn {
-  background: linear-gradient(
-    135deg,
-    #cacadb,
-    #babacb
-  ) !important; /* 灰白色渐变 */
-  border-color: #cacadb !important;
-  color: #1a1a1c !important; /* 深色文字确保对比度，符合 WCAG 标准 */
+  background: transparent !important;
+  border: 1px solid var(--border-secondary) !important;
+  color: var(--text-secondary) !important;
+  box-shadow: none !important;
 }
 
 #insert-code-btn:hover {
-  background: linear-gradient(
-    135deg,
-    #dadaeb,
-    #cacadb
-  ) !important; /* 悬停：整体提亮 */
-  border-color: #dadaeb !important;
+  background: var(--bg-hover) !important;
+  border-color: var(--border-primary) !important;
+  color: var(--text-primary) !important;
 }
 
-/* 深色模式 - 上传图片按钮 - 灰蓝色（中等优先级辅助功能） */
 #upload-image-btn {
-  background: linear-gradient(
-    135deg,
-    #99b6d3,
-    #89a6c3
-  ) !important; /* 灰蓝色渐变 */
-  border-color: #99b6d3 !important;
-  color: #1a1a1c !important; /* 深色文字确保对比度 */
+  background: transparent !important;
+  border: 1px solid var(--border-secondary) !important;
+  color: var(--text-secondary) !important;
+  box-shadow: none !important;
 }
 
 #upload-image-btn:hover {
-  background: linear-gradient(
-    135deg,
-    #a9c6e3,
-    #99b6d3
-  ) !important; /* 悬停：整体提亮 */
-  border-color: #a9c6e3 !important;
+  background: var(--bg-hover) !important;
+  border-color: var(--border-primary) !important;
+  color: var(--text-primary) !important;
 }
 
-/* 深色模式 - 发送请求按钮 - 亮蓝色（最高优先级主要操作） */
+/* 深色模式 - 发送请求按钮 - 陶土橙（最高优先级主要 CTA） */
 #submit-btn {
-  background: linear-gradient(
-    135deg,
-    #61aaf2,
-    #519ae2
-  ) !important; /* 亮蓝色渐变，强调主要操作 */
-  border-color: #61aaf2 !important;
-  color: #fff !important; /* 白色文字确保可读性 */
+  background: #b35730 !important; /* 陶土橙深档（4.86:1 AA） */
+  border-color: #c56a4c !important;
+  color: #fff !important;
 }
 
 #submit-btn:hover {
-  background: linear-gradient(
-    135deg,
-    #71baf2,
-    #61aaf2
-  ) !important; /* 悬停：整体提亮 */
-  border-color: #71baf2 !important;
+  background: #9a4929 !important; /* 悬停：加深（6.25:1） */
+  border-color: #b35730 !important;
 }
 
 /* 深色模式 - 按钮禁用状态（R229 / Cycle 13）
@@ -8463,28 +8494,29 @@ code,
    悬停效果：颜色加深约 10%，提供点击反馈
    ======================================================================== */
 
-/* 浅色模式 - 插入代码按钮 - Mid Gray（柔和辅助功能） */
+/* R700 优雅审计 #3：浅色主题同样幽灵化（与深色同规则，主题变量自适应） */
 [data-theme="light"] #insert-code-btn {
-  background: #b0aea5 !important; /* Mid Gray - 与浅色主题协调 */
-  border-color: #b0aea5 !important;
-  color: #fff !important; /* 白色文字 */
+  background: transparent !important;
+  border: 1px solid var(--border-primary) !important;
+  color: var(--text-secondary) !important;
 }
 
 [data-theme="light"] #insert-code-btn:hover {
-  background: #9a9890 !important; /* 悬停：加深约 10% */
-  border-color: #9a9890 !important;
+  background: var(--bg-hover) !important;
+  border-color: var(--border-hover) !important;
+  color: var(--text-primary) !important;
 }
 
-/* 浅色模式 - 上传图片按钮 - Blue（清爽辅助功能） */
 [data-theme="light"] #upload-image-btn {
-  background: #6a9bcc !important; /* Blue - 与浅色主题形成对比 */
-  border-color: #6a9bcc !important;
-  color: #fff !important; /* 白色文字 */
+  background: transparent !important;
+  border: 1px solid var(--border-primary) !important;
+  color: var(--text-secondary) !important;
 }
 
 [data-theme="light"] #upload-image-btn:hover {
-  background: #5a8bbc !important; /* 悬停：加深约 10% */
-  border-color: #5a8bbc !important;
+  background: var(--bg-hover) !important;
+  border-color: var(--border-hover) !important;
+  color: var(--text-primary) !important;
 }
 
 /* 浅色模式 - 发送请求按钮 - Orange（温暖的主要 CTA） */
@@ -8648,7 +8680,7 @@ code,
 /* 数字 - Purple */
 [data-theme="light"] .markdown-content pre code span[style*="AE81FF"],
 [data-theme="light"] .code-block-container pre code span[style*="AE81FF"] {
-  color: #8b5cf6 !important; /* Purple - 数字 */
+  color: #d97757 !important; /* Purple - 数字 */
 }
 
 /* 注释 - Cloud Medium 灰色 */
@@ -8699,7 +8731,7 @@ code,
 
 /* 类名 */
 [data-theme="light"] .token.class-name {
-  color: #8b5cf6 !important; /* Purple */
+  color: #d97757 !important; /* Purple */
 }
 
 /* 字符串 */
@@ -8714,12 +8746,12 @@ code,
 
 /* 数字 */
 [data-theme="light"] .token.number {
-  color: #8b5cf6 !important; /* Purple */
+  color: #d97757 !important; /* Purple */
 }
 
 /* 布尔值 */
 [data-theme="light"] .token.boolean {
-  color: #8b5cf6 !important; /* Purple */
+  color: #d97757 !important; /* Purple */
 }
 
 /* 注释 */
@@ -8759,7 +8791,7 @@ code,
 
 /* 常量 */
 [data-theme="light"] .token.constant {
-  color: #8b5cf6 !important; /* Purple */
+  color: #d97757 !important; /* Purple */
 }
 
 /* 符号 */
@@ -8784,7 +8816,7 @@ code,
 
 /* 内置对象 */
 [data-theme="light"] .token.builtin {
-  color: #8b5cf6 !important; /* Purple */
+  color: #d97757 !important; /* Purple */
 }
 
 /* 选择器 (CSS) */
@@ -8982,7 +9014,8 @@ code,
    ======================================================================== */
 
 .quick-phrases-container {
-  margin: 0 1.5rem 0.75rem 1.5rem;
+  /* R700：去掉左右 1.5rem 额外外边距——与选项/输入框同宽，视觉对齐 */
+  margin: 0 0 0.75rem 0;
   padding: 0.75rem 1rem;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -9034,7 +9067,7 @@ code,
   /* a11y-audit-cycle-5 Track C (R259g): 继承 --focus-ring-color
    * cycle-3 R258 WCAG 1.4.11 compliant 色。 */
   outline: 2px solid
-    var(--focus-ring-color, var(--primary-500, #8b5cf6));
+    var(--focus-ring-color, var(--primary-500, #d97757));
   outline-offset: 2px;
 }
 
@@ -9043,6 +9076,66 @@ code,
 .quick-phrases-import-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* R700 优雅审计 #4：「⋯」溢出菜单——低频的导出/导入收纳于此 */
+.quick-phrases-more {
+  position: relative;
+  display: inline-flex;
+}
+
+.quick-phrases-more-summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.quick-phrases-more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.quick-phrases-more-summary:hover,
+.quick-phrases-more[open] > .quick-phrases-more-summary {
+  background: var(--bg-hover);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+.quick-phrases-more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-secondary);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  min-width: 7rem;
+}
+
+.quick-phrases-more-menu .quick-phrases-export-btn,
+.quick-phrases-more-menu .quick-phrases-import-btn {
+  width: 100%;
+  text-align: left;
+  border-radius: 8px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.quick-phrases-more-menu .quick-phrases-export-btn:hover:not(:disabled),
+.quick-phrases-more-menu .quick-phrases-import-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
 }
 
 .quick-phrases-list {
@@ -9061,8 +9154,8 @@ code,
 .quick-phrase-chip-wrap {
   display: inline-flex;
   align-items: center;
-  background: rgba(139, 92, 246, 0.12);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: rgba(217, 119, 87, 0.12);
+  border: 1px solid rgba(217, 119, 87, 0.3);
   border-radius: 999px;
   overflow: hidden;
   transition:
@@ -9071,8 +9164,8 @@ code,
 }
 
 .quick-phrase-chip-wrap:hover {
-  background: rgba(139, 92, 246, 0.22);
-  border-color: rgba(139, 92, 246, 0.55);
+  background: rgba(217, 119, 87, 0.22);
+  border-color: rgba(217, 119, 87, 0.55);
 }
 
 .quick-phrase-chip {
@@ -9091,7 +9184,7 @@ code,
 .quick-phrase-chip:focus-visible {
   /* a11y-audit-cycle-5 Track C (R259g): 继承 --focus-ring-color。 */
   outline: 2px solid
-    var(--focus-ring-color, var(--primary-500, #8b5cf6));
+    var(--focus-ring-color, var(--primary-500, #d97757));
   outline-offset: 2px;
   border-radius: 999px;
 }
@@ -9118,7 +9211,7 @@ code,
 }
 
 .quick-phrase-chip-edit:hover {
-  color: var(--primary-500, #8b5cf6);
+  color: var(--primary-500, #d97757);
 }
 
 .quick-phrase-chip-delete:hover {
@@ -9129,7 +9222,7 @@ code,
 .quick-phrase-chip-delete:focus-visible {
   /* a11y-audit-cycle-5 Track C (R259g): 继承 --focus-ring-color。 */
   outline: 2px solid
-    var(--focus-ring-color, var(--primary-500, #8b5cf6));
+    var(--focus-ring-color, var(--primary-500, #d97757));
   outline-offset: 2px;
   border-radius: 999px;
 }
@@ -9158,13 +9251,13 @@ code,
 
 .quick-phrases-form-label:focus,
 .quick-phrases-form-text:focus {
-  outline: 2px solid var(--primary-500, #8b5cf6);
+  outline: 2px solid var(--primary-500, #d97757);
   outline-offset: 1px;
 }
 
 .quick-phrases-form-error {
   /* R696：跟随主题错误色令牌（dark #f87171 / light #b03d38，均已过 WCAG） */
-  color: var(--error-500, #f87171);
+  color: var(--error-500);
   font-size: 0.8rem;
   min-height: 1em;
 }
@@ -9185,13 +9278,13 @@ code,
 }
 
 .quick-phrases-form-save {
-  background: var(--primary-500, #8b5cf6);
+  background: var(--primary-500, #d97757);
   color: #fff;
   border-color: transparent;
 }
 
 .quick-phrases-form-save:hover {
-  background: var(--primary-600, #7c3aed);
+  background: var(--primary-600, #c56a4c);
 }
 
 .quick-phrases-form-cancel {

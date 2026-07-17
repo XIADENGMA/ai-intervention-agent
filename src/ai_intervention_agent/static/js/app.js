@@ -1853,17 +1853,21 @@ async function submitFeedback() {
     // body 即可。
     const submitBtn = document.getElementById("submit-btn");
     if (submitBtn) {
-      if (isSubmitTargetStillCurrent(submitTargetTaskId)) {
-        submitBtn.disabled = false;
-        // 还原为首次渲染时的 innerHTML（含 SVG + <span data-i18n>），然后重新翻译。
-        if (SUBMIT_BTN_ORIGINAL_HTML !== null) {
-          submitBtn.innerHTML = SUBMIT_BTN_ORIGINAL_HTML;
-          if (
-            window.AIIA_I18N &&
-            typeof window.AIIA_I18N.translateDOM === "function"
-          ) {
-            window.AIIA_I18N.translateDOM(submitBtn);
-          }
+      // R700 修复：提交按钮是跨任务共享的单例 DOM。旧实现仅在
+      // isSubmitTargetStillCurrent 时才还原——如果 await 期间发生了
+      // 任务切换（提交成功后自动激活下一个任务是常态路径！），守卫
+      // 判 false，按钮就永远停留在「提交中…」+ disabled 状态，表现为
+      // "提交按钮一直错误显示提交中"。共享按钮的还原对任何任务都
+      // 安全（新任务视图本来就需要一个可用的提交按钮），故无条件还原。
+      submitBtn.disabled = false;
+      // 还原为首次渲染时的 innerHTML（含 SVG + <span data-i18n>），然后重新翻译。
+      if (SUBMIT_BTN_ORIGINAL_HTML !== null) {
+        submitBtn.innerHTML = SUBMIT_BTN_ORIGINAL_HTML;
+        if (
+          window.AIIA_I18N &&
+          typeof window.AIIA_I18N.translateDOM === "function"
+        ) {
+          window.AIIA_I18N.translateDOM(submitBtn);
         }
       }
     }

@@ -43,7 +43,7 @@
     <link
       rel="mask-icon"
       href="/icons/icon.svg?v={{ version }}"
-      color="#8B5CF6"
+      color="#D97757"
     />
     <link
       rel="apple-touch-icon"
@@ -51,7 +51,7 @@
       href="/icons/apple-touch-icon.png?v={{ version }}"
     />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#8B5CF6" />
+    <meta name="theme-color" content="#D97757" />
     <meta name="application-name" content="AI Intervention Agent" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -980,27 +980,42 @@
               >
                 Add
               </button>
-              <!-- R131b — JSON 导出 / 导入按钮（跨设备 / 跨浏览器迁移） -->
-              <button
-                type="button"
-                class="quick-phrases-export-btn"
-                id="quick-phrases-export-btn"
-                data-i18n="quickPhrases.exportBtn"
-                data-i18n-aria-label="quickPhrases.exportBtnAriaLabel"
-                aria-label="Export quick replies as a JSON file"
-              >
-                Export
-              </button>
-              <button
-                type="button"
-                class="quick-phrases-import-btn"
-                id="quick-phrases-import-btn"
-                data-i18n="quickPhrases.importBtn"
-                data-i18n-aria-label="quickPhrases.importBtnAriaLabel"
-                aria-label="Import quick replies from a JSON file"
-              >
-                Import
-              </button>
+              <!-- R131b — JSON 导出 / 导入按钮（跨设备 / 跨浏览器迁移）。
+                   R700 优雅审计 #4：低频管理操作收进「⋯」溢出菜单，
+                   头部只保留高频的「添加」；details/summary 原生实现，
+                   零 JS 依赖（导出/导入按钮 id 与事件绑定不变）。 -->
+              <details class="quick-phrases-more" id="quick-phrases-more">
+                <summary
+                  class="quick-phrases-more-summary"
+                  data-i18n-aria-label="quickPhrases.moreAriaLabel"
+                  aria-label="More quick reply actions"
+                  title="⋯"
+                >
+                  ⋯
+                </summary>
+                <div class="quick-phrases-more-menu">
+                  <button
+                    type="button"
+                    class="quick-phrases-export-btn"
+                    id="quick-phrases-export-btn"
+                    data-i18n="quickPhrases.exportBtn"
+                    data-i18n-aria-label="quickPhrases.exportBtnAriaLabel"
+                    aria-label="Export quick replies as a JSON file"
+                  >
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    class="quick-phrases-import-btn"
+                    id="quick-phrases-import-btn"
+                    data-i18n="quickPhrases.importBtn"
+                    data-i18n-aria-label="quickPhrases.importBtnAriaLabel"
+                    aria-label="Import quick replies from a JSON file"
+                  >
+                    Import
+                  </button>
+                </div>
+              </details>
               <input
                 type="file"
                 id="quick-phrases-import-file"

@@ -20,6 +20,7 @@ derivative idea 是：让用户在 web UI 单击 freeze 一个 task 的倒计时
 from __future__ import annotations
 
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -230,15 +231,37 @@ class TestCssClass(unittest.TestCase):
     def test_freeze_light_theme_override(self) -> None:
         self.assertIn('[data-theme="light"] .countdown-freeze-btn {', self.css)
 
-    def test_freeze_distinct_from_extend(self) -> None:
-        """freeze 用蓝色 vs extend 的红橙色，确保视觉区分."""
-        idx = self.css.find(".countdown-freeze-btn {")
+    def test_tick_zero_guard_keeps_task_alive_while_typing_r699(self) -> None:
+        """R699：倒计时归零但用户仍在输入时，tick 不得触发自动提交。
+
+        typing-hold（R689）只在 extend 配额内自动延长；配额耗尽后本守卫
+        兜底——保持 timer 存活并跳过提交，直到用户停止输入。
+        """
+        js = JS_PATH.read_text(encoding="utf-8")
+        idx = js.find("// 倒计时结束")
         self.assertGreater(idx, 0)
-        snippet = self.css[idx : idx + 800]
-        # 蓝色调 rgb 应包含 120, 160, 220 (or 类似 cool color)
+        snippet = js[idx : idx + 800]
+        self.assertIn(
+            "taskId === activeTaskId && isUserActivelyTyping()",
+            snippet,
+            "tick 归零分支必须带「输入中不提交」守卫（R699）",
+        )
+
+    def test_freeze_button_visually_retired_r699(self) -> None:
+        """R699：+60s / 冻结按钮按用户决策下线可见入口（display:none）。
+
+        typing-hold（R689）在用户输入时自动调用 extend 端点保证不中断，
+        手动按钮不再需要；DOM 与 JS 逻辑保留（多端兼容 + 端点复用），
+        仅视觉隐藏。本断言锁定「视觉下线」状态，防止按钮悄悄回归。
+        """
+        pattern = re.compile(
+            r"\.countdown-extend-btn,\s*\n\.countdown-freeze-btn\s*\{[^}]*"
+            r"display:\s*none\s*!important",
+        )
         self.assertTrue(
-            "120, 160, 220" in snippet or "59, 130, 246" in snippet,
-            f"freeze 按钮应使用蓝色调以区别于 extend 的橙红：{snippet[:200]}",
+            pattern.search(self.css),
+            "R699 要求 .countdown-extend-btn / .countdown-freeze-btn "
+            "以 display:none !important 下线可见入口",
         )
 
 
