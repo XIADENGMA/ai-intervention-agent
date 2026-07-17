@@ -1596,7 +1596,12 @@ class TestGetTaskDetail(_RouteTestBase):
             resp = self._client.get("/api/tasks/detail-snapshot")
 
         self.assertEqual(resp.status_code, 200)
-        m.assert_called_once()
+        # 注意：不能用 assert_called_once —— patch 的是模块级
+        # time.monotonic，pytest-xdist 并行下同进程的其它请求线程
+        # （SSE 心跳/限流器等）也可能在窗口内调用它，导致偶发
+        # call_count > 1 的 flaky。核心契约由下一行保证：路由把
+        # patched 快照值显式传给了 get_remaining_time。
+        self.assertTrue(m.called)
         task.get_remaining_time.assert_called_once_with(now_monotonic=4321.0)
 
     @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
