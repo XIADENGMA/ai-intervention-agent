@@ -133,8 +133,8 @@
       "extendLimitReached": "本任務延長次數已達上限",
       "extendFailed": "延長倒數計時失敗 — 請重試",
       "freezeLabel": "凍結",
-      "freezeTitle": "永久停用本任務的自動重提（僅本次任務）",
-      "freezeAriaLabel": "凍結自動重提倒數計時（一次性）",
+      "freezeTitle": "永久停用本任務的自動重新調用（僅本次任務）",
+      "freezeAriaLabel": "凍結自動重新調用倒數計時（一次性）",
       "freezeAlreadyFrozen": "任務已被凍結",
       "freezeFailed": "凍結倒數計時失敗 — 請重試"
     },

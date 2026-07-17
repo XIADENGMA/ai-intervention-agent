@@ -45,8 +45,8 @@
     },
     "freezeCountdown": {
       "label": "冻结",
-      "title": "永久禁用本任务的自动重提（仅本次任务）",
-      "ariaLabel": "冻结自动重提倒计时（一次性）",
+      "title": "永久禁用本任务的自动重调（仅本次任务）",
+      "ariaLabel": "冻结自动重调倒计时（一次性）",
       "alreadyFrozen": "任务已被冻结",
       "networkError": "冻结倒计时失败 — 请重试"
     },

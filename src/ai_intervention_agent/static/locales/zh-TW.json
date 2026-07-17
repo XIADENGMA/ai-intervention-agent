@@ -50,8 +50,8 @@
     },
     "freezeCountdown": {
       "label": "凍結",
-      "title": "永久停用本任務的自動重提（僅本次任務）",
-      "ariaLabel": "凍結自動重提倒數計時（一次性）",
+      "title": "永久停用本任務的自動重新調用（僅本次任務）",
+      "ariaLabel": "凍結自動重新調用倒數計時（一次性）",
       "alreadyFrozen": "任務已被凍結",
       "networkError": "凍結倒數計時失敗 — 請重試"
     },
