@@ -141,6 +141,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _visibilityBenchmarkSeq: number;
   private _retainContextWhenHidden: boolean;
   private _webviewServerUrl: string;
+  // R692 (TODO#6-2)：通知直达任务。webview 隐藏期间派发新任务通知时记录
+  // 首个 task_id；用户点击状态栏/通知回到面板（webview 变为可见）时，
+  // 在时间窗内把该任务推给前端切换，实现"点通知 → 直达对应任务"。
+  private _pendingNotifiedTaskId: string;
+  private _pendingNotifiedTaskAtMs: number;
 
   constructor(
     extensionUri: vscode.Uri,
@@ -223,6 +228,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._pendingMessages = [];
     this._pendingMessageLimit = 50;
     this._revealPanelUntilMs = 0;
+    this._pendingNotifiedTaskId = "";
+    this._pendingNotifiedTaskAtMs = 0;
     this._notificationConfig = null;
     this._notificationConfigFetchedAt = 0;
     this._notificationConfigFetchPromise = null;
@@ -674,6 +681,21 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         // 发送 force-repaint 让前端用 rAF 触发 layer 重建清除残影。
         this._sendMessage({ type: "force-repaint" });
         this._sendVisibilityBenchmarkProbe();
+        // R692 (TODO#6-2)：隐藏期间有新任务通知 → 回到面板时直达该任务。
+        // 时间窗 120s：超过说明用户并非"看到通知立刻回来"，不再抢切换。
+        const PENDING_NOTIFY_DEEPLINK_FRESH_MS = 120 * 1000;
+        if (
+          this._pendingNotifiedTaskId &&
+          Date.now() - this._pendingNotifiedTaskAtMs <=
+            PENDING_NOTIFY_DEEPLINK_FRESH_MS
+        ) {
+          this._sendMessage({
+            type: "switchToTask",
+            taskId: this._pendingNotifiedTaskId,
+          });
+        }
+        this._pendingNotifiedTaskId = "";
+        this._pendingNotifiedTaskAtMs = 0;
       }
     });
 
@@ -1606,6 +1628,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       } catch {
         /* noop */
       }
+
+      // R692 (TODO#6-2)：记录本轮通知的首个任务，等用户回到面板时直达。
+      // 本方法只在 webview 不可见时被 extension 调用（可见时上游跳过派发），
+      // 因此这里登记的 pending 深链不会干扰正在面板中操作的用户。
+      this._pendingNotifiedTaskId = ids[0] || "";
+      this._pendingNotifiedTaskAtMs = Date.now();
 
       this._dispatchNotificationEvent({
         title: "AI \u4ea4\u4e92\u53cd\u9988",

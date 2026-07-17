@@ -1347,6 +1347,10 @@
   let typingAutoExtendBlockedTasks = {} // task_id -> true（配额耗尽后不再尝试）
   const TYPING_HOLD_IDLE_MS = 10 * 1000
   const TYPING_HOLD_TRIGGER_S = 15
+  // R692 (TODO#6-1)：提交成功后请求把焦点交给下一个任务的输入框。
+  // 时间窗 15s 覆盖插件端轮询节奏（提交后 ~0.5-3s 拿到下一个任务）。
+  let pendingInputFocusAtMs = 0
+  const PENDING_FOCUS_FRESH_MS = 15 * 1000
   let pollingTimer = null
   let remainingSeconds = 0
   let allTasks = []
@@ -3987,6 +3991,27 @@
     // 【对齐原始实现】任务切换时恢复输入/图片，避免串任务；同任务轮询不覆盖用户输入
     if (!isSameTask && config.task_id) {
       restoreLocalStateForTask(config.task_id)
+      // R692 (TODO#6-1)：提交成功后的下一个任务渲染完成 → 自动聚焦输入框
+      // （时间窗内有效；yesno 模式 textarea 隐藏则跳过，不抢按钮焦点）。
+      // typeof 守卫：部分单测 harness 只提取 updateUI 局部运行。
+      if (
+        typeof pendingInputFocusAtMs !== 'undefined' &&
+        pendingInputFocusAtMs > 0 &&
+        Date.now() - pendingInputFocusAtMs <= PENDING_FOCUS_FRESH_MS
+      ) {
+        pendingInputFocusAtMs = 0
+        if (config.question_type !== 'yesno') {
+          try {
+            const focusTarget = document.getElementById('feedbackText')
+            if (focusTarget && typeof focusTarget.focus === 'function') {
+              focusTarget.focus()
+              log('Focused feedback textarea for next task (R692)')
+            }
+          } catch (e) {
+            // 聚焦失败不影响主流程
+          }
+        }
+      }
     } else if (config.task_id) {
       // 同任务：同步图片缓存（输入由 input 事件实时保存）
       syncImagesToTaskCache(config.task_id)
@@ -5003,7 +5028,11 @@
     }
 
     // 直接提交用户输入，不添加额外文本（服务器端已处理提示）
-    await submitWithData(feedbackText, selected)
+    const submitOk = await submitWithData(feedbackText, selected)
+    // R692 (TODO#6-1)：手动提交成功后，下一个任务渲染时自动聚焦输入框
+    if (submitOk === true) {
+      pendingInputFocusAtMs = Date.now()
+    }
   }
 
   function applySubmitBackoffUi() {
@@ -5884,6 +5913,27 @@
         break
       case 'visibility-benchmark-probe':
         handleVisibilityBenchmarkProbe(message)
+        break
+      case 'switchToTask':
+        // R692 (TODO#6-2)：通知直达任务——extension 在 webview 隐藏期间收到
+        // 新任务通知，用户回到面板时把该任务推过来直接切换。
+        // 延迟 300ms 让同批次 'refresh' 消息触发的轮询先落地任务列表。
+        try {
+          if (message.taskId) {
+            const deepLinkTaskId = String(message.taskId)
+            setTimeout(() => {
+              try {
+                if (deepLinkTaskId !== activeTaskId) {
+                  switchToTask(deepLinkTaskId)
+                }
+              } catch (e) {
+                log('switchToTask deep-link failed: ' + e)
+              }
+            }, 300)
+          }
+        } catch (e) {
+          // 忽略：直达失败不影响面板正常使用
+        }
         break
     }
   })

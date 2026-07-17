@@ -374,6 +374,7 @@ Code 跑不了？" 几小时的 debug 节约多了。
 | R689    | `tests/test_typing_hold_and_autosubmit_content_r689.py`                 | 模式 C + 前端                     | **输入保持倒计时与归零提交内容保护**。锁定 web + webview 倒计时在用户输入时自动延长，归零时优先提交已输入文本/选项而不是 resubmit 提示语。 |
 | R690    | `tests/test_vscode_countdown_controls_parity_r690.py`                   | 模式 C + webview                  | **VSCode 倒计时控制对齐保护**。锁定 webview 渲染 +60s/冻结控制按钮并接通服务端 extend/freeze 端点，与 web 页面能力面保持一致。 |
 | R691    | `tests/test_webview_task_fields_parity_r691.py`                         | 模式 C + API 契约                 | **任务级字段跨端对齐保护**。锁定 `/api/config` 返回 `feedback_placeholder` / `question_type` / `header_label` 且 webview 消费它们（chip、占位覆盖、Yes/No 按钮组），与 web 页面一致。 |
+| R692    | `tests/test_submit_focus_and_notify_deeplink_r692.py`                   | 模式 C + UX 流程                  | **提交聚焦与通知直达保护**。锁定提交后自动聚焦的登记/消费流程（web + webview，带时间窗、yesno 感知）及隐藏态通知在面板重新可见时直达对应任务的深链。 |
 
 ## 7. 进一步阅读
 

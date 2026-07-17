@@ -3325,6 +3325,9 @@ async function loadTaskDetails(taskId) {
         _debugLog(`Countdown already exists; not resetting: ${taskId}`);
       }
 
+      // R692 (TODO#6-1)：任务详情渲染完成后消费待处理的聚焦请求
+      maybeApplyPendingInputFocus();
+
       _debugLog(`Task details loaded: ${taskId}`);
     } else {
       console.error("Load task details failed:", data.error);
@@ -3853,6 +3856,8 @@ async function closeTask(taskId) {
     if (activeTaskId === taskId) {
       const nextTask = findFirstOpenTask(currentTasks);
       if (nextTask) {
+        // R692 (TODO#6-1)：关闭当前任务切到下一个时同样自动聚焦输入框
+        requestFeedbackInputFocus();
         switchTask(nextTask.task_id);
       } else {
         setActiveTaskId(null);
@@ -4553,6 +4558,9 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
 
     if (data.success) {
       _debugLog(`Task ${taskId} submitted successfully`);
+      // R692 (TODO#6-1)：提交成功后请求把焦点交给下一个任务的输入框，
+      // 让连续回复多任务时省掉一次鼠标点击。
+      requestFeedbackInputFocus();
       // 停止该任务的倒计时
       if (taskCountdowns[taskId]) {
         _clearTaskCountdown(taskId);
@@ -4897,6 +4905,45 @@ async function refreshTasksList() {
     !(typeof document !== "undefined" && document.hidden)
   ) {
     startTasksPolling();
+  }
+}
+
+// ============================================================
+// R692 (TODO#6-1) — 提交/关闭任务后自动聚焦下一个任务的输入框
+// ============================================================
+// 设计：提交成功 / 关闭任务时登记一个带时间戳的聚焦请求；下一次任务详情
+// 渲染完成（loadTaskDetails / switchTask 缓存路径）时消费该请求。
+// - 时间窗 8s：覆盖 SSE（~80ms）与轮询兜底（≤3s）两条切换路径，
+//   过期请求自动作废，避免用户手动操作许久后焦点被"迟到的请求"抢走。
+// - 仅在 textarea 可见（非 yesno 模式）且页面可见时聚焦。
+if (typeof window.__aiiaFocusInputRequestAtMs === "undefined") {
+  window.__aiiaFocusInputRequestAtMs = 0;
+}
+var FOCUS_REQUEST_FRESH_MS = 8 * 1000;
+
+function requestFeedbackInputFocus() {
+  window.__aiiaFocusInputRequestAtMs = Date.now();
+}
+
+function maybeApplyPendingInputFocus() {
+  const requestedAt = window.__aiiaFocusInputRequestAtMs;
+  if (!requestedAt || Date.now() - requestedAt > FOCUS_REQUEST_FRESH_MS) {
+    return;
+  }
+  if (typeof document === "undefined" || document.hidden) return;
+  const textarea = document.getElementById("feedback-text");
+  if (!textarea || typeof textarea.focus !== "function") return;
+  // yesno 模式下 textarea 隐藏，不抢焦点（按钮本身可 Tab 到达）
+  if (textarea.style && textarea.style.display === "none") {
+    window.__aiiaFocusInputRequestAtMs = 0;
+    return;
+  }
+  window.__aiiaFocusInputRequestAtMs = 0;
+  try {
+    textarea.focus();
+    _debugLog("Focused feedback textarea for next task (R692)");
+  } catch (e) {
+    // 聚焦失败不影响主流程
   }
 }
 
