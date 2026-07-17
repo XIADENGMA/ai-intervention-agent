@@ -1204,6 +1204,14 @@
         }
         moreMenu.open = false;
       });
+      // a11y：Esc 关闭菜单并把焦点归还给「⋯」触发器（下拉菜单键盘惯例）
+      moreMenu.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape" || !moreMenu.open) return;
+        e.stopPropagation();
+        moreMenu.open = false;
+        var summary = moreMenu.querySelector(".quick-phrases-more-summary");
+        if (summary && typeof summary.focus === "function") summary.focus();
+      });
       moreMenu.dataset.qpBound = "1";
     }
   }
