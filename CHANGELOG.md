@@ -25,6 +25,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Migrate the dark theme to a Claude-style warm charcoal palette
+  (R697): backgrounds move from the cool purple-gray family to
+  `#1f1e1d`/`#262624`/`#30302e`, the primary accent changes from purple
+  to the shared terracotta `#d97757`, the secondary accent to brand
+  blue `#6a9bcc`, and all 43 hardcoded iOS-blue values are replaced
+  with brand tokens (the brand-color guard baselines are now locked at
+  zero). The PWA `theme_color`, offline page, and browser chrome color
+  follow terracotta.
+- Reduce edge glow across the UI (R698): shadow tokens are halved, the
+  main container shadow/border is toned down, and the prompt card's
+  colored gradient and glow shadows are removed.
+- Retire the manual `+60s`/freeze buttons and the header info row on
+  both web and VS Code surfaces (R699/R700, user decision): typing-hold
+  auto-extension replaces manual extension, the countdown ticker never
+  auto-submits while the user is still typing, the countdown's only
+  visual home is the task-tab ring, and task tabs now prefer the
+  human-readable `header_label` over machine task IDs (full ID stays in
+  the tooltip).
+- Elegance pass on the web page (R700): the empty-state "Close Web UI"
+  button becomes a ghost button, the bottom action row keeps a single
+  terracotta submit CTA (insert-code/upload turn into ghost buttons),
+  the quick-phrases panel aligns to full width with export/import
+  tucked into an overflow menu, the code-language label becomes a quiet
+  neutral badge, and the light-mode copy button no longer flips to
+  white text on hover.
+- Fix the theme toggle requiring two clicks (R700): the old
+  auto→light→dark cycle is replaced by flipping the currently effective
+  theme, so a single click always produces a visible switch.
+- Fix the submit button getting stuck on "Submitting…" (R700): the
+  shared button is now unconditionally restored after a submit, even
+  when the active task switches during the request.
 - Align the countdown bar and quick-phrases panel with the theme
   palettes (R696): the countdown bar drops the hardcoded pink and the
   ⏰ emoji in favor of a `currentColor` SVG clock plus warning-amber
