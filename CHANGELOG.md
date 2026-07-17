@@ -23,6 +23,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   per-task placeholder hints, and yes/no one-click answers (R691,
   including the missing task-level fields in `GET /api/config`).
 
+### Changed
+
+- Unify auto-resubmit terminology across every surface (R694): the
+  Chinese UI now consistently says 自动重调 (zh-TW 自動重新調用), and
+  the English UI drops the mixed "auto-reschedule" wording in favor of
+  "auto-resubmit".
+- Consolidate the duplicate test-notification status locale keys
+  (`status.testSent`/`status.testFailed` merged into
+  `status.testNotifySent`/`status.testNotifyFailed`) and point the
+  English README's system-prompt link at the English anchor (R694).
+
 ### Fixed
 
 - Stop losing the user's feedback when `config.toml` changes while a
