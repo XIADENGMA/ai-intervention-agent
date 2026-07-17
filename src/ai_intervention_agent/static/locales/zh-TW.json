@@ -242,8 +242,6 @@
     "closedRefreshing": "Web UI 已關閉，正在重新整理頁面…",
     "closeFailed": "關閉失敗，正在重新整理頁面…",
     "closeUIFailed": "關閉介面失敗，正在重新整理頁面…",
-    "testSent": "測試通知已傳送",
-    "testFailed": "測試通知失敗",
     "enableBarkFirst": "請先啟用 Bark 通知",
     "configureBark": "請先設定 Bark URL 和 Device Key",
     "sendingBark": "正在傳送 Bark 測試通知…",

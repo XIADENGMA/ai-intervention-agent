@@ -237,8 +237,6 @@
     "closedRefreshing": "Web UI 已关闭，正在刷新页面…",
     "closeFailed": "关闭失败，正在刷新页面…",
     "closeUIFailed": "关闭界面失败，正在刷新页面…",
-    "testSent": "测试通知已发送",
-    "testFailed": "测试通知失败",
     "enableBarkFirst": "请先启用 Bark 通知",
     "configureBark": "请先配置 Bark URL 和 Device Key",
     "sendingBark": "正在发送 Bark 测试通知…",

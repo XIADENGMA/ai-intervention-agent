@@ -400,8 +400,8 @@ Full parameter reference + a single complete Agent-mode call example
 ### Recommended LLM system prompt
 
 To force the agent to actually use this tool instead of "auto-finishing"
-the task, append the snippet under [`提示词（可复制）`](#方式一使用-uvx-启动推荐)
-(or its English copy) to your IDE's system prompt / `.cursorrules`.
+the task, append the snippet under [`Prompt snippet (copy/paste)`](#option-1-using-uvx-recommended)
+to your IDE's system prompt / `.cursorrules`.
 
 ## VS Code extension (optional)
 

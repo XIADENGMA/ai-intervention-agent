@@ -1475,10 +1475,10 @@ class SettingsManager {
           requireInteraction: false,
         },
       );
-      showStatus(t("status.testSent"), "success");
+      showStatus(t("status.testNotifySent"), "success");
     } catch (error) {
       console.error("Test notification failed:", error);
-      showStatus(t("status.testFailed") + ": " + error.message, "error");
+      showStatus(t("status.testNotifyFailed") + ": " + error.message, "error");
     }
   }
 

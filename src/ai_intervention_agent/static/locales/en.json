@@ -237,8 +237,6 @@
     "closedRefreshing": "Web UI closed, refreshing page…",
     "closeFailed": "Close failed, refreshing page…",
     "closeUIFailed": "Close UI failed, refreshing page…",
-    "testSent": "Test notification sent",
-    "testFailed": "Test notification failed",
     "enableBarkFirst": "Please enable Bark notification first",
     "configureBark": "Please configure Bark URL and Device Key first",
     "sendingBark": "Sending Bark test notification…",
