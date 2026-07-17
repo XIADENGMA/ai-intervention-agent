@@ -122,13 +122,16 @@ All four are visible to the LLM via the `tools/list` JSON-Schema
 description; this doc section is the human-readable reference.
 
 - `header_label` (string, optional, max **16** chars)
-  - Short context chip rendered above the prompt in the task pane.
-    Examples: `"Auth"`, `"DB"`, `"i18n"`, `"CSS"`. Especially valuable
-    in **multi-task mode** where the user is reviewing 3+ concurrent
-    requests — the chip lets them visually distinguish task domains at
-    a glance. Borrowed from `gemini-cli`'s `ask_user.header` schema.
+  - Used as the task tab's display name (since R700 it takes priority
+    over the machine-flavored task ID; the full ID stays in the
+    tooltip). Examples: `"Auth"`, `"DB"`, `"i18n"`, `"CSS"`. Especially
+    valuable in **multi-task mode** where the user is reviewing 3+
+    concurrent requests — it lets them visually distinguish task
+    domains at a glance. Borrowed from `gemini-cli`'s `ask_user.header`
+    schema.
   - Single-word recommendation, no spaces if avoidable. Overflow is
-    clamped server-side; omit or empty string → no chip rendered.
+    clamped server-side; omit or empty string → the tab falls back to
+    the task ID.
 
 - `question_type` (string, optional, currently only `"yesno"`)
   - When `"yesno"`, the frontend **hides the free-text textarea** and
