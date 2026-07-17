@@ -40,7 +40,7 @@ session* dimension that cold-start work didn't address.
 | Round | Focus | Wall-clock / payload impact |
 |-------|-------|------------------------------|
 | **R21.1** | Critical resource preload via `<link rel="preload">` | FCP +30-100 ms |
-| **R21.2** | Service Worker static asset cache-first | ~80 assets at 0 RTT on repeat sessions |
+| **R21.2/R459** | Service Worker static asset stale-while-revalidate | ~80 assets at 0 RTT on repeat sessions, with background freshness |
 | **R21.3** | (research only — declined) webview esbuild bundling | est. 2-10 ms — below noise floor |
 | **R21.4** | Brotli precompression layer (br > gzip > identity) | -253 KB / -32% on top of R20.14-D's gzip |
 
@@ -113,7 +113,7 @@ slow-LAN deployment the wins compound.
 
 Commit `4cc367a` · 24 tests in `tests/test_critical_preload_r21_1.py`.
 
-### R21.2 · Service Worker static asset cache-first
+### R21.2/R459 · Service Worker static asset stale-while-revalidate
 
 #### Problem
 
@@ -125,17 +125,20 @@ changed. On localhost that's ~12 ms × 80 assets = ~1 s; on slow-LAN
 deployments (MCP server on a different machine) it climbs to ~150-200 ms ×
 80 = 12-16 s of repeat-session RTT.
 
-#### Strategy: cache-first SW with versioned cache + FIFO eviction
+#### Strategy: stale-while-revalidate SW with versioned cache + FIFO eviction
 
 The existing `static/js/notification-service-worker.js` was a
-single-purpose SW handling `notificationclick` only. R21.2 makes it
-dual-purpose by adding a static-asset cache-first layer alongside the
-preserved click handler.
+single-purpose SW handling `notificationclick` only. R21.2 made it
+dual-purpose by adding a static-asset cache layer alongside the preserved
+click handler. R459 keeps cache-hit responses instant but refreshes matching
+static assets in the background with `event.waitUntil(...)`, avoiding the old
+cache-first failure mode where unversioned static assets could stay stale until
+the next service-worker cache bump.
 
 Cache architecture:
 
-- `STATIC_CACHE_NAME = 'aiia-static-v1'` — versioned name so a future
-  `-v2` bump cleanly evicts old caches in `activate`;
+- `STATIC_CACHE_NAME = 'aiia-static-v2'` — versioned name so a future
+  `-v3` bump cleanly evicts old caches in `activate`;
 - `MAX_ENTRIES = 200` — hard FIFO cap on cache size, deliberately
   approximate-LRU because true LRU needs per-entry timestamp bookkeeping
   and content-addressed assets (`?v=hash`) make cache hits the steady
@@ -155,17 +158,21 @@ Three guard conditions in `fetch`:
 3. **No `Accept: text/event-stream`** — SSE long-polls would be frozen at
    the initial response forever.
 
-The cache-first body:
+The stale-while-revalidate body:
 
 ```javascript
-async function handleCacheFirst(request) {
+async function handleCacheFirst(request, event) {
   let cache;
   try { cache = await caches.open(STATIC_CACHE_NAME); }
   catch (e) { return fetch(request); } // cache infra failure → never block req
 
   try {
     const cached = await cache.match(request);
-    if (cached) return cached;
+    if (cached) {
+      const refreshPromise = refreshStaticCache(request, cache);
+      event.waitUntil(refreshPromise);
+      return cached;
+    }
   } catch (e) { /* miss-on-error: fall through to network */ }
 
   const networkResponse = await fetch(request);
@@ -181,12 +188,13 @@ async function handleCacheFirst(request) {
 }
 ```
 
-The `cache.put` is intentionally fire-and-forget (`.then(...)` not
-`await`) — user-perceived latency is exactly `fetch(request)` time, never
-`fetch + cache.put`. Cache failures (`quota exceeded`, evicted cache,
-disk full) are silently swallowed because the network response is already
-on its way to the user; failing the response would be worse than missing
-a cache write.
+The `cache.put` is intentionally fire-and-forget on cache misses (`.then(...)`
+not `await`) — user-perceived latency is exactly `fetch(request)` time, never
+`fetch + cache.put`. On cache hits, the user sees the cached response
+immediately and the refresh is kept alive through the fetch event lifetime.
+Cache failures (`quota exceeded`, evicted cache, disk full) are silently
+swallowed because failing the response would be worse than missing a cache
+write.
 
 #### Decoupling SW registration from `Notification` API
 
@@ -195,7 +203,7 @@ Pre-R21.2, `static/js/notification-manager.js::init()` registered the SW
 `'Notification' in window`. iOS 16-, privacy-locked-down Firefox, and
 some embedded browsers gate `Notification` but DO support
 `serviceWorker` and `Cache` APIs — those users got zero R21.2 benefit
-even though their environments could fully support cache-first.
+even though their environments could fully support static caching.
 
 The fix moves `await this.registerServiceWorker()` out of the
 else-branch. The existing `supportsServiceWorkerNotifications()` guard
@@ -233,9 +241,9 @@ What R21.2 deliberately does NOT do:
    LAN/loopback only; if the user is offline, the MCP server is also
    offline, the AI agent can't even invoke `interactive_feedback`,
    nothing to fall back to;
-4. **Does NOT use stale-while-revalidate** — versioning is so
-   disciplined (`?v={{ app_version }}` everywhere) that there's no
-   "stale" state to revalidate; cache hit ≡ fresh fetch semantically;
+4. **Does NOT cache non-whitelisted static paths** — R459 only applies
+   stale-while-revalidate to the explicit static asset allowlist; dynamic
+   endpoints, HTML, and SSE keep their network semantics;
 5. **Does NOT add a Brotli-aware variant negotiation in the SW** —
    that's R21.4's territory; mixing the two would have us shipping two
    competing compression strategies in parallel.

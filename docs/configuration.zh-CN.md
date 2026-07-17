@@ -188,15 +188,19 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 - macOS：`~/Library/Application Support/ai-intervention-agent/`
 - Windows：`%APPDATA%/ai-intervention-agent/`
 
-> **macOS 上 `.config/` 残留兼容（R113）**
+> **macOS 上 `.config/` 残留兼容（R113 + R686）**
 >
-> 如果你的 macOS 上同时存在 `~/.config/ai-intervention-agent/config.toml`（可能是早期
-> 版本残留、跨平台 dotfiles 抄过来、或第三方安装脚本硬编码了 XDG 风格路径），agent 会：
+> 如果你的 macOS 上存在 `~/.config/ai-intervention-agent/config.toml`（可能是早期
+> 版本残留、跨平台 dotfiles 抄过来、或第三方安装脚本硬编码了 XDG 风格路径），agent
+> 始终以标准路径 `~/Library/Application Support/...` 为准：
 >
-> 1. **标准路径 + legacy 同时存在** → 使用标准 `~/Library/Application Support/...`，
->    并打印 `WARNING` 日志说明 legacy 文件位置 + 给出 `rm -rf` 清理建议。
-> 2. **仅 legacy 存在** → 优先使用 legacy 路径以**避免静默丢失**你已有的配置，并打印
->    强 `WARNING` 给出可一键复制的 `mkdir -p / mv / rmdir` 迁移脚本。
+> 1. **标准路径 + legacy 同时存在、内容一致** → 使用标准路径，legacy 文件自动重命名
+>    为 `config.toml.migrated-<时间戳>` 备份（幂等，一次性消除歧义，之后不再提示）。
+> 2. **标准路径 + legacy 同时存在、内容不一致** → 使用标准路径，并打印 `WARNING`
+>    说明 legacy 文件位置，由你人工确认后清理（程序不擅自合并/覆盖）。
+> 3. **仅 legacy 存在** → **自动迁移**：把 legacy 文件复制到标准路径（保留元数据），
+>    原文件重命名为 `*.migrated-<时间戳>` 备份，之后使用标准路径。仅当迁移失败
+>    （权限 / 只读卷）才临时采用 legacy 路径并打印手动迁移命令。
 >
 > Linux 用户不受影响——`~/.config/` 在 Linux 上是 XDG 标准，本检测仅 macOS 触发。
 
@@ -272,6 +276,7 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 | `bind_interface`         | string   | `0.0.0.0`  | `127.0.0.1` 仅本机；`0.0.0.0` 所有接口                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `allowed_networks`       | string[] | （见模板） | CIDR 白名单                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `blocked_ips`            | string[] | `[]`       | IP 黑名单                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `trusted_hosts`          | string[] | `[]`       | 额外允许的 HTTP `Host` 头具体值。默认会自动信任 loopback、具体 `bind_interface`、`mdns.hostname`、以及 `web_ui.external_base_url` 的主机名。仅当反向代理、自定义 DNS、隧道域名或 VS Code 自定义 `serverUrl` 使用其它主机名时才需要追加。通配符/后缀模式（如 `*.example.com` 或 `.example.com`）会被忽略。不要填写 `0.0.0.0` 或 `::`；它们是监听地址，不是请求 Host。                                                                                                                                    |
 | `access_control_enabled` | boolean  | `true`     | 是否启用访问控制                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `api_token`              | string   | `""`       | 可选 API token 认证（R189 / T4）。空串=未配置（仅 loopback 来源能调用敏感写入端点，与默认行为一致）。配置后 non-loopback 客户端可通过 `Authorization: Bearer <token>` 或 `X-API-Token: <token>` 头携带 token 调用 `POST /api/system/log-level` / `POST /api/system/open-config-file` 等写入端点。Loopback 来源始终通过——token 是**额外**通道，不是替代。最少 16 字符（短于此长度静默视作未配置并打 warning）。生成方式：`python -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `api_token_rotated_at`   | string   | `""`       | R199 / Cycle 7。上次 `POST /api/system/rotate-api-token` 调用的 ISO-8601 UTC 时间戳。由 rotation 端点**自动**写入；`GET /api/system/api-token-info` 读取后计算「token age」用于 dashboard alert（NIST SP 800-63B 建议 30-90 天轮换）。空串 = 从未轮换。**禁止手动编辑**——这是 rotation 端点的 owned field。非法格式（不是 ISO-8601、或缺少 `Z`/`+00:00` 后缀）会被静默丢弃并打 warning。                                                                                               |
@@ -279,6 +284,8 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 **Host 选择规则**：
 
 - Web UI 实际 host 优先使用 `network_security.bind_interface`（若存在），否则使用 `web_ui.host`。
+- HTTP `Host` 校验与 IP 白名单是两层不同边界：`trusted_hosts` 描述浏览器/代理可以使用哪些主机名，`allowed_networks` 描述哪些客户端来源网段可以访问。
+- 默认允许 `localhost`、`127.0.0.1`、`[::1]`、`mdns.hostname`（默认 `ai.local`）、配置的具体 bind host/IP，以及 `web_ui.external_base_url` 中的主机名。
 
 ### `mdns`（mDNS / 局域网服务发现）
 

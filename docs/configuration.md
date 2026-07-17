@@ -211,18 +211,24 @@ If a `config.jsonc` or `config.json` file is found via auto-discovery (not expli
 - macOS: `~/Library/Application Support/ai-intervention-agent/`
 - Windows: `%APPDATA%/ai-intervention-agent/`
 
-> **macOS legacy `.config/` compatibility (R113)**
+> **macOS legacy `.config/` compatibility (R113 + R686)**
 >
 > If your macOS box also has `~/.config/ai-intervention-agent/config.toml` (left over from
 > early versions, cross-platform dotfiles, or third-party scripts that hard-coded the XDG
-> path), the agent will:
+> path), the agent always treats the standard `~/Library/Application Support/...` path as
+> the source of truth:
 >
-> 1. **Standard + legacy both present** → use the standard `~/Library/Application Support/...`
->    path and emit a `WARNING` log naming the legacy file with an `rm -rf` cleanup
->    suggestion.
-> 2. **Legacy-only** → use the legacy path so your existing config is **never silently lost**,
->    and emit a strong `WARNING` with a copy-paste `mkdir -p / mv / rmdir` migration
->    script.
+> 1. **Standard + legacy both present, identical content** → use the standard path; the
+>    legacy file is automatically renamed to `config.toml.migrated-<timestamp>` as a
+>    backup (idempotent, removes the ambiguity once and for all).
+> 2. **Standard + legacy both present, conflicting content** → use the standard path and
+>    emit a `WARNING` naming the legacy file, leaving the cleanup decision to you (the
+>    agent never merges or overwrites your data on its own).
+> 3. **Legacy-only** → **auto-migrate**: the legacy file is copied to the standard path
+>    (metadata preserved) and the original is renamed to `*.migrated-<timestamp>` as a
+>    backup; the standard path is used from then on. Only if the migration fails
+>    (permissions / read-only volume) does the agent temporarily fall back to the legacy
+>    path with a manual migration command in the log.
 >
 > Linux users are not affected — `~/.config/` is the XDG standard there and the check is
 > macOS-specific.
@@ -299,6 +305,7 @@ Controls which interfaces the Web UI binds to and which networks can access it.
 | `bind_interface`         | string   | `0.0.0.0`      | `127.0.0.1` for local-only; `0.0.0.0` for all interfaces                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `allowed_networks`       | string[] | (see template) | CIDR allowlist                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `blocked_ips`            | string[] | `[]`           | Explicit deny list                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `trusted_hosts`          | string[] | `[]`           | Extra concrete HTTP `Host` header values accepted by Flask `TRUSTED_HOSTS`. Defaults are derived automatically from loopback, concrete `bind_interface`, `mdns.hostname`, and `web_ui.external_base_url`. Add entries only for reverse proxies, custom DNS names, tunnel domains, or VS Code custom `serverUrl` hosts. Wildcards/suffix patterns such as `*.example.com` or `.example.com` are ignored. Do not add `0.0.0.0` or `::`; they are listen addresses, not request hosts.                        |
 | `access_control_enabled` | boolean  | `true`         | Enable allow/deny checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `api_token`              | string   | `""`           | Optional API token (R189 / T4). Empty = loopback-only writes (default). When set, non-loopback callers can authenticate via `Authorization: Bearer <token>` or `X-API-Token: <token>` to access write-mutation endpoints (`POST /api/system/log-level`, `POST /api/system/open-config-file`). Loopback always passes; token is an additional path, not a replacement. Min 16 chars (shorter values are dropped with a warning). Generate via `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `api_token_rotated_at`   | string   | `""`           | R199 / Cycle 7. ISO-8601 UTC timestamp of the last `POST /api/system/rotate-api-token` invocation. Written **automatically** by the rotation endpoint; read by `GET /api/system/api-token-info` to compute "token age" for dashboards (NIST SP 800-63B recommends 30–90 day rotation). Empty string = never rotated. **Do not edit by hand**—the rotation endpoint owns this field. Malformed values (not ISO-8601, missing `Z`/`+00:00` suffix) are dropped to empty with a warning.                       |
@@ -306,6 +313,8 @@ Controls which interfaces the Web UI binds to and which networks can access it.
 **Host selection rule**:
 
 - Web UI host is effectively `network_security.bind_interface` (if present), otherwise `web_ui.host`.
+- HTTP `Host` validation is separate from the IP allowlist: trusted hosts describe names the browser/proxy may use, while `allowed_networks` describes client source networks.
+- By default the Web UI accepts `localhost`, `127.0.0.1`, `[::1]`, `mdns.hostname` (default `ai.local`), the configured concrete bind host/IP, and the host from `web_ui.external_base_url`.
 
 ### `mdns`
 

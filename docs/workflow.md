@@ -12,7 +12,7 @@ This document describes the recommended development and release workflow for thi
 
 - One-command gate (recommended): `uv run python scripts/ci_gate.py`
   - Default is **local mode**: auto-formats (`ruff format`) and runs ruff/ty/pytest/minify/precompress
-  - CI mode (check-only; no auto-format, but may generate gitignored build artifacts like `.min`, `.gz`, `.br`): `uv run python scripts/ci_gate.py --ci --with-coverage`
+  - CI mode (check-only; no auto-format and no static-asset rewrites): `uv run python scripts/ci_gate.py --ci --with-coverage`
   - Include VSCode checks: `uv run python scripts/ci_gate.py --with-vscode`
   - Makefile shortcuts (thin wrappers — pick whichever your muscle memory prefers):
     - `make ci` ≡ `uv run python scripts/ci_gate.py`

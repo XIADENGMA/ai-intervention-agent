@@ -60,6 +60,7 @@ bark_timeout = 10
 # - "auto": 自动检测 / Auto-detect (browser navigator.language / VS Code vscode.env.language)
 # - "en": English
 # - "zh-CN": 简体中文 / Simplified Chinese
+# - "zh-TW": 繁體中文 / Traditional Chinese
 language = "auto"
 # Web 服务监听地址 / Web server listen address (overridden by network_security.bind_interface)
 host = "127.0.0.1"
@@ -101,6 +102,24 @@ allowed_networks = [
 ]
 # IP 黑名单 / IP blacklist
 blocked_ips = []
+# 额外可信 Host / Extra trusted Host header values
+#
+# Web UI 会自动信任 localhost、127.0.0.1、::1、具体 bind_interface、
+# mdns.hostname（默认 ai.local）以及 web_ui.external_base_url 的主机名。
+# 只有在反向代理、自定义 DNS、隧道域名或 VS Code 自定义 serverUrl 使用
+# 其它主机名时，才需要在这里追加“具体 Host”。
+#
+# 不支持通配符（例如 *.example.com）或后缀模式（例如 .example.com）；
+# 也不要填写 0.0.0.0 / ::，它们是监听地址，不是浏览器请求 Host。
+#
+# The Web UI automatically trusts localhost, 127.0.0.1, ::1, a concrete
+# bind_interface, mdns.hostname (default ai.local), and the hostname from
+# web_ui.external_base_url. Add entries here only for reverse proxies, custom
+# DNS names, tunnel domains, or VS Code custom serverUrl hosts.
+#
+# Wildcards/suffixes are intentionally unsupported. Do not add 0.0.0.0 or ::;
+# those are listen addresses, not request Host values.
+trusted_hosts = []
 # 访问控制开关 / Access control switch
 access_control_enabled = true
 # R189 / T4: 可选 API token 认证 / Optional API token authentication
@@ -161,8 +180,10 @@ backend_max_wait = 600
 # 参考 Cursor 5分钟超时 / Based on Cursor 5-min session timeout, recommend 4 min (240s)
 frontend_countdown = 240
 # 错误/超时时的提示语 / Prompt on error/timeout (guides AI to re-invoke the tool)
-# 空字符串使用默认值 / Empty string uses default, max 500 chars
+# 空字符串使用默认值；超过 100000 字符会被截断（R166）
+# Empty string uses default; truncated beyond 100000 chars (R166)
 resubmit_prompt = "请立即调用 interactive_feedback 工具"
 # 追加到反馈末尾的提示语 / Suffix appended to user feedback (maintains session continuity)
-# 可为空字符串 / Can be empty, max 500 chars
+# 可为空字符串；超过 100000 字符会被截断（R166）
+# Can be empty; truncated beyond 100000 chars (R166)
 prompt_suffix = "\n请积极调用 interactive_feedback 工具"

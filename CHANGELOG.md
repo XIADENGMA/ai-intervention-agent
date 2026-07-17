@@ -9,8 +9,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Keep the countdown alive while the user is typing: the frontend
+  auto-extends the deadline through the server extend endpoint (R689,
+  bounded by the per-task extends quota), and the MCP backend wait now
+  probes the task's remaining countdown before timing out so user
+  extensions never trigger a premature ghost-close.
+- Submit the user's typed text and checked options when the countdown
+  reaches zero instead of the resubmit prompt (web + VS Code, R689).
+- Bring the VS Code webview to feature parity with the web page:
+  countdown `+60s` / freeze controls (R690), task header chips,
+  per-task placeholder hints, and yes/no one-click answers (R691,
+  including the missing task-level fields in `GET /api/config`).
+
 ### Fixed
 
+- Stop losing the user's feedback when `config.toml` changes while a
+  session is waiting: the feedback wait loop now re-acquires the pooled
+  HTTP client per request instead of holding a reference that the
+  config hot-reload callback closes (R685).
+- Always prefer the macOS standard config directory
+  (`~/Library/Application Support/…`) and auto-migrate legacy
+  `~/.config/…` files with a timestamped backup (R686).
+- Stop the 2-second markdown re-render flicker on the web page by
+  short-circuiting description/options renders when content is
+  unchanged (R687, both multi-task and single-task paths).
+- Render full markdown in the VS Code webview again: configure marked
+  via `use()` renderer merge instead of `setOptions({renderer})`, which
+  replaced the whole renderer and broke headings/lists/tables on
+  marked v15 (R688).
 - Allow the changelog freshness invariant to report a clean `OK` skip
   in CI checkout environments where no tags were fetched.
 - Keep service-manager notification lazy-load state coherent on cache

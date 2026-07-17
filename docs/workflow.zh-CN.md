@@ -12,7 +12,7 @@
 
 - 一键运行（推荐）：`uv run python scripts/ci_gate.py`
   - 默认是“本地模式”：会自动格式化（`ruff format`），并运行 ruff/ty/pytest/minify/precompress
-  - CI 模式（只检查；不自动格式化源码，但会生成 gitignore 的构建产物如 `.min`、`.gz`、`.br`）：`uv run python scripts/ci_gate.py --ci --with-coverage`
+  - CI 模式（只检查；不自动格式化源码，也不重写静态资源构建产物）：`uv run python scripts/ci_gate.py --ci --with-coverage`
   - 若希望一并跑 VSCode 插件门禁：`uv run python scripts/ci_gate.py --with-vscode`
   - Makefile 快捷命令（thin wrapper，按肌肉记忆任选）：
     - `make ci` ≡ `uv run python scripts/ci_gate.py`

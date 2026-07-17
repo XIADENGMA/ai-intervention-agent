@@ -35,7 +35,7 @@ R20.x 已经在四层上把冷启动方向打透了。R21.x **重新瞄准同样
 | 轮次 | 焦点 | 墙钟/字节影响 |
 |-----|------|--------------|
 | **R21.1** | `<link rel="preload">` 关键资源预加载 | FCP 提早 30-100 ms |
-| **R21.2** | Service Worker 静态资源 cache-first | 重复会话约 80 个资源 0 RTT |
+| **R21.2/R459** | Service Worker 静态资源 stale-while-revalidate | 重复会话约 80 个资源 0 RTT，后台刷新保鲜 |
 | **R21.3** | (调研后否决) webview esbuild 打包 | 估算 2-10 ms — 噪声级以下 |
 | **R21.4** | Brotli 预压缩层（br > gzip > identity） | 在 R20.14-D gzip 基础上再省 -253 KB / -32% |
 
@@ -102,7 +102,7 @@ script 请求" 之间有 ~30-50 ms 的间隙。
 
 Commit `4cc367a` · 24 测试在 `tests/test_critical_preload_r21_1.py`。
 
-### R21.2 · Service Worker 静态资源 cache-first
+### R21.2/R459 · Service Worker 静态资源 stale-while-revalidate
 
 #### 问题
 
@@ -112,16 +112,18 @@ Commit `4cc367a` · 24 测试在 `tests/test_critical_preload_r21_1.py`。
 本机 ~12 ms × 80 个 = ~1 s；slow-LAN 部署（MCP server 在另一台机器）
 就是 ~150-200 ms × 80 = 12-16 s 的重复会话 RTT。
 
-#### 方案：cache-first SW + 版本化 cache + FIFO 淘汰
+#### 方案：stale-while-revalidate SW + 版本化 cache + FIFO 淘汰
 
 `static/js/notification-service-worker.js` 之前是单职能 SW，仅处理
 `notificationclick`。R21.2 让它变双职能：在保留 click handler 之外
-新增静态资源 cache-first 层。
+新增静态资源缓存层。R459 保留 cache hit 立刻返回的响应速度，同时通过
+`event.waitUntil(...)` 在后台刷新匹配的静态资源，避免旧 cache-first 行为
+让未版本化静态资源一直陈旧到下一次 SW cache 版本 bump。
 
 Cache 架构：
 
-- `STATIC_CACHE_NAME = 'aiia-static-v1'`——版本化名字，未来 bump 到
-  `-v2` 时 `activate` 阶段干净清掉旧 cache；
+- `STATIC_CACHE_NAME = 'aiia-static-v2'`——版本化名字，未来 bump 到
+  `-v3` 时 `activate` 阶段干净清掉旧 cache；
 - `MAX_ENTRIES = 200`——cache 大小硬上限 + FIFO 淘汰；故意是近似 LRU
   而不是严格 LRU，因为严格 LRU 需要 per-entry 时间戳 bookkeeping，且
   内容寻址资源（`?v=hash`）让 cache 命中本身就是稳态；
@@ -138,17 +140,21 @@ Cache 架构：
 3. **不带 `Accept: text/event-stream`**——SSE 长连接缓存会让
    EventSource 永远停在初始响应。
 
-cache-first 主体：
+stale-while-revalidate 主体：
 
 ```javascript
-async function handleCacheFirst(request) {
+async function handleCacheFirst(request, event) {
   let cache;
   try { cache = await caches.open(STATIC_CACHE_NAME); }
   catch (e) { return fetch(request); }  // cache 基础设施失败 → 永不阻塞请求
 
   try {
     const cached = await cache.match(request);
-    if (cached) return cached;
+    if (cached) {
+      const refreshPromise = refreshStaticCache(request, cache);
+      event.waitUntil(refreshPromise);
+      return cached;
+    }
   } catch (e) { /* miss-on-error: 落到网络 */ }
 
   const networkResponse = await fetch(request);
@@ -164,10 +170,11 @@ async function handleCacheFirst(request) {
 }
 ```
 
-`cache.put` 故意 fire-and-forget（`.then(...)` 不 `await`）——用户感知
-延迟正好等于 `fetch(request)` 时间，永远不是 `fetch + cache.put`。
-Cache 失败（quota exceeded、cache 已被清、磁盘满）一律静默吞掉，
-因为网络响应已经在路上；让响应失败比让 cache 写失败更糟。
+cache miss 上的 `cache.put` 故意 fire-and-forget（`.then(...)` 不
+`await`）——用户感知延迟正好等于 `fetch(request)` 时间，永远不是
+`fetch + cache.put`。cache hit 上用户立刻拿到已缓存响应，后台刷新通过
+fetch event 生命周期保活。Cache 失败（quota exceeded、cache 已被清、
+磁盘满）一律静默吞掉，因为让响应失败比让 cache 写失败更糟。
 
 #### SW 注册解耦 `Notification` API
 
@@ -175,7 +182,7 @@ R21.2 之前，`static/js/notification-manager.js::init()` 在
 `if (this.isSupported) { ... }` 分支*内部*注册 SW，其中 `isSupported`
 检查 `'Notification' in window`。iOS 16-、隐私收紧的 Firefox、部分
 嵌入式浏览器都把 `Notification` 关了，但**支持** `serviceWorker` 和
-`Cache` API——这些用户在 R21.2 之前完全享受不到 cache-first 收益。
+`Cache` API——这些用户在 R21.2 之前完全享受不到静态缓存收益。
 
 修法：把 `await this.registerServiceWorker()` 调用移到 else 分支
 之外。`registerServiceWorker()` 内部已有的
@@ -207,9 +214,8 @@ R21.2 故意**不**做的事：
 3. **不实现 offline page fallback**——AIIA 是 LAN/loopback only，用户
    离线时 MCP server 也离线，AI agent 都没法调 `interactive_feedback`，
    没东西可以 fall back 到；
-4. **不用 stale-while-revalidate**——版本化做得太规整（`?v={{ app_version }}`
-   到处都是），没有"陈旧"状态需要 revalidate；cache 命中 ≡ 全新 fetch
-   语义等价；
+4. **不缓存非白名单静态路径**——R459 只把 stale-while-revalidate 用在明确
+   的静态资源白名单上；动态端点、HTML、SSE 仍保持网络语义；
 5. **SW 中不做 Brotli 协商**——那是 R21.4 的事；这里混进来等于同时
    shipping 两套竞争的压缩策略。
 
