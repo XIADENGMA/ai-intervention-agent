@@ -10,6 +10,14 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
+
+try:
+    from flask import request as _request_proxy
+except ImportError:  # pragma: no cover - Flask is a runtime dependency in normal use.
+    _flask_request: Any | None = None
+else:
+    _flask_request = _request_proxy
 
 logger = logging.getLogger(__name__)
 
@@ -132,17 +140,17 @@ def normalize_lang(raw: str) -> str:
 
 def detect_request_lang() -> str:
     """从 Flask request 的 Accept-Language 头检测语言，回退到 config.toml 配置。"""
-    try:
-        from flask import request
-
-        accept = request.headers.get("Accept-Language", "")
-        if accept:
-            primary = accept.split(",")[0].split(";")[0].strip()
-            lang = normalize_lang(primary)
-            if lang in SUPPORTED_LANGS:
-                return lang
-    except (RuntimeError, ImportError):
-        pass
+    request_proxy = _flask_request
+    if request_proxy is not None:
+        try:
+            accept = request_proxy.headers.get("Accept-Language", "")
+            if accept:
+                primary = accept.partition(",")[0].partition(";")[0].strip()
+                lang = normalize_lang(primary)
+                if lang in SUPPORTED_LANGS:
+                    return lang
+        except RuntimeError:
+            pass
 
     try:
         from ai_intervention_agent.config_manager import get_config

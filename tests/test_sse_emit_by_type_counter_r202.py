@@ -310,12 +310,17 @@ class TestSseEmitCounterLockColocation(unittest.TestCase):
                 ):
                     saw_emit_total_inc = True
 
-                if (
-                    isinstance(tgt, ast.Subscript)
-                    and isinstance(tgt.value, ast.Attribute)
-                    and isinstance(tgt.value.value, ast.Name)
-                    and tgt.value.value.id == "self"
-                    and tgt.value.attr == "_emit_by_type"
+                if isinstance(tgt, ast.Subscript) and (
+                    (
+                        isinstance(tgt.value, ast.Attribute)
+                        and isinstance(tgt.value.value, ast.Name)
+                        and tgt.value.value.id == "self"
+                        and tgt.value.attr == "_emit_by_type"
+                    )
+                    or (
+                        isinstance(tgt.value, ast.Name)
+                        and tgt.value.id == "emit_by_type"
+                    )
                 ):
                     saw_by_type_inc = True
 
@@ -358,10 +363,18 @@ class TestSseEmitCounterLockColocation(unittest.TestCase):
             tgt = node.target
             if not (
                 isinstance(tgt, ast.Subscript)
-                and isinstance(tgt.value, ast.Attribute)
-                and isinstance(tgt.value.value, ast.Name)
-                and tgt.value.value.id == "self"
-                and tgt.value.attr == "_emit_by_type"
+                and (
+                    (
+                        isinstance(tgt.value, ast.Attribute)
+                        and isinstance(tgt.value.value, ast.Name)
+                        and tgt.value.value.id == "self"
+                        and tgt.value.attr == "_emit_by_type"
+                    )
+                    or (
+                        isinstance(tgt.value, ast.Name)
+                        and tgt.value.id == "emit_by_type"
+                    )
+                )
             ):
                 continue
             if node.lineno not in lock_block_lines:

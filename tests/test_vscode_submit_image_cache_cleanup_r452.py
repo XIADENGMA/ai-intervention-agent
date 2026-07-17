@@ -412,6 +412,7 @@ def test_process_images_keeps_processed_image_with_origin_task_after_switch() ->
         _extract_function(source, name)
         for name in (
             "getImageUploadTargetImages",
+            "normalizeTaskImages",
             "cacheImagesForTask",
             "getPendingImageUploadKey",
             "getPendingImageUploadCount",
@@ -532,6 +533,7 @@ def test_process_images_counts_pending_slots_per_task_not_globally() -> None:
         _extract_function(source, name)
         for name in (
             "getImageUploadTargetImages",
+            "normalizeTaskImages",
             "cacheImagesForTask",
             "getPendingImageUploadKey",
             "getPendingImageUploadCount",
@@ -682,6 +684,7 @@ def test_process_images_drops_result_when_origin_task_disappears_mid_compression
         _extract_function(source, name)
         for name in (
             "getImageUploadTargetImages",
+            "normalizeTaskImages",
             "cacheImagesForTask",
             "getPendingImageUploadKey",
             "getPendingImageUploadCount",

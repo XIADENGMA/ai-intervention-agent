@@ -153,7 +153,7 @@ def get_feedback_counters() -> dict[str, int]:
     渲染，运维侧通过 MCP `resources/read` 拉取即可看到累计值。
     """
     with _FEEDBACK_COUNTERS_LOCK:
-        return dict(_FEEDBACK_COUNTERS)
+        return _FEEDBACK_COUNTERS.copy()
 
 
 async def _emit_ctx_info(
@@ -236,6 +236,16 @@ _POLL_INTERVAL_SAFETY_NET_S = 30.0
 # 测试可以通过 monkeypatch 覆盖本常量以缩短测试运行时间（参见
 # ``tests/test_retry_before_close_*.py``）。
 _FETCH_RETRY_BACKOFF_S: tuple[float, ...] = (0.0, 0.1, 0.25, 0.5, 1.0)
+
+
+_DEADLINE_EXTENSION_PROBE_MAX: int = 50
+"""R689（TODO#13）：backend 超时前允许探测"任务倒计时是否被用户延长"的
+最大次数。
+
+正常场景远达不到上限：手动 extend 受 ``COUNTDOWN_EXTENDS_MAX``（默认 3）
+约束、typing auto-extend 复用同一配额，因此探测最多个位数。上限仅防御
+pathological 场景（例如自定义 backend 无限返回 remaining_time>0），确保
+``wait_for_task_completion`` 不会变成永不返回的僵尸协程。"""
 
 
 async def _close_orphan_task_best_effort(
@@ -331,7 +341,29 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     target_host = server_config.get_target_host(config.host)
     api_url = f"http://{target_host}:{config.port}/api/tasks/{task_id}"
     sse_url = f"http://{target_host}:{config.port}/api/events"
-    http_client = service_manager.get_async_client(config)
+
+    # R685 (TODO#3 会话结果丢失修复)：**禁止**在函数开头一次性捕获
+    # ``http_client = service_manager.get_async_client(config)`` 然后闭包复用。
+    #
+    # 事故链（修复前）：
+    #   T0  interactive_feedback 开始等待，闭包捕获 client A
+    #   T1  用户编辑 config.toml → ConfigManager file watcher →
+    #       service_manager._invalidate_runtime_caches_on_config_change()
+    #       → client A 被 close
+    #   T2  _sse_listener 的 stream 抛 RuntimeError("client has been closed")
+    #       → SSE 断；_poll_fallback._fetch_result 每次用 client A →
+    #       RuntimeError 被 except 吞掉 → 永远返回 None
+    #   T3  用户在 Web UI 提交反馈 → web_ui 子进程 task=completed（UI 显示已反馈）
+    #   T4  MCP 侧 backend_timeout 到期 → retry-before-close 仍用 client A
+    #       全失败 → 返回 resubmit prompt → **用户反馈永久丢失**
+    #
+    # 修复：每个请求点即时调用 ``service_manager.get_async_client(config)``。
+    # 该访问器在 client 已关闭时自动重建（``is_closed`` 双检锁路径），
+    # 未关闭时返回同一个 pooled singleton——热路径开销只是一次属性读 +
+    # is_closed 检查（~百 ns 级），语义上与 R23.1 连接池复用完全兼容。
+    # 回归锁：``tests/test_wait_completion_survives_client_close_r685.py``。
+    def _pooled_client() -> Any:
+        return service_manager.get_async_client(config)
 
     start_time_monotonic = time.monotonic()
     effective_timeout: float | None = float(timeout) if timeout > 0 else None
@@ -350,9 +382,14 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     result_box: list[Any] = [None]
 
     async def _fetch_result() -> dict[str, Any] | None:
-        """获取已完成任务的结果，404 返回重调提示。"""
+        """获取已完成任务的结果，404 返回重调提示。
+
+        R685：client 在每次调用时通过 ``_pooled_client()`` 即时获取——
+        配置热更新关闭旧 client 后，下一次 fetch 自动拿到重建的新 client，
+        不会陷入 "closed client 永远抛错" 的死区。
+        """
         try:
-            resp = await http_client.get(api_url, timeout=2)
+            resp = await _pooled_client().get(api_url, timeout=2)
             if resp.status_code == 404:
                 return server_config._make_resubmit_response(as_mcp=False)
             if resp.status_code == 200:
@@ -406,11 +443,16 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         ``service_manager.get_async_client(cfg)`` 必然已经把 httpx 加载到
         ``sys.modules``，本地 import 走 cache 没有额外开销，但能让 ty 与运行时
         都正确解析 ``httpx.Timeout``。
+
+        R685: client 在进入 stream 前即时通过 ``service_manager.get_async_client``
+        获取（而不是复用函数开头捕获的引用）——配置热更新会关闭旧 client，
+        即时获取保证拿到的是可用（或重建后）的 pooled client。
         """
         import httpx
 
         try:
-            async with http_client.stream(
+            stream_client = service_manager.get_async_client(config)
+            async with stream_client.stream(
                 "GET", sse_url, timeout=httpx.Timeout(None, connect=5.0)
             ) as resp:
                 logger.debug(f"SSE 连接已建立: {task_id}")
@@ -470,6 +512,44 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     sse_task = asyncio.create_task(_sse_listener())
     poll_task = asyncio.create_task(_poll_fallback())
 
+    async def _probe_deadline_extension() -> float | None:
+        """R689（TODO#13）：backend 等待超时前，探测任务是否仍有剩余倒计时。
+
+        场景：用户在 Web UI / 插件里点了 +60s（extend endpoint）或正在
+        输入触发了 typing auto-extend —— 这些操作只增加 task 的
+        ``auto_resubmit_timeout``，而本函数的 ``backend_timeout`` 是任务
+        创建时一次性算好的（frontend_countdown + BACKEND_BUFFER）。修复
+        前 backend 会在旧 deadline 到期直接超时 → ghost-close 把仍在
+        倒计时的任务删掉 → 用户随后提交必然 404，输入内容永久丢失。
+
+        返回值：
+        - ``float``（> 0）：任务仍存活且有剩余倒计时，backend 应继续等
+          这么多秒（含 BACKEND_BUFFER 余量）；任务已 completed 但完成事
+          件尚未送达时返回一个短窗口让 SSE / poll 取回结果。
+        - ``None``：任务不存在 / 已无剩余倒计时 / 探测失败 → 按原超时
+          语义处理。
+        """
+        try:
+            resp = await _pooled_client().get(api_url, timeout=2)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            task = data.get("task") if data.get("success") else None
+            if not isinstance(task, dict):
+                return None
+            if task.get("status") == "completed":
+                # 已完成但 completion 事件还没到本协程：给 5s 短窗口，
+                # 让 SSE / 2s 紧密轮询把 result 取回来。
+                return 5.0
+            remaining = task.get("remaining_time")
+            if isinstance(remaining, (int, float)) and remaining > 0:
+                from ai_intervention_agent.runtime_constants import BACKEND_BUFFER
+
+                return float(remaining) + BACKEND_BUFFER
+        except Exception as e:
+            logger.debug(f"探测任务剩余倒计时失败（按超时处理）: {e}")
+        return None
+
     # R165 反馈丢失防御：把 TimeoutError 路径的 ``return`` 改成 set 一个
     # ``timed_out`` 标志位，让 finally 里的 retry-before-close 能影响最终
     # return 值。修复前是 ``except TimeoutError: return _make_resubmit_response``
@@ -477,13 +557,35 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     # 后续 ``finally`` 块即便 retry 拿到了真实 result 也无法覆盖返回值，
     # 用户的反馈会被丢成 resubmit。改成 flag 写法让 retry 后的 result 总能
     # 优先于 timeout 兜底，反馈数据零丢失。
+    #
+    # R689：超时不再一锤定音——先探测任务是否被用户延长了倒计时
+    # （extend 按钮 / typing auto-extend），仍有剩余时间就继续等待。
+    # ``_DEADLINE_EXTENSION_PROBE_MAX`` 防御 pathological 循环（正常场景
+    # extend 上限 3 次 + typing auto-extend 同样受 extends_max 约束，
+    # 探测次数远小于该上限）。
     timed_out = False
     try:
-        await asyncio.wait_for(completion.wait(), timeout=effective_timeout)
-    except TimeoutError:
-        timed_out = True
-        elapsed = time.monotonic() - start_time_monotonic
-        logger.error(f"任务超时: {task_id}, 等待 {elapsed:.1f}s")
+        remaining_wait = effective_timeout
+        probes_left = _DEADLINE_EXTENSION_PROBE_MAX
+        while True:
+            try:
+                await asyncio.wait_for(completion.wait(), timeout=remaining_wait)
+                break
+            except TimeoutError:
+                extension = (
+                    await _probe_deadline_extension() if probes_left > 0 else None
+                )
+                probes_left -= 1
+                if extension is None or extension <= 0:
+                    timed_out = True
+                    elapsed = time.monotonic() - start_time_monotonic
+                    logger.error(f"任务超时: {task_id}, 等待 {elapsed:.1f}s")
+                    break
+                remaining_wait = extension
+                logger.info(
+                    f"任务 {task_id} 倒计时被用户延长，backend 继续等待 "
+                    f"{extension:.0f}s（R689）"
+                )
     finally:
         sse_task.cancel()
         poll_task.cancel()
@@ -536,7 +638,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         # 后 GC，不需要重复操作）。
         if result_box[0] is None:
             await _close_orphan_task_best_effort(
-                task_id, target_host, config.port, client=http_client
+                task_id, target_host, config.port, client=_pooled_client()
             )
 
     if result_box[0] is not None:

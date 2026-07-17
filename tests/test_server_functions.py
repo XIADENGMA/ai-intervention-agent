@@ -5,6 +5,7 @@ AI Intervention Agent - Server 函数测试
 """
 
 import asyncio
+import inspect
 import signal
 import socket
 import subprocess
@@ -907,6 +908,33 @@ class TestGetWebUIConfig(unittest.TestCase):
         config, timeout = service_manager.get_web_ui_config()
         self.assertIsInstance(config, WebUIConfig)
         self.assertEqual(config.port, 8080)
+
+    @patch("ai_intervention_agent.service_manager.get_config")
+    @patch(
+        "ai_intervention_agent.service_manager._ensure_config_change_callbacks_registered"
+    )
+    def test_trusted_hosts_non_list_falls_back_to_empty(self, _, mock_get_cfg):
+        mock_cfg = MagicMock()
+        mock_cfg.get_section.side_effect = lambda sec: {
+            "web_ui": {"host": "127.0.0.1", "port": 8080},
+            "feedback": {},
+            "network_security": {"trusted_hosts": "not-a-list"},
+            "mdns": {},
+        }.get(sec, {})
+        mock_get_cfg.return_value = mock_cfg
+
+        config, _ = service_manager.get_web_ui_config()
+
+        self.assertEqual(config.trusted_hosts, [])
+
+    def test_trusted_hosts_load_avoids_eager_empty_list_fallback(self):
+        source = inspect.getsource(service_manager.get_web_ui_config)
+
+        self.assertIn(
+            'trusted_hosts_raw = network_security_config.get("trusted_hosts")',
+            source,
+        )
+        self.assertNotIn('network_security_config.get("trusted_hosts", [])', source)
 
     @patch("ai_intervention_agent.service_manager.get_config")
     @patch(

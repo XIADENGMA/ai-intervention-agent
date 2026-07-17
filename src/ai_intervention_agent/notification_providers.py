@@ -165,8 +165,8 @@ class WebNotificationProvider(BaseNotificationProvider):
             # 验证web_timeout为正数
             timeout = max(self.config.web_timeout, 1)
 
-            # 深拷贝metadata避免循环引用
-            metadata_copy = dict(event.metadata) if event.metadata else {}
+            # 浅拷贝 metadata，避免后续 provider payload 写回污染快照。
+            metadata_copy = event.metadata.copy() if event.metadata else {}
 
             # 构建通知数据
             notification_data = {
@@ -217,8 +217,8 @@ class SoundNotificationProvider(BaseNotificationProvider):
             # 验证音量范围0.0-1.0
             volume = max(0.0, min(self.config.sound_volume, 1.0))
 
-            # 深拷贝metadata避免循环引用
-            metadata_copy = dict(event.metadata) if event.metadata else {}
+            # 浅拷贝 metadata，避免后续 provider payload 写回污染快照。
+            metadata_copy = event.metadata.copy() if event.metadata else {}
 
             sound_data = {
                 "id": event.id,

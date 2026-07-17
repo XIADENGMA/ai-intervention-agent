@@ -298,9 +298,9 @@ class TestActivateCleanupDoesNotMisfire(unittest.TestCase):
     """确保 OFFLINE_CACHE_NAME 不会被 startsWith('aiia-static-') 误杀."""
 
     def test_static_and_offline_prefixes_distinct(self) -> None:
-        self.assertNotEqual("aiia-static-v1", "aiia-offline-v1")
+        self.assertNotEqual("aiia-static-v2", "aiia-offline-v1")
         self.assertFalse("aiia-offline-v1".startswith("aiia-static-"))
-        self.assertFalse("aiia-static-v1".startswith("aiia-offline-"))
+        self.assertFalse("aiia-static-v2".startswith("aiia-offline-"))
 
 
 if __name__ == "__main__":

@@ -209,14 +209,18 @@ class TestSourceInvariants(unittest.TestCase):
         延迟最多 30s。set 的位置必须紧跟 ``sc.stream(...)`` 后。
 
         实现策略：用字符串索引代替"嵌套括号"正则——前者鲁棒，后者
-        无法跨多行 ``http_client.stream("GET", sse_url, timeout=httpx.Timeout(...))``
+        无法跨多行 ``stream_client.stream("GET", sse_url, timeout=httpx.Timeout(...))``
         正确匹配（嵌套括号让 [^)]* 提前停止）。
+
+        R685 之后 client 改为在 listener 体内即时获取（``stream_client =
+        service_manager.get_async_client(config)``），本测试改抓
+        ``stream_client.stream(``。
         """
         body = self.sse_listener_body
-        stream_idx = body.find("http_client.stream(")
+        stream_idx = body.find("stream_client.stream(")
         async_for_idx = body.find("async for line in resp.aiter_lines")
         self.assertGreaterEqual(
-            stream_idx, 0, "sse_listener 必须用 http_client.stream(...)"
+            stream_idx, 0, "sse_listener 必须用 stream_client.stream(...)"
         )
         self.assertGreater(
             async_for_idx,
@@ -403,12 +407,20 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
     def test_wait_path_reuses_config_and_async_client(
         self, mock_get_client, mock_get_cfg
     ):
-        """同一次 wait 生命周期内只加载一次配置和 AsyncClient。
+        """同一次 wait 生命周期内只加载一次配置；client 每个请求点即时获取。
 
-        R27.3：``wait_for_task_completion`` 启动时已经拿到 WebUIConfig 和
-        AsyncClient；后续 ``_fetch_result`` / ``_sse_listener`` / close cleanup
-        都应复用它们。否则每个 poll 周期都会重复进入配置 TTL 锁和 client
-        singleton lookup，SSE 故障场景下会把本来已经降低的轮询成本又加回来。
+        R27.3（保留部分）：``wait_for_task_completion`` 启动时拿一次
+        WebUIConfig，后续子路径复用——配置 TTL 锁不应被每个 poll 周期
+        重复进入。
+
+        R685（策略更新）：AsyncClient **不再**在函数开头一次性捕获后闭包
+        复用——配置热更新回调会 close 旧 client，闭包引用会让等待中的会话
+        永远打不通（用户反馈丢失，TODO#3）。现在每个请求点即时调用
+        ``service_manager.get_async_client``：未关闭时返回同一个 pooled
+        singleton（一次全局读 + is_closed 检查，~百 ns 级，无配置 TTL 锁），
+        已关闭时自动重建。因此本测试对 client lookup 的断言从"恰好 1 次"
+        放宽为"至少 1 次"；连接池复用语义由
+        ``test_sse_listener_pooled_client_r23_1.py`` 继续锁定。
         """
         from ai_intervention_agent.service_manager import WebUIConfig
 
@@ -446,10 +458,11 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
             1,
             "同一次 wait 不应在每次 _fetch_result 里重复加载 Web UI 配置",
         )
-        self.assertEqual(
+        self.assertGreaterEqual(
             mock_get_client.call_count,
             1,
-            "同一次 wait 应复用同一个 AsyncClient，而不是每条子路径重复 lookup",
+            "R685: 每个请求点应即时调用 get_async_client（未关闭时仍返回同一个 "
+            "pooled singleton，连接池复用语义不变）",
         )
 
     @patch("ai_intervention_agent.service_manager.get_web_ui_config")

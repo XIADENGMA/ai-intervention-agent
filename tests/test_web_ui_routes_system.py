@@ -569,8 +569,8 @@ class TestSystemHealthEndpoint(_SystemRouteBase):
         """SSE bus + TaskQueue + recent_errors 都正常 + 0 错误 → healthy + 200。"""
         with (
             patch(
-                "ai_intervention_agent.enhanced_logging.get_recent_logs",
-                return_value=[],
+                "ai_intervention_agent.enhanced_logging.get_recent_error_stats",
+                return_value=(0, 0),
             ),
         ):
             resp = self._get()
@@ -584,21 +584,9 @@ class TestSystemHealthEndpoint(_SystemRouteBase):
 
     def test_degraded_when_recent_errors_seen(self):
         """近 5 分钟有 ERROR 但所有检查 ok → degraded + 200（K8s 不应重启）。"""
-        import time as _time
-
-        now = int(_time.time())
-        fake_log = [
-            {
-                "ts_unix": now - 30,
-                "level_no": 40,  # ERROR
-                "level_name": "ERROR",
-                "logger_name": "fake",
-                "message": "stuff went wrong",
-            }
-        ]
         with patch(
-            "ai_intervention_agent.enhanced_logging.get_recent_logs",
-            return_value=fake_log,
+            "ai_intervention_agent.enhanced_logging.get_recent_error_stats",
+            return_value=(1, 1),
         ):
             resp = self._get()
         self.assertEqual(resp.status_code, 200)
@@ -629,8 +617,8 @@ class TestSystemHealthEndpoint(_SystemRouteBase):
         R121-A 这种 *显式* 演进。
         """
         with patch(
-            "ai_intervention_agent.enhanced_logging.get_recent_logs",
-            return_value=[],
+            "ai_intervention_agent.enhanced_logging.get_recent_error_stats",
+            return_value=(0, 0),
         ):
             resp = self._get()
         body = resp.get_json()

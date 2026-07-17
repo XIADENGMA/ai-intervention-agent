@@ -105,7 +105,7 @@ class TestHandlerAggregatesThreeChecks(unittest.TestCase):
 
     def test_aggregates_recent_errors_check(self) -> None:
         self.assertIn('"recent_errors"', self.body)
-        self.assertIn("get_recent_logs", self.body)
+        self.assertIn("get_recent_error_stats", self.body)
 
 
 class TestStatusDecisionLogic(unittest.TestCase):

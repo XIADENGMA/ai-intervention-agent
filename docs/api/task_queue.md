@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `_prompt_utf8_size_for_guard(prompt: str) -> int`
+
 ### `_capture_all_thread_stacks() -> str`
 
 ### `_scan_pending_and_dump_slow() -> int`
@@ -45,6 +47,10 @@
 ##### `get_task(self, task_id: str) -> Task | None`
 
 ##### `get_all_tasks(self) -> list[Task]`
+
+##### `get_first_incomplete_task(self) -> Task | None`
+
+##### `has_tasks(self) -> bool`
 
 ##### `get_all_tasks_with_stats(self) -> tuple[list[Task], dict[str, int]]`
 

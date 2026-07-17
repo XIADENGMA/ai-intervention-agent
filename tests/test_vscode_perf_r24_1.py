@@ -1,18 +1,20 @@
-"""R24.1 · ``packages/vscode/webview.ts::_preloadResources`` 4 file read 并行化。
+"""R24.1/R462 · ``packages/vscode/webview.ts::_preloadResources`` critical read optimization.
 
 背景
 ----
 R20.13-C 已经把 ``extension.ts::activate`` 内的 host locale 加载从串行
 ``fs.readFileSync`` 切到了并行 ``Promise.all + fs.promises.readFile``，
-但 ``WebviewProvider::_preloadResources`` 里的 webview 端 4 个 read 一直是
+但 ``WebviewProvider::_preloadResources`` 里的 webview 端 disk read 一直是
 串行：``for (const loc of ['en','zh-CN'])`` 顺序 ``await
 vscode.workspace.fs.readFile(...)``，再串行做 ``activity-icon.svg`` 和
 ``lottie/sprout.json``。
 
 ``_preloadResources`` 在 ``resolveWebviewView`` 的 critical path 上
 ``await`` 一次（line 431），是首屏渲染前**唯一**的同步阻塞点 —
-原 inline 注释直接量化为「首次 ~50ms」。R24.1 把它改成 ``Promise.all``
-（4 个 read 互无数据依赖），首次 wall-clock 从 ~50 ms 压到 ~15 ms。
+原 inline 注释直接量化为「首次 ~50ms」。R24.1 把 critical reads 改成
+``Promise.all``，首次 wall-clock 从 ~50 ms 压到 ~15 ms。R462 继续把
+已改为 webview 端 URL lazy-fetch 的 445KB ``lottie/sprout.json`` 从
+host preload 中移除，避免冷开时做无人消费的 read + JSON.parse。
 
 测试维度
 --------
@@ -28,8 +30,10 @@ vscode.workspace.fs.readFile(...)``，再串行做 ``activity-icon.svg`` 和
    ``loadStaticAssets`` 字符串特征 —— 防御 refactor 误把并行化改回串行。
 5. 仍然只有一个 ``private async _preloadResources(): Promise<void>``
    入口 —— 防御重复定义两份导致 hot path 错走老版本。
-6. ``vscode.workspace.fs.readFile`` 在新版本里至少出现 3 次（en, zh-CN,
-   svg, lottie 各一次，但每个都有 fallback；最少 3 次保证主路径未丢）。
+6. ``vscode.workspace.fs.readFile`` 在新版本里至少出现 2 次（locale
+   helper + svg；最少 2 次保证主路径未丢）。
+7. R462 后 ``_preloadResources`` 禁止再引用 ``lottie/sprout.json`` /
+   ``lottieData`` / ``lottiePromise``。
 
 为什么用 source-text guard：和 ``test_vscode_perf_r20_13.py`` 同款思路 —
 ci_gate 唯一驱动器是 pytest，``packages/vscode`` 的 mocha/jest 不进
@@ -99,7 +103,7 @@ def test_preload_resources_no_serial_for_of_loop() -> None:
         }
 
     post-fix 必须用 ``Promise.all([loadLocale("en"), loadLocale("zh-CN"),
-    loadStaticAssets()])`` 一次性调度，把 4 个 read 排到同一 event loop tick。
+    loadStaticAssets()])`` 一次性调度，把 critical reads 排到同一 event loop tick。
     """
     text = _read(WEBVIEW_TS)
     body = _extract_preload_resources_body(text)
@@ -121,9 +125,7 @@ def test_preload_resources_no_serial_for_of_loop() -> None:
 def _extract_promise_all_arrays(body: str) -> list[str]:
     """提取 body 内所有 ``Promise.all([...])`` 的数组字面量内容（不含外层 ``[]``）。
 
-    R24.1 的设计是「外层 Promise.all 排 3 个 helper」+「inner Promise.all
-    在 loadStaticAssets 内部排 svg/lottie」，所以一个 _preloadResources
-    body 里会出现 2 个 Promise.all。
+    R24.1/R462 的设计是「外层 Promise.all 排 locale/static helper」。
     """
     out: list[str] = []
     cursor = 0
@@ -153,13 +155,11 @@ def test_preload_resources_uses_promise_all_with_three_branches() -> None:
     且至少一个 ``Promise.all`` 数组里同时引用 ``loadLocale`` 和
     ``loadStaticAssets`` 两个 helper。
 
-    R24.1 的设计有两层 Promise.all：
+    R24.1/R462 的关键设计：
     - 外层：``Promise.all([loadLocale("en"), loadLocale("zh-CN"),
       loadStaticAssets()])``
-    - 内层（在 loadStaticAssets 内部）：``Promise.all([svgPromise,
-      lottiePromise])``
 
-    本测试锁定的是**外层调度**——确保 4 个 disk read 真的并行调度，
+    本测试锁定的是**外层调度**——确保 critical disk reads 真的并行调度，
     不被 refactor 误改回 ``await loadLocale(...); await loadStaticAssets()``。
     """
     body = _extract_preload_resources_body(_read(WEBVIEW_TS))
@@ -198,9 +198,9 @@ def test_preload_resources_load_locale_helper_defined() -> None:
 def test_preload_resources_load_static_assets_helper_defined() -> None:
     """``_preloadResources`` 函数体内应定义 ``loadStaticAssets`` 局部 async 函数。
 
-    封 ``activity-icon.svg`` + ``lottie/sprout.json`` 两个 read 进同一个
-    helper，且 helper 内部用 ``Promise.all`` 把这两个再次并行（svg 和
-    lottie 也无依赖关系）。
+    R462 后这个 helper 只负责首屏需要内联的 ``activity-icon.svg``。445KB
+    ``lottie/sprout.json`` 已经由 webview 端通过 URL 按需 fetch，不应再进入
+    extension-host critical path。
     """
     body = _extract_preload_resources_body(_read(WEBVIEW_TS))
     assert re.search(
@@ -213,30 +213,19 @@ def test_preload_resources_load_static_assets_helper_defined() -> None:
     )
 
 
-def test_load_static_assets_uses_inner_promise_all_for_svg_and_lottie() -> None:
-    """``loadStaticAssets`` 内部应当再用一次 ``Promise.all`` 让 svg + lottie 并行。
+def test_preload_resources_does_not_host_preload_lottie_json() -> None:
+    """R462: ``_preloadResources`` 不应再 host-side 读取/解析 Lottie JSON。
 
-    若 loadStaticAssets 内部仍是 ``await read(svg); await read(lottie)``
-    串行，整体 wall-clock 还是要付 svg + lottie 两段时间，违背 R24.1 设计。
+    ``_getHtmlContent`` 已固定 ``inlineNoContentLottieDataLiteral = "null"``
+    并通过 ``data-no-content-lottie-json-url`` 交给 webview-ui 端按需
+    ``fetch(..., { cache: 'force-cache' })``。如果这里重新出现
+    ``lottie/sprout.json`` / ``lottieData`` / ``lottiePromise``，就表示
+    445KB JSON 又回到了首屏 critical path。
     """
-    text = _read(WEBVIEW_TS)
-    body = _extract_preload_resources_body(text)
-    # 在 _preloadResources body 里再定位 loadStaticAssets 函数体
-    static_match = re.search(
-        r"const\s+loadStaticAssets\s*=\s*async\s*\(\s*\)\s*"
-        r":\s*Promise<\s*void\s*>\s*=>\s*\{",
-        body,
-    )
-    assert static_match, "_preloadResources 找不到 loadStaticAssets 定义"
-    static_body = _extract_block_by_brace(body, static_match.end() - 1)
-    assert re.search(r"await\s+Promise\.all\s*\(\s*\[", static_body), (
-        "``loadStaticAssets`` 内部应当用 ``await Promise.all([...])`` 让 svg "
-        "和 lottie 也并行；缺它则 svg/lottie 之间还是串行，多浪费一段时间。"
-    )
-    assert "svgPromise" in static_body and "lottiePromise" in static_body, (
-        "``loadStaticAssets`` 内部应当用命名的 ``svgPromise`` / ``lottiePromise`` "
-        "提升可读性（也是稳定 hash 的源码契约 — 重命名时同步改测试可以提示开发者）"
-    )
+    body = _extract_preload_resources_body(_read(WEBVIEW_TS))
+    assert '"lottie", "sprout.json"' not in body
+    assert "lottieData" not in body
+    assert "lottiePromise" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -253,12 +242,9 @@ def test_preload_resources_keeps_safe_read_text_file_fallback() -> None:
     """
     body = _extract_preload_resources_body(_read(WEBVIEW_TS))
     safe_calls = re.findall(r"safeReadTextFile\s*\(", body)
-    # 4 个 read，每个都有 ``vscode.workspace.fs.readFile`` 主路径 +
-    # ``safeReadTextFile`` fallback，所以期望出现 ≥3 次
-    # （en + zh-CN locale 共用 loadLocale helper 算 1 次，
-    # svg 1 次、lottie 1 次，所以 ≥3 次）
-    assert len(safe_calls) >= 3, (
-        f"_preloadResources 应当至少 3 次调用 ``safeReadTextFile(...)`` 兜底；"
+    # locale helper 1 次 + svg 1 次；R462 不再 host-side 读 Lottie JSON。
+    assert len(safe_calls) >= 2, (
+        f"_preloadResources 应当至少 2 次调用 ``safeReadTextFile(...)`` 兜底；"
         f"当前 {len(safe_calls)} 次，可能漏写了 fallback 链路"
     )
 
@@ -271,9 +257,9 @@ def test_preload_resources_keeps_vscode_fs_read_file_main_path() -> None:
     """
     body = _extract_preload_resources_body(_read(WEBVIEW_TS))
     main_calls = re.findall(r"vscode\.workspace\.fs\.readFile\s*\(", body)
-    # 3 个文件主读取（locale helper 1 次 + svg 1 次 + lottie 1 次）
-    assert len(main_calls) >= 3, (
-        f"_preloadResources 应当至少 3 次 ``vscode.workspace.fs.readFile`` 主路径；"
+    # locale helper 1 次 + svg 1 次；Lottie JSON 留给 webview 端 lazy fetch。
+    assert len(main_calls) >= 2, (
+        f"_preloadResources 应当至少 2 次 ``vscode.workspace.fs.readFile`` 主路径；"
         f"当前 {len(main_calls)} 次，可能漏写"
     )
 
@@ -310,8 +296,7 @@ def test_load_locale_keeps_cache_short_circuit() -> None:
 def test_load_static_assets_keeps_cache_short_circuit() -> None:
     """``loadStaticAssets`` 入口应当先检查 ``_cachedStaticAssets`` 命中并 ``return``。
 
-    同样的二次命中短路，缺它则二次 ``resolveWebviewView`` 也会
-    重读 svg + lottie。
+    同样的二次命中短路，缺它则二次 ``resolveWebviewView`` 也会重读 svg。
     """
     text = _read(WEBVIEW_TS)
     body = _extract_preload_resources_body(text)
@@ -327,17 +312,15 @@ def test_load_static_assets_keeps_cache_short_circuit() -> None:
         static_body,
     ), (
         "``loadStaticAssets`` 应当起手 ``if (this._cachedStaticAssets) return`` "
-        "短路；缺它则缓存命中也会重读 svg/lottie"
+        "短路；缺它则缓存命中也会重读 svg"
     )
 
 
 def test_load_static_assets_writes_back_cached_object_at_end() -> None:
-    """``loadStaticAssets`` 末尾应当把 ``activityIconSvg + lottieData``
-    一次性写回 ``this._cachedStaticAssets``，确保两个字段同时可见。
+    """``loadStaticAssets`` 末尾应当只缓存 ``activityIconSvg``。
 
-    防御部分写回（如先写 svg 再 await lottie）—— 部分写回会让其它
-    路径看到 ``_cachedStaticAssets.activityIconSvg`` 已存在但
-    ``lottieData`` 为 undefined 的中间状态。
+    R462 后 Lottie JSON 不再属于 host-side cached static assets；缓存对象
+    继续保留是为了避免二次 HTML render 重读 ``activity-icon.svg``。
     """
     text = _read(WEBVIEW_TS)
     body = _extract_preload_resources_body(text)
@@ -348,22 +331,15 @@ def test_load_static_assets_writes_back_cached_object_at_end() -> None:
     )
     assert static_match
     static_body = _extract_block_by_brace(body, static_match.end() - 1)
-    # 关键 invariant：``await Promise.all`` 之后再 ``this._cachedStaticAssets =``，
-    # 不能在两个 promise 之间 partial-write。
-    promise_all_match = re.search(r"await\s+Promise\.all\s*\(\s*\[", static_body)
     assign_match = re.search(
-        r"this\._cachedStaticAssets\s*=\s*\{[\s\S]*?activityIconSvg[\s\S]*?lottieData",
+        r"this\._cachedStaticAssets\s*=\s*\{\s*activityIconSvg\s*:\s*svgText\s*\}",
         static_body,
     )
-    assert promise_all_match, "loadStaticAssets 应包含 ``await Promise.all([...])``"
     assert assign_match, (
-        "loadStaticAssets 应一次性写 "
-        "``this._cachedStaticAssets = { activityIconSvg, lottieData }``"
+        "loadStaticAssets 应写 ``this._cachedStaticAssets = { activityIconSvg: svgText }``，"
+        "且不应再包含 lottieData"
     )
-    assert promise_all_match.start() < assign_match.start(), (
-        "``await Promise.all([...])`` 必须在 ``this._cachedStaticAssets = {...}`` 之前；"
-        " 顺序倒了等于 partial-write，破坏 atomic visibility"
-    )
+    assert "lottieData" not in static_body
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +385,7 @@ def test_preload_resources_singly_defined() -> None:
 def test_resolve_webview_view_still_awaits_preload_resources() -> None:
     """``resolveWebviewView`` 必须 ``await this._preloadResources()`` 后再渲染。
 
-    R24.1 是把 ``_preloadResources`` 内部 4 个 read 并行化，**不**改变它
+    R24.1/R462 是把 ``_preloadResources`` 内部 critical reads 并行化/瘦身，**不**改变它
     在 ``resolveWebviewView`` 的位置 —— 仍然是渲染前的同步阻塞。
     若误改成 ``this._preloadResources(); // 不 await``，HTML 会拿空 locale。
     """
@@ -421,9 +397,9 @@ def test_resolve_webview_view_still_awaits_preload_resources() -> None:
     assert resolve_match, "webview.ts 找不到 resolveWebviewView 方法"
     resolve_body = _extract_block_by_brace(text, resolve_match.end() - 1)
     assert re.search(
-        r"await\s+this\._preloadResources\s*\(\s*\)",
+        r"await\s+Promise\.all\s*\(\s*\[[\s\S]*?this\._preloadResources\s*\(\s*\)",
         resolve_body,
     ), (
-        "resolveWebviewView 仍应 ``await this._preloadResources()`` 阻塞首屏；"
+        "resolveWebviewView 仍应 await 包含 ``this._preloadResources()`` 的 Promise.all；"
         " 改成 fire-and-forget 会让 webview 拿空 locale 渲染，破坏 i18n 合约"
     )

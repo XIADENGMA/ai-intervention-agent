@@ -78,6 +78,7 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+QUICK_API_RATE_LIMIT_SAFE_ITERATIONS = 5
 
 
 def _free_port() -> int:
@@ -587,13 +588,15 @@ def bench_api_round_trip(endpoint: str, iterations: int) -> list[float]:
                 conn = http.client.HTTPConnection(host, http_port, timeout=3.0)
 
             samples: list[float] = []
+            needs_rate_limit_spacing = iterations > QUICK_API_RATE_LIMIT_SAFE_ITERATIONS
             for i in range(iterations):
                 # web_ui.py 配置 ``default_limits=['60 per minute', '10 per second']``，
-                # 不间断打 ``/api/health`` 会很快触发 429。每次请求间 sleep 110 ms
-                # 留 1 ms 余量保证稳定 < 10 req/s（10 iters × 110 ms ≈ 1.1 s 总
-                # 间隔时间，远小于 60 req/min 限速窗口）。被测的是 round-trip
-                # latency 而不是吞吐量，所以 sleep 不污染测量值。
-                if i > 0:
+                # 默认 10-iteration run 加 warmup 会超过 10 req/s，因此每次请求
+                # 间 sleep 110 ms 留 1 ms 余量保证稳定 < 10 req/s。quick run 每
+                # 个 API benchmark 只有 5 个采样 + 1 次 warmup，低于每秒限额；
+                # 跳过 sleep 能让 release-review quick bench 少等 ~0.88s，且不
+                # 改变被测 round-trip latency。
+                if i > 0 and needs_rate_limit_spacing:
                     time.sleep(0.11)
                 t = time.perf_counter()
                 status, _body = _http_get_keepalive(conn, path)

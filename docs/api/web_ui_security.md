@@ -4,6 +4,10 @@
 
 ## Functions
 
+### `_normalize_trusted_host_candidate(value: object) -> str | None`
+
+### `build_trusted_hosts() -> list[str]`
+
 ### `get_config() -> Any`
 
 ## Classes

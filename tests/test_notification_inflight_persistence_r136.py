@@ -39,6 +39,7 @@ OOM / 容器被驱逐）时彻底丢——运维侧完全看不到"上次重启�
 
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 import time
@@ -275,6 +276,27 @@ class TestPersistWritePath(_ManagerWithTmpInflight):
             self._manager._persist_inflight_unlocked()
         self.assertFalse(self._file_path.exists())
 
+    def test_existing_empty_set_does_not_allocate_getattr_fallback(self) -> None:
+        # R465: initialized managers already have ``_inflight_persisted_ids``.
+        # Do not pay for an unused ``set()`` default on every persist call.
+        with self._manager._queue_lock:
+            self._manager._inflight_persisted_ids = set()
+            with patch(
+                "ai_intervention_agent.notification_manager.set",
+                side_effect=AssertionError("unused getattr fallback allocated"),
+                create=True,
+            ):
+                self._manager._persist_inflight_unlocked()
+
+    def test_missing_ids_attr_still_persists_as_empty(self) -> None:
+        # Compatibility for tests/helpers that bypass ``__init__``: missing attr
+        # still behaves like an empty set and removes a stale file.
+        self._file_path.write_text("{}")
+        del self._manager._inflight_persisted_ids
+        with self._manager._queue_lock:
+            self._manager._persist_inflight_unlocked()
+        self.assertFalse(self._file_path.exists())
+
     def test_non_empty_writes_envelope_with_schema(self) -> None:
         evt = _make_event("evt-write")
         with self._manager._queue_lock:
@@ -374,10 +396,49 @@ class TestGetStatusFields(_ManagerWithTmpInflight):
         status = self._manager.get_status()
         self.assertEqual(status["inflight_persisted_count"], 1)
 
+    def test_status_existing_ids_does_not_allocate_getattr_fallback(self) -> None:
+        # R465: status is a polled endpoint; avoid creating a throwaway empty
+        # set when the initialized attr is present.
+        self._manager._inflight_persisted_ids = set()
+        with patch(
+            "ai_intervention_agent.notification_manager.set",
+            side_effect=AssertionError("unused getattr fallback allocated"),
+            create=True,
+        ):
+            status = self._manager.get_status()
+        self.assertEqual(status["inflight_persisted_count"], 0)
+
+    def test_status_missing_ids_attr_still_reports_zero(self) -> None:
+        del self._manager._inflight_persisted_ids
+        status = self._manager.get_status()
+        self.assertEqual(status["inflight_persisted_count"], 0)
+
     def test_status_contains_inflight_seen_at_startup_list(self) -> None:
         status = self._manager.get_status()
         self.assertIn("inflight_seen_at_startup", status)
         self.assertIsInstance(status["inflight_seen_at_startup"], list)
+
+    def test_status_seen_at_startup_does_not_use_eager_getattr_list_fallback(
+        self,
+    ) -> None:
+        # R469: get_status() is a polled endpoint. Avoid the old pattern
+        # ``list(getattr(self, "_inflight_seen_at_startup", []))`` because the
+        # empty list fallback is allocated before getattr() is called, even when
+        # the initialized attr exists.
+        src = inspect.getsource(NotificationManager.get_status)
+        self.assertNotIn(
+            'getattr(self, "_inflight_seen_at_startup", [])',
+            src,
+        )
+        self.assertIn(
+            'getattr(self, "_inflight_seen_at_startup", None)',
+            src,
+        )
+
+    def test_status_missing_seen_at_startup_attr_still_returns_empty_list(self) -> None:
+        del self._manager._inflight_seen_at_startup
+        status = self._manager.get_status()
+        self.assertEqual(status["inflight_seen_at_startup"], [])
 
     def test_inflight_seen_at_startup_is_copy_not_internal_ref(self) -> None:
         # 内部状态被外部修改不应影响 manager 内部
@@ -387,6 +448,25 @@ class TestGetStatusFields(_ManagerWithTmpInflight):
         seen.append({"id": "external-mutation"})
         # 内部仍是 1 条
         self.assertEqual(len(self._manager._inflight_seen_at_startup), 1)
+
+    def test_status_provider_stats_does_not_use_eager_dict_fallback(self) -> None:
+        # R480: get_status() is polled by health / metrics. Avoid
+        # ``self._stats.get("providers", {})`` because the empty dict default is
+        # allocated before dict.get() is called, even when providers exists.
+        src = inspect.getsource(NotificationManager.get_status)
+        self.assertNotIn('self._stats.get("providers", {})', src)
+        self.assertIn("stats_snapshot = self._stats.copy()", src)
+        self.assertIn(
+            'providers_stats_raw = stats_snapshot.pop("providers", None)', src
+        )
+
+    def test_status_missing_providers_stats_still_returns_empty_snapshot(self) -> None:
+        with self._manager._stats_lock:
+            self._manager._stats.pop("providers", None)
+
+        status = self._manager.get_status()
+
+        self.assertEqual(status["stats"]["providers"], {})
 
 
 if __name__ == "__main__":

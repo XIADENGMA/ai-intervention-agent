@@ -30,11 +30,110 @@ R39 之前 ``web_ui_security.py`` 的整体覆盖率 93.79%，但漏掉的恰好
 
 from __future__ import annotations
 
+import inspect
 import unittest
 from typing import Any
 from unittest.mock import patch
 
 from ai_intervention_agent.web_ui import WebFeedbackUI
+
+
+class TestTrustedHostsBoundary(unittest.TestCase):
+    """Flask ``TRUSTED_HOSTS`` must reject spoofed Host headers."""
+
+    def _status_for_host(self, ui: WebFeedbackUI, host: str) -> int:
+        ui.app.config["TESTING"] = True
+        response = ui.app.test_client().get(
+            "/",
+            headers={"Host": host},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        return response.status_code
+
+    def test_default_trusted_hosts_allow_loopback_and_mdns(self) -> None:
+        ui = WebFeedbackUI(
+            prompt="test",
+            predefined_options=[],
+            task_id="test-host-default-r39",
+            host="0.0.0.0",
+            port=8080,
+        )
+
+        for host in (
+            "localhost:8080",
+            "127.0.0.1:8080",
+            "[::1]:8080",
+            "ai.local:8080",
+        ):
+            with self.subTest(host=host):
+                self.assertEqual(self._status_for_host(ui, host), 200)
+
+    def test_concrete_lan_bind_host_is_allowed(self) -> None:
+        ui = WebFeedbackUI(
+            prompt="test",
+            predefined_options=[],
+            task_id="test-host-lan-r39",
+            host="192.168.1.10",
+            port=8080,
+        )
+
+        self.assertEqual(self._status_for_host(ui, "192.168.1.10:8080"), 200)
+
+    def test_external_base_url_and_explicit_trusted_hosts_are_allowed(self) -> None:
+        ui = WebFeedbackUI(
+            prompt="test",
+            predefined_options=[],
+            task_id="test-host-custom-r39",
+            host="0.0.0.0",
+            port=8080,
+            external_base_url="https://ai.example.com/ui",
+            mdns_hostname="lab-ai.local",
+            trusted_hosts=["proxy.internal:9443", "https://tunnel.example.net/x"],
+        )
+
+        for host in (
+            "ai.example.com:443",
+            "lab-ai.local:8080",
+            "proxy.internal:9443",
+            "tunnel.example.net",
+        ):
+            with self.subTest(host=host):
+                self.assertEqual(self._status_for_host(ui, host), 200)
+
+    def test_spoofed_hosts_are_rejected(self) -> None:
+        ui = WebFeedbackUI(
+            prompt="test",
+            predefined_options=[],
+            task_id="test-host-reject-r39",
+            host="0.0.0.0",
+            port=8080,
+        )
+
+        for host in (
+            "evil.example:8080",
+            "localhost.evil.example:8080",
+            "0.0.0.0:8080",
+        ):
+            with self.subTest(host=host):
+                self.assertEqual(self._status_for_host(ui, host), 400)
+
+    def test_build_trusted_hosts_excludes_wildcards_and_normalizes_ipv6(self) -> None:
+        from ai_intervention_agent.web_ui import build_trusted_hosts
+
+        trusted = build_trusted_hosts(
+            host="::",
+            mdns_hostname="AI.local.",
+            external_base_url="https://[2001:db8::1]:8443/path",
+            configured_trusted_hosts=["*.example.com", "[::1]:8080"],
+        )
+
+        self.assertIn("localhost", trusted)
+        self.assertIn("127.0.0.1", trusted)
+        self.assertIn("[::1]", trusted)
+        self.assertIn("ai.local", trusted)
+        self.assertIn("[2001:db8::1]", trusted)
+        self.assertNotIn("::", trusted)
+        self.assertNotIn("*.example.com", trusted)
 
 
 class TestCspNonceOutsideRequestContext(unittest.TestCase):
@@ -73,19 +172,53 @@ class TestCspNonceOutsideRequestContext(unittest.TestCase):
         例如 app context teardown 期 / 多线程 race）必须落到
         ``return secrets.token_urlsafe(16)`` 而不是冒泡。
 
-        ``_get_csp_nonce`` 在函数体内 ``from flask import has_request_context``
-        懒导入，所以必须 patch ``flask.has_request_context`` 而不是
-        ``web_ui_security.has_request_context``——否则 patch 不会被命中，
-        测试看起来"通过"实际上根本没走到 except 分支。
+        R656 后 ``has_request_context`` 是 ``web_ui_security`` 的模块级绑定，
+        所以必须 patch ``web_ui_security.has_request_context``；否则 patch
+        不会被命中，测试看起来"通过"实际上根本没走到 except 分支。
         """
 
         def _fake_has_request_context() -> bool:
             raise RuntimeError("torn down")
 
-        with patch("flask.has_request_context", _fake_has_request_context):
+        with patch(
+            "ai_intervention_agent.web_ui_security.has_request_context",
+            _fake_has_request_context,
+        ):
             nonce = self.ui._get_csp_nonce()
             self.assertIsInstance(nonce, str)
             self.assertGreater(len(nonce), 10)
+
+    def test_existing_request_nonce_does_not_generate_unused_fallback(self) -> None:
+        """R464: request context already has ``g.csp_nonce`` → no extra CSPRNG call.
+
+        Regression target: ``getattr(g, "csp_nonce", secrets.token_urlsafe(16))``
+        looks lazy but Python evaluates call arguments before invoking
+        ``getattr``. That burned one unused secure random token every time
+        ``_get_template_context`` read the request nonce.
+        """
+        from flask import g
+
+        with self.ui.app.test_request_context("/"):
+            g.csp_nonce = "request-nonce"
+            with patch(
+                "ai_intervention_agent.web_ui_security.secrets.token_urlsafe",
+                side_effect=AssertionError("unused fallback should not run"),
+            ):
+                nonce = self.ui._get_csp_nonce()
+
+        self.assertEqual(nonce, "request-nonce")
+
+    def test_missing_request_nonce_still_generates_secure_fallback(self) -> None:
+        """R464 fallback behavior is preserved when ``g.csp_nonce`` is absent."""
+        with self.ui.app.test_request_context("/"):
+            with patch(
+                "ai_intervention_agent.web_ui_security.secrets.token_urlsafe",
+                return_value="generated-nonce",
+            ) as token_spy:
+                nonce = self.ui._get_csp_nonce()
+
+        self.assertEqual(nonce, "generated-nonce")
+        token_spy.assert_called_once_with(16)
 
 
 class TestBlockedCidrNetwork(unittest.TestCase):
@@ -237,6 +370,42 @@ class TestNetworkSecurityConfigFallback(unittest.TestCase):
         # 显式禁用后即使在黑名单也放行
         self.assertTrue(ui._is_ip_allowed("1.1.1.1"))
 
+    def test_malformed_blocked_ips_is_treated_as_empty_collection(self) -> None:
+        from ai_intervention_agent.web_ui_security import SecurityMixin
+
+        ui = WebFeedbackUI(
+            prompt="test",
+            predefined_options=[],
+            task_id="test-bad-blocked-ips-r39",
+        )
+        ui.network_security_config["access_control_enabled"] = True
+        ui.network_security_config["blocked_ips"] = "127.0.0.1"
+        ui.network_security_config["allowed_networks"] = ["127.0.0.0/8"]
+
+        self.assertTrue(ui._is_ip_allowed("127.0.0.1"))
+
+        source = inspect.getsource(SecurityMixin._is_ip_allowed)
+        self.assertNotIn('cfg.get("blocked_ips", [])', source)
+
+    def test_missing_allowed_networks_uses_lazy_default_path(self) -> None:
+        from ai_intervention_agent.web_ui_security import SecurityMixin
+
+        ui = WebFeedbackUI(
+            prompt="test",
+            predefined_options=[],
+            task_id="test-missing-allowed-networks-r497",
+        )
+        ui.network_security_config = {
+            "access_control_enabled": True,
+            "blocked_ips": [],
+        }
+
+        self.assertTrue(ui._is_ip_allowed("127.0.0.1"))
+
+        source = inspect.getsource(SecurityMixin._is_ip_allowed)
+        self.assertIn("_DEFAULT_ALLOWED_NETWORKS", source)
+        self.assertNotIn('cfg.get("allowed_networks", [', source)
+
 
 class TestNetworkSecurityConfigLoadFailure(unittest.TestCase):
     """``_load_network_security_config`` 异常路径（line 165-167）。"""
@@ -263,6 +432,39 @@ class TestNetworkSecurityConfigLoadFailure(unittest.TestCase):
             "兜底配置必须含默认 allowed_networks 字段",
         )
         self.assertIn("access_control_enabled", cfg)
+
+
+class TestNetworkSecurityLazyTestingGuard(unittest.TestCase):
+    """R474: TESTING guard must not allocate an unused dict fallback."""
+
+    def test_testing_short_circuit_does_not_load_config(self) -> None:
+        ui = WebFeedbackUI(
+            prompt="test",
+            predefined_options=[],
+            task_id="test-ns-testing-guard-r474",
+        )
+        ui.app.config["TESTING"] = True
+        ui._network_security_config_loaded_from_config = False
+
+        with patch.object(
+            ui,
+            "_load_network_security_config",
+            side_effect=AssertionError("TESTING guard should short-circuit"),
+        ):
+            ui._ensure_network_security_config_loaded()
+
+        self.assertTrue(ui._network_security_config_loaded_from_config)
+
+    def test_lazy_loader_no_eager_app_config_dict_fallback(self) -> None:
+        from ai_intervention_agent.web_ui_security import SecurityMixin
+
+        source = inspect.getsource(SecurityMixin._ensure_network_security_config_loaded)
+
+        self.assertNotIn(
+            'getattr(getattr(self, "app", None), "config", {})',
+            source,
+        )
+        self.assertIn("_MISSING_APP_CONFIG", source)
 
 
 def _build_app_context_helper(ui: WebFeedbackUI) -> Any:

@@ -10,6 +10,7 @@ Network Security 配置模块单元测试
     - _load_network_security_config() 方法
 """
 
+import inspect
 import json
 import tempfile
 import unittest
@@ -236,6 +237,33 @@ class TestValidateBlockedIps(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+class TestValidateTrustedHosts(unittest.TestCase):
+    """测试 validate_trusted_hosts() 函数"""
+
+    def test_valid_hosts_preserve_order_and_dedupe(self):
+        from ai_intervention_agent.web_ui import validate_trusted_hosts
+
+        result = validate_trusted_hosts(
+            ["ai.example.com", "  192.168.1.10  ", "ai.example.com"]
+        )
+
+        self.assertEqual(result, ["ai.example.com", "192.168.1.10"])
+
+    def test_filters_wildcards_empty_and_non_strings(self):
+        from ai_intervention_agent.web_ui import validate_trusted_hosts
+
+        result = validate_trusted_hosts(
+            ["ai.example.com", "", "*.example.com", None, 123]
+        )
+
+        self.assertEqual(result, ["ai.example.com"])
+
+    def test_non_list_defaults_empty(self):
+        from ai_intervention_agent.web_ui import validate_trusted_hosts
+
+        self.assertEqual(validate_trusted_hosts("ai.example.com"), [])
+
+
 class TestValidateNetworkSecurityConfig(unittest.TestCase):
     """测试 validate_network_security_config() 函数"""
 
@@ -254,7 +282,24 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
         self.assertEqual(result["bind_interface"], "192.168.1.1")
         self.assertEqual(len(result["allowed_networks"]), 2)
         self.assertEqual(len(result["blocked_ips"]), 1)
+        self.assertEqual(result["trusted_hosts"], [])
         self.assertTrue(result["access_control_enabled"])
+
+    def test_trusted_hosts_config(self):
+        """测试 trusted_hosts 字段"""
+        from ai_intervention_agent.web_ui import validate_network_security_config
+
+        config = {
+            "trusted_hosts": [
+                "ai.example.com",
+                "  192.168.1.10  ",
+                "*.example.com",
+                "ai.example.com",
+            ],
+        }
+        result = validate_network_security_config(config)
+
+        self.assertEqual(result["trusted_hosts"], ["ai.example.com", "192.168.1.10"])
 
     def test_empty_config(self):
         """测试空配置"""
@@ -267,6 +312,16 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
         self.assertTrue(len(result["allowed_networks"]) > 0)
         self.assertEqual(result["blocked_ips"], [])
         self.assertTrue(result["access_control_enabled"])
+
+    def test_collection_defaults_avoid_eager_empty_lists(self):
+        from ai_intervention_agent.web_ui import validate_network_security_config
+
+        source = inspect.getsource(validate_network_security_config)
+
+        self.assertEqual(validate_network_security_config({})["blocked_ips"], [])
+        self.assertEqual(validate_network_security_config({})["trusted_hosts"], [])
+        self.assertNotIn('config.get("blocked_ips", [])', source)
+        self.assertNotIn('config.get("trusted_hosts", [])', source)
 
     def test_partial_config(self):
         """测试部分配置"""
@@ -697,11 +752,45 @@ class TestValidateNetworkSecurityConfigMixin(unittest.TestCase):
                 "bind_interface",
                 "allowed_networks",
                 "blocked_ips",
+                "trusted_hosts",
                 "access_control_enabled",
                 "api_token",
                 "api_token_rotated_at",
             },
         )
+
+    def test_collection_defaults_avoid_eager_fallbacks(self):
+        from ai_intervention_agent.config_modules.network_security import (
+            NetworkSecurityMixin,
+        )
+
+        validate_source = inspect.getsource(
+            NetworkSecurityMixin._validate_network_security_config
+        )
+        load_source = inspect.getsource(
+            NetworkSecurityMixin.get_network_security_config
+        )
+
+        self.assertNotIn('get("network_security", {})', validate_source)
+        self.assertNotIn('get("allowed_networks", [])', validate_source)
+        self.assertNotIn('get("blocked_ips", [])', validate_source)
+        self.assertNotIn('get("trusted_hosts", [])', validate_source)
+        self.assertNotIn('get("network_security", {})', load_source)
+
+    def test_trusted_hosts_validated(self):
+        """trusted_hosts 只保留具体 Host，不接受通配符。"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {
+                "trusted_hosts": [
+                    "ai.example.com",
+                    ".example.com",
+                    "*.example.com",
+                    "  192.168.1.10  ",
+                ]
+            }
+        )
+        self.assertEqual(result["trusted_hosts"], ["ai.example.com", "192.168.1.10"])
 
 
 class TestUpdateNetworkSecurityMixin(unittest.TestCase):

@@ -9,6 +9,7 @@ AI Intervention Agent - 通知管理器单元测试
 5. Bark 提供者动态更新
 """
 
+import inspect
 import os
 import shutil
 import threading
@@ -1427,6 +1428,21 @@ class TestCallbacks(unittest.TestCase):
         mgr.trigger_callbacks("test_event")
         self.assertEqual(results, ["called"])
 
+    def test_trigger_missing_event_noop(self):
+        mgr = _make_manager()
+
+        mgr.trigger_callbacks("missing_event", "ignored")
+
+        self.assertEqual(mgr._callbacks, {})
+
+    def test_trigger_callbacks_avoids_eager_empty_list_fallback(self):
+        from ai_intervention_agent.notification_manager import NotificationManager
+
+        source = inspect.getsource(NotificationManager.trigger_callbacks)
+
+        self.assertIn("callbacks_raw = self._callbacks.get(event_name)", source)
+        self.assertNotIn("self._callbacks.get(event_name, [])", source)
+
     def test_callback_exception_doesnt_break(self):
         mgr = _make_manager()
 
@@ -1644,6 +1660,57 @@ class TestSendSingleNotification(unittest.TestCase):
         with mgr._stats_lock:
             self.assertGreater(mgr._stats["providers"]["web"]["success"], 0)
 
+    def test_provider_success_reuses_completion_time_for_latency_and_timestamp(self):
+        mgr = _make_manager()
+        mock_provider = MagicMock()
+        mock_provider.send.return_value = True
+        mgr.register_provider(NotificationType.WEB, mock_provider)
+        event = _make_event()
+
+        with patch(
+            "ai_intervention_agent.notification_manager.time.time",
+            side_effect=[10.0, 10.125],
+        ) as time_spy:
+            result = mgr._send_single_notification(NotificationType.WEB, event)
+
+        self.assertTrue(result)
+        self.assertEqual(time_spy.call_count, 2)
+        with mgr._stats_lock:
+            stats = mgr._stats["providers"]["web"]
+            self.assertEqual(stats["last_latency_ms"], 125)
+            self.assertEqual(stats["last_success_at"], 10.125)
+
+    def test_provider_failure_reuses_completion_time_for_latency_and_timestamp(self):
+        mgr = _make_manager()
+        mock_provider = MagicMock()
+        mock_provider.send.return_value = False
+        mgr.register_provider(NotificationType.WEB, mock_provider)
+        event = _make_event()
+
+        with patch(
+            "ai_intervention_agent.notification_manager.time.time",
+            side_effect=[20.0, 20.05],
+        ) as time_spy:
+            result = mgr._send_single_notification(NotificationType.WEB, event)
+
+        self.assertFalse(result)
+        self.assertEqual(time_spy.call_count, 2)
+        with mgr._stats_lock:
+            stats = mgr._stats["providers"]["web"]
+            self.assertEqual(stats["last_latency_ms"], 50)
+            self.assertEqual(stats["last_failure_at"], 20.05)
+
+    def test_provider_result_stats_use_completion_time_snapshot(self):
+        from ai_intervention_agent.notification_manager import NotificationManager
+
+        source = inspect.getsource(NotificationManager._send_single_notification)
+
+        self.assertIn("completed_at = time.time()", source)
+        self.assertIn("completed_at - started_at", source)
+        self.assertIn('stats["last_success_at"] = completed_at', source)
+        self.assertIn('stats["last_failure_at"] = completed_at', source)
+        self.assertNotIn("now = time.time()", source)
+
     def test_bark_error_in_metadata(self):
         mgr = _make_manager()
         mock_provider = MagicMock()
@@ -1658,6 +1725,47 @@ class TestSendSingleNotification(unittest.TestCase):
         with mgr._stats_lock:
             stats = mgr._stats["providers"]["bark"]
             self.assertEqual(stats["last_error"], "APNs connection failed")
+
+
+class TestProviderStatsLazyDefaults(unittest.TestCase):
+    """R472: provider stats defaults are allocated only for missing providers."""
+
+    def test_existing_provider_stats_reused_without_default_allocation(self):
+        from ai_intervention_agent import notification_manager as nm_module
+
+        existing = {"attempts": 7, "success": 3, "failure": 4}
+        stats_root = {"providers": {"web": existing}}
+
+        with patch.object(
+            nm_module,
+            "_new_provider_stats",
+            side_effect=AssertionError("default stats should not be allocated"),
+        ):
+            result = nm_module._get_or_create_provider_stats(stats_root, "web")
+
+        self.assertIs(result, existing)
+
+    def test_missing_provider_stats_created_once(self):
+        from ai_intervention_agent import notification_manager as nm_module
+
+        stats_root: dict[str, Any] = {}
+        result = nm_module._get_or_create_provider_stats(stats_root, "web")
+
+        self.assertIs(stats_root["providers"]["web"], result)
+        self.assertEqual(result["attempts"], 0)
+        self.assertEqual(result["success_streak"], 0)
+        self.assertEqual(result["failure_streak"], 0)
+
+    def test_send_single_notification_uses_lazy_provider_stats_helper(self):
+        from ai_intervention_agent import notification_manager as nm_module
+
+        source = inspect.getsource(
+            nm_module.NotificationManager._send_single_notification
+        )
+
+        self.assertNotIn('setdefault("providers", {})', source)
+        self.assertNotIn("providers.setdefault(", source)
+        self.assertGreaterEqual(source.count("_get_or_create_provider_stats("), 4)
 
 
 # ──────────────────────────────────────────────────────────

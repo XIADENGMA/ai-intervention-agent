@@ -176,6 +176,7 @@ def test_render_task_tabs_missing_container_does_not_block_nonempty_tasks() -> N
             "getOpenTaskId",
             "pickOpenTaskId",
             "reconcileActiveTaskId",
+            "buildTaskTabsRenderState",
             "renderTaskTabs",
         )
     )

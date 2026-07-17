@@ -3,7 +3,7 @@
 背景
 ----
 
-`multi_task.js::startTaskCountdown` 内的 `setInterval` body 与
+`multi_task.js::tickTaskCountdown` 内的共享 ticker body 与
 `forceUpdateAllTaskCountdowns` 都是 1Hz × N 并发 task 的高频 DOM 路径。
 原实现每次 tick 都为每个 task 触发 3 次 DOM 查找：
 
@@ -34,7 +34,7 @@ setInterval 到 1Hz 但 layout pipeline 仍要 work，长会话场景明显有 p
 - helper 函数 `_getOrCacheCountdownDom` 必须存在
 - 必须用 `document.contains` 检测 stale
 - 必须挂在 `entry._domCache` 上
-- `forceUpdateAllTaskCountdowns` 与 `setInterval` 内部都必须经由 helper
+- `forceUpdateAllTaskCountdowns` 与 `tickTaskCountdown` 内部都必须经由 helper
 - helper 必须 cache 三个 refs（ring / circle / numberSpan）
 
 Without these invariants, a routine "let me simplify this back to
@@ -156,28 +156,27 @@ class TestCountdownDomCacheR266(unittest.TestCase):
             "（应走 _getOrCacheCountdownDom 缓存路径）",
         )
 
-    def test_start_task_countdown_setInterval_uses_cache(self) -> None:
-        """`startTaskCountdown` 内 setInterval body 必须经由 helper（每秒
+    def test_tick_task_countdown_uses_cache(self) -> None:
+        """`tickTaskCountdown` 内共享 ticker body 必须经由 helper（每秒
         N 次的最热路径，不走 cache = 直接 perf regression）。"""
-        # 抓 startTaskCountdown 整段
+        # 抓 tickTaskCountdown 整段
         body_match = re.search(
-            r"function\s+startTaskCountdown[\s\S]*?(?=\n/\*\*|\nfunction\s+)",
+            r"function\s+tickTaskCountdown[\s\S]*?(?=\nfunction\s+)",
             self.js,
         )
-        self.assertIsNotNone(body_match, "找不到 startTaskCountdown 函数体")
+        self.assertIsNotNone(body_match, "找不到 tickTaskCountdown 函数体")
         assert body_match is not None
         body = body_match.group(0)
         self.assertIn(
-            "_getOrCacheCountdownDom(taskId, taskCountdowns[taskId])",
+            "_getOrCacheCountdownDom(taskId, entry)",
             body,
-            "R266 startTaskCountdown setInterval body 必须 "
-            "_getOrCacheCountdownDom(taskId, taskCountdowns[taskId])",
+            "R266 tickTaskCountdown body 必须 _getOrCacheCountdownDom(taskId, entry)",
         )
         # 反向锁：不能再 inline getElementById(`countdown-${taskId}`)
         self.assertNotRegex(
             body,
             r"document\.getElementById\(`countdown-\$\{taskId\}`\)",
-            "R266 startTaskCountdown setInterval 不应再 inline getElementById"
+            "R266 tickTaskCountdown 不应再 inline getElementById"
             "（应走 _getOrCacheCountdownDom 缓存路径）",
         )
 

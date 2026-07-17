@@ -286,7 +286,7 @@ class TestSumInvariantUnderCap(unittest.TestCase):
 
 class TestCardinalityCapLockColocation(unittest.TestCase):
     """**R203 核心契约 #2**：``_SSEBus.emit`` 源码里 cap-check（``if event
-    _type not in self._emit_by_type and len(self._emit_by_type) >= self._
+    _type not in emit_by_type and len(emit_by_type) >= self._
     EMIT_BY_TYPE_MAX_CARDINALITY``）必须**在同一 ``with self._lock:`` 块内**，
     且**两个分支**（overflow 桶 ``+= 1`` 与正常 event_type ``+= 1``）都
     在锁内。
@@ -340,10 +340,8 @@ class TestCardinalityCapLockColocation(unittest.TestCase):
                     and isinstance(stmt.left.func, ast.Name)
                     and stmt.left.func.id == "len"
                     and len(stmt.left.args) == 1
-                    and isinstance(stmt.left.args[0], ast.Attribute)
-                    and isinstance(stmt.left.args[0].value, ast.Name)
-                    and stmt.left.args[0].value.id == "self"
-                    and stmt.left.args[0].attr == "_emit_by_type"
+                    and isinstance(stmt.left.args[0], ast.Name)
+                    and stmt.left.args[0].id == "emit_by_type"
                 ):
                     continue
                 if not stmt.comparators or len(stmt.ops) != 1:
@@ -363,7 +361,8 @@ class TestCardinalityCapLockColocation(unittest.TestCase):
 
         self.fail(
             "_SSEBus.emit source does NOT contain a `len(self._emit_by_type) "
-            ">= self._EMIT_BY_TYPE_MAX_CARDINALITY` cap-check inside a "
+            "/ len(emit_by_type) >= self._EMIT_BY_TYPE_MAX_CARDINALITY` "
+            "cap-check inside a "
             "`with self._lock:` block. R203 cap-check must be lock-protected "
             "to avoid race-window cap overshoot. If you refactored, restore "
             "the structure or update this AST guard."
@@ -386,10 +385,18 @@ class TestCardinalityCapLockColocation(unittest.TestCase):
                 tgt = stmt.target
                 if not (
                     isinstance(tgt, ast.Subscript)
-                    and isinstance(tgt.value, ast.Attribute)
-                    and isinstance(tgt.value.value, ast.Name)
-                    and tgt.value.value.id == "self"
-                    and tgt.value.attr == "_emit_by_type"
+                    and (
+                        (
+                            isinstance(tgt.value, ast.Attribute)
+                            and isinstance(tgt.value.value, ast.Name)
+                            and tgt.value.value.id == "self"
+                            and tgt.value.attr == "_emit_by_type"
+                        )
+                        or (
+                            isinstance(tgt.value, ast.Name)
+                            and tgt.value.id == "emit_by_type"
+                        )
+                    )
                 ):
                     continue
                 if (
@@ -397,12 +404,16 @@ class TestCardinalityCapLockColocation(unittest.TestCase):
                     and isinstance(tgt.slice.value, ast.Name)
                     and tgt.slice.value.id == "self"
                     and tgt.slice.attr == "_EMIT_BY_TYPE_OVERFLOW_BUCKET"
+                ) or (
+                    isinstance(tgt.slice, ast.Name)
+                    and tgt.slice.id == "overflow_bucket"
                 ):
                     return
 
         self.fail(
-            "_SSEBus.emit source does NOT contain `self._emit_by_type[self._"
-            "EMIT_BY_TYPE_OVERFLOW_BUCKET] += 1` inside a `with self._lock:` "
+            "_SSEBus.emit source does NOT contain `_emit_by_type/emit_by_type"
+            "[_EMIT_BY_TYPE_OVERFLOW_BUCKET/overflow_bucket] += 1` inside a "
+            "`with self._lock:` "
             "block. R203 overflow accumulation must be lock-protected to "
             "preserve R202 sum invariant atomicity."
         )

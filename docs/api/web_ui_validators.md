@@ -16,4 +16,6 @@
 
 ### `validate_blocked_ips(ips: Any) -> list[str]`
 
+### `validate_trusted_hosts(hosts: Any) -> list[str]`
+
 ### `validate_network_security_config(config: Any) -> dict[str, Any]`

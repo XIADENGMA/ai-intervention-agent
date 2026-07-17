@@ -794,6 +794,7 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
         web_ui_config = config_mgr.get_section("web_ui")
         feedback_config = config_mgr.get_section("feedback")
         network_security_config = config_mgr.get_section("network_security")
+        mdns_config = config_mgr.get_section("mdns")
 
         host = str(
             network_security_config.get(
@@ -842,6 +843,11 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
             )
             language = env_language
 
+        trusted_hosts_raw = network_security_config.get("trusted_hosts")
+        trusted_hosts_source = (
+            trusted_hosts_raw if isinstance(trusted_hosts_raw, list) else ()
+        )
+
         config = WebUIConfig(
             host=host,
             port=port,
@@ -850,6 +856,12 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
             max_retries=max_retries,
             retry_delay=retry_delay,
             external_base_url=str(web_ui_config.get("external_base_url", "") or ""),
+            mdns_hostname=str(mdns_config.get("hostname", "ai.local") or "ai.local"),
+            trusted_hosts=[
+                str(item)
+                for item in trusted_hosts_source
+                if isinstance(item, str) and item.strip()
+            ],
         )
 
         result: tuple[WebUIConfig, int] = (config, auto_resubmit_timeout)
@@ -1017,6 +1029,12 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
         config.host,
         "--port",
         str(config.port),
+        "--external-base-url",
+        config.external_base_url,
+        "--mdns-hostname",
+        config.mdns_hostname,
+        "--trusted-hosts",
+        ",".join(config.trusted_hosts),
     ]
 
     log_path = _get_web_ui_log_path(script_dir)

@@ -166,10 +166,45 @@ def validate_blocked_ips(ips: Any) -> list[str]:
     return valid_ips
 
 
+def validate_trusted_hosts(hosts: Any) -> list[str]:
+    """Validate explicit Host allowlist entries while preserving hostname form.
+
+    Detailed normalization is done by ``web_ui_security.build_trusted_hosts`` so
+    URL, host:port, and IPv6 bracket syntax stay supported in one place.
+    """
+    if not isinstance(hosts, list):
+        return []
+
+    valid_hosts: list[str] = []
+    invalid_hosts: list[str] = []
+    seen: set[str] = set()
+    for host in hosts:
+        if not isinstance(host, str):
+            invalid_hosts.append(str(host))
+            continue
+        stripped = host.strip()
+        if not stripped or "*" in stripped or stripped.startswith("."):
+            invalid_hosts.append(str(host))
+            continue
+        if stripped in seen:
+            continue
+        valid_hosts.append(stripped)
+        seen.add(stripped)
+
+    if invalid_hosts:
+        logger.warning(
+            f"以下 trusted_hosts 条目无效，已跳过: {', '.join(invalid_hosts)}"
+        )
+    return valid_hosts
+
+
 def validate_network_security_config(config: Any) -> dict[str, Any]:
     """验证并清理 network_security 配置"""
     if not isinstance(config, dict):
         config = {}
+
+    blocked_ips_raw = config.get("blocked_ips")
+    trusted_hosts_raw = config.get("trusted_hosts")
 
     validated = {
         "bind_interface": validate_bind_interface(
@@ -178,7 +213,8 @@ def validate_network_security_config(config: Any) -> dict[str, Any]:
         "allowed_networks": validate_allowed_networks(
             config.get("allowed_networks", DEFAULT_ALLOWED_NETWORKS)
         ),
-        "blocked_ips": validate_blocked_ips(config.get("blocked_ips", [])),
+        "blocked_ips": validate_blocked_ips(blocked_ips_raw),
+        "trusted_hosts": validate_trusted_hosts(trusted_hosts_raw),
         "access_control_enabled": bool(
             config.get(
                 "access_control_enabled",

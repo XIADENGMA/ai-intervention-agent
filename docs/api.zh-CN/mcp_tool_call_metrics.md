@@ -124,7 +124,7 @@ R190 起本函数同时清空 ``_latency_state``——避免「counter reset 了
 关键性质：
 
 - 返回字典是新建的，调用者修改不会污染内部状态；
-- ``buckets`` 字典自带 ``float("inf")`` 这个键，值 == ``count``（因为
+- ``buckets`` 字典自带 ``+Inf`` 这个键，值 == ``count``（因为
   所有观测必然 ≤ +Inf）——caller 直接 emit ``le="+Inf"`` bucket 即可；
 - 若某 ``(tool, status)`` 还从未被记录，**不会**出现在返回字典里。
 

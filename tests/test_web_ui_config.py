@@ -280,6 +280,7 @@ class TestGetWebUIConfig(unittest.TestCase):
             },
             "feedback": {"auto_resubmit_timeout": 240},
             "network_security": {"bind_interface": "127.0.0.1"},
+            "mdns": {"hostname": "ai.local"},
         }[section]
         mock_get_config.return_value = mock_config_mgr
 
@@ -354,6 +355,7 @@ class TestGetWebUIConfigGenerationToken(unittest.TestCase):
                 "web_ui": {"port": 8080, "timeout": 30},
                 "feedback": {"auto_resubmit_timeout": 240},
                 "network_security": {"bind_interface": "127.0.0.1"},
+                "mdns": {"hostname": "ai.local"},
             }
             if section == "web_ui":
                 load_started.set()
@@ -419,6 +421,7 @@ class TestGetWebUIConfigGenerationToken(unittest.TestCase):
             "web_ui": {"port": 8080},
             "feedback": {"auto_resubmit_timeout": 240},
             "network_security": {"bind_interface": "127.0.0.1"},
+            "mdns": {"hostname": "ai.local"},
         }[section]
         mock_get_config.return_value = mock_config_mgr
 
@@ -1494,6 +1497,45 @@ class TestGetProjectVersion(unittest.TestCase):
             self.assertEqual(result, "unknown")
 
         get_project_version.cache_clear()
+
+    def test_pyproject_project_table_must_be_mapping(self):
+        """Malformed pyproject ``project`` values fall back without chained defaults."""
+        import tomllib
+        from importlib.metadata import PackageNotFoundError
+
+        from ai_intervention_agent.web_ui import get_project_version
+
+        get_project_version.cache_clear()
+
+        _orig_exists = Path.exists
+
+        def _mock_exists(self):
+            if str(self).endswith("pyproject.toml"):
+                return True
+            return _orig_exists(self)
+
+        with (
+            patch(
+                "importlib.metadata.version",
+                side_effect=PackageNotFoundError("ai-intervention-agent"),
+            ),
+            patch.object(Path, "exists", _mock_exists),
+            patch("builtins.open", MagicMock()),
+            patch.object(tomllib, "load", return_value={"project": "not a table"}),
+        ):
+            result = get_project_version()
+
+        self.assertEqual(result, "unknown")
+        get_project_version.cache_clear()
+
+    def test_pyproject_version_parser_does_not_use_eager_dict_fallback(self):
+        import ai_intervention_agent.web_ui as web_ui
+
+        source = Path(web_ui.__file__).read_text(encoding="utf-8")
+
+        self.assertNotIn('data.get("project", {})', source)
+        self.assertIn('project_data = data.get("project")', source)
+        self.assertIn("isinstance(project_data, dict)", source)
 
 
 # ──────────────────────────────────────────────────────────
@@ -2650,6 +2692,65 @@ class TestApiConfigBranches(unittest.TestCase):
             get_remaining_time=lambda: 100,
         )
 
+    def test_task_predefined_options_defaults_missing_attr_returns_empty(self):
+        from ai_intervention_agent.web_ui import _task_predefined_options_defaults
+
+        self.assertEqual(_task_predefined_options_defaults(SimpleNamespace()), [])
+
+    def test_task_predefined_options_defaults_existing_value_reused(self):
+        from ai_intervention_agent.web_ui import _task_predefined_options_defaults
+
+        defaults = [True]
+        task = SimpleNamespace(predefined_options_defaults=defaults)
+
+        self.assertIs(_task_predefined_options_defaults(task), defaults)
+
+    def test_task_remaining_time_no_arg_compatibility(self):
+        from ai_intervention_agent.web_ui import _task_remaining_time
+
+        task = SimpleNamespace(get_remaining_time=lambda: 42)
+
+        self.assertEqual(_task_remaining_time(task, now_monotonic=123.0), 42)
+
+    def test_api_config_option_defaults_do_not_use_eager_list_fallbacks(self):
+        import ai_intervention_agent.web_ui as web_ui
+
+        source = "".join(Path(web_ui.__file__).read_text().split())
+
+        self.assertNotIn(
+            'getattr(active_task,"predefined_options_defaults",[])',
+            source,
+        )
+        self.assertNotIn(
+            'getattr(first_task,"predefined_options_defaults",[])',
+            source,
+        )
+        self.assertNotIn(
+            'getattr(self,"current_options_defaults",[])',
+            source,
+        )
+        self.assertIn("_task_predefined_options_defaults(active_task)", source)
+        self.assertIn("_task_predefined_options_defaults(first_task)", source)
+
+    def test_api_config_taskqueue_remaining_time_uses_monotonic_snapshot(self):
+        import ai_intervention_agent.web_ui as web_ui
+
+        source = "".join(Path(web_ui.__file__).read_text().split())
+
+        self.assertIn("_task_remaining_time(active_task,now_monotonic)", source)
+        self.assertIn("_task_remaining_time(first_task,now_monotonic)", source)
+        self.assertNotIn("active_task.get_remaining_time()", source)
+        self.assertNotIn("first_task.get_remaining_time()", source)
+
+    def test_api_config_auto_activate_uses_first_incomplete_helper(self):
+        import ai_intervention_agent.web_ui as web_ui
+
+        source = Path(web_ui.__file__).read_text(encoding="utf-8")
+
+        self.assertIn("task_queue.get_first_incomplete_task()", source)
+        self.assertNotIn("incomplete_tasks = [", source)
+        self.assertNotIn("task_queue.get_all_tasks()", source)
+
     def test_active_task_returned(self):
         active = self._make_task("t-active", "active")
         mock_tq = MagicMock()
@@ -2663,11 +2764,60 @@ class TestApiConfigBranches(unittest.TestCase):
             self.assertEqual(data["task_id"], "t-active")
             self.assertEqual(data["predefined_options_defaults"], [True])
 
+    def test_active_task_receives_route_monotonic_snapshot(self):
+        from datetime import datetime
+
+        class SnapshotTask:
+            task_id = "t-active-snapshot"
+            status = "active"
+            prompt = "snapshot"
+            predefined_options = ["opt1"]
+            predefined_options_defaults = [True]
+            auto_resubmit_timeout = 120
+            created_at = datetime.fromtimestamp(1700000000)
+
+            def __init__(self) -> None:
+                self.seen_now_monotonic: list[float | None] = []
+
+            def get_remaining_time(self, now_monotonic: float | None = None) -> int:
+                self.seen_now_monotonic.append(now_monotonic)
+                return 77
+
+        active = SnapshotTask()
+        mock_tq = MagicMock()
+        mock_tq.get_active_task.return_value = active
+
+        with (
+            patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq),
+            patch("ai_intervention_agent.web_ui.time.monotonic", return_value=456.25),
+            patch("ai_intervention_agent.web_ui.time.time", return_value=1700000100.0),
+        ):
+            resp = self.client.get("/api/config")
+
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertEqual(data["remaining_time"], 77)
+        self.assertEqual(data["server_time"], 1700000100.0)
+        self.assertEqual(active.seen_now_monotonic, [456.25])
+
+    def test_active_task_missing_option_defaults_returns_empty(self):
+        active = self._make_task("t-active-missing", "active")
+        delattr(active, "predefined_options_defaults")
+        mock_tq = MagicMock()
+        mock_tq.get_active_task.return_value = active
+
+        with patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq):
+            resp = self.client.get("/api/config")
+            self.assertEqual(resp.status_code, 200)
+            data = json.loads(resp.data)
+            self.assertEqual(data["task_id"], "t-active-missing")
+            self.assertEqual(data["predefined_options_defaults"], [])
+
     def test_auto_activate_pending_task(self):
         pending = self._make_task("t-pending", "pending")
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = None
-        mock_tq.get_all_tasks.return_value = [pending]
+        mock_tq.get_first_incomplete_task.return_value = pending
 
         with patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq):
             resp = self.client.get("/api/config")
@@ -2676,13 +2826,15 @@ class TestApiConfigBranches(unittest.TestCase):
             self.assertTrue(data["has_content"])
             self.assertEqual(data["task_id"], "t-pending")
             self.assertEqual(data["predefined_options_defaults"], [True])
+            mock_tq.get_first_incomplete_task.assert_called_once_with()
+            mock_tq.get_all_tasks.assert_not_called()
             mock_tq.set_active_task.assert_called_once_with("t-pending")
 
     def test_all_tasks_completed(self):
-        completed = self._make_task("t-done", "completed")
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = None
-        mock_tq.get_all_tasks.return_value = [completed]
+        mock_tq.get_first_incomplete_task.return_value = None
+        mock_tq.has_tasks.return_value = True
 
         with patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq):
             resp = self.client.get("/api/config")
@@ -2690,12 +2842,15 @@ class TestApiConfigBranches(unittest.TestCase):
             data = json.loads(resp.data)
             self.assertFalse(data["has_content"])
             self.assertEqual(data["predefined_options_defaults"], [])
+            mock_tq.get_all_tasks.assert_not_called()
+            mock_tq.has_tasks.assert_called_once_with()
 
     def test_single_task_mode_fallback(self):
         """无 TaskQueue 任务时回退到单任务模式"""
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = None
-        mock_tq.get_all_tasks.return_value = []
+        mock_tq.get_first_incomplete_task.return_value = None
+        mock_tq.has_tasks.return_value = False
 
         self.web_ui.has_content = True
         self.web_ui.current_prompt = "single mode prompt"
@@ -2713,11 +2868,46 @@ class TestApiConfigBranches(unittest.TestCase):
             self.assertEqual(data["prompt"], "single mode prompt")
             self.assertEqual(data["predefined_options_defaults"], [True])
 
+    def test_single_task_mode_missing_option_defaults_returns_empty(self):
+        """单任务模式兼容绕开 __init__ 的旧对象：缺默认值 attr 返回空列表"""
+        mock_tq = MagicMock()
+        mock_tq.get_active_task.return_value = None
+        mock_tq.get_first_incomplete_task.return_value = None
+        mock_tq.has_tasks.return_value = False
+
+        self.web_ui.has_content = True
+        self.web_ui.current_prompt = "single missing defaults"
+        self.web_ui.current_options = ["opt"]
+        self.web_ui.current_task_id = "single-missing-defaults"
+        self.web_ui.current_auto_resubmit_timeout = 200
+        self.web_ui._single_task_timeout_explicit = True
+        had_defaults = hasattr(self.web_ui, "current_options_defaults")
+        previous_defaults = (
+            list(self.web_ui.current_options_defaults) if had_defaults else []
+        )
+        if had_defaults:
+            delattr(self.web_ui, "current_options_defaults")
+
+        try:
+            with patch(
+                "ai_intervention_agent.web_ui.get_task_queue",
+                return_value=mock_tq,
+            ):
+                resp = self.client.get("/api/config")
+                self.assertEqual(resp.status_code, 200)
+                data = json.loads(resp.data)
+                self.assertEqual(data["task_id"], "single-missing-defaults")
+                self.assertEqual(data["predefined_options_defaults"], [])
+        finally:
+            if had_defaults:
+                self.web_ui.current_options_defaults = previous_defaults
+
     def test_single_task_mode_non_explicit_timeout(self):
         """单任务模式：非显式 timeout 时从配置读取"""
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = None
-        mock_tq.get_all_tasks.return_value = []
+        mock_tq.get_first_incomplete_task.return_value = None
+        mock_tq.has_tasks.return_value = False
 
         self.web_ui.has_content = True
         self.web_ui.current_prompt = "non-explicit"
@@ -2744,7 +2934,8 @@ class TestApiConfigBranches(unittest.TestCase):
         """单任务模式：配置读取失败沿用当前值"""
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = None
-        mock_tq.get_all_tasks.return_value = []
+        mock_tq.get_first_incomplete_task.return_value = None
+        mock_tq.has_tasks.return_value = False
 
         self.web_ui.has_content = False
         self.web_ui.current_prompt = ""
@@ -3065,6 +3256,16 @@ class TestWebFeedbackUiFunction(unittest.TestCase):
             self.assertIsNone(result)
 
 
+class TestWebUiCliResultFormatting(unittest.TestCase):
+    def test_result_list_fields_use_lazy_default_path(self):
+        source = Path("src/ai_intervention_agent/web_ui.py").read_text(encoding="utf-8")
+
+        self.assertIn('selected_options = result.get("selected_options")', source)
+        self.assertIn('images = result.get("images")', source)
+        self.assertNotIn('result.get("selected_options", [])', source)
+        self.assertNotIn('result.get("images", [])', source)
+
+
 # ──────────────────────────────────────────────────────────
 # get_project_version tomllib 异常后 regex 回退
 # ──────────────────────────────────────────────────────────
@@ -3372,7 +3573,8 @@ class TestSingleTaskRenderMarkdownFails(unittest.TestCase):
     def test_render_failure_returns_empty_html(self):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = None
-        mock_tq.get_all_tasks.return_value = []
+        mock_tq.get_first_incomplete_task.return_value = None
+        mock_tq.has_tasks.return_value = False
 
         self.web_ui.has_content = True
         self.web_ui.current_prompt = "markdown content"

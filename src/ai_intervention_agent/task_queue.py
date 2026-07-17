@@ -74,6 +74,26 @@ _PROMPT_REJECT_BYTES: int = 10 * 1024 * 1024  # 10 MB
 """``add_task`` 收到的 prompt 超过此值时直接 ``return False``，不进队列。
 保护进程内存 + SSE history deque + 跨进程 IPC payload。"""
 
+_COMPACT_JSON_SEPARATORS: tuple[str, str] = (",", ":")
+"""Compact separators for machine-state JSON persisted on hot write paths."""
+
+
+def _prompt_utf8_size_for_guard(prompt: str) -> int:
+    """Return a prompt byte size suitable for the R53-A threshold guard.
+
+    For prompts that are provably below the warn threshold, the exact byte count
+    is irrelevant because no log/reject decision can change. Near the threshold
+    return an exact UTF-8 byte count so warning/rejection metadata remains
+    unchanged.
+    """
+    char_count = len(prompt)
+    if char_count * 4 <= _PROMPT_WARN_BYTES:
+        return char_count
+    if prompt.isascii():
+        return char_count
+    return len(prompt.encode("utf-8", errors="replace"))
+
+
 HEADER_LABEL_MAX_LENGTH: int = 16
 """mining-cycle-3 §2.1 borrow #1 — header chip clamp。
 源自 gemini-cli ``ask_user.header`` 设计（≤16 chars, "chip/tag" 显示）。
@@ -139,7 +159,7 @@ def _scan_pending_and_dump_slow() -> int:
                 continue
             if now - rec["start"] > _LOCK_WATCHDOG_TIMEOUT_S:
                 rec["dumped"] = True
-                slow_records.append(dict(rec))
+                slow_records.append(rec.copy())
     if not slow_records:
         return 0
     stacks = _capture_all_thread_stacks()
@@ -617,7 +637,7 @@ class TaskQueue:
         # (2) 巨型 prompt 不进锁内的 Task() 构造（pydantic validator 也要走
         # str → 内部字段拷贝，10+ MB 字符串拷贝会拖慢临界区）。
         try:
-            prompt_bytes = len(prompt.encode("utf-8", errors="replace"))
+            prompt_bytes = _prompt_utf8_size_for_guard(prompt)
         except Exception:
             # 非常规边界：prompt 不是 str（caller 传错类型）。这里不抛 TypeError
             # —— 后续 Task() 构造会因 pydantic 校验自然失败，返回 False 等价
@@ -753,6 +773,25 @@ class TaskQueue:
             # 【性能优化】Python 3.7+ dict 保持插入顺序，直接返回 values
             return list(self._tasks.values())
 
+    def get_first_incomplete_task(self) -> Task | None:
+        """Return the first non-completed task in insertion order.
+
+        This is the hot fallback used by ``GET /api/config`` when no active task
+        is set. It preserves the previous ``get_all_tasks()`` insertion-order
+        semantics without materializing a full task list or a filtered
+        incomplete-task list.
+        """
+        with self._lock.read_lock():
+            for task in self._tasks.values():
+                if task.status != TaskStatus.COMPLETED:
+                    return task
+            return None
+
+    def has_tasks(self) -> bool:
+        """Return whether the queue currently contains any task."""
+        with self._lock.read_lock():
+            return bool(self._tasks)
+
     def get_all_tasks_with_stats(self) -> tuple[list[Task], dict[str, int]]:
         """单次 read_lock 内同时拿 task list + stats，专门给 ``/api/tasks`` 用。
 
@@ -782,20 +821,38 @@ class TaskQueue:
                 - tasks: 与 ``get_all_tasks()`` 同语义的 list copy
                 - stats: 与 ``get_task_count()`` 同结构的 dict（含 total /
                   pending / active / completed / max）
+
+        R521: list copy 和 status 计数在同一次 ``_tasks.values()`` 遍历中完成。
+        调用方仍拿独立 list snapshot，但避免先 ``list(...)`` 再二次扫描该 list。
+
+        R522: 三个合法 status 是固定集合，计数时直接用局部 int counter + if/elif。
+        这保留未知 status 不进入 breakdown 的旧语义，同时避免每个 task 做 dict
+        membership + dict item update。
         """
         with self._lock.read_lock():
-            tasks_view = list(self._tasks.values())
-            counts: dict[str, int] = {
-                TaskStatus.PENDING: 0,
-                TaskStatus.ACTIVE: 0,
-                TaskStatus.COMPLETED: 0,
-            }
-            for t in tasks_view:
-                if t.status in counts:
-                    counts[t.status] += 1
+            if not self._tasks:
+                return [], {
+                    "total": 0,
+                    "pending": 0,
+                    "active": 0,
+                    "completed": 0,
+                    "max": self.max_tasks,
+                }
+            pending = active = completed = 0
+            tasks_view: list[Task] = []
+            for t in self._tasks.values():
+                tasks_view.append(t)
+                if t.status == TaskStatus.PENDING:
+                    pending += 1
+                elif t.status == TaskStatus.ACTIVE:
+                    active += 1
+                elif t.status == TaskStatus.COMPLETED:
+                    completed += 1
             stats: dict[str, int] = {
                 "total": len(tasks_view),
-                **counts,
+                "pending": pending,
+                "active": active,
+                "completed": completed,
                 "max": self.max_tasks,
             }
             return tasks_view, stats
@@ -1492,17 +1549,34 @@ class TaskQueue:
             - active数量应该是0或1（单活动任务模式）
             - total = pending + active + completed
             - completed任务会在10秒后被清理
+
+        R522: 与 ``get_all_tasks_with_stats`` 一样，直接用局部 int counter
+        统计固定的三种合法 status，未知 status 继续只进入 total。
         """
         with self._lock.read_lock():
-            counts: dict[str, int] = {
-                TaskStatus.PENDING: 0,
-                TaskStatus.ACTIVE: 0,
-                TaskStatus.COMPLETED: 0,
-            }
+            if not self._tasks:
+                return {
+                    "total": 0,
+                    "pending": 0,
+                    "active": 0,
+                    "completed": 0,
+                    "max": self.max_tasks,
+                }
+            pending = active = completed = 0
             for t in self._tasks.values():
-                if t.status in counts:
-                    counts[t.status] += 1
-            return {"total": len(self._tasks), **counts, "max": self.max_tasks}
+                if t.status == TaskStatus.PENDING:
+                    pending += 1
+                elif t.status == TaskStatus.ACTIVE:
+                    active += 1
+                elif t.status == TaskStatus.COMPLETED:
+                    completed += 1
+            return {
+                "total": len(self._tasks),
+                "pending": pending,
+                "active": active,
+                "completed": completed,
+                "max": self.max_tasks,
+            }
 
     # ========================================================================
     # 任务状态变更回调机制
@@ -1646,6 +1720,11 @@ class TaskQueue:
                     )
                 active_id = self._active_task_id
 
+            if not snapshot:
+                self._persist_path.unlink(missing_ok=True)
+                logger.debug("任务快照为空，已删除持久化文件")
+                return
+
             data = {
                 "version": 1,
                 "active_task_id": active_id,
@@ -1660,7 +1739,12 @@ class TaskQueue:
             )
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                    json.dump(
+                        data,
+                        f,
+                        ensure_ascii=False,
+                        separators=_COMPACT_JSON_SEPARATORS,
+                    )
                     # flush() 把 stdio buffer 推到内核；fsync(fileno()) 才
                     # 把内核 page cache 推到磁盘——两步缺一不可。flush 单独
                     # 不够（缓存仍在 page cache）；fsync 单独可能漏写当前
@@ -1704,10 +1788,18 @@ class TaskQueue:
            降级，不阻断 ``_restore`` 的"使用空队列"兜底，绝不抛异常给
            上层 ``__init__``。
         """
-        if not self._persist_path or not self._persist_path.exists():
+        if not self._persist_path:
             return
         try:
             raw = self._persist_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return
+        except Exception as e:
+            logger.warning(f"任务恢复失败（将使用空队列）: {e}", exc_info=True)
+            self._quarantine_corrupt_persist_file(reason=str(e))
+            return
+
+        try:
             if not raw.strip():
                 return
             data = json.loads(raw)
@@ -1715,17 +1807,18 @@ class TaskQueue:
                 logger.warning("持久化文件版本不匹配，忽略")
                 return
 
+            restore_now = datetime.now(UTC)
             saved_at_str = data.get("saved_at")
             saved_at = (
-                datetime.fromisoformat(saved_at_str)
-                if saved_at_str
-                else datetime.now(UTC)
+                datetime.fromisoformat(saved_at_str) if saved_at_str else restore_now
             )
-            elapsed_since_save = (datetime.now(UTC) - saved_at).total_seconds()
+            elapsed_since_save = (restore_now - saved_at).total_seconds()
 
             restored = 0
             skipped = 0
-            for item in data.get("tasks", []):
+            tasks_raw = data.get("tasks")
+            tasks_items = tasks_raw if isinstance(tasks_raw, list) else ()
+            for item in tasks_items:
                 if not isinstance(item, dict):
                     skipped += 1
                     continue
@@ -1744,9 +1837,7 @@ class TaskQueue:
                 # 避免整个持久化文件因一条损坏记录而完全失效。
                 try:
                     created_at = datetime.fromisoformat(item["created_at"])
-                    age_since_creation = (
-                        datetime.now(UTC) - created_at
-                    ).total_seconds()
+                    age_since_creation = (restore_now - created_at).total_seconds()
 
                     # mining-cycle-3 §2.1 borrow #3: 持久化恢复时也要回灌
                     # placeholder。旧版 snapshot 不存在该 key，``item.get``
@@ -1831,7 +1922,7 @@ class TaskQueue:
         本函数本身严格容错：rename 失败（磁盘满 / 权限 / target 已被占用）
         都吞 OSError 并 logger.warning，绝不向 ``_restore`` 抛异常。
         """
-        if not self._persist_path or not self._persist_path.exists():
+        if not self._persist_path:
             return
         try:
             ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -1845,6 +1936,8 @@ class TaskQueue:
                 "运维可保留该文件用于断电 / fsync 异常诊断，"
                 "或手动删除"
             )
+        except FileNotFoundError:
+            return
         except OSError as quarantine_err:
             # rename 失败也只是 best-effort，吞掉以保留 _restore 的"用空
             # 队列继续运行"语义。最坏情况下下次 _persist 会原子覆盖原文件。

@@ -127,9 +127,12 @@ EVENT_SCHEMAS: dict[str, EventSchema] = {
 }
 
 
+_KNOWN_EVENT_TYPES: tuple[str, ...] = tuple(sorted(EVENT_SCHEMAS))
+
+
 def get_known_event_types() -> tuple[str, ...]:
     """返回已注册的 event type 名集合 (tuple, 顺序按字母排序)。"""
-    return tuple(sorted(EVENT_SCHEMAS))
+    return _KNOWN_EVENT_TYPES
 
 
 def get_schema(event_type: str) -> EventSchema | None:

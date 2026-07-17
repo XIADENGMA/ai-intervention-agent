@@ -123,8 +123,21 @@ def _extract_js_detail_fields(js: str, event_name: str) -> set[str]:
             depth -= 1
             if depth == 0:
                 body = cleaned[body_start : i + 1]
-                fields = re.findall(r"\bdetail\.([a-z_][a-z0-9_]*)", body)
-                return set(fields)
+                fields = set(re.findall(r"\bdetail\.([a-z_][a-z0-9_]*)", body))
+                if event_name == "task_changed" and "_debugSseTaskChanged(" in body:
+                    helper = re.search(
+                        r"function _debugSseTaskChanged\(data\) \{(?P<body>.*?)\n\}",
+                        cleaned,
+                        re.DOTALL,
+                    )
+                    if helper is not None:
+                        fields.update(
+                            re.findall(
+                                r"\bdetail\.([a-z_][a-z0-9_]*)",
+                                helper.group("body"),
+                            )
+                        )
+                return fields
         i += 1
     return set()
 

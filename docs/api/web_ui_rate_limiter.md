@@ -6,6 +6,8 @@
 
 ### `_parse_limit(raw: str) -> _LimitSpec`
 
+### `_limit_period_seconds(raw: str) -> int`
+
 ## Classes
 
 ### `class WebUiLimiterProtocol`

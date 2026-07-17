@@ -93,22 +93,19 @@ class IOOperationsMixin:
                 if isinstance(ns_in_config, dict):
                     network_security = cast(dict[str, Any], ns_in_config)
 
+            config_without_network_security = actual_config.copy()
+            config_without_network_security.pop("network_security", None)
+
             with self._lock:
                 if merge:
-                    tmp = dict(actual_config)
-                    tmp.pop("network_security", None)
-                    self._deep_merge(self._config, tmp)
+                    self._deep_merge(self._config, config_without_network_security)
                     logger.info("配置已合并导入")
                 else:
-                    tmp = dict(actual_config)
-                    tmp.pop("network_security", None)
-                    self._config = tmp.copy()
+                    self._config = config_without_network_security.copy()
                     logger.info("配置已覆盖导入")
 
                 if save:
-                    tmp = dict(actual_config)
-                    tmp.pop("network_security", None)
-                    self._pending_changes.update(tmp)
+                    self._pending_changes.update(config_without_network_security)
                     self._save_config()
 
             if network_security is not None:
@@ -160,16 +157,16 @@ class IOOperationsMixin:
                 return False
 
             if "config" in backup_data:
-                actual_config = backup_data.get("config", {})
+                actual_config = backup_data.get("config")
                 if not isinstance(actual_config, dict):
                     logger.error("恢复配置失败: 备份中的 config 必须是字典")
                     return False
-                restored_config = dict(actual_config)
+                restored_config = actual_config.copy()
                 network_security = backup_data.get("network_security")
                 if isinstance(network_security, dict):
                     restored_config["network_security"] = network_security
             else:
-                restored_config = dict(backup_data)
+                restored_config = backup_data.copy()
 
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
             if self._is_toml_file():

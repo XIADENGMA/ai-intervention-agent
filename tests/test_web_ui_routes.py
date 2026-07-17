@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import inspect
 import io
 import json
 import unittest
@@ -240,6 +241,45 @@ class TestNotifyNewTasks(_RouteTestBase):
         )
         data = resp.get_json()
         self.assertEqual(data["status"], "skipped")
+
+    def test_task_ids_none_does_not_fallback_to_legacy_key(self):
+        resp = self._client.post(
+            "/api/notify-new-tasks",
+            json={"taskIds": None, "task_ids": ["legacy-task"], "count": 0},
+        )
+        data = resp.get_json()
+        self.assertEqual(data["status"], "skipped")
+
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
+    def test_legacy_task_ids_key_still_supported(self, mock_nm):
+        mock_nm.config = MagicMock()
+        mock_nm.config.enabled = True
+        mock_nm.config.bark_enabled = True
+        mock_nm.config.bark_device_key = "valid-key"
+        mock_nm.refresh_config_from_file = MagicMock()
+        mock_nm.send_notification.return_value = "evt-legacy"
+
+        resp = self._client.post(
+            "/api/notify-new-tasks", json={"count": 1, "task_ids": ["legacy-task"]}
+        )
+        data = resp.get_json()
+
+        self.assertEqual(data["status"], "success")
+        call_kwargs = mock_nm.send_notification.call_args
+        self.assertIn("legacy-task", call_kwargs.kwargs.get("message", ""))
+
+    def test_task_ids_lookup_avoids_eager_nested_fallback(self):
+        from ai_intervention_agent.web_ui_routes.notification import (
+            NotificationRoutesMixin,
+        )
+
+        source = inspect.getsource(NotificationRoutesMixin._setup_notification_routes)
+
+        self.assertIn('if "taskIds" in data:', source)
+        self.assertNotIn('data.get("taskIds", data.get("task_ids", []))', source)
 
     def test_empty_body_skipped(self):
         resp = self._client.post("/api/notify-new-tasks", json={})
@@ -629,6 +669,15 @@ class TestGetFeedbackPrompts(_RouteTestBase):
 # ═══════════════════════════════════════════════════════════════════════════
 class TestSubmitFeedbackJSON(_RouteTestBase):
     _port = 19020
+
+    def test_collection_defaults_avoid_eager_empty_lists(self):
+        from ai_intervention_agent.web_ui_routes.feedback import FeedbackRoutesMixin
+
+        source = inspect.getsource(FeedbackRoutesMixin._setup_feedback_routes)
+
+        self.assertNotIn('data.get("selected_options", [])', source)
+        self.assertNotIn('data.get("images", [])', source)
+        self.assertNotIn('data.get("predefined_options", [])', source)
 
     @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_body_success(self, mock_get_tq):

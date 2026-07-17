@@ -558,6 +558,22 @@ class TestGetLogLevelFromConfig(unittest.TestCase):
             level = fn()
             self.assertEqual(level, logging.WARNING)
 
+    def test_missing_web_ui_section_uses_lazy_default_path(self):
+        from unittest.mock import MagicMock, patch
+
+        from ai_intervention_agent.enhanced_logging import get_log_level_from_config
+
+        mock_mgr = MagicMock()
+        mock_mgr.get.return_value = None
+        with (
+            patch.dict(os.environ, {"AI_INTERVENTION_AGENT_LOG_LEVEL": ""}),
+            patch("ai_intervention_agent.config_manager.config_manager", mock_mgr),
+        ):
+            level = get_log_level_from_config()
+
+        self.assertEqual(level, logging.WARNING)
+        mock_mgr.get.assert_called_once_with("web_ui")
+
     def test_exception_returns_warning(self):
         from unittest.mock import patch
 

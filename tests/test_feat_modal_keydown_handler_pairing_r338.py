@@ -60,6 +60,7 @@ MODAL_DIALOG_PAIRS = frozenset(
         ("app.js", "handleCodePasteModalKeydown"),
         ("image-upload.js", "handleModalKeydown"),
         ("image-upload.js", "_imageModalTabTrapHandler"),
+        ("notification-manager.js", "handler"),  # auto-permission temporary listener
         ("settings-manager.js", "this._settingsEscHandler"),
         ("keyboard_shortcut_help.js", "_onTabInOverlay"),
     }

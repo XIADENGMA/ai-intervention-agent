@@ -150,6 +150,15 @@ R188 / T3 ``POST /api/system/log-level`` 端点的核心 helper——让运维
 ``limit=None`` 返回全部 buffer 内容（最多 ``_LOG_RING_MAXLEN`` 条）。
 返回的是 dict 的浅拷贝列表 —— 修改返回值不会污染 buffer。
 
+### `get_recent_error_stats(cutoff_ts_unix: float) -> tuple[int, int]`
+
+Return ``(error_count, buffer_total)`` for entries newer than ``cutoff``.
+
+Metrics and health probes only need an aggregate over the warning/error ring.
+Scanning the deque directly avoids allocating a full ``list(_log_ring)`` on
+every scrape while keeping the entry-returning API available for callers
+that need full log records.
+
 ### `clear_recent_logs() -> None`
 
 清空 ring buffer，主要供测试 setUp 隔离用。

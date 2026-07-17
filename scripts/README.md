@@ -22,6 +22,7 @@ common entry points:
 | `make docs-check`   | `generate_docs.py --check` for both locales                     |
 | `make lint`         | `ruff format` + `ruff check` + `ty check`                       |
 | `make test`         | `pytest -q` (no i18n / minify gates — fast loop only)           |
+| `make dependency-audit` | `dependency_audit.py --gate local`                          |
 | `make pre-commit`   | `pre-commit run --all-files`                                    |
 | `make clean`        | wipe `dist/` / `.coverage*` / `*.vsix` / `.ruff_cache` / et al. |
 | `make help`         | print the full table (also the default `make` target)           |
@@ -36,8 +37,15 @@ diverges.
   `uv sync` → `ruff format/check` → `ty` → 8× i18n parity gates →
   `minify_assets.py` → `precompress_static.py` → `pytest`
   (optionally `--with-coverage`) → red-team i18n smoke → optional
-  `--with-vscode` (npm `vscode:check`). Consumed by both local
-  pre-commit loops and `.github/workflows/test.yml`.
+  `--with-vscode` (npm `vscode:check`). In local mode, minify and
+  precompress steps regenerate static artifacts; in `--ci` mode they
+  run `--check` only. Consumed by both local pre-commit loops and
+  `.github/workflows/test.yml`. The `Tests` matrix emits coverage only
+  on Python 3.11, the same axis that uploads `coverage.xml`; newer
+  Python axes run the same gate without `--with-coverage`. Workflows
+  that already ran `bump_version.py --check` as a fast-fail step pass
+  `--skip-version-check` to avoid duplicate work; local runs should keep
+  the default full gate.
 
 ## i18n static gates (consumed by `ci_gate.py`)
 
@@ -148,18 +156,38 @@ diverges.
   in, Dependabot disabled, non-GitHub remote) degrade gracefully:
   pass with a log line, never hard-fail, so contributor onboarding
   doesn't regress.
+- [`dependency_audit.py`](dependency_audit.py) — reproducible
+  dependency security gate. Exports locked third-party Python
+  requirements with `uv export --all-groups --all-extras
+  --no-emit-project`, audits the pinned requirements with
+  `uvx pip-audit --no-deps --disable-pip`, then runs
+  `npm audit --audit-level=moderate --json`. The only accepted npm
+  findings are the documented VS Code test-runner path in
+  `docs/security/npm-audit-2026-06-21.md`; the script also runs
+  `npm pack --workspace ai-intervention-agent --dry-run --json` to
+  verify that accepted packages are not shipped in the extension
+  package. Use `--gate local|pr|release` to label the context; all
+  modes fail on Python vulnerabilities and unaccepted npm findings.
 
 ## Performance
 
 - [`perf_e2e_bench.py`](perf_e2e_bench.py) _(R20.14-A)_ — single
   source of truth for "how fast is `interactive_feedback` →
   Web-UI today?" Captures the four-stage E2E latency the R20.4
-  → R20.13 sprints drove from 1980 ms to 360 ms.
+  → R20.13 sprints drove from 1980 ms to 360 ms. Quick API benches
+  stay below the configured 10 req/s Flask-Limiter budget and skip the
+  default-run throttle sleeps.
 - [`perf_gate.py`](perf_gate.py) _(R20.14-A)_ — regression gate
   that compares a fresh `perf_e2e_bench.py` snapshot against the
   committed baseline and fails CI if regressions exceed the
   configured budget. Bench-and-gate are kept strictly separate;
   the bench never bakes in thresholds.
+- [`perf_report.py`](perf_report.py) _(R453)_ — machine-aware JSON
+  report wrapper around the existing bench/gate pair. It records
+  environment metadata, benchmark summaries, and an optional baseline
+  verdict; numeric regressions are report-only by default and become a
+  non-zero exit only with `--fail-on-regression`, which is intended for
+  known-comparable hardware.
 - [`bench_vscode_webview_retain.mjs`](bench_vscode_webview_retain.mjs)
   _(R452)_ — summarize VS Code Webview hide/show probes emitted when
   `AIIA_WEBVIEW_BENCH_OUTPUT=/tmp/aiia-webview-retain.ndjson` is set.

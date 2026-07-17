@@ -1,6 +1,7 @@
 """增强日志模块 - 基于 Loguru，提供脱敏、防注入、去重，全部输出到 stderr（MCP 友好）。"""
 
 import collections
+import itertools
 import logging
 import os
 import re
@@ -10,6 +11,31 @@ import time
 from typing import Any
 
 from loguru import logger as _loguru_logger
+
+_SENSITIVE_LOG_MARKERS: tuple[str, ...] = (
+    "password",
+    "passwd",
+    "secret",
+    "private",
+    "sk-",
+    "xox",
+    "ghp_",
+    "ghs_",
+    "gho_",
+    "ghu_",
+    "ghr_",
+    "github_pat_",
+    "AKIA",
+    "AIza",
+    "hf_",
+    "sk_live_",
+    "sk_test_",
+    "pk_live_",
+    "pk_test_",
+    "http://",
+    "https://",
+    "eyJ",
+)
 
 # ========================================================================
 # 日志脱敏
@@ -95,6 +121,14 @@ class LogSanitizer:
         ``http(s)://``+username 部分留下，仅密码段替换为 ``***REDACTED***``，
         让运维仍然能从日志里看到"是哪个账号在 leak"。其它形态全部一刀切替换。
         """
+        # R654: normal log messages vastly outnumber secret-bearing messages.
+        # Keep the regex set authoritative, but avoid walking every pattern when
+        # none of the existing detectable labels / token prefixes can be present.
+        for marker in _SENSITIVE_LOG_MARKERS:
+            if marker in message:
+                break
+        else:
+            return message
         for pattern in self.sensitive_patterns:
             if pattern.pattern.startswith("(https?://)"):
                 message = pattern.sub(r"\1\2:***REDACTED***@", message)
@@ -182,8 +216,16 @@ class LogDeduplicator:
                     return True, None
             else:
                 self.cache[msg_hash] = (current_time, 1)
-                self._cleanup_cache(current_time)
-                self._last_cleanup_time = current_time
+                # R653: a fresh cache miss only needs an O(n) cleanup scan when
+                # an entry could have expired since the last scan or when the
+                # bounded cache crossed its size cap. Unique log bursts within
+                # the time window otherwise stay O(1) per message.
+                if (
+                    current_time - self._last_cleanup_time >= self.time_window
+                    or len(self.cache) > self.max_cache_size
+                ):
+                    self._cleanup_cache(current_time)
+                    self._last_cleanup_time = current_time
                 return True, None
 
     def _cleanup_cache(self, current_time: float) -> None:
@@ -540,7 +582,9 @@ def get_log_level_from_config() -> int:
     try:
         from ai_intervention_agent.config_manager import config_manager
 
-        web_ui_config = config_manager.get("web_ui", {})
+        web_ui_config = config_manager.get("web_ui")
+        if not isinstance(web_ui_config, dict):
+            web_ui_config = {}
         log_level_str = web_ui_config.get("log_level", "WARNING")
 
         log_level_upper = str(log_level_str).upper()
@@ -701,6 +745,12 @@ _LOG_RING_MAXLEN: int = 200
 _LOG_RING_MESSAGE_MAXLEN: int = 500
 """单条 ring entry 的 message 字段最大长度。超出截断为 ``message[:500] + '…'``。"""
 
+_LOG_RING_SERVER_INFO_LIMIT: int = 20
+"""Recent-log tail size used by server-info aggregation."""
+
+_LOG_RING_ENDPOINT_DEFAULT_LIMIT: int = 50
+"""Default recent-log tail size used by the HTTP endpoint."""
+
 _log_ring: collections.deque[dict[str, Any]] = collections.deque(
     maxlen=_LOG_RING_MAXLEN
 )
@@ -737,11 +787,38 @@ def get_recent_logs(limit: int | None = None) -> list[dict[str, Any]]:
 
     ``limit=None`` 返回全部 buffer 内容（最多 ``_LOG_RING_MAXLEN`` 条）。
     返回的是 dict 的浅拷贝列表 —— 修改返回值不会污染 buffer。"""
+    if limit is None or limit <= 0:
+        with _log_ring_lock:
+            return list(_log_ring)
     with _log_ring_lock:
+        if limit in (_LOG_RING_SERVER_INFO_LIMIT, _LOG_RING_ENDPOINT_DEFAULT_LIMIT):
+            ring_len = len(_log_ring)
+            if limit < ring_len:
+                return list(itertools.islice(_log_ring, ring_len - limit, ring_len))
         snapshot = list(_log_ring)
     if limit is not None and limit > 0:
         snapshot = snapshot[-limit:]
     return snapshot
+
+
+def get_recent_error_stats(cutoff_ts_unix: float) -> tuple[int, int]:
+    """Return ``(error_count, buffer_total)`` for entries newer than ``cutoff``.
+
+    Metrics and health probes only need an aggregate over the warning/error ring.
+    Scanning the deque directly avoids allocating a full ``list(_log_ring)`` on
+    every scrape while keeping the entry-returning API available for callers
+    that need full log records.
+    """
+    error_count = 0
+    with _log_ring_lock:
+        buffer_total = len(_log_ring)
+        for entry in _log_ring:
+            if (
+                entry.get("level_no", 0) >= logging.ERROR
+                and entry.get("ts_unix", 0) >= cutoff_ts_unix
+            ):
+                error_count += 1
+    return error_count, buffer_total
 
 
 def clear_recent_logs() -> None:

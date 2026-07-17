@@ -140,6 +140,9 @@ _DEFAULT_LATENCY_BUCKETS: tuple[float, ...] = (
 """默认延迟桶（秒）。``+Inf`` 桶由 ``get_mcp_tool_call_latency_snapshot()``
 自动追加，不在这个元组里——避免 caller 误以为 ``+Inf`` 是真实采样上限。"""
 
+_DEFAULT_LATENCY_BUCKET_COUNTS = dict.fromkeys(_DEFAULT_LATENCY_BUCKETS, 0)
+_MCP_LATENCY_INF_BUCKET = float("inf")
+
 _latency_state: dict[tuple[str, str], dict[str, Any]] = {}
 """每个 ``(tool_name, status)`` 一份独立的 histogram 状态。读写均需持
 ``_counter_lock``——为避免双锁死锁，本模块复用 counter 锁。"""
@@ -173,12 +176,15 @@ def get_mcp_tool_call_stats() -> dict[str, dict[str, int]]:
 
     result: dict[str, dict[str, int]] = {}
     for (tool_name, status), value in snapshot.items():
-        result.setdefault(tool_name, {"success": 0, "failure": 0, "total": 0})
+        tool_stats = result.get(tool_name)
+        if tool_stats is None:
+            tool_stats = {"success": 0, "failure": 0, "total": 0}
+            result[tool_name] = tool_stats
         if status == "success":
-            result[tool_name]["success"] = value
+            tool_stats["success"] = value
         elif status == "failure":
-            result[tool_name]["failure"] = value
-        result[tool_name]["total"] += value
+            tool_stats["failure"] = value
+        tool_stats["total"] += value
     return result
 
 
@@ -212,7 +218,7 @@ def _record_latency(tool_name: str, status: str, duration_seconds: float) -> Non
             {
                 "count": 0,
                 "sum_seconds": 0.0,
-                "buckets": dict.fromkeys(_DEFAULT_LATENCY_BUCKETS, 0),
+                "buckets": _DEFAULT_LATENCY_BUCKET_COUNTS.copy(),
             },
         )
         _latency_state[key] = state
@@ -244,15 +250,15 @@ def get_mcp_tool_call_latency_snapshot() -> dict[tuple[str, str], dict[str, Any]
     关键性质：
 
     - 返回字典是新建的，调用者修改不会污染内部状态；
-    - ``buckets`` 字典自带 ``float("inf")`` 这个键，值 == ``count``（因为
+    - ``buckets`` 字典自带 ``+Inf`` 这个键，值 == ``count``（因为
       所有观测必然 ≤ +Inf）——caller 直接 emit ``le="+Inf"`` bucket 即可；
     - 若某 ``(tool, status)`` 还从未被记录，**不会**出现在返回字典里。
     """
     with _counter_lock:
         result: dict[tuple[str, str], dict[str, Any]] = {}
         for key, state in _latency_state.items():
-            buckets_copy = dict(state["buckets"])
-            buckets_copy[float("inf")] = state["count"]
+            buckets_copy = state["buckets"].copy()
+            buckets_copy[_MCP_LATENCY_INF_BUCKET] = state["count"]
             result[key] = {
                 "count": state["count"],
                 "sum_seconds": state["sum_seconds"],

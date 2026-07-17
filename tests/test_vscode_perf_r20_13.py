@@ -296,8 +296,8 @@ def test_c_locale_loading_uses_promises_read_file_and_parallel() -> None:
     """``activate`` 内 locale 加载用 ``fs.promises.readFile + Promise.all`` 并行。
 
     pre-fix 串行 ``for (const loc of [...]) fs.readFileSync(...)``；
-    post-fix 必须改 ``await Promise.all(['en','zh-CN'].map(async loc => ...))``
-    才能把两次 I/O 排到同一 event loop tick，不再线性等。
+    post-fix 必须用 promise collector + ``Promise.all``，才能把两次 I/O 排到同一
+    event loop tick，不再线性等。
     """
     text = _read(EXTENSION_TS)
     body_start = re.search(
@@ -305,11 +305,14 @@ def test_c_locale_loading_uses_promises_read_file_and_parallel() -> None:
     ) or re.search(r"async\s+function\s+activate\s*\([^)]*\)[^{]*\{", text)
     assert body_start
     activate_body = _extract_block_by_brace(text, body_start.end() - 1)
-    assert re.search(
-        r"Promise\.all\s*\(\s*\[\s*['\"]en['\"]\s*,\s*['\"]zh-CN['\"]\s*\]",
-        activate_body,
-    ), (
-        "activate 应当用 ``Promise.all([...locales].map(async ...))`` 并行加载；"
+    assert "const localeReads: Promise<void>[] = []" in activate_body
+    assert 'for (const loc of ["en", "zh-CN"])' in activate_body
+    assert (
+        "localeReads.push(loadHostLocale(localesDir, loc, hostLocales))"
+        in activate_body
+    )
+    assert "await Promise.all(localeReads)" in activate_body, (
+        "activate 应当用 promise collector + ``Promise.all`` 并行加载 locale；"
         " pre-fix 串行 fs.readFileSync 慢一倍。"
     )
     assert "fs.promises.readFile" in activate_body, (

@@ -16,11 +16,15 @@ R113 修复一个**长期潜伏的用户体验问题**：
   - 第三方安装脚本假设 ``.config/`` 跨平台
   - 进程在错误的 cwd 下启动（dev 模式分支会在 cwd 创建 ``config.toml``）
 
-R113 在 macOS 上额外探测此路径，三种行为：
+R113 在 macOS 上额外探测此路径；R686（TODO#4）把行为升级为"标准路径始终
+优先 + 自动迁移"：
 
-1. **标准 + legacy 都有** → 用标准路径，warn 提示残留歧义
-2. **仅 legacy 有** → 优先用 legacy（不丢用户配置），强 warn 给出 ``mv`` 命令
-3. **仅标准有 / 都没有** → 行为不变
+1. **标准 + legacy 都有、内容一致** → 用标准路径，legacy 自动重命名为
+   ``*.migrated-<时间戳>`` 备份（幂等消除歧义）
+2. **标准 + legacy 都有、内容不一致** → 用标准路径，warn 让用户人工取舍
+3. **仅 legacy 有** → 自动迁移到标准路径（copy2 + 重命名备份）后使用标准
+   路径；迁移失败才降级为临时采用 legacy
+4. **仅标准有 / 都没有** → 行为不变
 
 Linux 上 ``.config/`` 是 XDG 标准（``user_config_dir`` 直接指向那里），R113
 仅在 macOS 触发。
@@ -226,10 +230,10 @@ class TestMacosLegacyXdgConfigDirR113(_R113TestBase):
 class TestFindConfigFileMacosLegacyR113(_R113TestBase):
     """``find_config_file`` 集成 R113 行为：3 种宏观场景。"""
 
-    def test_standard_and_legacy_both_exist_uses_standard_warns_about_legacy(
+    def test_standard_and_legacy_conflicting_content_uses_standard_warns(
         self,
     ) -> None:
-        """场景 1：标准 + legacy 同时存在 → 用标准路径，warn 提及 legacy。"""
+        """场景 1a：标准 + legacy 同时存在且内容不一致 → 用标准路径 + warn。"""
         from ai_intervention_agent.config_manager import find_config_file
 
         with self._patch_macos_environment():
@@ -254,28 +258,92 @@ class TestFindConfigFileMacosLegacyR113(_R113TestBase):
                 joined,
                 "warn 应说明 legacy 文件具体路径",
             )
+            self.assertTrue(
+                self._xdg_legacy_file.exists(),
+                "内容不一致时不得擅自动 legacy 文件（用户人工取舍）",
+            )
 
-    def test_only_legacy_exists_uses_legacy_with_strong_migrate_warn(self) -> None:
-        """场景 2：仅 legacy 存在 → 用 legacy 不丢配置，强 warn 给出 mv 命令。"""
+    def test_standard_and_legacy_identical_content_retires_legacy(self) -> None:
+        """场景 1b（R686）：内容一致 → 用标准路径，legacy 自动重命名为备份。"""
+        from ai_intervention_agent.config_manager import find_config_file
+
+        with self._patch_macos_environment():
+            same = 'shared = "yes"\n'
+            self._create_standard_config(same)
+            self._create_xdg_legacy_config(same)
+
+            result = find_config_file()
+
+            self.assertEqual(result, self._mac_standard_file, "应优先用 macOS 标准路径")
+            self.assertFalse(
+                self._xdg_legacy_file.exists(),
+                "内容一致时 legacy 应被自动重命名为备份（消除歧义）",
+            )
+            backups = list(self._xdg_legacy_dir.glob("config.toml.migrated-*"))
+            self.assertEqual(
+                len(backups), 1, "legacy 应以 *.migrated-<时间戳> 形式保留备份"
+            )
+            self.assertEqual(backups[0].read_text(), same, "备份内容必须原样保留")
+
+    def test_only_legacy_exists_auto_migrates_to_standard(self) -> None:
+        """场景 2（R686）：仅 legacy 存在 → 自动迁移到标准路径并使用标准路径。"""
         from ai_intervention_agent.config_manager import find_config_file
 
         with self._patch_macos_environment():
             # 仅创建 legacy；标准路径**不**预创建
+            content = 'legacy_only = "yes"\n'
+            self._create_xdg_legacy_config(content)
+
+            result = find_config_file()
+
+            self.assertEqual(
+                result,
+                self._mac_standard_file,
+                "R686: 应自动迁移到 macOS 标准路径并返回标准路径",
+            )
+            self.assertTrue(
+                self._mac_standard_file.exists(), "标准路径应出现迁移后的配置文件"
+            )
+            self.assertEqual(
+                self._mac_standard_file.read_text(),
+                content,
+                "迁移后的配置内容必须与 legacy 原文一致",
+            )
+            self.assertFalse(
+                self._xdg_legacy_file.exists(),
+                "legacy 原文件应被重命名为备份（避免下次启动再次进入迁移分支）",
+            )
+            backups = list(self._xdg_legacy_dir.glob("config.toml.migrated-*"))
+            self.assertEqual(len(backups), 1, "legacy 应保留 *.migrated-* 备份")
+
+    def test_only_legacy_migration_failure_falls_back_to_legacy(self) -> None:
+        """场景 2 降级：自动迁移失败 → 临时采用 legacy + warn 给出 mv 命令。"""
+        from ai_intervention_agent import config_manager
+        from ai_intervention_agent.config_manager import find_config_file
+
+        with self._patch_macos_environment():
             self._create_xdg_legacy_config('legacy_only = "yes"\n')
 
-            with self.assertLogs(
-                "ai_intervention_agent.config_manager", level="WARNING"
-            ) as cm:
+            with (
+                patch.object(
+                    config_manager,
+                    "_migrate_legacy_config_to_standard",
+                    return_value=None,
+                ),
+                self.assertLogs(
+                    "ai_intervention_agent.config_manager", level="WARNING"
+                ) as cm,
+            ):
                 result = find_config_file()
 
             self.assertEqual(
                 result,
                 self._xdg_legacy_file,
-                "标准路径无 config 时应优先用 legacy 路径以兼容旧配置",
+                "迁移失败时应降级为临时采用 legacy（零数据丢失优先）",
             )
             joined = "\n".join(cm.output)
             self.assertIn("R113", joined)
-            self.assertIn("mv ", joined, "强 warn 应包含 mv 一键迁移命令")
+            self.assertIn("mv ", joined, "降级 warn 应包含 mv 手动迁移命令")
             self.assertIn(
                 "Library/Application Support",
                 joined,

@@ -60,7 +60,10 @@ def _parse_accept_encoding(req_obj: object | None = None) -> set[str]:
     # ``req_obj is None`` 时回退到全局 Flask ``request`` 代理，所以做一次
     # 精确判空让类型推断把 fallback 路径单独 narrow 到 ``request``。
     src = req_obj if req_obj is not None else request
-    accept = getattr(src, "headers", {}).get("Accept-Encoding", "")
+    headers = getattr(src, "headers", None)
+    if headers is None:
+        return set()
+    accept = headers.get("Accept-Encoding", "")
     if not accept:
         return set()
 
@@ -127,21 +130,30 @@ def _send_with_optional_gzip(
     函数名仍带 ``gzip`` 是历史包袱（R20.14-D 时只有 gzip）；R21.4 改实现
     增加 brotli 协商但不改函数名以免破坏既有调用。新代码可以直接用此函数，
     它实质是 ``_send_with_optional_compressed``。
+
+    R463: 热路径只解析一次 ``Accept-Encoding``。旧实现先调用
+    ``_client_accepts_brotli()``，再在 br 不命中时调用
+    ``_client_accepts_gzip()``，两者各自重新 split/parse 同一个 header。
+    静态资源首屏会并发多次进入这里，协商结果在单个 request 内不可变，
+    因此一次解析后复用布尔值即可。
     """
     br_filename = filename + ".br"
     gz_filename = filename + ".gz"
     br_path = directory / br_filename
     gz_path = directory / gz_filename
+    accepted_encodings = _parse_accept_encoding()
+    accepts_brotli = "br" in accepted_encodings or "*" in accepted_encodings
+    accepts_gzip = "gzip" in accepted_encodings or "*" in accepted_encodings
 
     response: Response | None = None
     try:
-        if _client_accepts_brotli() and br_path.is_file():
+        if accepts_brotli and br_path.is_file():
             # R21.4：Brotli 优先（实测体积比 gzip 小 17-23%，主流 client 全支持）
             response = send_from_directory(
                 str(directory), br_filename, mimetype=mimetype
             )
             response.headers["Content-Encoding"] = "br"
-        elif _client_accepts_gzip() and gz_path.is_file():
+        elif accepts_gzip and gz_path.is_file():
             response = send_from_directory(
                 str(directory), gz_filename, mimetype=mimetype
             )

@@ -4,6 +4,10 @@
 
 ## Functions
 
+### `_new_provider_stats() -> dict[str, Any]`
+
+### `_get_or_create_provider_stats(stats_root: dict[str, Any], provider_name: str) -> dict[str, Any]`
+
 ### `_get_inflight_file_dir() -> Path | None`
 
 ### `_shutdown_global_notification_manager()`

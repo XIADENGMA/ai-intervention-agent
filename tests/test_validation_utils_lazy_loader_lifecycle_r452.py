@@ -100,7 +100,7 @@ def test_lazy_loader_init_disconnects_previous_observer() -> None:
         "secondDisconnectedOnDisconnect": True,
         "firstObserved": 1,
         "secondObserved": 1,
-        "queryLog": [".first", ".first", ".second", ".second"],
+        "queryLog": [".first", ".second"],
         "activeObserverCleared": True,
     }
 

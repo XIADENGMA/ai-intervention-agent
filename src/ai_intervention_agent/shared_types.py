@@ -226,6 +226,10 @@ class NetworkSecuritySectionConfig(BaseModel):
         "172.16.0.0/12",
     ]
     blocked_ips: list[str] = []
+    # Explicit additional request Host values accepted by Flask TRUSTED_HOSTS.
+    # Defaults are derived at runtime from loopback, bind_interface, mDNS, and
+    # web_ui.external_base_url; this field is only for custom DNS/proxy names.
+    trusted_hosts: list[str] = []
     access_control_enabled: SafeBool = True
     # R189 / T4: 可选 API token 认证。空串=未配置（loopback-only）。
     # 长度约束（< 16 视作未配置；> 256 截断；含空白清洗）由

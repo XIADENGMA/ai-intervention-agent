@@ -22,6 +22,8 @@
 
 ### `get_recent_logs(limit: int | None = None) -> list[dict[str, Any]]`
 
+### `get_recent_error_stats(cutoff_ts_unix: float) -> tuple[int, int]`
+
 ### `clear_recent_logs() -> None`
 
 ## Classes

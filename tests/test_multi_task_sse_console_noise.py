@@ -32,7 +32,7 @@ def _extract_connect_sse(source: str) -> str:
 
 def _extract_debug_log(source: str) -> str:
     match = re.search(
-        r"function _debugLog\(\) \{(?P<body>.*?)\n\}\n\nif \(typeof window\.taskDeadlines",
+        r"function _debugLog\(\) \{(?P<body>.*?)\n\}\n\nfunction _debugSseTaskChanged",
         source,
         re.DOTALL,
     )
@@ -47,7 +47,8 @@ def test_sse_normal_state_logs_are_debug_gated() -> None:
 
     assert "SSE connected; polling degraded to safety-net mode" in sse_body
     assert "SSE disconnected; falling back to short-interval polling" in sse_body
-    assert "SSE task_changed:" in sse_body
+    assert "SSE task_changed:" in source
+    assert "_debugSseTaskChanged(" in sse_body
 
     assert "console.log(" not in sse_body
     assert "console.debug(" not in sse_body
@@ -56,14 +57,22 @@ def test_sse_normal_state_logs_are_debug_gated() -> None:
 
 
 def test_debug_log_handles_missing_console_without_reference_error() -> None:
-    debug_body = _extract_debug_log(_read_source())
+    source = _read_source()
+    debug_body = _extract_debug_log(source)
+    debug_enabled_body = re.search(
+        r"function _debugLogEnabled\(\) \{(?P<body>.*?)\n\}\n\nfunction _debugLog",
+        source,
+        re.DOTALL,
+    )
+    assert debug_enabled_body is not None, "multi_task.js 必须保留 _debugLogEnabled"
+    combined_debug_body = debug_enabled_body.group("body") + debug_body
     # 同时接受单/双引号字面量：测试锁住 typeof guard 语义，而不是引号风格。
     # Prettier 默认 singleQuote=false 会把字面量整体改成双引号，重写文件时
     # 这条不应假阴。
-    assert re.search(r"typeof console === ['\"]undefined['\"]", debug_body), (
+    assert re.search(r"typeof console !== ['\"]undefined['\"]", combined_debug_body), (
         "missing typeof console === 'undefined'/\"undefined\" guard"
     )
-    assert "!console" not in debug_body
-    assert re.search(r"typeof console\.debug !== ['\"]function['\"]", debug_body), (
-        "missing typeof console.debug !== 'function'/\"function\" guard"
-    )
+    assert "!console" not in combined_debug_body
+    assert re.search(
+        r"typeof console\.debug === ['\"]function['\"]", combined_debug_body
+    ), "missing typeof console.debug !== 'function'/\"function\" guard"

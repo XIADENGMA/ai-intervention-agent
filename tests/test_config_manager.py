@@ -2264,6 +2264,15 @@ class TestSectionCache(unittest.TestCase):
         stats = mgr.get_cache_stats()
         self.assertEqual(stats["misses"], 1)
 
+    def test_missing_section_uses_lazy_default_path(self):
+        mgr = ConfigManager()
+
+        with patch.object(mgr, "get", return_value=None) as get_spy:
+            result = mgr.get_section("missing_section_lazy", use_cache=False)
+
+        self.assertEqual(result, {})
+        get_spy.assert_called_once_with("missing_section_lazy")
+
 
 # ──────────────────────────────────────────────────────────
 # cache stats 和 TTL
@@ -3232,6 +3241,15 @@ class TestMigrateJsoncToToml(unittest.TestCase):
             content = mgr.config_file.read_text(encoding="utf-8")
             parsed = tomlkit.parse(content)
             self.assertEqual(parsed["mdns"]["enabled"], "auto")  # ty: ignore[not-subscriptable]
+
+    def test_migrate_mdns_lookup_uses_lazy_default_path(self):
+        """迁移路径不应为存在的 mdns section 预先构造 unused dict fallback。"""
+        import inspect
+
+        source = inspect.getsource(ConfigManager._migrate_jsonc_to_toml)
+
+        self.assertIn('mdns = config_data.get("mdns")', source)
+        self.assertNotIn('config_data.get("mdns", {})', source)
 
     def test_migrate_preserves_mdns_true(self):
         """mdns.enabled=true 不应被改为 'auto'"""

@@ -101,7 +101,7 @@ class TestServiceWorkerOfflineResilient(unittest.TestCase):
         """``handleCacheFirst`` 内部的 ``fetch(request)`` 必须被 try/catch 包裹。"""
         # 锁住"网络拉取 + 异步写 cache"段落里有 try { networkResponse = await fetch
         match = re.search(
-            r"function\s+handleCacheFirst\(\s*request\s*\)\s*\{(?P<body>.*?)\n\}\s*\n",
+            r"function\s+handleCacheFirst\(\s*request\s*(?:,\s*event)?\s*\)\s*\{(?P<body>.*?)\n\}\s*\n",
             self.source,
             re.DOTALL,
         )
@@ -172,7 +172,7 @@ class TestHtmlIconCacheBusting(unittest.TestCase):
                 "?v={{ version }}",
                 href,
                 f"图标 href {href!r} 必须带 ?v={{{{ version }}}} cache-busting query，"
-                "否则 service worker cache-first 会永久卡住旧版本",
+                "否则 service worker 静态缓存会先返回旧版本再后台刷新",
             )
 
     def test_manifest_link_no_cache_bust(self) -> None:

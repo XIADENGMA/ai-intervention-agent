@@ -69,6 +69,7 @@ NotificationEvent: Any = None
 NotificationTrigger: Any = None
 NotificationType: Any = None
 BarkNotificationProvider: Any = None
+_FEEDBACK_PROMPT_ROUTE_DEPS: tuple[Any, int, int] | None = None
 
 
 def get_config() -> Any:
@@ -76,6 +77,26 @@ def get_config() -> Any:
     from ai_intervention_agent.config_manager import get_config as _get_config
 
     return _get_config()
+
+
+def _get_feedback_prompt_route_deps() -> tuple[Any, int, int]:
+    """First-touch cache for hot GET feedback prompt dependencies."""
+    global _FEEDBACK_PROMPT_ROUTE_DEPS
+
+    if _FEEDBACK_PROMPT_ROUTE_DEPS is None:
+        from ai_intervention_agent.config_utils import truncate_string
+        from ai_intervention_agent.server_config import (
+            AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+            PROMPT_MAX_LENGTH,
+        )
+
+        _FEEDBACK_PROMPT_ROUTE_DEPS = (
+            truncate_string,
+            AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+            PROMPT_MAX_LENGTH,
+        )
+
+    return _FEEDBACK_PROMPT_ROUTE_DEPS
 
 
 def _ensure_notification_loaded() -> None:
@@ -400,7 +421,10 @@ class NotificationRoutesMixin:
             try:
                 data = request.json or {}
 
-                raw_task_ids = data.get("taskIds", data.get("task_ids", []))
+                if "taskIds" in data:
+                    raw_task_ids = data["taskIds"]
+                else:
+                    raw_task_ids = data.get("task_ids")
                 task_ids: list[str] = []
                 if isinstance(raw_task_ids, list):
                     for item in raw_task_ids[:50]:
@@ -600,7 +624,7 @@ class NotificationRoutesMixin:
                     _ensure_notification_loaded()
 
                     config_mgr = get_config()
-                    notification_config = dict(config_mgr.get_section("notification"))
+                    notification_config = config_mgr.get_section("notification")
 
                     def normalize_sound_volume(raw_value: Any) -> int:
                         try:
@@ -902,11 +926,11 @@ class NotificationRoutesMixin:
                 config_mgr = get_config()
                 feedback_config = config_mgr.get_section("feedback")
 
-                from ai_intervention_agent.config_utils import truncate_string
-                from ai_intervention_agent.server_config import (
+                (
+                    truncate_string,
                     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
                     PROMPT_MAX_LENGTH,
-                )
+                ) = _get_feedback_prompt_route_deps()
 
                 raw_countdown = feedback_config.get(
                     "frontend_countdown",
@@ -1013,7 +1037,7 @@ class NotificationRoutesMixin:
                     data = {}
 
                 config_mgr = get_config()
-                feedback_config = dict(config_mgr.get_section("feedback"))
+                feedback_config = config_mgr.get_section("feedback")
 
                 from ai_intervention_agent.config_utils import truncate_string
                 from ai_intervention_agent.server_config import (
@@ -1132,7 +1156,7 @@ class NotificationRoutesMixin:
                 }
 
                 config_mgr = get_config()
-                current = dict(config_mgr.get_section("feedback"))
+                current = config_mgr.get_section("feedback")
                 current.update(defaults)
                 config_mgr.update_section("feedback", current)
                 logger.info("反馈配置已重置为默认值")

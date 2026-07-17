@@ -5,7 +5,7 @@
 设计目标：
 - 把“门禁命令”收敛到单一入口，减少 docs / CI / 脚本之间的漂移
 - 默认适合本地开发：会自动格式化（ruff format）
-- 可通过参数切换为 CI 模式：只做检查（不自动格式化源码），但可能生成 gitignore 的构建产物（如 .min；若启用 --with-vscode 还会产生 .vsix）
+- 可通过参数切换为 CI 模式：只做检查（不自动格式化源码，不重写静态构建产物；若启用 --with-vscode 仍可能产生 .vsix）
 """
 
 from __future__ import annotations
@@ -131,6 +131,14 @@ def _main_impl(argv: list[str]) -> int:
         help="额外运行 VSCode 插件门禁：npm run vscode:check（需要 npm；或在 fnm 环境下自动尝试 fnm exec）",
     )
     parser.add_argument(
+        "--skip-version-check",
+        action="store_true",
+        help=(
+            "跳过内置 bump_version.py --check。仅供 workflow 已在同一 job 前置"
+            "执行过该检查时使用，避免重复 gate；本地默认不要跳过。"
+        ),
+    )
+    parser.add_argument(
         "--node-version",
         default="v24.14.0",
         help="当 npm 不可用但 fnm 可用时，使用该 Node 版本执行（默认 v24.14.0，与 CI 对齐）",
@@ -247,16 +255,24 @@ def _main_impl(argv: list[str]) -> int:
     # ``CITATION.cff`` 全部对齐。历史上 ``test.yml`` 独占这一步，本地
     # ``make ci`` / ``make pre-commit`` 跑不到，只有 push 之后 CI 才报
     # 红——一次往返浪费 5–10 分钟。挪进 ci_gate 后本地预检和远端 CI 的
-    # 信号面完全一致（local-CI parity），``test.yml`` 那一步保留作为
-    # 防御性兜底，不构成重复执行成本（同一进程，跑两次还是 < 0.1s）。
-    _run(["uv", "run", "python", "scripts/bump_version.py", "--check"])
+    # 信号面完全一致（local-CI parity）。GitHub workflow 可以保留前置
+    # fast-fail step，然后给 ci_gate 传 ``--skip-version-check`` 避免同一
+    # job 里重复执行；本地默认仍保留该 gate。
+    if not args.skip_version_check:
+        _run(["uv", "run", "python", "scripts/bump_version.py", "--check"])
 
-    # 先生成 .min / 预压缩副本，再跑 pytest。
-    # pytest 会校验预压缩 .gz/.br 解压后与原文 byte-identical；如果只更新
-    # .min 而不重生预压缩副本，CI 会在 static compression 集成测试中选到
-    # stale .gz 并失败。
-    _run(["uv", "run", "python", "scripts/minify_assets.py"])
-    _run(["uv", "run", "python", "scripts/precompress_static.py"])
+    # 先验证/生成 .min 与预压缩副本，再跑 pytest。
+    # CI 模式必须保持 check-only，不写 .min/.gz/.br；本地模式仍自动生成，
+    # 给开发者一键修复体验。pytest 后续会校验预压缩 .gz/.br 解压后与原文
+    # byte-identical；如果只更新 .min 而不重生预压缩副本，CI 会在 static
+    # compression 集成测试中选到 stale .gz 并失败。
+    minify_cmd = ["uv", "run", "python", "scripts/minify_assets.py"]
+    precompress_cmd = ["uv", "run", "python", "scripts/precompress_static.py"]
+    if args.ci:
+        minify_cmd.append("--check")
+        precompress_cmd.append("--check")
+    _run(minify_cmd)
+    _run(precompress_cmd)
 
     # 测试集中包含大量“故意喂坏配置”的用例；这些用例会产生日志级
     # WARNING/ERROR，但断言本身期望通过。门禁输出保持干净，只让真实失败

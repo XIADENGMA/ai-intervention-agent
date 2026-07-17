@@ -15,11 +15,14 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Iterable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -33,12 +36,123 @@ if TYPE_CHECKING:
 
 logger = EnhancedLogger(__name__)
 
+_PROM_INF = float("inf")
+_PROM_NEG_INF = float("-inf")
+_MCP_TOOL_CALL_METRICS_MODULE: Any | None = None
+
+_SSE_COUNTER_FIELD_SPECS: tuple[tuple[str, str, str], ...] = (
+    ("aiia_sse_emit_total", "emit_total", "Total SSE events emitted."),
+    (
+        "aiia_sse_gap_warnings_total",
+        "gap_warnings_emitted",
+        "Total gap_warning events sent because subscribe(after_id=...) was past the history window.",
+    ),
+    (
+        "aiia_sse_backpressure_discards_total",
+        "backpressure_discards",
+        "Total times emit() dropped a subscriber due to queue Full / backlog over threshold.",
+    ),
+    (
+        "aiia_sse_heartbeat_total",
+        "heartbeat_total",
+        'Total SSE heartbeat (": heartbeat\\n\\n") frames pushed.',
+    ),
+    (
+        "aiia_sse_oversize_drops_total",
+        "oversize_drops",
+        "Total events dropped because their serialized payload exceeded the per-event size cap.",
+    ),
+)
+
+_SSE_GAUGE_FIELD_SPECS: tuple[tuple[str, str, str], ...] = (
+    (
+        "aiia_sse_subscriber_count",
+        "subscriber_count",
+        "Current active SSE subscribers (instantaneous).",
+    ),
+    (
+        "aiia_sse_history_size",
+        "history_size",
+        "Current SSE history deque length (instantaneous, ≤ _HISTORY_MAXLEN).",
+    ),
+    (
+        "aiia_sse_latest_event_id",
+        "latest_event_id",
+        "Monotonically increasing ID of the last SSE event emitted.",
+    ),
+)
+
+_SSE_LATENCY_QUANTILE_SPECS: tuple[tuple[str, str], ...] = (
+    ("p50_ms", "0.5"),
+    ("p95_ms", "0.95"),
+)
+
+# Field tuple shape: (metric_suffix, source_key, help_text, metric_type).
+_NOTIFICATION_PROVIDER_FIELD_SPECS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "attempts_total",
+        "attempts",
+        "Notification attempts per provider.",
+        "counter",
+    ),
+    (
+        "success_total",
+        "success",
+        "Notification successful deliveries per provider.",
+        "counter",
+    ),
+    (
+        "failure_total",
+        "failure",
+        "Notification failed deliveries per provider.",
+        "counter",
+    ),
+    (
+        "success_rate",
+        "success_rate",
+        "Per-provider notification delivery success rate (0.0–1.0).",
+        "gauge",
+    ),
+    (
+        "avg_latency_ms",
+        "avg_latency_ms",
+        "Per-provider average notification delivery latency in ms.",
+        "gauge",
+    ),
+    (
+        "success_streak",
+        "success_streak",
+        "Consecutive successful deliveries per provider (R145).",
+        "gauge",
+    ),
+    (
+        "failure_streak",
+        "failure_streak",
+        "Consecutive failed deliveries per provider (R145).",
+        "gauge",
+    ),
+)
+
 
 def get_config() -> Any:
     """Lazy proxy kept patchable for system routes."""
     from ai_intervention_agent.config_manager import get_config as _get_config
 
     return _get_config()
+
+
+def _get_mcp_tool_call_metrics_module() -> Any | None:
+    """Return the MCP metrics module once loaded, retrying after import failure."""
+    global _MCP_TOOL_CALL_METRICS_MODULE
+    module = _MCP_TOOL_CALL_METRICS_MODULE
+    if module is not None:
+        return module
+    try:
+        from ai_intervention_agent import mcp_tool_call_metrics
+    except Exception:
+        return None
+    _MCP_TOOL_CALL_METRICS_MODULE = mcp_tool_call_metrics
+    return mcp_tool_call_metrics
 
 
 # 自动探测时按优先级尝试的编辑器命令名（保留与 mcp.json 中常见 IDE 的呼应）
@@ -232,6 +346,19 @@ _HEALTH_ERROR_CLASS_VALUES: tuple[str, ...] = (
     "not_registered",  # provider 没在 NotificationManager 注册
     "unknown",  # 无法归类的字符串（兜底）
 )
+_LAST_ERROR_STATUS_RE = re.compile(
+    r"(?:status[_\s]*code['\":\s]+|http\s+|http/[\d.]+\s+)(\d{3})"
+)
+_LAST_ERROR_PREFIX_STATUS_RE = re.compile(r"\s*([4-5]\d\d)\s+[a-z][a-z ]+")
+_LAST_ERROR_NETWORK_KEYWORDS: tuple[str, ...] = (
+    "connection refused",
+    "connectionerror",
+    "connecterror",
+    "network",
+    "dns",
+    "name resolution",
+    "unreachable",
+)
 
 
 def _classify_last_error(last_error: str | None) -> str | None:
@@ -258,8 +385,7 @@ def _classify_last_error(last_error: str | None) -> str | None:
     if not last_error:
         return None
 
-    s = str(last_error)
-    s_lower = s.lower()
+    s_lower = str(last_error).lower()
 
     if "provider_not_registered" in s_lower:
         return "not_registered"
@@ -270,17 +396,13 @@ def _classify_last_error(last_error: str | None) -> str | None:
     # 1. ``'status_code': NNN`` —— NotificationManager 写入 Bark dict
     #    的固定 repr 模式
     # 2. ``HTTP NNN`` / ``http nnn`` —— 自由文本中的 HTTP layer 标识
-    import re
-
-    sc_match = re.search(
-        r"(?:status[_\s]*code['\":\s]+|http\s+|http/[\d.]+\s+)(\d{3})", s_lower
-    )
+    sc_match = _LAST_ERROR_STATUS_RE.search(s_lower)
     if not sc_match:
         # 第三条：以 ``NNN <文字>`` 开头的常见 HTTP 错误格式，如
         # ``500 Internal Server Error from upstream``。只匹配 4xx/5xx
         # 数字 + 空格 + 字母 + 字母/空格 这种结构，避免 ``443 port`` /
         # ``80 abc`` 这种 port 编号被误判。
-        sc_match = re.match(r"\s*([4-5]\d\d)\s+[a-z][a-z ]+", s_lower)
+        sc_match = _LAST_ERROR_PREFIX_STATUS_RE.match(s_lower)
 
     if sc_match:
         try:
@@ -296,18 +418,7 @@ def _classify_last_error(last_error: str | None) -> str | None:
     if "timeout" in s_lower or "timed out" in s_lower:
         return "timeout"
 
-    if any(
-        kw in s_lower
-        for kw in (
-            "connection refused",
-            "connectionerror",
-            "connecterror",
-            "network",
-            "dns",
-            "name resolution",
-            "unreachable",
-        )
-    ):
+    if any(kw in s_lower for kw in _LAST_ERROR_NETWORK_KEYWORDS):
         return "network_error"
 
     return "unknown"
@@ -443,7 +554,7 @@ def _safe_notification_latency_histograms() -> dict[str, dict[str, Any]]:
         return {}
 
 
-def _safe_notification_summary() -> dict[str, object] | None:
+def _safe_notification_summary(now: float | None = None) -> dict[str, object] | None:
     """从全局 ``notification_manager`` 提取 health 端点需要的安全字段。
 
     刻意 **不** 透出 ``config`` 子树（含 token / bark_secret 等敏感字段），
@@ -455,6 +566,10 @@ def _safe_notification_summary() -> dict[str, object] | None:
     /last_error_present 摘要，让 K8s 探针/Datadog/Grafana 能 **定位**
     具体哪家 provider 在故障，而不仅"全局成功率掉了"。``last_error``
     原文本不暴露（防 PII），只暴露 boolean。
+
+    ``now`` 允许 ``/api/system/health`` 传入请求级 wall-clock 快照，让顶层
+    ``ts_unix`` 和 provider ``last_*_age_seconds`` 使用同一个时间边界；直接
+    调 helper 的旧调用方仍可省略参数。
     """
     try:
         from ai_intervention_agent.notification_manager import notification_manager
@@ -463,10 +578,10 @@ def _safe_notification_summary() -> dict[str, object] | None:
         if not isinstance(status, dict):
             return None
 
-        providers = status.get("providers", [])
+        providers = status.get("providers")
         providers_count = len(providers) if isinstance(providers, list) else 0
 
-        stats = status.get("stats", {})
+        stats = status.get("stats")
         if not isinstance(stats, dict):
             stats = {}
 
@@ -485,10 +600,11 @@ def _safe_notification_summary() -> dict[str, object] | None:
             int(in_flight_raw) if isinstance(in_flight_raw, int | float) else 0
         )
 
-        providers_stats_raw = stats.get("providers", {})
+        providers_stats_raw = stats.get("providers")
         if not isinstance(providers_stats_raw, dict):
             providers_stats_raw = {}
-        per_provider = _safe_per_provider_snapshot(providers_stats_raw, time.time())
+        snapshot_now = time.time() if now is None else now
+        per_provider = _safe_per_provider_snapshot(providers_stats_raw, snapshot_now)
 
         return {
             "enabled": bool(status.get("enabled", False)),
@@ -539,8 +655,6 @@ def _compute_age_seconds_from_iso(rotated_at: object) -> int | None:
     if not isinstance(rotated_at, str) or not rotated_at:
         return None
     try:
-        from datetime import UTC, datetime
-
         ts = rotated_at.replace("Z", "+00:00")
         rotated_dt = datetime.fromisoformat(ts)
         age = int((datetime.now(UTC) - rotated_dt).total_seconds())
@@ -604,10 +718,14 @@ def _safe_token_age_seconds() -> int | None:
 # Prometheus exposition format spec：label value 内字符需 escape 反斜杠、
 # 双引号、换行。详见 https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md
 _PROM_LABEL_ESCAPES = (("\\", "\\\\"), ('"', '\\"'), ("\n", "\\n"))
+_PromSample = tuple[dict[str, str] | None, int | float]
+_PromHistogramObservation = tuple[dict[str, str] | None, dict[float, int], int, float]
 
 
 def _escape_prom_label_value(value: str) -> str:
     """转义 Prometheus label value 中的反斜杠 / 双引号 / 换行。"""
+    if "\\" not in value and '"' not in value and "\n" not in value:
+        return value
     out = value
     for old, new in _PROM_LABEL_ESCAPES:
         out = out.replace(old, new)
@@ -623,8 +741,54 @@ def _format_prom_labels(labels: dict[str, str] | None) -> str:
     """
     if not labels:
         return ""
-    parts = [f'{k}="{_escape_prom_label_value(str(v))}"' for k, v in labels.items()]
-    return "{" + ",".join(parts) + "}"
+    if len(labels) == 1:
+        k, v = next(iter(labels.items()))
+        return f'{{{k}="{_escape_prom_label_value(str(v))}"}}'
+    return (
+        "{"
+        + ",".join(
+            f'{k}="{_escape_prom_label_value(str(v))}"' for k, v in labels.items()
+        )
+        + "}"
+    )
+
+
+def _format_prom_histogram_bucket_labels(
+    le_label_value: str,
+    base_labels: dict[str, str] | None,
+    *,
+    le_label_value_is_safe: bool = False,
+    preescaped_base_label_suffix: str | None = None,
+) -> str:
+    if not base_labels:
+        escaped_le_label_value = (
+            le_label_value
+            if le_label_value_is_safe
+            else _escape_prom_label_value(le_label_value)
+        )
+        return f'{{le="{escaped_le_label_value}"}}'
+    if "le" in base_labels:
+        return _format_prom_labels({"le": le_label_value, **base_labels})
+    escaped_le_label_value = (
+        le_label_value
+        if le_label_value_is_safe
+        else _escape_prom_label_value(le_label_value)
+    )
+    if preescaped_base_label_suffix is not None:
+        return f'{{le="{escaped_le_label_value}",{preescaped_base_label_suffix}}}'
+    if len(base_labels) == 1:
+        k, v = next(iter(base_labels.items()))
+        return (
+            f'{{le="{escaped_le_label_value}",'
+            f'{k}="{_escape_prom_label_value(str(v))}"}}'
+        )
+    return (
+        f'{{le="{escaped_le_label_value}",'
+        + ",".join(
+            f'{k}="{_escape_prom_label_value(str(v))}"' for k, v in base_labels.items()
+        )
+        + "}"
+    )
 
 
 def _format_prom_value(value: int | float) -> str:
@@ -634,15 +798,58 @@ def _format_prom_value(value: int | float) -> str:
     损失；``inf`` / ``nan`` 渲染为 Prometheus 标准的 ``+Inf`` / ``-Inf`` /
     ``NaN``。
     """
+    if type(value) is int:
+        return str(value)
     if isinstance(value, float):
         if value != value:
             return "NaN"
-        if value == float("inf"):
+        if value == _PROM_INF:
             return "+Inf"
-        if value == float("-inf"):
+        if value == _PROM_NEG_INF:
             return "-Inf"
         return repr(value)
     return str(int(value))
+
+
+def _prom_histogram_bucket_keys(buckets: dict[float, int]) -> tuple[list[float], bool]:
+    bucket_count = len(buckets)
+    if bucket_count == 0:
+        return [_PROM_INF], False
+    if bucket_count == 1:
+        single_key = next(iter(buckets))
+        if single_key == _PROM_INF:
+            return [single_key], True
+        return [single_key, _PROM_INF], False
+    if bucket_count == 2:
+        key_iter = iter(buckets)
+        first_key = next(key_iter)
+        second_key = next(key_iter)
+        if first_key > second_key:
+            first_key, second_key = second_key, first_key
+        if second_key == _PROM_INF:
+            return [first_key, second_key], True
+        return [first_key, second_key, _PROM_INF], False
+
+    bucket_keys = list(buckets)
+    keys_are_sorted = True
+    key_iter = iter(bucket_keys)
+    try:
+        previous_key = next(key_iter)
+    except StopIteration:
+        pass
+    else:
+        for key in key_iter:
+            if previous_key > key:
+                keys_are_sorted = False
+                break
+            previous_key = key
+    if not keys_are_sorted:
+        bucket_keys.sort()
+
+    has_inf_bucket = bool(bucket_keys) and bucket_keys[-1] == _PROM_INF
+    if not has_inf_bucket:
+        bucket_keys.append(_PROM_INF)
+    return bucket_keys, has_inf_bucket
 
 
 def _format_prom_metric(
@@ -664,8 +871,15 @@ def _format_prom_metric(
     避免严格 Prometheus parser 因为「second TYPE for metric」报错。本函数
     只适合「一个 metric name 只发一个 value」的场景。
     """
-    label_str = _format_prom_labels(labels)
     value_str = _format_prom_value(value)
+    if not labels:
+        return (
+            f"# HELP {name} {help_text}\n"
+            f"# TYPE {name} {metric_type}\n"
+            f"{name} {value_str}\n"
+        )
+
+    label_str = _format_prom_labels(labels)
     return (
         f"# HELP {name} {help_text}\n"
         f"# TYPE {name} {metric_type}\n"
@@ -678,7 +892,7 @@ def _format_prom_metric_family(
     *,
     help_text: str,
     metric_type: str,
-    samples: list[tuple[dict[str, str] | None, int | float]],
+    samples: Iterable[_PromSample],
 ) -> str:
     """渲染同一 metric name 的 family（HELP + TYPE 各只出现一次 + N 个 value 行）。
 
@@ -688,16 +902,28 @@ def _format_prom_metric_family(
     在 ``aiia_notification_*`` per-provider 循环里对每条样本都 emit
     HELP+TYPE，是一个 latent bug，本函数在 R187 follow-up 修掉。
 
-    ``samples``：``[(labels, value), ...]``。``labels=None`` 视作无 label
-    样本（一个 family 内一般不混用，但允许）。空 samples 列表返回空串。
+    ``samples``：``(labels, value)`` iterable。``labels=None`` 视作无 label
+    样本（一个 family 内一般不混用，但允许）。空 iterable 返回空串。
     """
-    if not samples:
+    sample_iter = iter(samples)
+    try:
+        first_labels, first_value = next(sample_iter)
+    except StopIteration:
         return ""
-    out_lines: list[str] = [
-        f"# HELP {name} {help_text}\n",
-        f"# TYPE {name} {metric_type}\n",
-    ]
-    for labels, value in samples:
+    header = f"# HELP {name} {help_text}\n# TYPE {name} {metric_type}\n"
+    first_label_str = _format_prom_labels(first_labels)
+    first_value_str = _format_prom_value(first_value)
+    first_line = f"{name}{first_label_str} {first_value_str}\n"
+    try:
+        second_labels, second_value = next(sample_iter)
+    except StopIteration:
+        return header + first_line
+
+    out_lines: list[str] = [header, first_line]
+    second_label_str = _format_prom_labels(second_labels)
+    second_value_str = _format_prom_value(second_value)
+    out_lines.append(f"{name}{second_label_str} {second_value_str}\n")
+    for labels, value in sample_iter:
         label_str = _format_prom_labels(labels)
         value_str = _format_prom_value(value)
         out_lines.append(f"{name}{label_str} {value_str}\n")
@@ -708,14 +934,7 @@ def _format_prom_histogram_family(
     name: str,
     *,
     help_text: str,
-    observations: list[
-        tuple[
-            dict[str, str] | None,  # base labels (e.g. {"tool": ..., "status": ...})
-            dict[float, int],  # cumulative buckets: {0.1: n, ..., float("inf"): n}
-            int,  # count（== buckets[+Inf]，作为冗余校验显式传入）
-            float,  # sum_seconds
-        ]
-    ],
+    observations: Iterable[_PromHistogramObservation],
 ) -> str:
     """渲染同一 metric name 的 histogram family（R190 foundational）。
 
@@ -745,47 +964,150 @@ def _format_prom_histogram_family(
       接受冗余 ``count`` 参数作为 caller-side sanity check，**不**自动
       推断，避免渲染时静默修复数据 bug。
 
-    ``observations``：每个元组对应一个独立的「label 组合 + 直方图」。空
-    列表返回空串（与 ``_format_prom_metric_family`` 行为一致）。
+    ``observations``：每个元组对应一个独立的「label 组合 + 直方图」。
+    空 iterable 返回空串（与 ``_format_prom_metric_family`` 行为一致）。
 
     本函数为 R190 / R191 / R192 / 未来所有 histogram 类指标共享。
     """
-    if not observations:
-        return ""
-    out_lines: list[str] = [
-        f"# HELP {name} {help_text}\n",
-        f"# TYPE {name} histogram\n",
-    ]
+    out_lines: list[str] = []
     for base_labels, buckets, count, sum_value in observations:
-        # bucket 排序：有限值升序 + +Inf 在末尾。``float("inf")`` 在
-        # Python ``sorted()`` 下天然排在所有有限数之后，所以一次排序
-        # 即可，但我们显式校验「最后一个 key 就是 +Inf」避免 caller
-        # 漏传 +Inf 桶导致 metric 不完整。
-        sorted_keys = sorted(buckets.keys())
-        if not sorted_keys or sorted_keys[-1] != float("inf"):
-            # caller bug：缺 +Inf 桶。补上一个等于 count 的 +Inf 桶，
-            # 保证渲染出的 metric 仍然形式合法；strict parser 不会因
-            # 此 reject。本路径走不到时只能说明本函数 caller 提交的
-            # data 已经 violate 了 docstring 约定——log 不在这里发，由
-            # caller 端的契约测试守护。
-            buckets = dict(buckets)
-            buckets[float("inf")] = count
-            sorted_keys = sorted(buckets.keys())
+        if not out_lines:
+            out_lines.extend(
+                (
+                    f"# HELP {name} {help_text}\n",
+                    f"# TYPE {name} histogram\n",
+                )
+            )
+        # Fast path: in-repo histogram producers build cumulative buckets in
+        # ascending insertion order, so only sort when caller input is disorderly.
+        sorted_keys, has_inf_bucket = _prom_histogram_bucket_keys(buckets)
+        base_label_str = _format_prom_labels(base_labels)
+        preescaped_base_label_suffix = (
+            base_label_str[1:-1]
+            if base_label_str and base_labels and "le" not in base_labels
+            else None
+        )
+        count_value_str: str | None = None
 
         for le in sorted_keys:
-            le_label_value = "+Inf" if le == float("inf") else f"{le}"
-            merged_labels = {"le": le_label_value, **(base_labels or {})}
-            label_str = _format_prom_labels(merged_labels)
-            out_lines.append(
-                f"{name}_bucket{label_str} {_format_prom_value(buckets[le])}\n"
+            le_label_value = "+Inf" if le == _PROM_INF else f"{le}"
+            label_str = _format_prom_histogram_bucket_labels(
+                le_label_value,
+                base_labels,
+                le_label_value_is_safe=True,
+                preescaped_base_label_suffix=preescaped_base_label_suffix,
             )
+            if has_inf_bucket or le != _PROM_INF:
+                bucket_value_str = _format_prom_value(buckets[le])
+            else:
+                count_value_str = _format_prom_value(count)
+                bucket_value_str = count_value_str
+            out_lines.append(f"{name}_bucket{label_str} {bucket_value_str}\n")
 
-        base_label_str = _format_prom_labels(base_labels)
         out_lines.append(
             f"{name}_sum{base_label_str} {_format_prom_value(sum_value)}\n"
         )
-        out_lines.append(f"{name}_count{base_label_str} {_format_prom_value(count)}\n")
+        if count_value_str is None:
+            count_value_str = _format_prom_value(count)
+        out_lines.append(f"{name}_count{base_label_str} {count_value_str}\n")
     return "".join(out_lines)
+
+
+def _iter_notification_provider_metric_samples(
+    per_provider: dict[Any, Any],
+    *,
+    metric_suffix: str,
+    key: str,
+    metric_type: str,
+) -> Iterator[_PromSample]:
+    """Yield notification per-provider metric samples without staging a list."""
+    for provider_name, stats in per_provider.items():
+        if not isinstance(provider_name, str) or not isinstance(stats, dict):
+            continue
+        stats_typed = cast("dict[str, Any]", stats)
+        raw = stats_typed.get(key)
+        if isinstance(raw, int | float):
+            value: int | float = (
+                float(raw)
+                if metric_type == "gauge"
+                and metric_suffix in ("success_rate", "avg_latency_ms")
+                else int(raw)
+            )
+            yield {"provider": provider_name}, value
+
+
+def _iter_sse_emit_by_type_samples(
+    emit_by_type: dict[Any, Any],
+) -> Iterator[_PromSample]:
+    """Yield SSE emit-by-type samples without staging sorted item tuples."""
+    if len(emit_by_type) == 1:
+        event_type, count = next(iter(emit_by_type.items()))
+        if isinstance(count, int | float):
+            yield {"event_type": str(event_type)}, int(count)
+        return
+    for event_type in sorted(emit_by_type):
+        count = emit_by_type[event_type]
+        if isinstance(count, int | float):
+            yield {"event_type": str(event_type)}, int(count)
+
+
+def _iter_mcp_tool_call_samples(tool_stats: dict[Any, Any]) -> Iterator[_PromSample]:
+    """Yield MCP tool call counter samples without staging a list."""
+    for tool_name, statuses in tool_stats.items():
+        if not isinstance(tool_name, str) or not isinstance(statuses, dict):
+            continue
+        statuses_typed = cast("dict[str, Any]", statuses)
+        for status in ("success", "failure"):
+            raw = statuses_typed.get(status)
+            if isinstance(raw, int | float):
+                yield {"tool": tool_name, "status": status}, int(raw)
+
+
+def _iter_notification_latency_histogram_observations(
+    provider_latencies: dict[Any, Any],
+) -> Iterator[_PromHistogramObservation]:
+    """Yield notification latency histogram observations without staging a list."""
+    for provider_name, state in provider_latencies.items():
+        if not isinstance(provider_name, str) or not isinstance(state, dict):
+            continue
+        state_typed = cast("dict[str, Any]", state)
+        buckets = state_typed.get("buckets")
+        count = state_typed.get("count", 0)
+        sum_seconds = state_typed.get("sum_seconds", 0.0)
+        if not isinstance(buckets, dict) or not isinstance(count, int):
+            continue
+        if not isinstance(sum_seconds, int | float):
+            continue
+        buckets_typed = cast("dict[float, int]", buckets)
+        yield {"provider": provider_name}, buckets_typed, count, float(sum_seconds)
+
+
+def _iter_mcp_tool_latency_histogram_observations(
+    tool_latency: dict[Any, Any],
+) -> Iterator[_PromHistogramObservation]:
+    """Yield MCP tool latency histogram observations without staging a list."""
+    for (tool_name, status), state in tool_latency.items():
+        if (
+            not isinstance(tool_name, str)
+            or not isinstance(status, str)
+            or not isinstance(state, dict)
+        ):
+            continue
+        state_typed = cast("dict[str, Any]", state)
+        buckets = state_typed.get("buckets")
+        count = state_typed.get("count", 0)
+        sum_seconds = state_typed.get("sum_seconds", 0.0)
+        if not isinstance(buckets, dict) or not isinstance(count, int):
+            continue
+        if not isinstance(sum_seconds, int | float):
+            continue
+        buckets_typed = cast("dict[float, int]", buckets)
+        yield (
+            {"tool": tool_name, "status": status},
+            buckets_typed,
+            count,
+            float(sum_seconds),
+        )
 
 
 def _render_prometheus_metrics() -> str:
@@ -838,30 +1160,7 @@ def _render_prometheus_metrics() -> str:
         snap = None
 
     if isinstance(snap, dict):
-        sse_counter_fields = (
-            ("aiia_sse_emit_total", "emit_total", "Total SSE events emitted."),
-            (
-                "aiia_sse_gap_warnings_total",
-                "gap_warnings_emitted",
-                "Total gap_warning events sent because subscribe(after_id=...) was past the history window.",
-            ),
-            (
-                "aiia_sse_backpressure_discards_total",
-                "backpressure_discards",
-                "Total times emit() dropped a subscriber due to queue Full / backlog over threshold.",
-            ),
-            (
-                "aiia_sse_heartbeat_total",
-                "heartbeat_total",
-                'Total SSE heartbeat (": heartbeat\\n\\n") frames pushed.',
-            ),
-            (
-                "aiia_sse_oversize_drops_total",
-                "oversize_drops",
-                "Total events dropped because their serialized payload exceeded the per-event size cap.",
-            ),
-        )
-        for prom_name, key, help_text in sse_counter_fields:
+        for prom_name, key, help_text in _SSE_COUNTER_FIELD_SPECS:
             raw = snap.get(key)
             if isinstance(raw, int | float):
                 lines.append(
@@ -890,42 +1189,19 @@ def _render_prometheus_metrics() -> str:
             # event_type 按字符串字典序排序，让 exposition 输出 deterministic
             # ——Prometheus parser 不要求顺序，但 deterministic 输出方便
             # smoke test 直接 string-equality assertion + diff-friendly。
-            emit_by_type_samples: list[tuple[dict[str, str] | None, int | float]] = [
-                ({"event_type": str(et)}, int(count))
-                for et, count in sorted(emit_by_type_raw.items())
-                if isinstance(count, int | float)
-            ]
-            if emit_by_type_samples:
-                lines.append(
-                    _format_prom_metric_family(
-                        "aiia_sse_emit_by_type_total",
-                        help_text=(
-                            "Total SSE events emitted, partitioned by event_type "
-                            "(sum of all event_type series equals aiia_sse_emit_total)."
-                        ),
-                        metric_type="counter",
-                        samples=emit_by_type_samples,
-                    )
-                )
+            emit_by_type_metrics = _format_prom_metric_family(
+                "aiia_sse_emit_by_type_total",
+                help_text=(
+                    "Total SSE events emitted, partitioned by event_type "
+                    "(sum of all event_type series equals aiia_sse_emit_total)."
+                ),
+                metric_type="counter",
+                samples=_iter_sse_emit_by_type_samples(emit_by_type_raw),
+            )
+            if emit_by_type_metrics:
+                lines.append(emit_by_type_metrics)
 
-        sse_gauge_fields = (
-            (
-                "aiia_sse_subscriber_count",
-                "subscriber_count",
-                "Current active SSE subscribers (instantaneous).",
-            ),
-            (
-                "aiia_sse_history_size",
-                "history_size",
-                "Current SSE history deque length (instantaneous, ≤ _HISTORY_MAXLEN).",
-            ),
-            (
-                "aiia_sse_latest_event_id",
-                "latest_event_id",
-                "Monotonically increasing ID of the last SSE event emitted.",
-            ),
-        )
-        for prom_name, key, help_text in sse_gauge_fields:
+        for prom_name, key, help_text in _SSE_GAUGE_FIELD_SPECS:
             raw = snap.get(key)
             if isinstance(raw, int | float):
                 lines.append(
@@ -942,10 +1218,7 @@ def _render_prometheus_metrics() -> str:
         # 加 quantile label 是 prom 社区广泛接受的"approximation"模式）。
         latency = snap.get("latency_ms")
         if isinstance(latency, dict):
-            for quantile_key, quantile_label in (
-                ("p50_ms", "0.5"),
-                ("p95_ms", "0.95"),
-            ):
+            for quantile_key, quantile_label in _SSE_LATENCY_QUANTILE_SPECS:
                 raw = latency.get(quantile_key)
                 if isinstance(raw, int | float):
                     lines.append(
@@ -1055,15 +1328,10 @@ def _render_prometheus_metrics() -> str:
 
     # --- 最近 5 分钟 ERROR 日志计数 ---
     try:
-        from ai_intervention_agent.enhanced_logging import get_recent_logs
+        from ai_intervention_agent.enhanced_logging import get_recent_error_stats
 
         cutoff = time.time() - 300
-        recent = get_recent_logs()
-        error_count = sum(
-            1
-            for entry in recent
-            if entry.get("level_no", 0) >= 40 and entry.get("ts_unix", 0) >= cutoff
-        )
+        error_count, _buffer_total = get_recent_error_stats(cutoff)
         lines.append(
             _format_prom_metric(
                 "aiia_recent_errors_5min",
@@ -1073,7 +1341,7 @@ def _render_prometheus_metrics() -> str:
             )
         )
     except Exception:
-        # [R-186] enhanced_logging.get_recent_logs() 任何内部异常（环形
+        # [R-186] enhanced_logging.get_recent_error_stats() 任何内部异常（环形
         # 缓冲读取冲突、字段缺失、Timestamp 解析失败）都不应让 /metrics
         # 整端点 5xx；丢失一行 ``aiia_recent_errors_5min`` gauge 比让
         # Prometheus scrape 失败把整个 ai-intervention-agent target 标
@@ -1148,85 +1416,25 @@ def _render_prometheus_metrics() -> str:
         # 一次性发完整 family：HELP/TYPE 各一行 + N 个 value 行。
         per_provider = notif.get("per_provider")
         if isinstance(per_provider, dict):
-            # 字段定义：(metric_suffix, source_key, help_text, metric_type)
-            _per_provider_field_specs: tuple[tuple[str, str, str, str], ...] = (
-                (
-                    "attempts_total",
-                    "attempts",
-                    "Notification attempts per provider.",
-                    "counter",
-                ),
-                (
-                    "success_total",
-                    "success",
-                    "Notification successful deliveries per provider.",
-                    "counter",
-                ),
-                (
-                    "failure_total",
-                    "failure",
-                    "Notification failed deliveries per provider.",
-                    "counter",
-                ),
-                (
-                    "success_rate",
-                    "success_rate",
-                    "Per-provider notification delivery success rate (0.0–1.0).",
-                    "gauge",
-                ),
-                (
-                    "avg_latency_ms",
-                    "avg_latency_ms",
-                    "Per-provider average notification delivery latency in ms.",
-                    "gauge",
-                ),
-                (
-                    "success_streak",
-                    "success_streak",
-                    "Consecutive successful deliveries per provider (R145).",
-                    "gauge",
-                ),
-                (
-                    "failure_streak",
-                    "failure_streak",
-                    "Consecutive failed deliveries per provider (R145).",
-                    "gauge",
-                ),
-            )
-            for metric_suffix, key, help_text, metric_type in _per_provider_field_specs:
-                # 为这一个 metric name 收集所有 provider 的 sample
-                samples: list[tuple[dict[str, str] | None, int | float]] = []
-                for provider_name, stats in per_provider.items():
-                    if not isinstance(provider_name, str) or not isinstance(
-                        stats, dict
-                    ):
-                        continue
-                    # ty 0.0.34: ``per_provider = notif.get("per_provider")``
-                    # 把 ``stats`` 推为 ``Any``, isinstance(stats, dict) narrow
-                    # 之后变 ``dict[Never, Never]``——``stats.get(key)`` 拿
-                    # ``Literal["attempts" | ...]`` 当 key 就报 invalid-
-                    # argument-type。``cast`` 把 narrow 后的 stats 重新声
-                    # 明为 ``dict[str, Any]`` (这正是 R142 _safe_per_provider_
-                    # snapshot 的实际输出类型, 见 system.py:309).
-                    stats_typed = cast("dict[str, Any]", stats)
-                    raw = stats_typed.get(key)
-                    if isinstance(raw, int | float):
-                        value: int | float = (
-                            float(raw)
-                            if metric_type == "gauge"
-                            and metric_suffix in ("success_rate", "avg_latency_ms")
-                            else int(raw)
-                        )
-                        samples.append(({"provider": provider_name}, value))
-                if samples:
-                    lines.append(
-                        _format_prom_metric_family(
-                            f"aiia_notification_{metric_suffix}",
-                            help_text=help_text,
-                            metric_type=metric_type,
-                            samples=samples,
-                        )
-                    )
+            for (
+                metric_suffix,
+                key,
+                help_text,
+                metric_type,
+            ) in _NOTIFICATION_PROVIDER_FIELD_SPECS:
+                provider_metrics = _format_prom_metric_family(
+                    f"aiia_notification_{metric_suffix}",
+                    help_text=help_text,
+                    metric_type=metric_type,
+                    samples=_iter_notification_provider_metric_samples(
+                        per_provider,
+                        metric_suffix=metric_suffix,
+                        key=key,
+                        metric_type=metric_type,
+                    ),
+                )
+                if provider_metrics:
+                    lines.append(provider_metrics)
 
     # --- R191 / Cycle 5: Notification send duration histogram (per-provider) ---
     # ``aiia_notification_send_duration_seconds{provider}`` 让运维仪表板能
@@ -1240,40 +1448,20 @@ def _render_prometheus_metrics() -> str:
         # 不应让 /metrics 5xx。
         provider_latencies = {}
     if isinstance(provider_latencies, dict) and provider_latencies:
-        notif_hist_observations: list[
-            tuple[dict[str, str] | None, dict[float, int], int, float]
-        ] = []
-        for provider_name, state in provider_latencies.items():
-            if not isinstance(provider_name, str) or not isinstance(state, dict):
-                continue
-            buckets = state.get("buckets")
-            count = state.get("count", 0)
-            sum_seconds = state.get("sum_seconds", 0.0)
-            if not isinstance(buckets, dict) or not isinstance(count, int):
-                continue
-            if not isinstance(sum_seconds, int | float):
-                continue
-            notif_hist_observations.append(
-                (
-                    {"provider": provider_name},
-                    buckets,
-                    count,
-                    float(sum_seconds),
-                )
-            )
-        if notif_hist_observations:
-            lines.append(
-                _format_prom_histogram_family(
-                    "aiia_notification_send_duration_seconds",
-                    help_text=(
-                        "Notification send duration distribution per provider "
-                        "(R191 / Cycle 5). Buckets aligned with MCP tool "
-                        "latency: 0.1s → 600s, covers human-in-the-loop "
-                        "feedback semantics."
-                    ),
-                    observations=notif_hist_observations,
-                )
-            )
+        notification_histogram_metrics = _format_prom_histogram_family(
+            "aiia_notification_send_duration_seconds",
+            help_text=(
+                "Notification send duration distribution per provider "
+                "(R191 / Cycle 5). Buckets aligned with MCP tool "
+                "latency: 0.1s → 600s, covers human-in-the-loop "
+                "feedback semantics."
+            ),
+            observations=_iter_notification_latency_histogram_observations(
+                provider_latencies
+            ),
+        )
+        if notification_histogram_metrics:
+            lines.append(notification_histogram_metrics)
 
     # --- R187 / T2: MCP tool call counter ---
     # ``aiia_mcp_tool_calls_total{tool,status}`` 给监控仪表板做
@@ -1281,43 +1469,32 @@ def _render_prometheus_metrics() -> str:
     # failure) 的分子分母——配合 R37 ``get_mcp_error_stats()`` 的
     # ``{error_type}:{method}`` 计数可以做"哪类 tool 错最多 + 错的是
     # 什么类型"的二维下钻。
-    try:
-        from ai_intervention_agent.mcp_tool_call_metrics import (
-            get_mcp_tool_call_stats,
-        )
-
-        tool_stats = get_mcp_tool_call_stats()
-    except Exception:
-        # [R-187] mcp_tool_call_metrics 任何 import / 调用异常都不应让
-        # /metrics 5xx——丢失一行 tool counter 比让 Prometheus 把整个
-        # ai-intervention-agent target 标 red 更可接受（与其他子系统
-        # block 的优雅降级模式一致）。
+    mcp_tool_call_metrics_module = _get_mcp_tool_call_metrics_module()
+    if mcp_tool_call_metrics_module is None:
         tool_stats = {}
+    else:
+        try:
+            tool_stats = mcp_tool_call_metrics_module.get_mcp_tool_call_stats()
+        except Exception:
+            # [R-187] mcp_tool_call_metrics 任何 import / 调用异常都不应让
+            # /metrics 5xx——丢失一行 tool counter 比让 Prometheus 把整个
+            # ai-intervention-agent target 标 red 更可接受（与其他子系统
+            # block 的优雅降级模式一致）。
+            tool_stats = {}
 
     if isinstance(tool_stats, dict) and tool_stats:
-        mcp_samples: list[tuple[dict[str, str] | None, int | float]] = []
-        for tool_name, statuses in tool_stats.items():
-            if not isinstance(tool_name, str) or not isinstance(statuses, dict):
-                continue
-            for status in ("success", "failure"):
-                raw = statuses.get(status)
-                if isinstance(raw, int | float):
-                    mcp_samples.append(
-                        ({"tool": tool_name, "status": status}, int(raw))
-                    )
-        if mcp_samples:
-            lines.append(
-                _format_prom_metric_family(
-                    "aiia_mcp_tool_calls_total",
-                    help_text=(
-                        "Total MCP tool invocations by tool name and outcome "
-                        "(R187 / T2; partner of get_mcp_error_stats's "
-                        "error_type:method breakdown)."
-                    ),
-                    metric_type="counter",
-                    samples=mcp_samples,
-                )
-            )
+        mcp_tool_call_metrics = _format_prom_metric_family(
+            "aiia_mcp_tool_calls_total",
+            help_text=(
+                "Total MCP tool invocations by tool name and outcome "
+                "(R187 / T2; partner of get_mcp_error_stats's "
+                "error_type:method breakdown)."
+            ),
+            metric_type="counter",
+            samples=_iter_mcp_tool_call_samples(tool_stats),
+        )
+        if mcp_tool_call_metrics:
+            lines.append(mcp_tool_call_metrics)
 
     # R190 / Cycle 5 · MCP tool 调用耗时 histogram
     # ----------------------------------------------------------------
@@ -1326,53 +1503,32 @@ def _render_prometheus_metrics() -> str:
     # 耗时对比」等仪表板（CR#18 §4.1 → §7 item 2 deliverable）。R187
     # 的 counter 是分子分母，R190 的 histogram 是 SLO 延迟侧——两者
     # 合在一起才是完整的 RED（Rate / Errors / Duration）三件套。
-    try:
-        from ai_intervention_agent.mcp_tool_call_metrics import (
-            get_mcp_tool_call_latency_snapshot,
-        )
-
-        tool_latency = get_mcp_tool_call_latency_snapshot()
-    except Exception:
-        # [R-187] 与上面的 stats 路径同档容错——histogram 故障不应让
-        # /metrics 5xx；丢失一行 latency 比 Prometheus 把整个 target
-        # 标 red 更可接受。
+    if mcp_tool_call_metrics_module is None:
         tool_latency = {}
+    else:
+        try:
+            tool_latency = (
+                mcp_tool_call_metrics_module.get_mcp_tool_call_latency_snapshot()
+            )
+        except Exception:
+            # [R-187] 与上面的 stats 路径同档容错——histogram 故障不应让
+            # /metrics 5xx；丢失一行 latency 比 Prometheus 把整个 target
+            # 标 red 更可接受。
+            tool_latency = {}
 
     if isinstance(tool_latency, dict) and tool_latency:
-        hist_observations: list[
-            tuple[dict[str, str] | None, dict[float, int], int, float]
-        ] = []
-        for (tool_name, status), state in tool_latency.items():
-            if not isinstance(tool_name, str) or not isinstance(state, dict):
-                continue
-            buckets = state.get("buckets")
-            count = state.get("count", 0)
-            sum_seconds = state.get("sum_seconds", 0.0)
-            if not isinstance(buckets, dict) or not isinstance(count, int):
-                continue
-            if not isinstance(sum_seconds, int | float):
-                continue
-            hist_observations.append(
-                (
-                    {"tool": tool_name, "status": status},
-                    buckets,
-                    count,
-                    float(sum_seconds),
-                )
-            )
-        if hist_observations:
-            lines.append(
-                _format_prom_histogram_family(
-                    "aiia_mcp_tool_call_duration_seconds",
-                    help_text=(
-                        "MCP tool invocation duration distribution by tool name "
-                        "and outcome (R190 / Cycle 5). Buckets chosen for "
-                        "human-in-the-loop feedback latency: 0.1s (instant) "
-                        "→ 600s (long research round)."
-                    ),
-                    observations=hist_observations,
-                )
-            )
+        mcp_tool_latency_metrics = _format_prom_histogram_family(
+            "aiia_mcp_tool_call_duration_seconds",
+            help_text=(
+                "MCP tool invocation duration distribution by tool name "
+                "and outcome (R190 / Cycle 5). Buckets chosen for "
+                "human-in-the-loop feedback latency: 0.1s (instant) "
+                "→ 600s (long research round)."
+            ),
+            observations=_iter_mcp_tool_latency_histogram_observations(tool_latency),
+        )
+        if mcp_tool_latency_metrics:
+            lines.append(mcp_tool_latency_metrics)
 
     return "".join(lines)
 
@@ -2168,7 +2324,8 @@ class SystemRoutesMixin:
                       type: object
                       description: 各子检查的状态映射
             """
-            ts = int(time.time())
+            now = time.time()
+            ts = int(now)
             checks: dict[str, dict[str, object]] = {}
             try:
                 from ai_intervention_agent.web_ui_routes.task import _sse_bus
@@ -2198,23 +2355,19 @@ class SystemRoutesMixin:
                 checks["task_queue"] = {"ok": False, "error": str(exc)}
 
             try:
-                from ai_intervention_agent.enhanced_logging import get_recent_logs
+                from ai_intervention_agent.enhanced_logging import (
+                    get_recent_error_stats,
+                )
 
                 # 数最近 5 分钟内的 ERROR 数量。5 分钟是个权衡：太短(1m)
                 # 容易因为 cron job 的瞬时 spike 误判，太长(30m)无法反映
                 # 当下健康度。监控可结合多次采样判趋势。
                 cutoff = ts - 300
-                recent = get_recent_logs()
-                error_count = sum(
-                    1
-                    for entry in recent
-                    if entry.get("level_no", 0) >= 40  # ERROR=40, CRITICAL=50
-                    and entry.get("ts_unix", 0) >= cutoff
-                )
+                error_count, buffer_total = get_recent_error_stats(cutoff)
                 checks["recent_errors"] = {
                     "ok": True,
                     "count_last_5min": error_count,
-                    "buffer_total": len(recent),
+                    "buffer_total": buffer_total,
                 }
             except Exception as exc:
                 checks["recent_errors"] = {"ok": False, "error": str(exc)}
@@ -2226,7 +2379,7 @@ class SystemRoutesMixin:
             # degraded。门槛 30 条 finalized 是经验值：太低（5 条）会被冷启
             # 动早期的瞬时 0% 误判，太高（100 条）对刚上线的部署一直探测
             # 不到任何降级。30 大约是一个工作日的通知量级。
-            notification_summary = _safe_notification_summary()
+            notification_summary = _safe_notification_summary(now)
             if notification_summary is None:
                 checks["notification"] = {"ok": False, "error": "summary unavailable"}
             else:
@@ -2238,8 +2391,8 @@ class SystemRoutesMixin:
             # ``object``，``int()`` 拒绝直接转。改用本地变量 + ``isinstance`` 守
             # 卫：拿到 int / 数值就用，否则降级为 0（说明该子检查挂了，直接当
             # 没观测到来抑制误判）。
-            sse_check = checks.get("sse_bus", {})
-            re_check = checks.get("recent_errors", {})
+            sse_check = checks.get("sse_bus")
+            re_check = checks.get("recent_errors")
             bp_raw = (
                 sse_check.get("backpressure_discards", 0)
                 if isinstance(sse_check, dict)
@@ -2259,7 +2412,7 @@ class SystemRoutesMixin:
             #   3. events_finalized >= 30（足够样本，避免冷启动早期误判）
             #   4. delivery_success_rate < 0.8（80% 是个权衡：太高过敏，
             #      太低不敏感）
-            notif_check = checks.get("notification", {})
+            notif_check = checks.get("notification")
             notif_degraded = False
             if isinstance(notif_check, dict) and notif_check.get("ok"):
                 enabled = bool(notif_check.get("enabled", False))
@@ -2782,8 +2935,6 @@ class SystemRoutesMixin:
             # （而不是之后），让磁盘里的 rotated_at 跟响应里的字符串
             # 完全一致——后续 GET /api/system/api-token-info 读取 config
             # 时就能算出准确的 age。
-            from datetime import UTC, datetime
-
             rotated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
             try:
                 cfg = get_config()

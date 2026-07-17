@@ -42,6 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 VSCODE_DIR = REPO_ROOT / "packages" / "vscode"
 WEBVIEW_TS = VSCODE_DIR / "webview.ts"
 WEBVIEW_CSS = VSCODE_DIR / "webview.css"
+EXTENSION_TS = VSCODE_DIR / "extension.ts"
 
 EXPECTED_BRANCHES = ("skeleton", "loading", "empty", "error")
 EXPECTED_ERROR_DETAILS = ("network", "server_500", "timeout", "unknown")
@@ -62,6 +63,48 @@ EXPECTED_I18N_KEYS = (
     "aiia.state.error.action.retry",
     "aiia.state.error.action.open_log",
     "aiia.state.error.action.copy_diagnostics",
+)
+
+EXPECTED_WEBVIEW_URI_CONSTANTS = (
+    "markedJsUri",
+    "prismBootstrapUri",
+    "prismJsUri",
+    "prismCssUri",
+    "webviewCssUri",
+    "mathjaxScriptUri",
+    "webviewStateUri",
+    "webviewHelpersUri",
+    "webviewUiUri",
+    "activityIconUri",
+    "webviewNotifyCoreUri",
+    "webviewSettingsUiUri",
+    "i18nJsUri",
+    "triStatePanelJsUri",
+    "triStatePanelLoaderUri",
+    "triStatePanelBootstrapUri",
+    "lottieJsUri",
+    "noContentLottieJsonUri",
+)
+
+EXPECTED_LOCAL_WEBVIEW_ASSETS = (
+    "marked.min.js",
+    "prism-bootstrap.js",
+    "prism.min.js",
+    "prism.min.css",
+    "webview.css",
+    "tex-mml-svg.js",
+    "webview-state.js",
+    "webview-helpers.js",
+    "webview-ui.js",
+    "activity-icon.svg",
+    "webview-notify-core.js",
+    "webview-settings-ui.js",
+    "i18n.js",
+    "tri-state-panel.js",
+    "tri-state-panel-loader.js",
+    "tri-state-panel-bootstrap.js",
+    "lottie.min.js",
+    "sprout.json",
 )
 
 
@@ -272,6 +315,77 @@ class TestTriStatePanelVscodeDom(unittest.TestCase):
                     f"is the only sanctioned channel."
                 ),
             )
+
+
+class TestVscodeWebviewSecurityInvariants(unittest.TestCase):
+    """Security invariants around VS Code webview local-resource loading."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.ts = WEBVIEW_TS.read_text(encoding="utf-8")
+        cls.extension_ts = EXTENSION_TS.read_text(encoding="utf-8")
+
+    def test_local_resource_roots_is_only_extension_uri(self) -> None:
+        roots = re.findall(r"localResourceRoots\s*:\s*\[(?P<roots>[^\]]*)\]", self.ts)
+        self.assertEqual(
+            roots,
+            ["this._extensionUri"],
+            msg=(
+                "webview.ts must keep localResourceRoots restricted to "
+                "[this._extensionUri]. Adding workspace folders, home dirs, "
+                "or broad filesystem roots expands the webview's readable "
+                "local-resource surface."
+            ),
+        )
+
+    def test_all_local_uri_constants_use_as_webview_uri_join_path(self) -> None:
+        for uri_var in EXPECTED_WEBVIEW_URI_CONSTANTS:
+            pattern = re.compile(
+                rf"const\s+{re.escape(uri_var)}\s*=\s*webview\.asWebviewUri"
+                rf"\(\s*vscode\.Uri\.joinPath\(\s*this\._extensionUri\s*,",
+                flags=re.DOTALL,
+            )
+            self.assertRegex(
+                self.ts,
+                pattern,
+                msg=(
+                    f"{uri_var} must be assigned through "
+                    "webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, ...)). "
+                    "Raw file paths, relative URLs, and external URLs bypass the "
+                    "VS Code webview resource bridge and can regress CSP/localResourceRoots "
+                    "behavior."
+                ),
+            )
+
+    def test_template_does_not_reference_raw_local_asset_paths(self) -> None:
+        for asset in EXPECTED_LOCAL_WEBVIEW_ASSETS:
+            raw_attr = re.compile(
+                rf"\b(?:src|href)=['\"](?:\./)?{re.escape(asset)}(?:[?#][^'\"]*)?['\"]"
+            )
+            self.assertNotRegex(
+                self.ts,
+                raw_attr,
+                msg=(
+                    f"webview.ts must not render raw local asset path '{asset}' "
+                    "in src/href attributes. Use the matching asWebviewUri(...) "
+                    "placeholder so VS Code can enforce localResourceRoots and CSP."
+                ),
+            )
+
+    def test_retain_context_provider_option_is_config_driven(self) -> None:
+        self.assertIn(
+            "webview.retainContextWhenHidden",
+            self.extension_ts,
+            msg="Extension activation must read the retainContextWhenHidden setting.",
+        )
+        self.assertIn(
+            "retainContextWhenHidden: retainWebviewContextWhenHidden",
+            self.extension_ts,
+            msg=(
+                "registerWebviewViewProvider must pass the explicit config value, "
+                "not a hard-coded true default."
+            ),
+        )
 
 
 class TestTriStatePanelVscodeCss(unittest.TestCase):

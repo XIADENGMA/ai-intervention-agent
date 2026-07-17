@@ -147,6 +147,7 @@ class SSEBusStatsSnapshot(TypedDict):
 # 「服务器以为客户端断了，客户端以为服务器还在推」的 silent disconnection。
 # 由 ``test_sse_bus_backpressure_disconnect_signals_generator`` 锁定 contract。
 _SSE_DISCONNECT_SENTINEL = object()
+_SSE_EMPTY_JSON = "{}"
 
 
 # R125c — 后端 export ``?include_images=...`` 解析工具。
@@ -157,6 +158,82 @@ _SSE_DISCONNECT_SENTINEL = object()
 # best-effort 习惯。
 _TRUTHY_QUERY: frozenset[str] = frozenset({"true", "1", "yes", "on"})
 _FALSY_QUERY: frozenset[str] = frozenset({"false", "0", "no", "off"})
+
+
+def _format_sse_heartbeat_payload(now_unix: Any | None = None) -> str:
+    """Return the heartbeat SSE data payload.
+
+    Heartbeat data is always a single integer field. Keep this out of the
+    generic JSON encoder so every idle SSE connection avoids allocating a dict
+    and walking ``json.dumps`` on each 25s heartbeat.
+    """
+    try:
+        ts_unix = int(time.time() if now_unix is None else now_unix)
+    except (OverflowError, TypeError, ValueError):
+        return "{}"
+    return f'{{"ts_unix":{ts_unix}}}'
+
+
+def _format_sse_gap_warning_payload(after_id: int) -> str:
+    """Return the fixed-schema gap warning SSE data payload."""
+    return f'{{"reason":"history_evicted","after_id":{after_id}}}'
+
+
+def _format_sse_oversize_drop_payload(
+    original_event_type: str,
+    size_bytes: int,
+    limit_bytes: int,
+) -> str | None:
+    """Return the fixed-schema oversize_drop SSE data payload.
+
+    ``original_event_type`` remains free-form, so delegate just that string to
+    the JSON encoder for correct escaping. The two byte counts are internal
+    integers; formatting them directly avoids allocating and walking a metadata
+    dict on the oversize warning path.
+    """
+    try:
+        event_type_json = json.dumps(original_event_type, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return None
+    return (
+        '{"original_event_type":'
+        f'{event_type_json},"size_bytes":{size_bytes},'
+        f'"limit_bytes":{limit_bytes}'
+        "}"
+    )
+
+
+def _serialize_sse_payload(data: Any) -> tuple[Any, str | None]:
+    """Normalize and serialize SSE payload data.
+
+    ``emit`` historically treats every falsy payload as an empty object. Keep
+    that contract, but avoid running the generic JSON encoder for the stable
+    empty-object case.
+    """
+    payload_data = data or {}
+    if not payload_data:
+        return payload_data, _SSE_EMPTY_JSON
+    try:
+        return payload_data, json.dumps(payload_data, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return payload_data, None
+
+
+def _sse_serialized_utf8_exceeds_limit(serialized: str, limit: int) -> tuple[bool, int]:
+    """Return whether ``serialized`` can exceed ``limit`` UTF-8 bytes.
+
+    UTF-8 encodes one Unicode code point as at most 4 bytes. Most SSE events are
+    tiny JSON strings, so ``len(serialized) * 4 <= limit`` proves they are under
+    the byte cap without allocating a temporary ``bytes`` object. Near the cap,
+    encode once and return the exact byte count for oversize metadata.
+    """
+    char_count = len(serialized)
+    if char_count * 4 <= limit:
+        return False, char_count
+    if serialized.isascii():
+        return char_count > limit, char_count
+    byte_count = len(serialized.encode("utf-8"))
+    return byte_count > limit, byte_count
 
 
 def _parse_bool_query(raw: str | None, *, default: bool) -> bool:
@@ -252,7 +329,7 @@ def _strip_images_from_result(
             continue
         meta = {k: v for k, v in img.items() if k != "data"}
         stripped_images.append(meta)
-    sanitized: dict[str, Any] = dict(result)
+    sanitized = result.copy()
     sanitized["images"] = stripped_images
     sanitized["images_stripped"] = True
     return sanitized
@@ -452,38 +529,41 @@ class _SSEBus:
                 oldest_id, _ = self._history[0]
                 latest_id, _ = self._history[-1]
                 if after_id < oldest_id - 1:
-                    # 太旧：buffer 已 evict，必然丢事件。塞 gap_warning + 全部
-                    # 当前 history（让客户端至少拿到最新窗口里的事件，之后客户端
-                    # 自己 fetch 全量）。
+                    # 太旧：buffer 已 evict，必然丢事件。塞 gap_warning + 当前
+                    # history 的可见前缀（queue 剩余容量内），之后客户端自己
+                    # fetch 全量。
                     inject_gap_warning = True
                     self._gap_warnings_emitted += 1
-                    replay_items = [payload for _, payload in self._history]
+                    replay_budget = self._QUEUE_MAXSIZE - 1
+                    if replay_budget > 0:
+                        for replay_count, (_, payload) in enumerate(self._history, 1):
+                            replay_items.append(payload)
+                            if replay_count >= replay_budget:
+                                break
                 elif after_id < latest_id:
-                    # 在 history 范围内，正常补发。
-                    replay_items = [
-                        payload
-                        for evt_id, payload in self._history
-                        if evt_id > after_id
-                    ]
+                    # 在 history 范围内，正常补发。history 的 id 单调递增；
+                    # 从右侧向左找 tail，客户端只落后几条时避免扫描完整 deque。
+                    for evt_id, payload in reversed(self._history):
+                        if evt_id <= after_id:
+                            break
+                        replay_items.append(payload)
+                    replay_items.reverse()
                 # after_id == latest_id 或 after_id > latest_id：客户端是
                 # up-to-date 或者比 server 还新（server 重启 _next_id=0），都不补发。
 
             self._subscribers.add(q)
 
         if inject_gap_warning:
+            assert after_id is not None
             warning_data = {
                 "reason": "history_evicted",
                 "after_id": after_id,
             }
-            try:
-                warning_serialized = json.dumps(warning_data, ensure_ascii=False)
-            except (TypeError, ValueError):
-                warning_serialized = None
             warning_payload = {
                 "id": -1,
                 "type": "gap_warning",
                 "data": warning_data,
-                "_serialized": warning_serialized,
+                "_serialized": _format_sse_gap_warning_payload(after_id),
             }
             try:
                 q.put_nowait(warning_payload)
@@ -544,10 +624,7 @@ class _SSEBus:
                 with self._lock:
                     self._schema_violation_total += 1
 
-        try:
-            serialized_data = json.dumps(data or {}, ensure_ascii=False)
-        except (TypeError, ValueError):
-            serialized_data = None
+        data, serialized_data = _serialize_sse_payload(data)
 
         # R58：如果序列化字节数超过阈值，把这条 emit 替换成一个 ``oversize_drop``
         # warning（自身只携带元数据，不含原 payload）。原 payload 不发，避
@@ -555,8 +632,11 @@ class _SSEBus:
         # ``oversize_drop`` 仍然占用 id 槽位、仍然被 client EventSource 看
         # 到，所以不会引起 ``Last-Event-ID`` resume 的 gap_warning。
         if serialized_data is not None:
-            payload_bytes = len(serialized_data.encode("utf-8"))
-            if payload_bytes > self._OVERSIZE_LIMIT_BYTES:
+            exceeds_limit, payload_bytes = _sse_serialized_utf8_exceeds_limit(
+                serialized_data,
+                self._OVERSIZE_LIMIT_BYTES,
+            )
+            if exceeds_limit:
                 with self._lock:
                     self._oversize_drops += 1
                 # 留住原 event_type 当 metadata，方便 client UI / dashboard
@@ -568,10 +648,11 @@ class _SSEBus:
                     "size_bytes": payload_bytes,
                     "limit_bytes": self._OVERSIZE_LIMIT_BYTES,
                 }
-                try:
-                    serialized_data = json.dumps(data, ensure_ascii=False)
-                except (TypeError, ValueError):
-                    serialized_data = None
+                serialized_data = _format_sse_oversize_drop_payload(
+                    original_event_type,
+                    payload_bytes,
+                    self._OVERSIZE_LIMIT_BYTES,
+                )
 
         # R134：emit 时间戳。``time.monotonic_ns()`` 不受系统时钟跳变影响，
         # 是 emit→deliver 延迟测量的正确时基（``time.time()`` 在 NTP 校
@@ -582,15 +663,17 @@ class _SSEBus:
         with self._lock:
             self._next_id += 1
             self._emit_total += 1
+            emit_by_type = self._emit_by_type
             # R61：按 event_type 分桶累加。``oversize_drop`` 替换路径会用替换
             # 后的 type（``"oversize_drop"`` 而非原 ``"task_changed"``），这正
             # 是我们想看到的——dashboard 能直接观测到"这一桶 oversize 事件
             # 实际上来自哪个上游 type"，因为替换后的 ``data["original_event_type"]``
             # 仍然保留了原 type 名。
             if (
-                event_type not in self._emit_by_type
-                and len(self._emit_by_type) >= self._EMIT_BY_TYPE_MAX_CARDINALITY
+                event_type not in emit_by_type
+                and len(emit_by_type) >= self._EMIT_BY_TYPE_MAX_CARDINALITY
             ):
+                overflow_bucket = self._EMIT_BY_TYPE_OVERFLOW_BUCKET
                 # R203 cap-hit 路径：未见过的新 event_type 落到 overflow
                 # 桶，保 sum 不变量；只 WARN 一次。
                 if not self._emit_by_type_cap_hit_warned:
@@ -602,18 +685,18 @@ class _SSEBus:
                         "auditing emit-site code for runaway dynamic "
                         "event_type strings.",
                         self._EMIT_BY_TYPE_MAX_CARDINALITY,
-                        self._EMIT_BY_TYPE_OVERFLOW_BUCKET,
+                        overflow_bucket,
                         event_type,
                     )
                     self._emit_by_type_cap_hit_warned = True
-                self._emit_by_type[self._EMIT_BY_TYPE_OVERFLOW_BUCKET] += 1
+                emit_by_type[overflow_bucket] += 1
             else:
-                self._emit_by_type[event_type] += 1
+                emit_by_type[event_type] += 1
             event_id = self._next_id
             payload = {
                 "id": event_id,
                 "type": event_type,
-                "data": data or {},
+                "data": data,
                 "_serialized": serialized_data,
                 # R134：generator yield 之前算 monotonic_ns - _emit_ts_ns。
                 # 字段名带下划线，与 ``_serialized`` 同一约定：
@@ -723,19 +806,78 @@ class _SSEBus:
     def _compute_latency_snapshot(self) -> SSELatencySnapshot:
         """R134：基于当前 ``_latency_samples_ns`` 算 P50/P95（ms, 2 位小数）。
 
-        必须在持 ``self._lock`` 时调用，因为内部读 ``_latency_samples_ns``
-        快照是 ``list(self._latency_samples_ns)``——deque 在多线程并发
-        ``append`` 时遍历会抛 ``RuntimeError: deque mutated during iteration``。
+        必须在持 ``self._lock`` 时调用。empty / singleton / up-to-four-sample
+        fast path 只读长度和端点元素；larger-sample 路径才用
+        ``list(samples_ns)`` 做快照，避免 deque 在多线程并发
+        ``append`` 时遍历抛 ``RuntimeError: deque mutated during iteration``。
         - 算法：nearest-rank percentile（``sorted[int(N * pct)]``，pct ∈
           [0,1)）。N=512 时 P95 索引 = 486，P50 = 256；nearest-rank 比
           线性插值简单稳定，监控用 ±1ms 精度足够。
         - count = 0 时 p50/p95 全 None；count == 1 时 p50 = p95 = 唯一
           样本。
         """
-        samples = list(self._latency_samples_ns)
-        count = len(samples)
+        samples_ns = self._latency_samples_ns
+        count = len(samples_ns)
         if count == 0:
             return {"p50_ms": None, "p95_ms": None, "count": 0}
+        if count == 1:
+            sample_ms = round(samples_ns[0] / 1_000_000.0, 2)
+            return {"p50_ms": sample_ms, "p95_ms": sample_ms, "count": 1}
+        if count == 2:
+            first_sample = samples_ns[0]
+            second_sample = samples_ns[1]
+            p_sample = first_sample if first_sample >= second_sample else second_sample
+            sample_ms = round(p_sample / 1_000_000.0, 2)
+            return {"p50_ms": sample_ms, "p95_ms": sample_ms, "count": 2}
+        if count == 3:
+            first_sample = samples_ns[0]
+            second_sample = samples_ns[1]
+            third_sample = samples_ns[2]
+            if first_sample <= second_sample:
+                low_sample = first_sample
+                high_sample = second_sample
+            else:
+                low_sample = second_sample
+                high_sample = first_sample
+            if third_sample <= low_sample:
+                p50_sample = low_sample
+                p95_sample = high_sample
+            elif third_sample >= high_sample:
+                p50_sample = high_sample
+                p95_sample = third_sample
+            else:
+                p50_sample = third_sample
+                p95_sample = high_sample
+            p50_ms = round(p50_sample / 1_000_000.0, 2)
+            p95_ms = round(p95_sample / 1_000_000.0, 2)
+            return {"p50_ms": p50_ms, "p95_ms": p95_ms, "count": 3}
+        if count == 4:
+            first_sample = samples_ns[0]
+            second_sample = samples_ns[1]
+            third_sample = samples_ns[2]
+            fourth_sample = samples_ns[3]
+            if first_sample >= second_sample:
+                pair_a_high = first_sample
+                pair_a_low = second_sample
+            else:
+                pair_a_high = second_sample
+                pair_a_low = first_sample
+            if third_sample >= fourth_sample:
+                pair_b_high = third_sample
+                pair_b_low = fourth_sample
+            else:
+                pair_b_high = fourth_sample
+                pair_b_low = third_sample
+            if pair_a_high >= pair_b_high:
+                p95_sample = pair_a_high
+                p50_sample = pair_b_high if pair_b_high >= pair_a_low else pair_a_low
+            else:
+                p95_sample = pair_b_high
+                p50_sample = pair_a_high if pair_a_high >= pair_b_low else pair_b_low
+            p50_ms = round(p50_sample / 1_000_000.0, 2)
+            p95_ms = round(p95_sample / 1_000_000.0, 2)
+            return {"p50_ms": p50_ms, "p95_ms": p95_ms, "count": 4}
+        samples = list(samples_ns)
         samples.sort()
         # nearest-rank with cap 防止 index == count（pct=1.0 时会越界）
         p50_idx = min(count - 1, int(count * 0.50))
@@ -764,6 +906,7 @@ class _SSEBus:
         瞬时值），caller 可以记录两次快照后做差，得到一段窗口内的速率。
         """
         with self._lock:
+            emit_by_type = dict(self._emit_by_type) if self._emit_by_type else {}
             return {
                 "emit_total": self._emit_total,
                 "latest_event_id": self._next_id,
@@ -776,7 +919,7 @@ class _SSEBus:
                 "oversize_drops": self._oversize_drops,
                 # R61：每事件类型的 emit 计数。返回 dict 浅拷贝，调用方外部
                 # 修改不影响内部 Counter；UI 想出 top-N 自行 ``Counter(...).most_common(n)``。
-                "emit_by_type": dict(self._emit_by_type),
+                "emit_by_type": emit_by_type,
                 # R134：emit→deliver 延迟分布。``_compute_latency_snapshot``
                 # 在锁内读 ``_latency_samples_ns``，输出 ms 单位。
                 "latency_ms": self._compute_latency_snapshot(),
@@ -931,13 +1074,7 @@ class TaskRoutesMixin:
                             # detect 应用层卡死，且 SSE 协议规范规定未注册
                             # listener 会自动忽略，向后兼容。
                             _sse_bus.bump_heartbeat()
-                            try:
-                                hb_payload = json.dumps(
-                                    {"ts_unix": int(time.time())},
-                                    ensure_ascii=False,
-                                )
-                            except (TypeError, ValueError):
-                                hb_payload = "{}"
+                            hb_payload = _format_sse_heartbeat_payload()
                             yield f"event: heartbeat\ndata: {hb_payload}\n\n"
                             continue
                         if event is _SSE_DISCONNECT_SENTINEL:
@@ -1294,11 +1431,15 @@ class TaskRoutesMixin:
                 server_time = time.time()
                 now_monotonic = time.monotonic()
 
-                if since_dt is not None:
-                    tasks = [t for t in tasks if _task_modified_since(t, since_dt)]
+                if since_dt is None:
+                    tasks_iter = iter(tasks)
+                else:
+                    tasks_iter = (
+                        task for task in tasks if _task_modified_since(task, since_dt)
+                    )
 
                 exported: list[dict[str, Any]] = []
-                for task in tasks:
+                for task in tasks_iter:
                     remaining = task.get_remaining_time(now_monotonic=now_monotonic)
                     completed_at_iso = (
                         task.completed_at.isoformat() if task.completed_at else None
@@ -1337,14 +1478,18 @@ class TaskRoutesMixin:
 
                 # ISO8601 时间戳作为文件名时间分量。冒号在 Windows 文件名里
                 # 非法，所以用 ``%Y%m%dT%H%M%SZ`` 紧凑格式（只含数字 + T/Z）。
-                stamp = _dt.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+                # 同一快照同时用于 filename + payload，避免一次 export 内
+                # 出现跨秒漂移，也少一次 UTC now() 调用。
+                exported_at = _dt.now(UTC)
+                exported_at_iso = exported_at.isoformat()
+                stamp = exported_at.strftime("%Y%m%dT%H%M%SZ")
                 base_name = f"ai-intervention-agent-tasks-{stamp}"
 
                 if fmt == "json":
                     payload = {
                         "success": True,
                         "schema_version": 1,
-                        "exported_at": _dt.now(UTC).isoformat(),
+                        "exported_at": exported_at_iso,
                         "server_time": server_time,
                         "stats": stats,
                         "include_images": include_images,
@@ -1370,7 +1515,7 @@ class TaskRoutesMixin:
                 lines: list[str] = []
                 lines.append("# AI Intervention Agent · Task Export")
                 lines.append("")
-                lines.append(f"- Exported at: `{_dt.now(UTC).isoformat()}`")
+                lines.append(f"- Exported at: `{exported_at_iso}`")
                 lines.append(f"- Server time: `{server_time}`")
                 if since_dt is not None:
                     # R135: 增量导出标记，让人类读快照时知道这是「自 X 以来

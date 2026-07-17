@@ -69,10 +69,41 @@ class TestNotificationCheckPresent(unittest.TestCase):
 
     def test_uses_safe_notification_summary_helper(self) -> None:
         self.assertIn(
+            "_safe_notification_summary(now)",
+            self.body,
+            "notification 检查必须走 _safe_notification_summary(now) helper"
+            "（避免直接读敏感 config，并复用请求时间快照）",
+        )
+        self.assertNotIn(
             "_safe_notification_summary()",
             self.body,
-            "notification 检查必须走 _safe_notification_summary() helper（避免直接读敏感 config）",
+            "system_health handler 不应无参调用 summary，否则会重新读一次 wall-clock",
         )
+
+    def test_reuses_request_timestamp_snapshot_for_notification_summary(self) -> None:
+        self.assertIn(
+            "now = time.time()",
+            self.body,
+            "health handler 必须先捕获请求级 wall-clock 快照",
+        )
+        self.assertIn(
+            "ts = int(now)",
+            self.body,
+            "ts_unix 必须来自同一个请求级 wall-clock 快照",
+        )
+        self.assertIn(
+            "_safe_notification_summary(now)",
+            self.body,
+            "notification provider age 计算必须复用 health 请求时间快照",
+        )
+
+    def test_status_decision_avoids_eager_empty_dict_fallbacks(self) -> None:
+        self.assertIn('checks.get("sse_bus")', self.body)
+        self.assertIn('checks.get("recent_errors")', self.body)
+        self.assertIn('checks.get("notification")', self.body)
+        self.assertNotIn('checks.get("sse_bus", {})', self.body)
+        self.assertNotIn('checks.get("recent_errors", {})', self.body)
+        self.assertNotIn('checks.get("notification", {})', self.body)
 
 
 class TestTopLevelMetadataFieldsPresent(unittest.TestCase):
@@ -335,6 +366,78 @@ class TestSafeNotificationSummary(unittest.TestCase):
                 result,
                 "get_status 返回非 dict 时必须 graceful 返回 None",
             )
+
+    def test_missing_status_collections_fall_back_without_sensitive_fields(
+        self,
+    ) -> None:
+        """status 缺 providers/stats 时仍返回安全空摘要。"""
+        from ai_intervention_agent.notification_manager import notification_manager
+
+        with patch.object(
+            notification_manager,
+            "get_status",
+            return_value={"enabled": True, "queue_size": 2},
+        ):
+            result = system_module._safe_notification_summary(now=1234.5)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["providers_count"], 0)
+        self.assertEqual(result["delivery_success_rate"], None)
+        self.assertEqual(result["events_finalized"], 0)
+        self.assertEqual(result["events_in_flight"], 0)
+        self.assertNotIn("config", result)
+        self.assertNotIn("stats", result)
+
+    def test_summary_does_not_use_eager_collection_fallbacks(self) -> None:
+        import inspect
+
+        source = inspect.getsource(system_module._safe_notification_summary)
+
+        self.assertNotIn('status.get("providers", [])', source)
+        self.assertNotIn('status.get("stats", {})', source)
+        self.assertNotIn('stats.get("providers", {})', source)
+        self.assertIn('providers = status.get("providers")', source)
+        self.assertIn('stats = status.get("stats")', source)
+
+    def test_uses_supplied_now_for_per_provider_ages(self) -> None:
+        """调用方传入 ``now`` 时，provider age 计算不得再次读取 wall-clock。"""
+        from ai_intervention_agent.notification_manager import notification_manager
+
+        providers_stats = {
+            "bark": {
+                "attempts": 1,
+                "success": 1,
+                "failure": 0,
+                "last_success_at": 1230.0,
+            }
+        }
+        status = {
+            "enabled": True,
+            "providers": ["bark"],
+            "queue_size": 0,
+            "stats": {
+                "delivery_success_rate": 1.0,
+                "events_finalized": 1,
+                "events_in_flight": 0,
+                "providers": providers_stats,
+            },
+        }
+
+        with (
+            patch.object(notification_manager, "get_status", return_value=status),
+            patch.object(
+                system_module,
+                "_safe_per_provider_snapshot",
+                return_value={"bark": {"attempts": 1}},
+            ) as per_provider_snapshot,
+        ):
+            result = system_module._safe_notification_summary(now=1234.5)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual({"bark": {"attempts": 1}}, result["per_provider"])
+        per_provider_snapshot.assert_called_once_with(providers_stats, 1234.5)
 
 
 # ---------------------------------------------------------------------------

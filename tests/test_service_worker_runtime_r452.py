@@ -3,8 +3,9 @@
 The existing SW tests intentionally lock many source-level invariants. This file
 adds a thin runtime layer for the behavior that is easiest to regress while
 refactoring: navigation requests must be network-first with an offline fallback,
-SSE must fall through untouched, and static assets must stay cache-first without
-turning network failures into rejected ``respondWith`` promises.
+    SSE must fall through untouched, and static assets must stay instant on cache
+hits while refreshing in the background without turning network failures into
+rejected ``respondWith`` promises.
 """
 
 from __future__ import annotations
@@ -110,6 +111,7 @@ def _service_worker_harness(case_js: str) -> str:
           const putCalls = [];
           const deletedEntries = [];
           const deletedCaches = [];
+          const waitUntilPromises = [];
 
           function ensureStore(name) {{
             if (!stores[name]) stores[name] = new Map();
@@ -195,6 +197,7 @@ def _service_worker_harness(case_js: str) -> str:
             __openedCaches: openedCaches,
             __putCalls: putCalls,
             __stores: stores,
+            __waitUntilPromises: waitUntilPromises,
           }};
           sandbox.self = sandbox;
           return sandbox;
@@ -214,6 +217,9 @@ def _service_worker_harness(case_js: str) -> str:
             request,
             respondWith(promise) {{
               respondPromise = Promise.resolve(promise);
+            }},
+            waitUntil(promise) {{
+              sandbox.__waitUntilPromises.push(Promise.resolve(promise));
             }},
           }});
           if (!respondPromise) return null;
@@ -296,38 +302,45 @@ def test_sse_fetch_event_falls_through_without_cache_or_network() -> None:
 
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
-def test_static_cache_first_hit_returns_cached_response_without_network() -> None:
+def test_static_cache_hit_returns_cached_response_and_revalidates() -> None:
     script = _service_worker_harness(
         """
         const request = makeRequest('/static/js/app.js?v=cached');
-        sandbox.__stores['aiia-static-v1'] = new Map([
+        sandbox.__stores['aiia-static-v2'] = new Map([
           [request.url, new MiniResponse('cached app js', { status: 200 })],
         ]);
         let networkCalls = 0;
         sandbox.fetch = async () => {
           networkCalls += 1;
-          return new MiniResponse('network app js', { status: 200 });
+          return new MiniResponse('network app js', { status: 200, type: 'basic' });
         };
 
         const response = await dispatchFetch(request);
         if (!response) throw new Error('static request was not handled');
+        if (response.body !== 'cached app js') {
+          throw new Error('expected cached response, got ' + response.body);
+        }
+        await Promise.all(sandbox.__waitUntilPromises);
         process.stdout.write(
           JSON.stringify({
             body: response.body,
             networkCalls,
             openedCaches: sandbox.__openedCaches,
+            putCalls: sandbox.__putCalls,
           })
         );
         """
     )
 
     assert _run_node(script) == (
-        '{"body":"cached app js","networkCalls":0,"openedCaches":["aiia-static-v1"]}'
+        '{"body":"cached app js","networkCalls":1,"openedCaches":["aiia-static-v2"],'
+        '"putCalls":[{"cache":"aiia-static-v2",'
+        '"key":"http://aiia.test/static/js/app.js?v=cached","status":200}]}'
     )
 
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
-def test_static_cache_first_miss_writes_successful_network_response() -> None:
+def test_static_cache_miss_writes_successful_network_response() -> None:
     script = _service_worker_harness(
         """
         const request = makeRequest('/static/js/app.js?v=network');
@@ -350,13 +363,13 @@ def test_static_cache_first_miss_writes_successful_network_response() -> None:
     )
 
     assert _run_node(script) == (
-        '{"body":"network app js","putCalls":[{"cache":"aiia-static-v1",'
+        '{"body":"network app js","putCalls":[{"cache":"aiia-static-v2",'
         '"key":"http://aiia.test/static/js/app.js?v=network","status":200}]}'
     )
 
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
-def test_static_cache_first_network_failure_returns_503_response() -> None:
+def test_static_cache_network_failure_returns_503_response() -> None:
     script = _service_worker_harness(
         """
         sandbox.fetch = async () => {

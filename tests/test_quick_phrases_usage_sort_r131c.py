@@ -263,17 +263,18 @@ class TestSortOrder(unittest.TestCase):
     def test_render_list_sorts_before_iteration(self) -> None:
         body = _extract_function_body(self.js, r"function\s+renderList\s*\(\s*\)")
         sort_idx = body.find("_sortPhrasesByUsage(phrases)")
-        forEach_idx = body.find("phrases.forEach")
+        loop_idx = body.find("var phraseCount =")
         self.assertGreaterEqual(
             sort_idx,
             0,
             "renderList 必须调用 _sortPhrasesByUsage(phrases)",
         )
-        self.assertGreaterEqual(forEach_idx, 0)
+        self.assertNotIn("phrases.forEach", body)
+        self.assertGreaterEqual(loop_idx, 0)
         self.assertLess(
             sort_idx,
-            forEach_idx,
-            "_sortPhrasesByUsage 必须在 phrases.forEach 之前调用",
+            loop_idx,
+            "_sortPhrasesByUsage 必须在 phraseCount indexed loop 之前调用",
         )
 
 

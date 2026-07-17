@@ -174,6 +174,14 @@ class TestPrintConfigOutputShape(unittest.TestCase):
             "env_overrides 必须是 dict（None 仅用于 health endpoint 的探测失败语义）",
         )
 
+    def test_web_ui_section_lookup_uses_lazy_default_path(self) -> None:
+        import inspect
+
+        source = inspect.getsource(server._print_effective_config)
+
+        self.assertIn('web_ui_raw = all_config.get("web_ui")', source)
+        self.assertNotIn('all_config.get("web_ui", {})', source)
+
 
 class TestPrintConfigReflectsEnvOverrides(unittest.TestCase):
     """env 设了就显示，没设就 {}——与 health endpoint 行为镜像。

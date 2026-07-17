@@ -29,6 +29,7 @@ endpoint test 合并精简而来)；R199 + R204 自己的 test 保留, 验证
 
 from __future__ import annotations
 
+import inspect
 import sys
 import unittest
 from datetime import UTC, datetime, timedelta
@@ -38,6 +39,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import ai_intervention_agent.web_ui_routes.system as system_routes
 from ai_intervention_agent.web_ui_routes.system import (
     _compute_age_seconds_from_iso,
 )
@@ -177,6 +179,21 @@ class TestFutureTimestamp(unittest.TestCase):
 
     def test_one_day_in_future_returns_none(self) -> None:
         self.assertIsNone(_compute_age_seconds_from_iso(_iso_future(days=1)))
+
+
+class TestImportPlacementPerfInvariant(unittest.TestCase):
+    """R470: hot age helper must not repeat stdlib import binding per call."""
+
+    def test_compute_age_helper_has_no_local_datetime_import(self) -> None:
+        source = inspect.getsource(_compute_age_seconds_from_iso)
+
+        self.assertNotIn("from datetime import", source)
+
+    def test_datetime_import_is_module_scoped_once(self) -> None:
+        module_path = Path(system_routes.__file__)
+        source = module_path.read_text(encoding="utf-8")
+
+        self.assertEqual(source.count("from datetime import UTC, datetime"), 1)
 
 
 if __name__ == "__main__":

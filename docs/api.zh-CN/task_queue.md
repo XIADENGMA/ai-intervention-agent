@@ -6,6 +6,15 @@
 
 ## 函数
 
+### `_prompt_utf8_size_for_guard(prompt: str) -> int`
+
+Return a prompt byte size suitable for the R53-A threshold guard.
+
+For prompts that are provably below the warn threshold, the exact byte count
+is irrelevant because no log/reject decision can change. Near the threshold
+return an exact UTF-8 byte count so warning/rejection metadata remains
+unchanged.
+
 ### `_capture_all_thread_stacks() -> str`
 
 采集进程内所有线程的当前调用栈，拼成可读字符串。
@@ -295,6 +304,19 @@ remove_task()     → 直接删除
 
 获取所有任务列表
 
+##### `get_first_incomplete_task(self) -> Task | None`
+
+Return the first non-completed task in insertion order.
+
+This is the hot fallback used by ``GET /api/config`` when no active task
+is set. It preserves the previous ``get_all_tasks()`` insertion-order
+semantics without materializing a full task list or a filtered
+incomplete-task list.
+
+##### `has_tasks(self) -> bool`
+
+Return whether the queue currently contains any task.
+
 ##### `get_all_tasks_with_stats(self) -> tuple[list[Task], dict[str, int]]`
 
 单次 read_lock 内同时拿 task list + stats，专门给 ``/api/tasks`` 用。
@@ -325,6 +347,13 @@ Returns:
         - tasks: 与 ``get_all_tasks()`` 同语义的 list copy
         - stats: 与 ``get_task_count()`` 同结构的 dict（含 total /
           pending / active / completed / max）
+
+R521: list copy 和 status 计数在同一次 ``_tasks.values()`` 遍历中完成。
+调用方仍拿独立 list snapshot，但避免先 ``list(...)`` 再二次扫描该 list。
+
+R522: 三个合法 status 是固定集合，计数时直接用局部 int counter + if/elif。
+这保留未知 status 不进入 breakdown 的旧语义，同时避免每个 task 做 dict
+membership + dict item update。
 
 ##### `update_auto_resubmit_timeout_for_all(self, auto_resubmit_timeout: int) -> int`
 
@@ -719,6 +748,9 @@ int
     - active数量应该是0或1（单活动任务模式）
     - total = pending + active + completed
     - completed任务会在10秒后被清理
+
+R522: 与 ``get_all_tasks_with_stats`` 一样，直接用局部 int counter
+统计固定的三种合法 status，未知 status 继续只进入 total。
 
 ##### `register_status_change_callback(self, callback: Callable[[str, str | None, str], None]) -> None`
 

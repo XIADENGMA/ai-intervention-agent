@@ -238,9 +238,9 @@ class FeedbackRoutesMixin:
                         data.get("feedback_text", data.get("user_input", ""))
                     ).strip()
                     selected_options = _sanitize_selected_options(
-                        data.get("selected_options", [])
+                        data.get("selected_options")
                     )
-                    images = data.get("images", [])
+                    images = data.get("images")
                     if not isinstance(images, list):
                         images = []
 
@@ -463,7 +463,7 @@ class FeedbackRoutesMixin:
                 )
                 new_prompt = new_prompt[:MAX_MESSAGE_LENGTH] + "..."
 
-            new_options_raw = data.get("predefined_options", [])
+            new_options_raw = data.get("predefined_options")
             if new_options_raw is None:
                 new_options_raw = []
             if not isinstance(new_options_raw, list):

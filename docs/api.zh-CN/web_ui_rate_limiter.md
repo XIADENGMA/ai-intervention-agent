@@ -12,6 +12,8 @@ Web UI (``limit`` / ``exempt`` / ``enabled``) without importing
 
 ### `_parse_limit(raw: str) -> _LimitSpec`
 
+### `_limit_period_seconds(raw: str) -> int`
+
 ## 类
 
 ### `class WebUiLimiterProtocol`

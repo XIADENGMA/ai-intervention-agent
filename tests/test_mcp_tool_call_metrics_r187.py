@@ -51,6 +51,7 @@ R186 / T1 在 ``/api/system/metrics`` 暴露了 Prometheus exposition format
 from __future__ import annotations
 
 import asyncio
+import inspect
 import sys
 import unittest
 from pathlib import Path
@@ -118,6 +119,20 @@ class TestCounterBehaviour(unittest.TestCase):
             second["foo"]["success"],
             1,
             "get_mcp_tool_call_stats 必须返回 copy；外部修改不能反向污染内部",
+        )
+
+    def test_get_stats_does_not_use_eager_setdefault_default(self) -> None:
+        source = inspect.getsource(mtcm.get_mcp_tool_call_stats)
+        self.assertNotIn(
+            "setdefault(",
+            source,
+            "get_mcp_tool_call_stats 是 metrics scrape helper，不应为已有 tool "
+            "重复构造 unused setdefault 默认 stats dict",
+        )
+        self.assertIn(
+            "tool_stats = result.get(tool_name)",
+            source,
+            "stats snapshot 应用显式 get + missing branch 惰性创建默认 dict",
         )
 
 

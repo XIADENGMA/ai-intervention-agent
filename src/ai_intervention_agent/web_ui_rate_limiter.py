@@ -12,7 +12,7 @@ import math
 import threading
 import time
 from collections.abc import Callable, Mapping
-from functools import wraps
+from functools import lru_cache, wraps
 from types import MappingProxyType
 from typing import Any, Protocol, cast
 
@@ -85,6 +85,11 @@ def _parse_limit(raw: str) -> _LimitSpec:
     return _LimitSpec(amount, period_seconds, raw)
 
 
+@lru_cache(maxsize=32)
+def _limit_period_seconds(raw: str) -> int:
+    return _parse_limit(raw).period_seconds
+
+
 class WebUiRateLimiter:
     """Small fixed-window limiter compatible with the Web UI's decorator use."""
 
@@ -150,11 +155,11 @@ class WebUiRateLimiter:
 
     def _client_key(self) -> str:
         remote_addr = request.remote_addr or ""
-        forwarded_for = request.headers.get("X-Forwarded-For", "")
         try:
             from ai_intervention_agent.web_ui_security import SecurityMixin
 
             if SecurityMixin._should_trust_forwarded_for(remote_addr):
+                forwarded_for = request.headers.get("X-Forwarded-For", "")
                 forwarded_ip = SecurityMixin._parse_forwarded_for(forwarded_for)
                 if forwarded_ip:
                     return forwarded_ip
@@ -174,7 +179,7 @@ class WebUiRateLimiter:
 
         now = time.time()
         client_key = self._client_key()
-        decisions: list[_LimitDecision] = []
+        decision: _LimitDecision | None = None
 
         with self._lock:
             self._prune_expired_buckets(now)
@@ -189,17 +194,24 @@ class WebUiRateLimiter:
                 count += 1
                 self._buckets[bucket_key] = (stored_window, count)
                 remaining = max(spec.amount - count, 0)
-                decisions.append(
-                    _LimitDecision(
-                        allowed=count <= spec.amount,
-                        limit=spec.amount,
-                        remaining=remaining,
-                        reset_at=reset_at,
-                        retry_after=max(1, math.ceil(reset_at - now)),
-                    )
+                current_decision = _LimitDecision(
+                    allowed=count <= spec.amount,
+                    limit=spec.amount,
+                    remaining=remaining,
+                    reset_at=reset_at,
+                    retry_after=max(1, math.ceil(reset_at - now)),
                 )
+                if decision is None or (
+                    current_decision.remaining,
+                    current_decision.reset_at,
+                ) < (
+                    decision.remaining,
+                    decision.reset_at,
+                ):
+                    decision = current_decision
 
-        decision = min(decisions, key=lambda item: (item.remaining, item.reset_at))
+        if decision is None:
+            return None
         g._aiia_rate_limit_decision = decision
         if decision.allowed:
             return None
@@ -211,7 +223,7 @@ class WebUiRateLimiter:
         expired = [
             bucket_key
             for bucket_key, (window_start, _count) in self._buckets.items()
-            if window_start + _parse_limit(bucket_key[2]).period_seconds <= now
+            if window_start + _limit_period_seconds(bucket_key[2]) <= now
         ]
         for bucket_key in expired:
             del self._buckets[bucket_key]

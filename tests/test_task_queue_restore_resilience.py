@@ -17,14 +17,31 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 
 def _write_persist(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+class _CountingDateTime(datetime):
+    calls: list[object] = []
+    current = datetime(2025, 1, 1, 0, 5, tzinfo=UTC)
+
+    @classmethod
+    def now(cls, tz=None):
+        cls.calls.append(tz)
+        return cls.current
+
+    @classmethod
+    def fromisoformat(cls, date_string: str):
+        return datetime.fromisoformat(date_string)
 
 
 class TestRestoreResilience(unittest.TestCase):
@@ -161,6 +178,14 @@ class TestRestoreResilience(unittest.TestCase):
         finally:
             q.stop_cleanup()
 
+    def test_restore_tasks_loop_avoids_eager_empty_list_fallback(self) -> None:
+        from ai_intervention_agent.task_queue import TaskQueue
+
+        source = inspect.getsource(TaskQueue._restore)
+
+        self.assertIn('tasks_raw = data.get("tasks")', source)
+        self.assertNotIn('data.get("tasks", [])', source)
+
     def test_non_dict_item_is_skipped(self) -> None:
         _write_persist(
             self.persist_path,
@@ -187,6 +212,72 @@ class TestRestoreResilience(unittest.TestCase):
         try:
             self.assertEqual(len(q.get_all_tasks()), 1)
             self.assertIsNotNone(q.get_task("good"))
+        finally:
+            q.stop_cleanup()
+
+    def test_restore_uses_one_wall_clock_snapshot_for_multiple_tasks(self) -> None:
+        _write_persist(
+            self.persist_path,
+            {
+                "version": 1,
+                "saved_at": "2025-01-01T00:00:00+00:00",
+                "active_task_id": None,
+                "tasks": [
+                    {
+                        "task_id": "first",
+                        "prompt": "p1",
+                        "predefined_options": [],
+                        "auto_resubmit_timeout": 120,
+                        "created_at": "2025-01-01T00:01:00+00:00",
+                        "status": "pending",
+                    },
+                    {
+                        "task_id": "second",
+                        "prompt": "p2",
+                        "predefined_options": [],
+                        "auto_resubmit_timeout": 120,
+                        "created_at": "2025-01-01T00:02:00+00:00",
+                        "status": "pending",
+                    },
+                ],
+            },
+        )
+
+        _CountingDateTime.calls = []
+        with patch("ai_intervention_agent.task_queue.datetime", _CountingDateTime):
+            q = self._make_queue()
+        try:
+            self.assertEqual(_CountingDateTime.calls, [UTC])
+            self.assertIsNotNone(q.get_task("first"))
+            self.assertIsNotNone(q.get_task("second"))
+        finally:
+            q.stop_cleanup()
+
+    def test_restore_missing_saved_at_still_uses_one_wall_clock_snapshot(self) -> None:
+        _write_persist(
+            self.persist_path,
+            {
+                "version": 1,
+                "active_task_id": None,
+                "tasks": [
+                    {
+                        "task_id": "only",
+                        "prompt": "p",
+                        "predefined_options": [],
+                        "auto_resubmit_timeout": 120,
+                        "created_at": "2025-01-01T00:01:00+00:00",
+                        "status": "pending",
+                    },
+                ],
+            },
+        )
+
+        _CountingDateTime.calls = []
+        with patch("ai_intervention_agent.task_queue.datetime", _CountingDateTime):
+            q = self._make_queue()
+        try:
+            self.assertEqual(_CountingDateTime.calls, [UTC])
+            self.assertIsNotNone(q.get_task("only"))
         finally:
             q.stop_cleanup()
 

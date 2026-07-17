@@ -359,6 +359,14 @@ class TestParseAcceptEncoding:
         result = self.parse(empty_req)
         assert result == set()
 
+    def test_missing_headers_attr_returns_empty(self) -> None:
+        """R471: 缺 ``headers`` attr 时仍按无 Accept-Encoding 处理。"""
+
+        class _FakeReq:
+            pass
+
+        assert self.parse(_FakeReq()) == set()
+
 
 # ===========================================================================
 # D. _send_with_optional_gzip 协商优先级
@@ -503,14 +511,71 @@ class TestSendWithFallbackWhenSiblingMissing:
     def test_raw_when_only_br_supported_but_missing(self) -> None:
         """client 只声明支持 br，但 .br 副本缺失 → 服务原文件。
 
-        ``_client_accepts_gzip`` 是独立检查；此 case 下 client 不声明
-        gzip，所以 gzip 检查失败，最终落到 raw。
+        gzip 支持位来自同一次 ``Accept-Encoding`` 解析；此 case 下 client
+        不声明 gzip，所以 gzip 检查失败，最终落到 raw。
         """
         client = self.app.test_client()
         with closing(client.get("/js/x.js", headers={"Accept-Encoding": "br"})) as rv:
             assert rv.status_code == 200
             assert rv.headers.get("Content-Encoding") in (None, "")
             assert rv.data == self.raw
+
+
+class TestSendNegotiationHotPath:
+    """R463: ``_send_with_optional_gzip`` 每个 request 只解析一次 header。"""
+
+    def setup_method(self) -> None:
+        from flask import Flask
+
+        from ai_intervention_agent.web_ui_routes.static import _send_with_optional_gzip
+
+        self.tmp = Path(tempfile.mkdtemp(prefix="r463_test_"))
+        self.raw = b"body { color: green; }\n" * 80
+        (self.tmp / "main.css").write_bytes(self.raw)
+        (self.tmp / "main.css.gz").write_bytes(
+            gzip.compress(self.raw, compresslevel=9, mtime=0)
+        )
+        if BROTLI_AVAILABLE:
+            import brotli
+
+            (self.tmp / "main.css.br").write_bytes(brotli.compress(self.raw))
+        else:
+            (self.tmp / "main.css.br").write_bytes(b"fake-br")
+
+        self.app = Flask(__name__)
+
+        @self.app.route("/css/<filename>")
+        def _route(filename: str):  # type: ignore[no-untyped-def]
+            return _send_with_optional_gzip(self.tmp, filename, mimetype="text/css")
+
+    def teardown_method(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_accept_encoding_parsed_once_for_br_gzip_request(self) -> None:
+        from ai_intervention_agent.web_ui_routes import static as static_mod
+
+        calls = 0
+        original_parse = static_mod._parse_accept_encoding
+
+        def _spy(req_obj: object | None = None) -> set[str]:
+            nonlocal calls
+            calls += 1
+            return original_parse(req_obj)
+
+        client = self.app.test_client()
+        with patch.object(static_mod, "_parse_accept_encoding", side_effect=_spy):
+            with closing(
+                client.get("/css/main.css", headers={"Accept-Encoding": "br, gzip"})
+            ) as rv:
+                assert rv.status_code == 200
+                assert rv.headers.get("Content-Encoding") == "br"
+
+        assert calls == 1, (
+            "_send_with_optional_gzip should parse Accept-Encoding once and reuse "
+            "the result for br/gzip negotiation"
+        )
 
 
 # ===========================================================================
@@ -527,10 +592,13 @@ class TestStaticPySourceInvariants:
         ).read_text()
 
     def test_brotli_check_present(self) -> None:
-        """实现里必须有 brotli 协商分支。"""
-        assert re.search(r"_client_accepts_brotli\s*\(\s*\)", self.text), (
-            "R21.4 期望 ``_send_with_optional_gzip`` 调用 ``_client_accepts_brotli()``"
-        )
+        """实现里必须有 brotli 协商分支，且复用一次 header 解析结果。"""
+        assert re.search(
+            r"accepted_encodings\s*=\s*_parse_accept_encoding\(\)", self.text
+        ), "R463 期望 ``_send_with_optional_gzip`` 只解析一次 Accept-Encoding"
+        assert re.search(
+            r"accepts_brotli\s*=.*[\"']br[\"'].*accepted_encodings", self.text
+        ), "R21.4/R463 期望 brotli 支持位来自 accepted_encodings"
 
     def test_brotli_filename_pattern(self) -> None:
         """实现里必须能拼出 ``.br`` 后缀文件名。"""
@@ -551,6 +619,10 @@ class TestStaticPySourceInvariants:
             "被发给只支持 gzip 的客户端，bytes 解码失败"
         )
 
+    def test_parse_accept_encoding_does_not_use_eager_dict_fallback(self) -> None:
+        """R471: hot parser must not allocate unused ``{}`` fallback per request."""
+        assert 'getattr(src, "headers", {})' not in self.text
+
     def test_br_check_before_gzip_in_send_helper(self) -> None:
         """协商顺序：br 必须在 gzip 之前检查（br > gzip 优先级）。"""
         # 抓 ``_send_with_optional_gzip`` 函数体：从 ``def _send_with_optional_gzip``
@@ -562,10 +634,10 @@ class TestStaticPySourceInvariants:
         )
         assert m is not None, "找不到 ``_send_with_optional_gzip`` 函数体"
         body = m.group(0)
-        br_pos = body.find("_client_accepts_brotli")
-        gz_pos = body.find("_client_accepts_gzip")
-        assert br_pos != -1, "_client_accepts_brotli 必须在函数体里被调用"
-        assert gz_pos != -1, "_client_accepts_gzip 必须在函数体里被调用"
+        br_pos = body.find("accepts_brotli")
+        gz_pos = body.find("accepts_gzip")
+        assert br_pos != -1, "accepts_brotli 必须在函数体里定义/使用"
+        assert gz_pos != -1, "accepts_gzip 必须在函数体里定义/使用"
         assert br_pos < gz_pos, (
             "R21.4 协商优先级要求 br 检查在 gzip 之前 ── 否则当客户端两种都"
             "支持时会错误地优先发更大的 gzip"

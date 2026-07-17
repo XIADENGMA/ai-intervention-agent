@@ -225,14 +225,15 @@ class TestR316SetupActuallyExercisesSendPath:
     不会 throw AttributeError (runtime contract — 比静态正则检查更强)。"""
 
     def test_r145_setup_followed_by_send_does_not_raise_attribute_error(self):
-        import importlib
+        import importlib.machinery
+        import importlib.util
 
         spec_loader = importlib.machinery.SourceFileLoader(
             "_r316_load_r145_module", str(_R145_TEST_PATH)
         )
-        mod = importlib.util.module_from_spec(
-            importlib.util.spec_from_loader("_r316_load_r145_module", spec_loader)
-        )
+        spec = importlib.util.spec_from_loader("_r316_load_r145_module", spec_loader)
+        assert spec is not None
+        mod = importlib.util.module_from_spec(spec)
         spec_loader.exec_module(mod)
 
         TestClass = mod.TestStreakInRealNotificationManagerSendPath

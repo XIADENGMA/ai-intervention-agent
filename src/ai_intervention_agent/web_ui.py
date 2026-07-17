@@ -13,6 +13,7 @@ __all__ = [
     "_list_non_loopback_ipv4",
     "_sync_existing_tasks_timeout_from_config",
     "_sync_network_security_from_config",
+    "build_trusted_hosts",
     "detect_best_publish_ipv4",
     "normalize_mdns_hostname",
     "validate_allowed_networks",
@@ -20,6 +21,7 @@ __all__ = [
     "validate_blocked_ips",
     "validate_network_cidr",
     "validate_network_security_config",
+    "validate_trusted_hosts",
 ]
 
 import argparse
@@ -32,7 +34,7 @@ import threading
 import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from flask import (
     Flask,
@@ -103,7 +105,7 @@ from ai_intervention_agent.web_ui_routes import (
     TaskRoutesMixin,
 )
 from ai_intervention_agent.web_ui_routes._upload_helpers import MAX_TOTAL_UPLOAD_BYTES
-from ai_intervention_agent.web_ui_security import SecurityMixin
+from ai_intervention_agent.web_ui_security import SecurityMixin, build_trusted_hosts
 from ai_intervention_agent.web_ui_validators import (
     DEFAULT_ALLOWED_NETWORKS,
     VALID_BIND_INTERFACES,
@@ -113,6 +115,7 @@ from ai_intervention_agent.web_ui_validators import (
     validate_blocked_ips,
     validate_network_cidr,
     validate_network_security_config,
+    validate_trusted_hosts,
 )
 
 logger = EnhancedLogger(__name__)
@@ -187,7 +190,12 @@ def get_project_version() -> str:
 
                 with open(pyproject_path, "rb") as f:
                     data = tomllib.load(f)
-                raw_version: Any = data.get("project", {}).get("version", "unknown")
+                project_data = data.get("project")
+                raw_version: Any = (
+                    project_data.get("version", "unknown")
+                    if isinstance(project_data, dict)
+                    else "unknown"
+                )
                 return raw_version if isinstance(raw_version, str) else str(raw_version)
             except Exception:
                 # 兜底：正则提取 version = "X.Y.Z" 那一行
@@ -249,6 +257,7 @@ def _read_inline_locale_json(locale_path_str: str) -> str | None:
 # "0" / "false" / "no" / "off"）都视为禁用，避免「无意中泄漏环境变量」
 # 误启用 Swagger 文档端点。
 _SWAGGER_ENABLED_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
+_MISSING_OPTION_DEFAULTS: object = object()
 _SWAGGER_DISABLED_FALLBACK_HTML = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>API docs disabled</title>
 <style>body{{font-family:system-ui,-apple-system,sans-serif;max-width:640px;margin:48px auto;padding:0 16px;color:#333;line-height:1.5}}
@@ -288,6 +297,23 @@ def _is_swagger_enabled_via_env() -> bool:
     """
     raw = os.environ.get("AI_AGENT_ENABLE_SWAGGER", "")
     return raw.strip().lower() in _SWAGGER_ENABLED_TRUTHY_VALUES
+
+
+def _task_predefined_options_defaults(task: Any) -> Any:
+    """Return task option defaults without eager fallback allocation."""
+    defaults = getattr(task, "predefined_options_defaults", None)
+    return defaults or []
+
+
+def _task_remaining_time(task: Any, now_monotonic: float) -> int:
+    """Return task remaining time, reusing a caller-provided monotonic snapshot."""
+    get_remaining_time = task.get_remaining_time
+    try:
+        return int(get_remaining_time(now_monotonic=now_monotonic))
+    except TypeError:
+        # Compatibility for old task-like objects and tests whose method predates
+        # the injected monotonic snapshot argument.
+        return int(get_remaining_time())
 
 
 # ============================================================================
@@ -445,6 +471,9 @@ class WebFeedbackUI(
         auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
         host: str = "0.0.0.0",
         port: int = 8080,
+        external_base_url: str = "",
+        mdns_hostname: str = MDNS_DEFAULT_HOSTNAME,
+        trusted_hosts: list[str] | None = None,
     ):
         """初始化 Flask 应用、安全策略、路由"""
         self.prompt = prompt
@@ -453,6 +482,9 @@ class WebFeedbackUI(
         self.auto_resubmit_timeout = auto_resubmit_timeout
         self.host = host
         self.port = port
+        self.external_base_url = external_base_url
+        self.mdns_hostname = mdns_hostname
+        self.trusted_hosts = trusted_hosts or []
         # mDNS / DNS-SD 状态（仅在 run() 真正启动服务时启用）
         self._mdns_zeroconf: Any | None = None
         self._mdns_service_info: Any | None = None
@@ -491,6 +523,12 @@ class WebFeedbackUI(
         self._task_queue_runtime_hooks_registered = False
         self._task_queue_runtime_hooks_lock = threading.Lock()
         self.app = Flask(__name__)
+        self.app.config["TRUSTED_HOSTS"] = build_trusted_hosts(
+            host=host,
+            mdns_hostname=mdns_hostname,
+            external_base_url=external_base_url,
+            configured_trusted_hosts=self.trusted_hosts,
+        )
         _cors_origins: list[str | re.Pattern[str]] = [
             f"http://localhost:{port}",
             f"http://127.0.0.1:{port}",
@@ -968,62 +1006,86 @@ class WebFeedbackUI(
                     # 使用TaskQueue中的激活任务
                     # 返回剩余时间而非固定超时，解决刷新页面后倒计时重置的问题
                     # 【优化】添加 server_time 和 deadline，让前端可以基于服务器时间计算倒计时
+                    now_monotonic = time.monotonic()
+                    remaining_time = _task_remaining_time(active_task, now_monotonic)
+                    server_time = time.time()
                     return jsonify(
                         {
                             "prompt": active_task.prompt,
                             "prompt_html": self.render_markdown(active_task.prompt),
                             "predefined_options": active_task.predefined_options,
-                            "predefined_options_defaults": getattr(
-                                active_task, "predefined_options_defaults", []
-                            )
-                            or [],
+                            "predefined_options_defaults": (
+                                _task_predefined_options_defaults(active_task)
+                            ),
                             "task_id": active_task.task_id,
                             "auto_resubmit_timeout": active_task.auto_resubmit_timeout,
-                            "remaining_time": active_task.get_remaining_time(),
-                            "server_time": time.time(),
+                            "remaining_time": remaining_time,
+                            "server_time": server_time,
                             "deadline": active_task.created_at.timestamp()
                             + active_task.auto_resubmit_timeout,
                             "language": ui_lang,
                             "persistent": True,
                             "has_content": True,
                             "initial_empty": False,
+                            # R691（TODO#5 跨端一致性）：/api/config 补齐三个
+                            # 任务级字段。此前仅 /api/tasks/<id> 返回，导致
+                            # 依赖本端点的 VSCode webview 拿不到 per-task
+                            # placeholder / yesno / header chip 信息。
+                            # getattr 兜底：路由历史上兼容 duck-typed
+                            # task（部分单测用 SimpleNamespace 构造），真实
+                            # Task 模型始终携带这三个字段。
+                            "feedback_placeholder": getattr(
+                                active_task, "feedback_placeholder", None
+                            ),
+                            "question_type": getattr(
+                                active_task, "question_type", None
+                            ),
+                            "header_label": getattr(active_task, "header_label", None),
                         }
                     )
                 else:
                     # 如果没有激活任务，检查是否有 pending 任务
-                    all_tasks = task_queue.get_all_tasks()
-                    # 过滤出未完成的任务（排除 completed 状态）
-                    incomplete_tasks = [t for t in all_tasks if t.status != "completed"]
-
-                    if incomplete_tasks:
+                    first_task = task_queue.get_first_incomplete_task()
+                    if first_task is not None:
                         # 有未完成任务存在，激活第一个
-                        first_task = incomplete_tasks[0]
                         task_queue.set_active_task(first_task.task_id)
                         logger.info(f"自动激活第一个pending任务: {first_task.task_id}")
 
                         # 【优化】添加 server_time 和 deadline，让前端可以基于服务器时间计算倒计时
+                        now_monotonic = time.monotonic()
+                        remaining_time = _task_remaining_time(first_task, now_monotonic)
+                        server_time = time.time()
                         return jsonify(
                             {
                                 "prompt": first_task.prompt,
                                 "prompt_html": self.render_markdown(first_task.prompt),
                                 "predefined_options": first_task.predefined_options,
-                                "predefined_options_defaults": getattr(
-                                    first_task, "predefined_options_defaults", []
-                                )
-                                or [],
+                                "predefined_options_defaults": (
+                                    _task_predefined_options_defaults(first_task)
+                                ),
                                 "task_id": first_task.task_id,
                                 "auto_resubmit_timeout": first_task.auto_resubmit_timeout,
-                                "remaining_time": first_task.get_remaining_time(),
-                                "server_time": time.time(),
+                                "remaining_time": remaining_time,
+                                "server_time": server_time,
                                 "deadline": first_task.created_at.timestamp()
                                 + first_task.auto_resubmit_timeout,
                                 "language": ui_lang,
                                 "persistent": True,
                                 "has_content": True,
                                 "initial_empty": False,
+                                # R691：同 active-task 分支，补齐任务级字段
+                                "feedback_placeholder": getattr(
+                                    first_task, "feedback_placeholder", None
+                                ),
+                                "question_type": getattr(
+                                    first_task, "question_type", None
+                                ),
+                                "header_label": getattr(
+                                    first_task, "header_label", None
+                                ),
                             }
                         )
-                    elif all_tasks:
+                    elif task_queue.has_tasks():
                         # 所有任务都是 completed 状态，显示无有效内容
                         logger.info("所有任务均已完成，显示无有效内容页面")
                         return jsonify(
@@ -1051,8 +1113,15 @@ class WebFeedbackUI(
                         effective_timeout = int(self.current_auto_resubmit_timeout)
                         prompt_snapshot = str(self.current_prompt)
                         options_snapshot = list(self.current_options)
-                        option_defaults_snapshot = list(
-                            getattr(self, "current_options_defaults", [])
+                        current_options_defaults = getattr(
+                            self,
+                            "current_options_defaults",
+                            _MISSING_OPTION_DEFAULTS,
+                        )
+                        option_defaults_snapshot = (
+                            []
+                            if current_options_defaults is _MISSING_OPTION_DEFAULTS
+                            else list(cast("Any", current_options_defaults))
                         )
                         task_id_snapshot = self.current_task_id
                         has_content_snapshot = bool(self.has_content)
@@ -1819,6 +1888,9 @@ def web_feedback_ui(
     output_file: str | None = None,
     host: str = "0.0.0.0",
     port: int = 8080,
+    external_base_url: str = "",
+    mdns_hostname: str = MDNS_DEFAULT_HOSTNAME,
+    trusted_hosts: list[str] | None = None,
 ) -> FeedbackResult | None:
     """启动 Web UI（交互反馈界面）的便捷函数
 
@@ -1833,6 +1905,9 @@ def web_feedback_ui(
         output_file: 输出文件路径（可选；若指定则将结果保存为 JSON 文件）
         host: 绑定主机地址（默认"0.0.0.0"）
         port: 绑定端口（默认8080）
+        external_base_url: 反向代理或自定义域名的外部基地址（可选）
+        mdns_hostname: mDNS 主机名（默认 ai.local）
+        trusted_hosts: 额外允许的 Host 头（可选）
 
     返回值：
         FeedbackResult | None: 用户反馈结果字典，包含：
@@ -1862,7 +1937,15 @@ def web_feedback_ui(
     """
     auto_resubmit_timeout = validate_auto_resubmit_timeout(int(auto_resubmit_timeout))
     ui = WebFeedbackUI(
-        prompt, predefined_options, task_id, auto_resubmit_timeout, host, port
+        prompt,
+        predefined_options,
+        task_id,
+        auto_resubmit_timeout,
+        host,
+        port,
+        external_base_url,
+        mdns_hostname,
+        trusted_hosts,
     )
     result = ui.run()
 
@@ -1892,6 +1975,9 @@ if __name__ == "__main__":
         --output-file: 将反馈结果保存为 JSON 文件的路径
         --host: Web UI 监听地址（默认 "0.0.0.0"）
         --port: Web UI 监听端口（默认 8080）
+        --external-base-url: 反向代理或自定义域名的外部基地址（可选）
+        --mdns-hostname: mDNS 主机名（默认 ai.local）
+        --trusted-hosts: 额外允许的 Host，逗号分隔
 
     执行流程：
         1. 创建ArgumentParser解析命令行参数
@@ -1934,11 +2020,31 @@ if __name__ == "__main__":
     parser.add_argument("--output-file", help="将反馈结果保存为 JSON 文件的路径")
     parser.add_argument("--host", default="0.0.0.0", help="Web UI 监听地址")
     parser.add_argument("--port", type=int, default=8080, help="Web UI 监听端口")
+    parser.add_argument(
+        "--external-base-url",
+        default="",
+        help="反向代理或自定义域名的外部基地址（可选）",
+    )
+    parser.add_argument(
+        "--mdns-hostname",
+        default=MDNS_DEFAULT_HOSTNAME,
+        help="mDNS 主机名（默认 ai.local）",
+    )
+    parser.add_argument(
+        "--trusted-hosts",
+        default="",
+        help="额外允许的 Host，逗号分隔（例如 ai.example.com,10.0.0.5）",
+    )
     args = parser.parse_args()
 
     predefined_options = (
         [opt for opt in args.predefined_options.split("|||") if opt]
         if args.predefined_options
+        else None
+    )
+    trusted_hosts = (
+        [item.strip() for item in args.trusted_hosts.split(",") if item.strip()]
+        if args.trusted_hosts
         else None
     )
 
@@ -1950,11 +2056,18 @@ if __name__ == "__main__":
         output_file=args.output_file,
         host=args.host,
         port=args.port,
+        external_base_url=args.external_base_url,
+        mdns_hostname=args.mdns_hostname,
+        trusted_hosts=trusted_hosts,
     )
     if result:
         user_input = result.get("user_input", "")
-        selected_options = result.get("selected_options", [])
-        images = result.get("images", [])
+        selected_options = result.get("selected_options")
+        if not isinstance(selected_options, list):
+            selected_options = []
+        images = result.get("images")
+        if not isinstance(images, list):
+            images = []
 
         print("\n收到反馈:")
         if selected_options:

@@ -37,6 +37,13 @@
 
 验证并清理 blocked_ips 列表（支持单个 IP 和 CIDR，存储规范化后的形式）。
 
+### `validate_trusted_hosts(hosts: Any) -> list[str]`
+
+Validate explicit Host allowlist entries while preserving hostname form.
+
+Detailed normalization is done by ``web_ui_security.build_trusted_hosts`` so
+URL, host:port, and IPv6 bracket syntax stay supported in one place.
+
 ### `validate_network_security_config(config: Any) -> dict[str, Any]`
 
 验证并清理 network_security 配置

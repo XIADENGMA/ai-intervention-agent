@@ -12,11 +12,15 @@
 
 ### `_is_swagger_enabled_via_env() -> bool`
 
+### `_task_predefined_options_defaults(task: Any) -> Any`
+
+### `_task_remaining_time(task: Any, now_monotonic: float) -> int`
+
 ### `_compute_file_version(file_path_str: str) -> str`
 
 ### `_get_module_static_dir() -> Path`
 
-### `web_feedback_ui(prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, output_file: str | None = None, host: str = '0.0.0.0', port: int = 8080) -> FeedbackResult | None`
+### `web_feedback_ui(prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, output_file: str | None = None, host: str = '0.0.0.0', port: int = 8080, external_base_url: str = '', mdns_hostname: str = MDNS_DEFAULT_HOSTNAME, trusted_hosts: list[str] | None = None) -> FeedbackResult | None`
 
 ## Classes
 
@@ -24,7 +28,7 @@
 
 #### Methods
 
-##### `__init__(self, prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, host: str = '0.0.0.0', port: int = 8080)`
+##### `__init__(self, prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, host: str = '0.0.0.0', port: int = 8080, external_base_url: str = '', mdns_hostname: str = MDNS_DEFAULT_HOSTNAME, trusted_hosts: list[str] | None = None)`
 
 ##### `setup_markdown(self) -> None`
 

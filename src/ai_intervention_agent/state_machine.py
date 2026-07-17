@@ -231,7 +231,7 @@ def list_all_states() -> dict[str, tuple[str, ...]]:
 
 def list_transitions() -> dict[str, dict[str, tuple[str, ...]]]:
     """返回完整迁移表（浅拷贝）。"""
-    return {kind: dict(rules) for kind, rules in TRANSITIONS.items()}
+    return {kind: rules.copy() for kind, rules in TRANSITIONS.items()}
 
 
 def flatten_targets(kind: str) -> set[str]:

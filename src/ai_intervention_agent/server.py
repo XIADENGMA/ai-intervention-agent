@@ -66,6 +66,7 @@ import random
 import sys
 import threading  # used for server.threading.main_thread (tests patch this) + _sse_stats_cache_lock
 import time
+from typing import cast
 
 # R62：进程启动时戳（unix epoch 秒）。在 module import 时即被赋值，所以
 # 它代表的是「server module 第一次被加载的时刻」——对一个 ``python -m
@@ -230,12 +231,12 @@ def _resolve_build_info() -> dict[str, str]:
     """
     global _BUILD_INFO_CACHE
     if _BUILD_INFO_CACHE:
-        return dict(_BUILD_INFO_CACHE)
+        return _BUILD_INFO_CACHE.copy()
 
     with _BUILD_INFO_CACHE_LOCK:
         # 双重检查：进入锁后再看一次 cache，防止多个 thread 同时穿透
         if _BUILD_INFO_CACHE:
-            return dict(_BUILD_INFO_CACHE)
+            return _BUILD_INFO_CACHE.copy()
 
         import subprocess as _subprocess
         from pathlib import Path as _Path
@@ -275,7 +276,7 @@ def _resolve_build_info() -> dict[str, str]:
             cache["git_dirty"] = "unknown"
 
         _BUILD_INFO_CACHE = cache
-        return dict(cache)
+        return cache.copy()
 
 
 def reset_sse_stats_cache_for_testing() -> None:
@@ -296,9 +297,10 @@ def reset_recent_logs_cache_for_testing() -> None:
     """R352 (cycle-39 #C2) · **Test-only**: 清空 ``_recent_logs_cache`` +
     重置 timestamp, 让下次 ``_fetch_recent_logs_cached`` 重新拉取。
     """
-    global _recent_logs_cache_ts
+    global _recent_logs_cache_key, _recent_logs_cache_ts
     with _recent_logs_cache_lock:
         _recent_logs_cache.clear()
+        _recent_logs_cache_key = ""
         _recent_logs_cache_ts = 0.0
 
 
@@ -670,7 +672,7 @@ def _fetch_sse_stats_cached(host: str, port: int) -> dict[str, object]:
     with _sse_stats_cache_lock:
         age = now - _sse_stats_cache_ts
         if _sse_stats_cache and age < _SSE_STATS_CACHE_TTL_S:
-            cached_copy = dict(_sse_stats_cache)
+            cached_copy = _sse_stats_cache.copy()
             cached_copy["cached"] = True
             cached_copy["cache_age_s"] = round(age, 3)
             return cached_copy
@@ -725,6 +727,7 @@ def _fetch_sse_stats_cached(host: str, port: int) -> dict[str, object]:
 # success-only / fine-grained-lock / always-fresh-copy 设计。
 _RECENT_LOGS_CACHE_TTL_S: float = 1.0
 _recent_logs_cache: dict[str, object] = {}
+_recent_logs_cache_key: str = ""
 _recent_logs_cache_ts: float = 0.0
 _recent_logs_cache_lock: threading.Lock = threading.Lock()
 
@@ -741,22 +744,23 @@ def _fetch_recent_logs_cached(
     注意 ``limit`` 进 cache key 一起：不同 limit 视作不同请求，避免一个
     limit=20 的请求填了 cache 后，limit=50 命中误得到 truncated entries。
     """
-    global _recent_logs_cache_ts
+    global _recent_logs_cache_key, _recent_logs_cache_ts
     now = time.monotonic()
-    cache_key = f"limit={int(limit)}"
+    limit_int = int(limit)
+    cache_key = f"limit={limit_int}"
     with _recent_logs_cache_lock:
         age = now - _recent_logs_cache_ts
         if (
             _recent_logs_cache
             and age < _RECENT_LOGS_CACHE_TTL_S
-            and _recent_logs_cache.get("_key") == cache_key
+            and _recent_logs_cache_key == cache_key
         ):
-            cached_copy = {k: v for k, v in _recent_logs_cache.items() if k != "_key"}
+            cached_copy = _recent_logs_cache.copy()
             cached_copy["cached"] = True
             cached_copy["cache_age_s"] = round(age, 3)
             return cached_copy
 
-    target_url = f"http://{host}:{port}/api/system/recent-logs?limit={int(limit)}"
+    target_url = f"http://{host}:{port}/api/system/recent-logs?limit={limit_int}"
     result: dict[str, object] = {}
     try:
         import httpx
@@ -783,7 +787,7 @@ def _fetch_recent_logs_cached(
             with _recent_logs_cache_lock:
                 _recent_logs_cache.clear()
                 _recent_logs_cache.update(result)
-                _recent_logs_cache["_key"] = cache_key
+                _recent_logs_cache_key = cache_key
                 _recent_logs_cache_ts = time.monotonic()
         else:
             result["error"] = f"recent-logs response not success: {body!r}"
@@ -995,7 +999,10 @@ def server_info_resource() -> dict[str, object]:
 
         getter = getattr(_sfb, "get_feedback_counters", None)
         if callable(getter):
-            feedback_counters_info = dict(getter())
+            counters = getter()
+            feedback_counters_info = (
+                counters if isinstance(counters, dict) else dict(counters)
+            )
         else:
             feedback_counters_info["error"] = (
                 "get_feedback_counters not found on server_feedback"
@@ -1065,7 +1072,7 @@ def server_info_resource() -> dict[str, object]:
 
         mcp_entries: list[dict[str, object]] = []
         for ent in _get_recent_logs(limit=20):
-            tagged = dict(ent)
+            tagged = ent.copy()
             tagged["source"] = "mcp"
             mcp_entries.append(tagged)
         recent_logs_info["mcp_count"] = len(mcp_entries)
@@ -1082,7 +1089,7 @@ def server_info_resource() -> dict[str, object]:
                     for ent in fetched_entries:
                         if not isinstance(ent, dict):
                             continue
-                        tagged = dict(ent)
+                        tagged = cast("dict[str, object]", ent.copy())
                         tagged["source"] = "web_ui"
                         web_ui_entries.append(tagged)
                 if "error" in fetched:
@@ -1402,11 +1409,8 @@ def _print_effective_config() -> int:
         sections_full: dict[str, object] = {
             k: v for k, v in all_config.items() if isinstance(v, dict)
         }
-        web_ui_section = (
-            dict(all_config.get("web_ui", {}))
-            if isinstance(all_config.get("web_ui"), dict)
-            else {}
-        )
+        web_ui_raw = all_config.get("web_ui")
+        web_ui_section = web_ui_raw.copy() if isinstance(web_ui_raw, dict) else {}
     except Exception as exc:
         print(
             _json.dumps(

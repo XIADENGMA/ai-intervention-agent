@@ -46,7 +46,11 @@ def test_get_task_count_remains_snapshot_based_not_maintained_counters() -> None
 
     assert "with self._lock.read_lock()" in source
     assert "for t in self._tasks.values()" in source
-    assert "counts[t.status] += 1" in source
+    assert "pending = active = completed = 0" in source
+    assert "if t.status == TaskStatus.PENDING:" in source
+    assert "elif t.status == TaskStatus.ACTIVE:" in source
+    assert "elif t.status == TaskStatus.COMPLETED:" in source
+    assert "counts[t.status]" not in source
     assert "len(self._tasks)" in source
 
     maintained_counter_names = (

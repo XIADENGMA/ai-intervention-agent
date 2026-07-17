@@ -60,6 +60,45 @@ logger = EnhancedLogger(__name__)
 # DNS 解析（首次）合计 < 5s，所以这里 +5 既能屏蔽尾时延，又不会让健康的 Bark
 # 失败时 retry 拖太久。
 _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS = 5
+_MISSING_STATS_FIELD = object()
+_NOTIFICATION_LATENCY_INF_BUCKET = float("inf")
+
+
+def _new_provider_stats() -> dict[str, Any]:
+    """Return the default per-provider stats payload."""
+    return {
+        "attempts": 0,
+        "success": 0,
+        "failure": 0,
+        "last_success_at": None,
+        "last_failure_at": None,
+        "last_error": None,
+        "last_latency_ms": None,
+        "latency_ms_total": 0,
+        "latency_ms_count": 0,
+        # R145: 连续成功 / 连续失败计数
+        "success_streak": 0,
+        "failure_streak": 0,
+    }
+
+
+def _get_or_create_provider_stats(
+    stats_root: dict[str, Any], provider_name: str
+) -> dict[str, Any]:
+    """Return provider stats, allocating default dicts only when missing."""
+    providers_obj = stats_root.get("providers", _MISSING_STATS_FIELD)
+    if providers_obj is _MISSING_STATS_FIELD:
+        providers_obj = {}
+        stats_root["providers"] = providers_obj
+
+    providers = cast("dict[str, Any]", providers_obj)
+    try:
+        stats_obj = providers[provider_name]
+    except KeyError:
+        stats_obj = _new_provider_stats()
+        providers[provider_name] = stats_obj
+
+    return cast("dict[str, Any]", stats_obj)
 
 
 # R136: 通知 in-flight 队列断电恢复
@@ -84,6 +123,7 @@ _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS = 5
 _INFLIGHT_FILE_NAME: str = "notification_inflight.json"
 _INFLIGHT_SCHEMA_VERSION: int = 1
 _INFLIGHT_TTL_SECONDS: int = 300  # 5 分钟
+_COMPACT_JSON_SEPARATORS: tuple[str, str] = (",", ":")
 
 
 def _get_inflight_file_dir() -> Path | None:
@@ -553,7 +593,7 @@ class NotificationManager:
             # raise; 但出于防御性编程 + 不希望 reset 因为某个 race condition
             # 半途崩掉, 这里包 try/except 是有意 silent (test-only path,
             # 残留 timer 在最坏情况只会延后清理一个 cycle)。
-            for timer in list(self._delayed_timers.values()):
+            for timer in tuple(self._delayed_timers.values()):
                 try:
                     timer.cancel()
                 except Exception:
@@ -722,6 +762,9 @@ class NotificationManager:
         5.0,
         10.0,
     )
+    _DEFAULT_LATENCY_BUCKET_COUNTS: dict[float, int] = dict.fromkeys(
+        _DEFAULT_LATENCY_BUCKETS_SECONDS, 0
+    )
     """provider-side 通知发送的 latency 桶（秒）—— R196 / Cycle 6 重新调
     优 (CR#19 §4.1 「R190' · histogram bucket selection per-metric vs
     project-wide」follow-up)。
@@ -776,7 +819,7 @@ class NotificationManager:
                 {
                     "count": 0,
                     "sum_seconds": 0.0,
-                    "buckets": dict.fromkeys(self._DEFAULT_LATENCY_BUCKETS_SECONDS, 0),
+                    "buckets": self._DEFAULT_LATENCY_BUCKET_COUNTS.copy(),
                 },
             )
             self._provider_latency_histograms[provider_name] = state
@@ -792,7 +835,7 @@ class NotificationManager:
         """返回 provider latency histogram 快照（深 copy）。
 
         形态与 ``mcp_tool_call_metrics.get_mcp_tool_call_latency_snapshot``
-        对齐——``buckets`` 字典自动附加 ``float("inf")`` 键，值 == count。
+        对齐——``buckets`` 字典自动附加 ``+Inf`` 键，值 == count。
         若某 provider 还从未发送过，**不**出现在返回字典里。
 
         返回值是新建 dict，调用者修改不会污染内部状态。
@@ -800,8 +843,8 @@ class NotificationManager:
         with self._stats_lock:
             result: dict[str, dict[str, Any]] = {}
             for provider_name, state in self._provider_latency_histograms.items():
-                buckets_copy = dict(state["buckets"])
-                buckets_copy[float("inf")] = state["count"]
+                buckets_copy = state["buckets"].copy()
+                buckets_copy[_NOTIFICATION_LATENCY_INF_BUCKET] = state["count"]
                 result[provider_name] = {
                     "count": state["count"],
                     "sum_seconds": state["sum_seconds"],
@@ -820,7 +863,8 @@ class NotificationManager:
     def trigger_callbacks(self, event_name: str, *args: Any, **kwargs: Any) -> None:
         """触发指定事件的所有回调，异常不中断后续回调"""
         with self._callbacks_lock:
-            callbacks = list(self._callbacks.get(event_name, []))
+            callbacks_raw = self._callbacks.get(event_name)
+            callbacks = list(callbacks_raw) if callbacks_raw is not None else []
 
         for callback in callbacks:
             try:
@@ -847,8 +891,10 @@ class NotificationManager:
             logger.debug("通知管理器已关闭，跳过发送")
             return ""
 
-        # 生成事件ID
-        event_id = f"notification_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+        # 生成事件ID。创建时间同时用于 stats，避免同一 enqueue 流程里重复
+        # 读取 wall clock 并产生毫秒级漂移。
+        created_at_ts = time.time()
+        event_id = f"notification_{int(created_at_ts * 1000)}_{uuid.uuid4().hex[:8]}"
 
         # 默认通知类型
         if types is None:
@@ -889,7 +935,7 @@ class NotificationManager:
             with self._stats_lock:
                 self._stats["events_total"] += 1
                 self._stats["last_event_id"] = event_id
-                self._stats["last_event_at"] = time.time()
+                self._stats["last_event_at"] = created_at_ts
         except Exception:
             # 统计不影响主流程
             pass
@@ -1100,22 +1146,21 @@ class NotificationManager:
         path = self._inflight_file_path()
         if path is None:
             return
-        ids = getattr(self, "_inflight_persisted_ids", set())
+        ids = getattr(self, "_inflight_persisted_ids", None)
         try:
             if not ids:
                 # 空集合：删文件
-                if path.exists():
-                    try:
-                        path.unlink()
-                    except OSError:
-                        pass
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
                 return
 
-            # 从 _event_queue 里挑出 id 仍在持久化集合内的事件
-            events_to_save = [e for e in self._event_queue if e.id in ids]
+            saved_at_ts = time.time()
+            saved_at_iso = datetime.fromtimestamp(saved_at_ts, UTC).isoformat()
             payload: dict[str, Any] = {
                 "schema_version": _INFLIGHT_SCHEMA_VERSION,
-                "saved_at": datetime.now(UTC).isoformat(),
+                "saved_at": saved_at_iso,
                 "events": [
                     {
                         # NotificationEvent.model_dump() 输出含 trigger /
@@ -1123,14 +1168,21 @@ class NotificationManager:
                         # dump 成枚举值（str），重启读时直接 dict 暴露给
                         # stats，不重建模型对象避免 strict mode 噪音
                         **e.model_dump(mode="json"),
-                        "saved_at_ts": time.time(),
+                        "saved_at_ts": saved_at_ts,
                     }
-                    for e in events_to_save
+                    for e in self._event_queue
+                    if e.id in ids
                 ],
             }
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(path.suffix + ".tmp")
-            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+            tmp.write_text(
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    separators=_COMPACT_JSON_SEPARATORS,
+                )
+            )
             os.replace(tmp, path)
         except Exception as exc:
             logger.debug(
@@ -1151,10 +1203,16 @@ class NotificationManager:
         path = self._inflight_file_path()
         if path is None:
             return []
-        if not path.exists():
-            return []
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return []
+        except OSError as exc:
+            logger.warning("[R136] inflight 持久化文件损坏，跳过: %s", exc)
+            return []
+
+        try:
+            data = json.loads(raw)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("[R136] inflight 持久化文件损坏，跳过: %s", exc)
             return []
@@ -1355,23 +1413,8 @@ class NotificationManager:
             # 【可观测性】即便 provider 缺失，也记录一次失败（避免“静默丢失”）
             try:
                 with self._stats_lock:
-                    providers = self._stats.setdefault("providers", {})
-                    stats = providers.setdefault(
-                        notification_type.value,
-                        {
-                            "attempts": 0,
-                            "success": 0,
-                            "failure": 0,
-                            "last_success_at": None,
-                            "last_failure_at": None,
-                            "last_error": None,
-                            "last_latency_ms": None,
-                            "latency_ms_total": 0,
-                            "latency_ms_count": 0,
-                            # R145: 连续成功 / 连续失败计数
-                            "success_streak": 0,
-                            "failure_streak": 0,
-                        },
+                    stats = _get_or_create_provider_stats(
+                        self._stats, notification_type.value
                     )
                     stats["attempts"] += 1
                     stats["failure"] += 1
@@ -1390,23 +1433,8 @@ class NotificationManager:
             # 【可观测性】记录提供者级别的尝试次数
             try:
                 with self._stats_lock:
-                    providers = self._stats.setdefault("providers", {})
-                    stats = providers.setdefault(
-                        notification_type.value,
-                        {
-                            "attempts": 0,
-                            "success": 0,
-                            "failure": 0,
-                            "last_success_at": None,
-                            "last_failure_at": None,
-                            "last_error": None,
-                            "last_latency_ms": None,
-                            "latency_ms_total": 0,
-                            "latency_ms_count": 0,
-                            # R145: 连续成功 / 连续失败计数
-                            "success_streak": 0,
-                            "failure_streak": 0,
-                        },
+                    stats = _get_or_create_provider_stats(
+                        self._stats, notification_type.value
                     )
                     stats["attempts"] += 1
             except Exception:
@@ -1419,30 +1447,15 @@ class NotificationManager:
             else:
                 logger.error(f"通知提供者缺少send方法: {notification_type.value}")
                 ok = False
-            latency_ms = max(int((time.time() - started_at) * 1000), 0)
+            completed_at = time.time()
+            latency_ms = max(int((completed_at - started_at) * 1000), 0)
 
             # 【可观测性】记录结果与最近错误
             try:
                 with self._stats_lock:
-                    providers = self._stats.setdefault("providers", {})
-                    stats = providers.setdefault(
-                        notification_type.value,
-                        {
-                            "attempts": 0,
-                            "success": 0,
-                            "failure": 0,
-                            "last_success_at": None,
-                            "last_failure_at": None,
-                            "last_error": None,
-                            "last_latency_ms": None,
-                            "latency_ms_total": 0,
-                            "latency_ms_count": 0,
-                            # R145: 连续成功 / 连续失败计数
-                            "success_streak": 0,
-                            "failure_streak": 0,
-                        },
+                    stats = _get_or_create_provider_stats(
+                        self._stats, notification_type.value
                     )
-                    now = time.time()
                     stats["last_latency_ms"] = latency_ms
                     stats["latency_ms_total"] = int(
                         stats.get("latency_ms_total", 0) or 0
@@ -1460,7 +1473,7 @@ class NotificationManager:
                     )
                     if ok:
                         stats["success"] += 1
-                        stats["last_success_at"] = now
+                        stats["last_success_at"] = completed_at
                         stats["last_error"] = None
                         # R145: success_streak / failure_streak 维护——
                         # 成功 → 累加 success_streak，failure_streak 归零
@@ -1470,7 +1483,7 @@ class NotificationManager:
                         stats["failure_streak"] = 0
                     else:
                         stats["failure"] += 1
-                        stats["last_failure_at"] = now
+                        stats["last_failure_at"] = completed_at
                         # Bark 在 debug/test 模式下会写入 event.metadata["bark_error"]
                         last_error = None
                         if (
@@ -1497,23 +1510,8 @@ class NotificationManager:
             # 【可观测性】记录异常
             try:
                 with self._stats_lock:
-                    providers = self._stats.setdefault("providers", {})
-                    stats = providers.setdefault(
-                        notification_type.value,
-                        {
-                            "attempts": 0,
-                            "success": 0,
-                            "failure": 0,
-                            "last_success_at": None,
-                            "last_failure_at": None,
-                            "last_error": None,
-                            "last_latency_ms": None,
-                            "latency_ms_total": 0,
-                            "latency_ms_count": 0,
-                            # R145: 连续成功 / 连续失败计数
-                            "success_streak": 0,
-                            "failure_streak": 0,
-                        },
+                    stats = _get_or_create_provider_stats(
+                        self._stats, notification_type.value
                     )
                     stats["failure"] += 1
                     stats["last_failure_at"] = time.time()
@@ -1567,7 +1565,7 @@ class NotificationManager:
         # 取消所有未触发的延迟通知
         try:
             with self._delayed_timers_lock:
-                timers = list(self._delayed_timers.values())
+                timers = tuple(self._delayed_timers.values())
                 self._delayed_timers.clear()
             for t in timers:
                 try:
@@ -1595,7 +1593,7 @@ class NotificationManager:
                 deadline = time.monotonic() + grace_period
                 # ``_threads`` 是 ``ThreadPoolExecutor`` 私有属性
                 # （CPython 3.9-3.13 一直存在），这里仅 read 不 mutate。
-                worker_threads = list(getattr(self._executor, "_threads", ()) or ())
+                worker_threads = tuple(getattr(self._executor, "_threads", ()) or ())
                 for t in worker_threads:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
@@ -1612,7 +1610,7 @@ class NotificationManager:
         # 关闭并清空 providers（释放可能的网络连接池等资源）
         try:
             with self._providers_lock:
-                providers = list(self._providers.values())
+                providers = tuple(self._providers.values())
                 self._providers.clear()
             for p in providers:
                 self._safe_close_provider(p)
@@ -1826,19 +1824,24 @@ class NotificationManager:
             # R136: getattr 兜底兼容绕开 __init__ 的测试 helper / 老调用
             # 路径——这条路径不应该是常态，但 fail-soft 比 fail-hard 更
             # 适合 status 端点（端点本身不应当因为内部字段缺失就 5xx）。
-            inflight_persisted_count = len(
-                getattr(self, "_inflight_persisted_ids", set())
+            inflight_persisted_ids = getattr(self, "_inflight_persisted_ids", None)
+            inflight_persisted_count = (
+                len(inflight_persisted_ids) if inflight_persisted_ids is not None else 0
             )
 
         # 线程安全地获取统计快照
         try:
             with self._stats_lock:
-                providers_stats = {
-                    k: dict(v) for k, v in self._stats.get("providers", {}).items()
-                }
-                stats_snapshot = {
-                    k: v for k, v in self._stats.items() if k != "providers"
-                }
+                stats_snapshot = self._stats.copy()
+                providers_stats_raw = stats_snapshot.pop("providers", None)
+                providers_stats = (
+                    {
+                        k: v.copy() if isinstance(v, dict) else dict(v)
+                        for k, v in providers_stats_raw.items()
+                    }
+                    if isinstance(providers_stats_raw, dict)
+                    else {}
+                )
                 stats_snapshot["providers"] = providers_stats
                 # 计算派生指标（阶段 A：delivery_success_rate 等）
                 try:
@@ -1879,6 +1882,16 @@ class NotificationManager:
         with self._providers_lock:
             providers = [t.value for t in self._providers]
 
+        # R469: avoid eager ``[]`` fallback allocation on the normal initialized
+        # status path. Still copy the list before returning so callers cannot
+        # mutate internal startup state.
+        inflight_seen_at_startup = getattr(self, "_inflight_seen_at_startup", None)
+        inflight_seen_at_startup_copy = (
+            list(inflight_seen_at_startup)
+            if inflight_seen_at_startup is not None
+            else []
+        )
+
         return {
             "enabled": self.config.enabled,
             "providers": providers,
@@ -1899,9 +1912,7 @@ class NotificationManager:
             # 防 caller 改写内部状态）。``getattr`` 兜底兼容绕开 __init__
             # 的测试 helper / 老调用路径。
             "inflight_persisted_count": inflight_persisted_count,
-            "inflight_seen_at_startup": list(
-                getattr(self, "_inflight_seen_at_startup", [])
-            ),
+            "inflight_seen_at_startup": inflight_seen_at_startup_copy,
         }
 
 

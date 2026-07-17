@@ -49,9 +49,11 @@ class NetworkSecurityMixin:
 
     def _validate_network_security_config(self, raw: Any) -> dict[str, Any]:
         """强校验并归一化 network_security（与文档/模板对齐，兼容旧字段）"""
-        default_ns = cast(
-            dict[str, Any],
-            self._get_default_config().get("network_security", {}),
+        default_ns_raw = self._get_default_config().get("network_security")
+        default_ns = (
+            cast(dict[str, Any], default_ns_raw)
+            if isinstance(default_ns_raw, dict)
+            else {}
         )
 
         if not isinstance(raw, dict):
@@ -86,8 +88,10 @@ class NetworkSecurityMixin:
                 out.append(x)
             return out
 
-        allowed_raw = raw.get(
-            "allowed_networks", default_ns.get("allowed_networks", [])
+        allowed_raw = (
+            raw["allowed_networks"]
+            if "allowed_networks" in raw
+            else default_ns.get("allowed_networks")
         )
         allowed_list: list[str] = []
         if isinstance(allowed_raw, list):
@@ -112,7 +116,11 @@ class NetworkSecurityMixin:
         if not allowed_list:
             allowed_list = ["127.0.0.0/8", "::1/128"]
 
-        blocked_raw = raw.get("blocked_ips", default_ns.get("blocked_ips", []))
+        blocked_raw = (
+            raw["blocked_ips"]
+            if "blocked_ips" in raw
+            else default_ns.get("blocked_ips")
+        )
         blocked_list: list[str] = []
         if isinstance(blocked_raw, list):
             for item in blocked_raw:
@@ -144,6 +152,25 @@ class NetworkSecurityMixin:
             ),
             default=True,
         )
+
+        trusted_hosts_raw = (
+            raw["trusted_hosts"]
+            if "trusted_hosts" in raw
+            else default_ns.get("trusted_hosts")
+        )
+        trusted_hosts: list[str] = []
+        if isinstance(trusted_hosts_raw, list):
+            for item in trusted_hosts_raw:
+                if not isinstance(item, str):
+                    continue
+                t = item.strip()
+                if not t or "*" in t or t.startswith("."):
+                    logger.warning(f"trusted_hosts 无效条目已忽略: {item!r}")
+                    continue
+                trusted_hosts.append(t)
+        else:
+            logger.warning("trusted_hosts 不是列表，使用默认值")
+        trusted_hosts = _dedupe_keep_order(trusted_hosts)
 
         # R189 / T4：可选 API token（与 loopback gate 共存的认证副通道）。
         # 校验规则：
@@ -248,6 +275,7 @@ class NetworkSecurityMixin:
             "bind_interface": bind,
             "allowed_networks": allowed_list,
             "blocked_ips": blocked_list,
+            "trusted_hosts": trusted_hosts,
             "access_control_enabled": access_enabled,
             "api_token": api_token,
             "api_token_rotated_at": rotated_at,
@@ -384,13 +412,14 @@ class NetworkSecurityMixin:
             raise ValueError("network_security 更新必须是 dict")
 
         current = self.get_network_security_config()
-        merged = dict(current)
+        merged = current.copy()
 
         for k, v in updates.items():
             if k in (
                 "bind_interface",
                 "allowed_networks",
                 "blocked_ips",
+                "trusted_hosts",
                 "api_token",
                 "api_token_rotated_at",
             ):
@@ -430,8 +459,11 @@ class NetworkSecurityMixin:
         try:
             if not self.config_file.exists():
                 default_config = self._get_default_config()
-                raw_result = cast(
-                    dict[str, Any], default_config.get("network_security", {})
+                raw_result_obj = default_config.get("network_security")
+                raw_result = (
+                    cast(dict[str, Any], raw_result_obj)
+                    if isinstance(raw_result_obj, dict)
+                    else {}
                 )
                 result = self._validate_network_security_config(raw_result)
                 with self._lock:
@@ -446,14 +478,20 @@ class NetworkSecurityMixin:
 
             self._validate_config_structure(full_config, content)
 
-            network_security_config = cast(
-                dict[str, Any], full_config.get("network_security", {})
+            network_security_obj = full_config.get("network_security")
+            network_security_config = (
+                cast(dict[str, Any], network_security_obj)
+                if isinstance(network_security_obj, dict)
+                else {}
             )
 
             if not network_security_config:
                 default_config = self._get_default_config()
-                network_security_config = cast(
-                    dict[str, Any], default_config.get("network_security", {})
+                default_network_security_obj = default_config.get("network_security")
+                network_security_config = (
+                    cast(dict[str, Any], default_network_security_obj)
+                    if isinstance(default_network_security_obj, dict)
+                    else {}
                 )
                 logger.debug("配置文件中未找到network_security，使用默认配置")
 
@@ -477,7 +515,10 @@ class NetworkSecurityMixin:
                     return self._network_security_cache
 
             default_config = self._get_default_config()
-            raw_default = cast(
-                dict[str, Any], default_config.get("network_security", {})
+            raw_default_obj = default_config.get("network_security")
+            raw_default = (
+                cast(dict[str, Any], raw_default_obj)
+                if isinstance(raw_default_obj, dict)
+                else {}
             )
             return self._validate_network_security_config(raw_default)

@@ -113,6 +113,30 @@ class TestPytestXdistDeclaredInBothGroups(unittest.TestCase):
                 f"低版本 worksteal/loadfile subTest 收集有 bug",
             )
 
+    def test_pyproject_xdist_comment_matches_locked_dist_mode(self) -> None:
+        """pyproject 里的维护注释不能和 ci_gate.py 的真实调度模式漂移。
+
+        R454 发现 optional-dependencies.dev 仍写着 ``--dist=worksteal``，
+        但 R305/R308 已经把真实 CI 决策锁为 ``--dist=loadfile``。这种反向
+        注释会误导未来维护者把一个已拒绝的污染风险重新引入。
+        """
+        lines = _read(PYPROJECT).splitlines()
+        xdist_line = next(
+            i for i, line in enumerate(lines) if '"pytest-xdist>=3.6.0"' in line
+        )
+        comment_block = "\n".join(lines[max(0, xdist_line - 8) : xdist_line])
+
+        self.assertIn(
+            "--dist=loadfile",
+            comment_block,
+            "R305/R308: pyproject 的 pytest-xdist 注释必须说明真实 CI 调度模式",
+        )
+        self.assertNotIn(
+            "--dist=worksteal",
+            comment_block,
+            "R305/R308: pyproject 注释不得声称 CI 使用已拒绝的 worksteal",
+        )
+
 
 # ============================================================
 # scripts/ci_gate.py — pytest_cmd 必须含 -n 4 --dist=loadfile

@@ -13,11 +13,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -110,6 +112,26 @@ class TestGeneratorYieldsNamedHeartbeat(unittest.TestCase):
             "generator 必须在 yield heartbeat 时调用 _sse_bus.bump_heartbeat()",
         )
 
+    def test_generator_uses_dedicated_heartbeat_payload_formatter(self) -> None:
+        m = re.search(
+            r"except queue\.Empty:.*?yield f\"event: heartbeat",
+            self.src,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(m)
+        assert m is not None
+        heartbeat_branch = m.group(0)
+        self.assertIn(
+            "_format_sse_heartbeat_payload()",
+            heartbeat_branch,
+            "heartbeat 分支应使用专用 formatter，避免每个 idle tick 都走 json.dumps",
+        )
+        self.assertNotIn(
+            "json.dumps(",
+            heartbeat_branch,
+            "heartbeat payload 是单字段整数 JSON，不应走通用 json.dumps hot path",
+        )
+
     def test_generator_no_longer_uses_comment_heartbeat(self) -> None:
         """旧的 ``: heartbeat`` SSE comment 不应再出现在 generator 里。"""
         m = re.search(r"def generate\(\):.*?return Response", self.src, re.DOTALL)
@@ -121,6 +143,27 @@ class TestGeneratorYieldsNamedHeartbeat(unittest.TestCase):
             body,
             "comment heartbeat 已废弃，不应再 yield ``: heartbeat\\n\\n``",
         )
+
+
+class TestHeartbeatPayloadFormatter(unittest.TestCase):
+    """R468：heartbeat payload 是固定单字段整数 JSON，避免通用 JSON encoder。"""
+
+    def test_formatter_returns_parseable_integer_payload_without_json_dumps(
+        self,
+    ) -> None:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.json.dumps",
+            side_effect=AssertionError("heartbeat formatter must not call json.dumps"),
+        ):
+            payload = task_module._format_sse_heartbeat_payload(1_700_000_000.9)
+
+        self.assertEqual(payload, '{"ts_unix":1700000000}')
+        self.assertEqual(json.loads(payload), {"ts_unix": 1_700_000_000})
+
+    def test_formatter_rejects_non_finite_or_non_numeric_time(self) -> None:
+        self.assertEqual(task_module._format_sse_heartbeat_payload(float("inf")), "{}")
+        self.assertEqual(task_module._format_sse_heartbeat_payload(float("nan")), "{}")
+        self.assertEqual(task_module._format_sse_heartbeat_payload("not-time"), "{}")
 
 
 class TestFrontendHeartbeatListener(unittest.TestCase):

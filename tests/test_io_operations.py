@@ -198,6 +198,16 @@ class TestRestoreConfig(unittest.TestCase):
         finally:
             os.unlink(tmp_path)
 
+    def test_restore_config_lookup_uses_lazy_default_path(self):
+        import inspect
+
+        from ai_intervention_agent.config_modules.io_operations import IOOperationsMixin
+
+        source = inspect.getsource(IOOperationsMixin.restore_config)
+
+        self.assertIn('actual_config = backup_data.get("config")', source)
+        self.assertNotIn('backup_data.get("config", {})', source)
+
     def test_restore_with_network_security(self):
         import tempfile
 

@@ -22,6 +22,12 @@
 
 ### `_macos_legacy_xdg_config_dir() -> Path | None`
 
+### `_retire_legacy_config_file(legacy_file: Path) -> bool`
+
+### `_migrate_legacy_config_to_standard(legacy_file: Path, standard_dir: Path) -> Path | None`
+
+### `_files_have_same_content(a: Path, b: Path) -> bool`
+
 ### `find_config_file(config_filename: str = 'config.toml') -> Path`
 
 ### `_get_user_config_dir_fallback() -> Path`

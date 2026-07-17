@@ -25,7 +25,7 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from ai_intervention_agent.config_manager import get_config
 from ai_intervention_agent.config_utils import (
@@ -100,7 +100,7 @@ logger = EnhancedLogger(__name__)
 #   硬上限（task_queue ─┘    10MB 字节）：拒绝级，唯一的"反 DoS"护栏
 #
 # 软上限阈值参考：
-#   * 100MB-1MB ASCII / 3MB UTF-8 中文 → 远超合理 prompt + LLM 输出场景
+#   * 100 万字符 ≈ 1 MB ASCII / ~3 MB UTF-8 中文 → 远超合理 prompt + LLM 输出场景
 #   * 仍远低于 10MB 字节硬上限（保留 ~3-10× 余量）
 #   * 截断时仍保留原 "+ ..." 行为以保持向后兼容（测试断言依赖此前缀）
 PROMPT_MAX_LENGTH = 100_000  # 提示语最大长度（resubmit_prompt / prompt_suffix）
@@ -148,6 +148,8 @@ class WebUIConfig(BaseModel):
     max_retries: int = 3
     retry_delay: float = 1.0
     external_base_url: str = ""
+    mdns_hostname: str = "ai.local"
+    trusted_hosts: list[str] = Field(default_factory=list)
 
     @field_validator("language")
     @classmethod
@@ -781,7 +783,7 @@ def parse_structured_response(
     if not user_input and isinstance(legacy_text, str) and legacy_text.strip():
         user_input = legacy_text
 
-    selected_options_raw = response_data.get("selected_options", [])
+    selected_options_raw = response_data.get("selected_options")
     selected_options = (
         [str(x) for x in selected_options_raw if x is not None]
         if isinstance(selected_options_raw, list)
@@ -797,7 +799,7 @@ def parse_structured_response(
     if user_input:
         text_parts.append(f"用户输入: {user_input}")
 
-    images = response_data.get("images", []) or []
+    images = response_data.get("images") or ()
     for index, image in enumerate(images):
         if not isinstance(image, dict):
             continue

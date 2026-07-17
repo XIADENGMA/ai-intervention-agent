@@ -9,6 +9,19 @@
 
 ## 函数
 
+### `_normalize_trusted_host_candidate(value: object) -> str | None`
+
+Return a Flask ``TRUSTED_HOSTS`` exact host value, or ``None``.
+
+The input may be a hostname, IP literal, host:port, bracketed IPv6 literal,
+or an absolute URL such as ``https://ai.example.com:8443``. Wildcard bind
+addresses are excluded because they are listen addresses, not request
+authority values.
+
+### `build_trusted_hosts() -> list[str]`
+
+Build the concrete host allowlist for Flask ``TRUSTED_HOSTS``.
+
 ### `get_config() -> Any`
 
 Lazy proxy kept patchable for tests and security helpers.

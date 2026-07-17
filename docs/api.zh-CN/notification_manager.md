@@ -8,6 +8,14 @@
 
 ## 函数
 
+### `_new_provider_stats() -> dict[str, Any]`
+
+Return the default per-provider stats payload.
+
+### `_get_or_create_provider_stats(stats_root: dict[str, Any], provider_name: str) -> dict[str, Any]`
+
+Return provider stats, allocating default dicts only when missing.
+
 ### `_get_inflight_file_dir() -> Path | None`
 
 R136 — 解析 in-flight 持久化文件所在目录。
@@ -123,7 +131,7 @@ app), 是 v3.8 第 2 个全工业化 pattern (与 R322 idempotent 同 cycle
 返回 provider latency histogram 快照（深 copy）。
 
 形态与 ``mcp_tool_call_metrics.get_mcp_tool_call_latency_snapshot``
-对齐——``buckets`` 字典自动附加 ``float("inf")`` 键，值 == count。
+对齐——``buckets`` 字典自动附加 ``+Inf`` 键，值 == count。
 若某 provider 还从未发送过，**不**出现在返回字典里。
 
 返回值是新建 dict，调用者修改不会污染内部状态。

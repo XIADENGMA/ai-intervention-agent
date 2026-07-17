@@ -42,7 +42,9 @@ from __future__ import annotations
 
 import re
 import unittest
+from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import patch
 
 
 class _ExportTestBase(unittest.TestCase):
@@ -172,6 +174,28 @@ class TestJsonFormatContract(_ExportTestBase):
             f"（实际: {cd!r}）",
         )
 
+    def test_json_filename_and_exported_at_share_one_clock_snapshot(self) -> None:
+        """R466: filename stamp 和 payload exported_at 必须来自同一次 now。"""
+        fixed = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+        calls: list[object] = []
+
+        class FixedDatetime:
+            @staticmethod
+            def now(tz: object = None) -> datetime:
+                calls.append(tz)
+                return fixed
+
+        with patch("ai_intervention_agent.web_ui_routes.task._dt", FixedDatetime):
+            resp = self._client.get("/api/tasks/export?format=json")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(calls, [UTC])
+        self.assertEqual(resp.get_json()["exported_at"], fixed.isoformat())
+        self.assertIn(
+            'filename="ai-intervention-agent-tasks-20260102T030405Z.json"',
+            resp.headers.get("Content-Disposition", ""),
+        )
+
     def test_task_full_fields_in_json(self) -> None:
         """JSON 模式必须给完整字段（不像 ``/api/tasks`` 只给 prompt[:100]）。"""
         full_prompt = "x" * 500  # 超过 /api/tasks 截断的 100
@@ -239,6 +263,29 @@ class TestMarkdownFormatContract(_ExportTestBase):
             cd,
             r"filename=\"ai-intervention-agent-tasks-\d{8}T\d{6}Z\.md\"",
             f"Markdown 导出文件名必须以 .md 结尾（实际 {cd}）",
+        )
+
+    def test_markdown_filename_and_exported_at_share_one_clock_snapshot(self) -> None:
+        """R466: Markdown header 和下载文件名必须来自同一次 now。"""
+        fixed = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+        calls: list[object] = []
+
+        class FixedDatetime:
+            @staticmethod
+            def now(tz: object = None) -> datetime:
+                calls.append(tz)
+                return fixed
+
+        with patch("ai_intervention_agent.web_ui_routes.task._dt", FixedDatetime):
+            resp = self._client.get("/api/tasks/export?format=markdown")
+
+        body = resp.get_data(as_text=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(calls, [UTC])
+        self.assertIn(f"- Exported at: `{fixed.isoformat()}`", body)
+        self.assertIn(
+            'filename="ai-intervention-agent-tasks-20260102T030405Z.md"',
+            resp.headers.get("Content-Disposition", ""),
         )
 
     def test_markdown_has_header_and_stats(self) -> None:

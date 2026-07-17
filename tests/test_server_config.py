@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import base64
+import inspect
 import unittest
 from unittest.mock import patch
 
@@ -456,6 +457,15 @@ class TestParseStructuredResponse(unittest.TestCase):
     def test_selected_options_non_list(self):
         result = parse_structured_response({"selected_options": "not_list"})
         self.assertTrue(len(result) >= 1)
+
+    def test_collection_defaults_avoid_eager_empty_lists(self):
+        source = inspect.getsource(parse_structured_response)
+
+        result = parse_structured_response({})
+
+        self.assertIn("未提供", self._last_text(result))
+        self.assertNotIn('response_data.get("selected_options", [])', source)
+        self.assertNotIn('response_data.get("images", [])', source)
 
 
 # ──────────────────────────────────────────────────────────

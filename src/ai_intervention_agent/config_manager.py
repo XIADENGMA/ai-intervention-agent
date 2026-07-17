@@ -371,12 +371,15 @@ def _macos_legacy_xdg_config_dir() -> Path | None:
       ``~/.config/ai-intervention-agent/`` 当 cwd 启动时，dev 模式分支会在该 cwd
       创建 ``config.toml``。
 
-    R113 在 macOS 上探测此目录是否存在，以便：
+    R113 在 macOS 上探测此目录是否存在；**R686（TODO#4）** 在此基础上把
+    "被动 warn + 临时采用 legacy" 升级为 "标准路径始终优先 + 自动迁移"：
 
-    1. **向后兼容**：标准路径还没有 config 但 ``.config/`` 已有 → 优先用 legacy
-       路径，避免用户的旧配置静默被新 default 覆盖。
-    2. **fail-loud warn**：标准路径和 legacy 同时存在 → warn 让用户知道有歧义；
-       仅 legacy 存在 → 强 warn 给出 ``mv`` 一键迁移命令。
+    1. 仅 legacy 有 config → **自动迁移**到标准路径后使用标准路径
+       （旧文件重命名为 ``*.migrated-<时间戳>`` 备份，不删除数据）。
+    2. 标准 + legacy 同时存在且内容一致 → 自动把 legacy 重命名为备份，
+       消除歧义（幂等，之后不再告警）。
+    3. 标准 + legacy 同时存在且内容**不一致** → 使用标准路径 + warn
+       （数据取舍必须由用户决定，程序不擅自合并/覆盖）。
 
     返回：
         macOS 上目录存在 → ``Path``；其他情况（非 macOS / 目录不存在）→ ``None``。
@@ -388,6 +391,66 @@ def _macos_legacy_xdg_config_dir() -> Path | None:
     if not legacy_dir.is_dir():
         return None
     return legacy_dir
+
+
+def _retire_legacy_config_file(legacy_file: Path) -> bool:
+    """R686：把 legacy 配置文件重命名为 ``<name>.migrated-<时间戳>`` 备份。
+
+    重命名（而非删除）保证零数据丢失；重命名后的文件不再匹配
+    ``config.toml`` / ``config.jsonc`` / ``config.json`` 候选名，后续启动
+    不会再进入 legacy 分支——迁移天然幂等。
+
+    返回是否成功；失败（权限 / 只读卷等）由调用方决定降级策略。
+    """
+    try:
+        ts = time.strftime("%Y%m%dT%H%M%S")
+        backup = legacy_file.with_name(f"{legacy_file.name}.migrated-{ts}")
+        legacy_file.rename(backup)
+        logger.info(f"[R686] legacy 配置已重命名为备份: {backup}")
+        return True
+    except OSError as e:
+        logger.warning(f"[R686] 重命名 legacy 配置失败（保留原文件）: {e}")
+        return False
+
+
+def _migrate_legacy_config_to_standard(
+    legacy_file: Path, standard_dir: Path
+) -> Path | None:
+    """R686（TODO#4）：把 macOS legacy ``~/.config/...`` 配置迁移到标准目录。
+
+    步骤：
+    1. ``mkdir -p`` 标准目录；
+    2. ``shutil.copy2`` 保留元数据地复制 legacy 文件到标准目录（同名）；
+    3. 复制成功后把 legacy 文件重命名为 ``*.migrated-<时间戳>`` 备份。
+
+    任何一步失败都返回 ``None``，调用方降级回 "临时采用 legacy" 的旧行为，
+    保证迁移永远不会让用户丢配置。
+    """
+    try:
+        standard_dir.mkdir(parents=True, exist_ok=True)
+        target = standard_dir / legacy_file.name
+        if target.exists():
+            # 并发 / 二次进入窗口：标准路径已出现同名文件，不覆盖，直接用它
+            logger.info(f"[R686] 标准路径已存在 {target.name}，跳过复制")
+        else:
+            shutil.copy2(legacy_file, target)
+        _retire_legacy_config_file(legacy_file)
+        logger.info(f"[R686] macOS legacy 配置已自动迁移: {legacy_file} -> {target}")
+        return target
+    except OSError as e:
+        logger.warning(
+            f"[R686] 自动迁移 legacy 配置失败，将临时采用 legacy 路径: {e}",
+            exc_info=True,
+        )
+        return None
+
+
+def _files_have_same_content(a: Path, b: Path) -> bool:
+    """比较两个小文件内容是否一致（配置文件 KB 级，直接读全量即可）。"""
+    try:
+        return a.read_bytes() == b.read_bytes()
+    except OSError:
+        return False
 
 
 def find_config_file(config_filename: str = "config.toml") -> Path:
@@ -416,14 +479,18 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
     * macOS：``~/Library/Application Support/ai-intervention-agent``
     * Windows：``%APPDATA%\\ai-intervention-agent``
 
-    macOS 兼容性（R113）
+    macOS 兼容性（R113 + R686）
     ----
     在 macOS 上**额外**检查 ``~/.config/ai-intervention-agent/`` 是否有残留 config
-    （历史版本 / 第三方脚本 / 手动 mkdir 都可能创建）。规则：
+    （历史版本 / 第三方脚本 / 手动 mkdir 都可能创建）。规则（R686 起标准路径
+    ``~/Library/Application Support/...`` **始终优先**）：
 
-    * 标准路径 + ``.config/`` 都有 → 用标准路径，warn 提示 legacy 残留
-    * 仅 ``.config/`` 有 → **优先用 legacy**（不丢用户配置），强 warn 给出 ``mv``
-      迁移命令
+    * 标准路径 + ``.config/`` 都有、内容一致 → 用标准路径，legacy 自动重命名
+      为 ``*.migrated-<时间戳>`` 备份（幂等，一次性消除歧义）
+    * 标准路径 + ``.config/`` 都有、内容不一致 → 用标准路径，warn 提示用户
+      人工取舍（程序不擅自合并/覆盖）
+    * 仅 ``.config/`` 有 → **自动迁移**到标准路径（copy2 + 重命名备份，零数据
+      丢失）后使用标准路径；迁移失败才降级为临时采用 legacy
     * 仅标准路径或都没有 → 行为不变
 
     Linux 上 ``.config/`` 是 XDG 标准，本逻辑不触发。
@@ -526,22 +593,39 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
 
         if user_hit is not None:
             if legacy_macos_hit is not None:
-                logger.warning(
-                    "[R113] macOS 上检测到非标准 XDG 配置路径残留: "
-                    f"{legacy_macos_hit}。已使用标准路径 {user_hit}；"
-                    "建议删除非标准路径以避免歧义： "
-                    f"`rm -rf {legacy_macos_dir}`"
-                )
+                # R686：标准路径始终优先。legacy 与标准内容一致 → 自动把
+                # legacy 重命名为备份，一次性消除歧义（幂等）；内容不一致 →
+                # 不擅自动用户数据，warn 让用户自行取舍。
+                if _files_have_same_content(user_hit, legacy_macos_hit):
+                    if _retire_legacy_config_file(legacy_macos_hit):
+                        logger.info(
+                            "[R686] macOS legacy 配置与标准路径内容一致，"
+                            "已自动重命名为备份，后续不再提示"
+                        )
+                else:
+                    logger.warning(
+                        "[R113] macOS 上检测到非标准 XDG 配置路径残留且内容与"
+                        f"标准路径不一致: {legacy_macos_hit}。已使用标准路径 "
+                        f"{user_hit}；请人工确认后删除非标准路径以避免歧义： "
+                        f"`rm -rf {legacy_macos_dir}`"
+                    )
             logger.info(f"使用用户配置目录的配置文件: {user_hit}")
             return user_hit
 
         if legacy_macos_hit is not None:
-            # 向后兼容：标准路径无 config 但 .config/ 有，用 .config/ 不丢用户配置；
-            # 强 warn 给出可一键复制的 mv 迁移命令。
+            # R686（TODO#4）：标准路径无 config 但 legacy 有 → 自动迁移到
+            # 标准路径（copy2 + 重命名备份，零数据丢失），返回标准路径。
+            # 迁移失败（权限 / 只读卷）才降级回 "临时采用 legacy" 旧行为。
+            assert legacy_macos_dir is not None
+            migrated = _migrate_legacy_config_to_standard(
+                legacy_macos_hit, user_config_dir_path
+            )
+            if migrated is not None:
+                logger.info(f"使用用户配置目录的配置文件: {migrated}")
+                return migrated
             logger.warning(
-                "[R113] macOS 上仅在非标准 XDG 路径找到配置: "
-                f"{legacy_macos_hit}。标准路径 {user_config_dir_path} 暂无配置。"
-                "已临时采用非标准路径以兼容历史用户；强烈建议立即迁移到标准位置：\n"
+                "[R113] macOS 上仅在非标准 XDG 路径找到配置且自动迁移失败: "
+                f"{legacy_macos_hit}。已临时采用非标准路径；建议手动迁移：\n"
                 f"  mkdir -p {shlex.quote(str(user_config_dir_path))}\n"
                 f"  mv {shlex.quote(str(legacy_macos_hit))} "
                 f"{shlex.quote(str(user_config_dir_path) + '/')}\n"
@@ -704,7 +788,7 @@ class ConfigManager(
                 config_data = parse_jsonc(content)
             else:
                 config_data = json.loads(content)
-            mdns = config_data.get("mdns", {})
+            mdns = config_data.get("mdns")
             if isinstance(mdns, dict) and mdns.get("enabled") is None:
                 mdns["enabled"] = "auto"
             template_file = Path(__file__).parent / "config.toml.default"
@@ -1271,7 +1355,7 @@ class ConfigManager(
                     return copy.deepcopy(self._section_cache[section])
 
             self._cache_stats["misses"] += 1
-            raw = self.get(section, {})
+            raw = self.get(section)
             result = self._validate_section(section, raw)
 
             self._section_cache[section] = result
@@ -1286,12 +1370,12 @@ class ConfigManager(
             raw = {}
         model_cls = SECTION_MODELS.get(section)
         if model_cls is None:
-            return dict(raw)
+            return raw.copy()
         try:
             return model_cls.model_validate(raw).model_dump()
         except Exception as e:
             logger.warning(f"配置段 '{section}' Pydantic 校验失败，使用原始值: {e}")
-            return dict(raw)
+            return raw.copy()
 
     def update_section(
         self, section: str, updates: dict[str, Any], save: bool = True

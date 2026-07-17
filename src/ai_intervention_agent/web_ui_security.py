@@ -8,18 +8,109 @@ from __future__ import annotations
 
 import secrets
 from ipaddress import AddressValueError, ip_address, ip_network
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
+from urllib.parse import urlsplit
 
-from flask import Response, abort, g, request
+from flask import Response, abort, g, has_request_context, request
 from flask.typing import ResponseReturnValue
 
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
+from ai_intervention_agent.web_ui_mdns_utils import (
+    MDNS_DEFAULT_HOSTNAME,
+    normalize_mdns_hostname,
+)
 from ai_intervention_agent.web_ui_validators import validate_network_security_config
 
 if TYPE_CHECKING:
     from flask import Flask
 
 logger = EnhancedLogger(__name__)
+
+_WILDCARD_BIND_HOSTS: frozenset[str] = frozenset({"0.0.0.0", "::", "[::]"})
+_LOOPBACK_TRUSTED_HOSTS: tuple[str, ...] = ("localhost", "127.0.0.1", "[::1]")
+_DEFAULT_ALLOWED_NETWORKS: tuple[str, ...] = ("127.0.0.0/8", "::1/128")
+_MISSING_CSP_NONCE = object()
+_MISSING_APP_CONFIG = object()
+
+
+def _normalize_trusted_host_candidate(value: object) -> str | None:
+    """Return a Flask ``TRUSTED_HOSTS`` exact host value, or ``None``.
+
+    The input may be a hostname, IP literal, host:port, bracketed IPv6 literal,
+    or an absolute URL such as ``https://ai.example.com:8443``. Wildcard bind
+    addresses are excluded because they are listen addresses, not request
+    authority values.
+    """
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+
+    host = ""
+    if "://" in raw:
+        try:
+            host = urlsplit(raw).hostname or ""
+        except ValueError:
+            return None
+    elif raw.startswith("["):
+        end = raw.find("]")
+        if end == -1:
+            return None
+        host = raw[1:end]
+    elif raw.count(":") == 1:
+        maybe_host, maybe_port = raw.rsplit(":", 1)
+        host = maybe_host if maybe_port.isdigit() else raw
+    else:
+        host = raw
+
+    host = host.strip().lower()
+    if not host:
+        return None
+    if host.startswith("."):
+        return None
+    host = host.rstrip(".")
+    if "*" in host:
+        return None
+    if host in _WILDCARD_BIND_HOSTS:
+        return None
+
+    try:
+        parsed_ip = ip_address(host)
+    except ValueError:
+        return host
+    if parsed_ip.version == 6:
+        return f"[{parsed_ip.compressed}]"
+    return str(parsed_ip)
+
+
+def build_trusted_hosts(
+    *,
+    host: str,
+    mdns_hostname: str | None = MDNS_DEFAULT_HOSTNAME,
+    external_base_url: str = "",
+    configured_trusted_hosts: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    """Build the concrete host allowlist for Flask ``TRUSTED_HOSTS``."""
+    candidates: list[object] = [*_LOOPBACK_TRUSTED_HOSTS, host]
+
+    normalized_mdns = normalize_mdns_hostname(mdns_hostname)
+    if normalized_mdns:
+        candidates.append(normalized_mdns)
+    if external_base_url:
+        candidates.append(external_base_url)
+    if configured_trusted_hosts:
+        candidates.extend(configured_trusted_hosts)
+
+    trusted_hosts: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = _normalize_trusted_host_candidate(candidate)
+        if normalized is None or normalized in seen:
+            continue
+        trusted_hosts.append(normalized)
+        seen.add(normalized)
+    return trusted_hosts
 
 
 def get_config() -> Any:
@@ -191,11 +282,12 @@ class SecurityMixin:
 
     def _get_csp_nonce(self) -> str:
         """获取当前请求的 CSP nonce；非请求上下文时生成临时随机值。"""
-        from flask import has_request_context
-
         try:
             if has_request_context():
-                return getattr(g, "csp_nonce", secrets.token_urlsafe(16))
+                nonce = getattr(g, "csp_nonce", _MISSING_CSP_NONCE)
+                if nonce is not _MISSING_CSP_NONCE:
+                    return str(nonce)
+                return secrets.token_urlsafe(16)
         except RuntimeError:
             pass
         return secrets.token_urlsafe(16)
@@ -229,7 +321,11 @@ class SecurityMixin:
         if getattr(self, "network_security_config", default_config) != default_config:
             self._network_security_config_loaded_from_config = True
             return
-        if getattr(getattr(self, "app", None), "config", {}).get("TESTING"):
+        app = getattr(self, "app", None)
+        app_config = getattr(app, "config", _MISSING_APP_CONFIG)
+        if app_config is not _MISSING_APP_CONFIG and cast("Any", app_config).get(
+            "TESTING"
+        ):
             self._network_security_config_loaded_from_config = True
             return
         lock = getattr(self, "_network_security_config_lock", None)
@@ -274,7 +370,10 @@ class SecurityMixin:
         try:
             client_addr = self._normalize_addr(client_ip)
 
-            blocked_ips = cfg.get("blocked_ips", [])
+            blocked_ips_raw = cfg.get("blocked_ips")
+            blocked_ips = (
+                blocked_ips_raw if isinstance(blocked_ips_raw, (list, tuple)) else ()
+            )
             for blocked_entry in blocked_ips:
                 try:
                     if "/" in blocked_entry:
@@ -290,7 +389,7 @@ class SecurityMixin:
                 except (AddressValueError, ValueError, TypeError):
                     continue
 
-            allowed_networks = cfg.get("allowed_networks", ["127.0.0.0/8", "::1/128"])
+            allowed_networks = cfg.get("allowed_networks", _DEFAULT_ALLOWED_NETWORKS)
             for network_str in allowed_networks:
                 try:
                     if "/" in network_str:
@@ -335,7 +434,7 @@ class SecurityMixin:
         """从 X-Forwarded-For 中提取首个客户端 IP。"""
         if not forwarded_for:
             return ""
-        return forwarded_for.split(",")[0].strip()
+        return forwarded_for.partition(",")[0].strip()
 
     @classmethod
     def _should_trust_forwarded_for(cls, remote_addr: str) -> bool:
@@ -350,9 +449,9 @@ class SecurityMixin:
     def _get_request_client_ip(self, environ: dict[str, Any]) -> str:
         """获取用于访问控制的客户端 IP。"""
         remote_addr = str(environ.get("REMOTE_ADDR", "")).strip()
-        forwarded_for = str(environ.get("HTTP_X_FORWARDED_FOR", "")).strip()
 
         if self._should_trust_forwarded_for(remote_addr):
+            forwarded_for = str(environ.get("HTTP_X_FORWARDED_FOR", "")).strip()
             forwarded_ip = self._parse_forwarded_for(forwarded_for)
             if forwarded_ip:
                 return forwarded_ip
