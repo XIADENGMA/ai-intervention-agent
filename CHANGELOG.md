@@ -25,6 +25,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Align the countdown bar and quick-phrases panel with the theme
+  palettes (R696): the countdown bar drops the hardcoded pink and the
+  ⏰ emoji in favor of a `currentColor` SVG clock plus warning-amber
+  (dark) / Anthropic terracotta (light) tokens, the freeze button uses
+  the brand blue family in light mode, and light-mode quick-phrase
+  chips switch from purple to terracotta.
+- Start the empty-state animation as Lottie from the first frame
+  (R696): `lottie.min.js` now loads via a first-paint `<script defer>`
+  tag, removing the visible SVG-fallback-to-Lottie hot swap; the SVG
+  fallback remains only for reduced-motion users and runtime load
+  failures.
 - Unify auto-resubmit terminology across every surface (R694): the
   Chinese UI now consistently says 自动重调 (zh-TW 自動重新調用), and
   the English UI drops the mixed "auto-reschedule" wording in favor of
