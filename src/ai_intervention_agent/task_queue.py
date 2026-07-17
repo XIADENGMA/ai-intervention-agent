@@ -274,6 +274,13 @@ class Task(BaseModel):
     #   单选/多选 chip 默认勾选状态时直接读它。
     predefined_options_defaults: list[bool] | None = None
     auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT
+    # R702（幽灵提交根因修复）：调用方（HTTP API / 自动化脚本）**显式**
+    # 传入 auto_resubmit_timeout 时置 True。config 热更新同步
+    # （``update_auto_resubmit_timeout_for_all``）永远跳过显式任务——
+    # per-task 显式值优先于全局 ``frontend_countdown``，否则「重启后第
+    # 一个 API 任务的 3600s 被回调无差别覆盖为 config 的 30s → 30 秒后
+    # 前端如实自动提交」。False = 从 config 默认值继承，热更新照常跟随。
+    auto_resubmit_timeout_explicit: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_at_monotonic: float = Field(default_factory=time.monotonic)
     status: str = TaskStatus.PENDING
@@ -630,6 +637,7 @@ class TaskQueue:
         feedback_placeholder: str | None = None,
         question_type: str | None = None,
         header_label: str | None = None,
+        auto_resubmit_timeout_explicit: bool = False,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
         # R53-A：在拿写锁之前先做 prompt size 校验。锁外校验有两个好处：
@@ -713,6 +721,7 @@ class TaskQueue:
                 predefined_options=predefined_options,
                 predefined_options_defaults=predefined_options_defaults,
                 auto_resubmit_timeout=auto_resubmit_timeout,
+                auto_resubmit_timeout_explicit=auto_resubmit_timeout_explicit,
                 feedback_placeholder=normalized_placeholder,
                 question_type=normalized_question_type,
                 header_label=normalized_header_label,
@@ -890,6 +899,11 @@ class TaskQueue:
         with _watched_write_lock(self._lock, "update_auto_resubmit_timeout_for_all"):
             for task in self._tasks.values():
                 if task.status == TaskStatus.COMPLETED:
+                    continue
+                # R702：显式 per-task timeout 优先于全局配置——热更新
+                # 同步永远跳过这类任务，避免 API 传入的 3600s 被 config
+                # 的 frontend_countdown=30 无差别覆盖（幽灵提交根因）。
+                if task.auto_resubmit_timeout_explicit:
                     continue
                 if task.auto_resubmit_timeout != auto_resubmit_timeout:
                     task.auto_resubmit_timeout = auto_resubmit_timeout

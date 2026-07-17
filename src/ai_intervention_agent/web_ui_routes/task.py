@@ -1870,6 +1870,9 @@ class TaskRoutesMixin:
                     predefined_options=predefined_options,
                     predefined_options_defaults=predefined_options_defaults,
                     auto_resubmit_timeout=auto_resubmit_timeout,
+                    # R702：调用方显式传 timeout 的任务不受 config
+                    # frontend_countdown 热更新同步覆盖（幽灵提交根因修复）
+                    auto_resubmit_timeout_explicit=timeout_explicit,
                     feedback_placeholder=feedback_placeholder,
                     question_type=question_type,
                     header_label=header_label,

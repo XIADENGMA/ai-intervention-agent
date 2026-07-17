@@ -136,7 +136,16 @@ def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
                 _sync_existing_tasks_timeout_from_config
             )
             _wu._FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = True
-            _sync_existing_tasks_timeout_from_config()
+            # R702（幽灵提交根因修复，方案 B）：注册 ≠ 配置变更。历史上
+            # 这里会立刻执行一次同步，把「重启后第一个 task/config 请求
+            # 之前创建的任务」（含 API 显式传 3600s 的）无差别覆盖为
+            # config 的 frontend_countdown（用户配置 30s）→ 30 秒后前端
+            # 如实自动提交。现在注册时只记录基准，真正的覆盖只发生在
+            # 之后 config 文件实际变更时（且 R702 方案 A 会跳过显式任务）。
+            with _wu._FEEDBACK_TIMEOUT_CALLBACK_LOCK:
+                _wu._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT = (
+                    _wu._get_default_auto_resubmit_timeout_from_config()
+                )
             logger.debug(
                 "已注册 feedback.auto_resubmit_timeout 热更新回调（同步已存在任务倒计时）"
             )

@@ -377,6 +377,7 @@ Code 跑不了？" 几小时的 debug 节约多了。
 | R692    | `tests/test_submit_focus_and_notify_deeplink_r692.py`                   | 模式 C + UX 流程                  | **提交聚焦与通知直达保护**。锁定提交后自动聚焦的登记/消费流程（web + webview，带时间窗、yesno 感知）及隐藏态通知在面板重新可见时直达对应任务的深链。 |
 | R695    | `tests/test_web_countdown_header_visibility_r695.py`                     | 模式 C + CSS/JS                   | **Web 倒计时控件可见性与冻结语义保护**。锁定 `.header-info-container` 保持可见（chip / +60s / 冻结按钮锚点在其中）、冻结成功路径整体注销倒计时条目、重建倒计时前必须带显式禁用守卫——确保冻结不会触发自动提交。 |
 | R696    | `tests/test_lottie_eager_countdown_icon_r696.py`                          | 模式 C + 模板/CSS                 | **Lottie 直出与倒计时图标主题化保护**。锁定 lottie.min.js 随首屏 `<script defer>` 预加载且排在 app.js 之前（空态动画从第一帧即为 Lottie，无降级动画热切换；降级仅限 reduced-motion / 加载失败），倒计时标签为 `currentColor` 内联 SVG 时钟而非 ⏰ emoji。 |
+| R702    | `tests/test_task_timeout_explicit_guard_r702.py`                          | 模式 A + 源码契约                 | **显式 per-task 超时的热更新保护（幽灵提交根因）**。锁定 `Task.auto_resubmit_timeout_explicit`：API 调用方显式传入 timeout 的任务永不被 `frontend_countdown` 配置热更新同步覆盖；回调注册路径只记录基准、不执行同步（注册不等于配置变更）。 |
 
 ## 7. 进一步阅读
 

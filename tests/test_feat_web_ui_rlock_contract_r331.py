@@ -98,9 +98,19 @@ class TestLayer2ReentryChainProof:
     """Layer 2: ``_FEEDBACK_TIMEOUT_CALLBACK_LOCK`` 必须有 reentry chain
     证据 (callback registration → callback execution → 重入同一锁)。"""
 
-    def test_register_callback_holds_lock_when_calling_callback(self):
+    def test_register_callback_holds_lock_when_recording_baseline(self):
         """``_ensure_feedback_timeout_hot_reload_callback_registered`` 在持
-        锁状态下调用 ``_sync_existing_tasks_timeout_from_config()``。"""
+        锁状态下记录 ``_LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT`` 基准。
+
+        R702 契约更新：注册路径不再调用
+        ``_sync_existing_tasks_timeout_from_config()``（历史行为会在服务
+        重启后第一个请求时把 API 显式传入的 per-task timeout 无差别覆盖
+        为 config 值——幽灵提交根因）。注册时只在锁内记录基准；同步仅
+        在 config 文件真正变更时由回调触发。原重入链
+        （register 持锁 → sync → 同一锁）随之消失，但 RLock 保留：
+        callback 本身仍 acquire 同一锁（见下一测试），且未来扩展可能
+        重新引入嵌套调用，RLock 防御成本为零。
+        """
         text = _WEB_UI_CONFIG_SYNC_PY.read_text(encoding="utf-8")
         # 找 _ensure_feedback_timeout_hot_reload_callback_registered 函数体
         m = re.search(
@@ -111,15 +121,20 @@ class TestLayer2ReentryChainProof:
         )
         assert m, "R331-L2: cannot find _ensure_*_callback_registered function"
         body = m.group("body")
-        # 必须在 with _FEEDBACK_TIMEOUT_CALLBACK_LOCK: 块内调用 _sync_*
-        # 找 `with ..._FEEDBACK_TIMEOUT_CALLBACK_LOCK:` 后是否有 _sync_*
         with_idx = body.find("_FEEDBACK_TIMEOUT_CALLBACK_LOCK")
         assert with_idx >= 0, "R331-L2: with block not found in register"
-        sync_call_idx = body.find("_sync_existing_tasks_timeout_from_config(", with_idx)
-        assert sync_call_idx >= 0, (
-            "R331-L2: register function must call _sync_existing_tasks_*() "
-            "from within `with _FEEDBACK_TIMEOUT_CALLBACK_LOCK:` block "
-            "(this is the reentry trigger that requires RLock)"
+        # R702：注册路径在锁内记录基准，而不是执行同步
+        baseline_idx = body.find("_LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT", with_idx)
+        assert baseline_idx >= 0, (
+            "R331-L2/R702: register function must record the "
+            "_LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT baseline inside the "
+            "`with _FEEDBACK_TIMEOUT_CALLBACK_LOCK:` block"
+        )
+        # R702：注册路径禁止直接调用同步函数（历史幽灵提交根因）
+        assert "            _sync_existing_tasks_timeout_from_config()" not in body, (
+            "R331-L2/R702: register function must NOT invoke "
+            "_sync_existing_tasks_timeout_from_config() directly — "
+            "registration is not a config change (ghost-submit root cause)"
         )
 
     def test_callback_function_acquires_same_lock(self):

@@ -85,6 +85,10 @@ INTERNAL_FIELDS: frozenset[str] = frozenset(
         # parallel-array flag — 内部 storage; 前端只看 predefined_
         # options + options_defaults 的语义 union
         "predefined_options_defaults",
+        # R702 — 「调用方显式传入 timeout」标记, 只影响 config 热更新
+        # 同步是否跳过该任务 (幽灵提交根因修复); 对前端无语义, 前端只
+        # 看 auto_resubmit_timeout / remaining_time 本身
+        "auto_resubmit_timeout_explicit",
     }
 )
 
