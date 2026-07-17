@@ -115,6 +115,50 @@ class TestRouteMarksExplicitTimeout(unittest.TestCase):
         )
 
 
+class TestExplicitFlagPersistenceRoundTrip(unittest.TestCase):
+    """R702：显式标记必须随快照落盘并在重启恢复后存活。
+
+    该场景正是幽灵提交的原始触发路径（服务重启后第一批任务被热更新
+    回调覆盖）——若恢复丢失标记，修复在重启场景会静默失效。
+    """
+
+    def test_explicit_flag_survives_restart_and_hot_reload(self) -> None:
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "tasks.json")
+            q1 = TaskQueue(persist_path=p)
+            try:
+                q1.add_task(
+                    "e",
+                    "p",
+                    auto_resubmit_timeout=3600,
+                    auto_resubmit_timeout_explicit=True,
+                )
+                q1.add_task("i", "p", auto_resubmit_timeout=240)
+            finally:
+                q1.stop_cleanup()
+
+            # 模拟重启
+            q2 = TaskQueue(persist_path=p)
+            try:
+                te = q2.get_task("e")
+                ti = q2.get_task("i")
+                assert te is not None and ti is not None
+                self.assertTrue(te.auto_resubmit_timeout_explicit)
+                self.assertFalse(ti.auto_resubmit_timeout_explicit)
+                # 重启后热更新仍须跳过显式任务
+                q2.update_auto_resubmit_timeout_for_all(60)
+                te2 = q2.get_task("e")
+                ti2 = q2.get_task("i")
+                assert te2 is not None and ti2 is not None
+                self.assertEqual(te2.auto_resubmit_timeout, 3600)
+                self.assertEqual(ti2.auto_resubmit_timeout, 60)
+            finally:
+                q2.stop_cleanup()
+
+
 class TestMcpPayloadOmitsConfigTimeout(unittest.TestCase):
     """MCP 侧（server_feedback）创建任务不显式传 config 默认倒计时。
 

@@ -1725,6 +1725,10 @@ class TaskQueue:
                             "predefined_options": task.predefined_options,
                             "predefined_options_defaults": task.predefined_options_defaults,
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
+                            # R702：显式标记必须随快照落盘——否则重启恢复
+                            # 后标记丢失，热更新回调会再次覆盖显式任务
+                            # （幽灵提交在「重启后第一批任务」场景复活）
+                            "auto_resubmit_timeout_explicit": task.auto_resubmit_timeout_explicit,
                             "created_at": task.created_at.isoformat(),
                             "status": task.status,
                             "feedback_placeholder": task.feedback_placeholder,
@@ -1887,6 +1891,11 @@ class TaskQueue:
                             "predefined_options_defaults"
                         ),
                         auto_resubmit_timeout=item.get("auto_resubmit_timeout", 240),
+                        # R702：显式标记 round-trip——旧快照无该 key 时
+                        # bool(None)=False，行为与修复前一致（跟随热更新）
+                        auto_resubmit_timeout_explicit=bool(
+                            item.get("auto_resubmit_timeout_explicit", False)
+                        ),
                         created_at=created_at,
                         created_at_monotonic=time.monotonic() - age_since_creation,
                         status=TaskStatus.PENDING,
