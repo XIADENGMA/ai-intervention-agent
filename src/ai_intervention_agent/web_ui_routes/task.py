@@ -2583,7 +2583,18 @@ class TaskRoutesMixin:
 
                 task_queue.complete_task(task_id, result)
 
-                logger.info(f"任务 {task_id} 反馈已提交")
+                # R700 可观测性：记录提交来源指纹，用于诊断「任务被
+                # 非预期客户端自动提交」类问题（间歇现象，事后只能靠
+                # 日志定位是哪个 UA/页面、提交的是自动重调提示语还是
+                # 用户输入）。仅记录前 60 字符摘要，不落全文。
+                _ua = (request.headers.get("User-Agent") or "")[:80]
+                _referer = (request.headers.get("Referer") or "")[:80]
+                _preview = feedback_text[:60].replace("\n", "\\n")
+                logger.info(
+                    f"任务 {task_id} 反馈已提交 | opts={len(selected_options)} "
+                    f'imgs={len(images)} text[:60]="{_preview}" '
+                    f'ua="{_ua}" referer="{_referer}"'
+                )
                 return jsonify({"success": True, "message": msg("feedback.submitted")})
             except Exception as e:
                 logger.error(f"提交任务失败: {e}", exc_info=True)
