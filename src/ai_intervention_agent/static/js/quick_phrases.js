@@ -1182,6 +1182,30 @@
       importFile.addEventListener("change", handleImportFileChange);
       importFile.dataset.qpBound = "1";
     }
+    // R700 优雅审计 #4：「⋯」溢出菜单（原生 details）不会自动收起——
+    // 选择导出/导入后、或点击菜单外部时主动关闭，符合下拉菜单惯例。
+    var moreMenu = document.getElementById("quick-phrases-more");
+    if (moreMenu && !moreMenu.dataset.qpBound) {
+      moreMenu.addEventListener("click", function (e) {
+        var target = e.target;
+        if (
+          target &&
+          typeof target.closest === "function" &&
+          target.closest(".quick-phrases-more-menu button")
+        ) {
+          moreMenu.open = false;
+        }
+      });
+      document.addEventListener("click", function (e) {
+        if (!moreMenu.open) return;
+        var t = e.target;
+        if (t && typeof t.closest === "function" && t.closest("#quick-phrases-more")) {
+          return;
+        }
+        moreMenu.open = false;
+      });
+      moreMenu.dataset.qpBound = "1";
+    }
   }
 
   function init() {
