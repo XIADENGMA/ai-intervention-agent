@@ -51,7 +51,7 @@ jobs:
         run: uv run python scripts/bump_version.py --check
 
       - name: Python CI Gate（ruff/ty/pytest/minify）
-        run: uv run python scripts/ci_gate.py --ci
+        run: uv run python scripts/ci_gate.py --ci --skip-version-check
 
       - name: 构建（uv build）
         run: uv build --sdist --wheel --out-dir dist --clear
@@ -69,8 +69,14 @@ jobs:
       - name: 安装 Node 依赖（npm workspaces）
         run: npm ci
 
-      - name: 构建 VSCode 插件 VSIX
-        run: npm run vscode:package
+      - name: 依赖安全审计（release gate）
+        run: uv run python scripts/dependency_audit.py --gate release
+
+      - name: 安装 xvfb（VSCode 测试无头环境需要）
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: VSCode 插件：Check（Test + Package）
+        run: xvfb-run -a npm run vscode:check
 
       - name: 上传构建产物
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

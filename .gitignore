@@ -233,6 +233,8 @@ packages/**/.vscode-test/
 *.vsix
 
 # 项目相关（AI 工具/编辑器）
+issues/
+plan/
 .cursor/
 .cursor/rules/
 .cursorignore

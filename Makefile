@@ -14,7 +14,7 @@
 # Discoverability:
 #   `make` (no args) → renders the help table; same as `make help`.
 
-.PHONY: help install install-hooks lint test ci coverage docs docs-check vscode-check pre-commit release-check release-check-cve clean
+.PHONY: help install install-hooks lint test ci coverage docs docs-check vscode-check dependency-audit pre-commit release-check release-check-cve clean
 
 # Default goal: print the help table so a fresh checkout's `make` is informative
 # instead of surprising. Pinning this is more robust than relying on Make's
@@ -33,6 +33,7 @@ help:
 	@echo "  make docs              regenerate docs/api/ + docs/api.zh-CN/ from Python source"
 	@echo "  make docs-check        verify docs/api/ + docs/api.zh-CN/ are in sync (no writes)"
 	@echo "  make vscode-check      full CI Gate + VS Code extension test + VSIX build"
+	@echo "  make dependency-audit  pip-audit + npm audit with documented exception handling"
 	@echo "  make pre-commit        run all pre-commit hooks against all files"
 	@echo "  make release-check     verify <=3 unpushed v*.*.* tags before 'git push --follow-tags'"
 	@echo "  make release-check-cve same as release-check, plus R185 Dependabot CVE gate"
@@ -76,6 +77,9 @@ docs-check:
 
 vscode-check:
 	uv run python scripts/ci_gate.py --with-vscode
+
+dependency-audit:
+	uv run python scripts/dependency_audit.py --gate local
 
 pre-commit:
 	uv run pre-commit run --all-files
