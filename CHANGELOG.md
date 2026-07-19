@@ -9,6 +9,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-19
+
 ### Added
 
 - Loop engineering (P1+P2, design notes in

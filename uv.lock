@@ -11,7 +11,7 @@ resolution-markers = [
 
 [[package]]
 name = "ai-intervention-agent"
-version = "1.7.13"
+version = "1.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "brotli" },
