@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-07-19
+
+### Fixed
+
+- Unblock the release pipeline by tracking the generated `.min.js` /
+  `.min.css` assets in git: since the CI gate went check-only for build
+  artifacts (`ci_gate.py --ci` runs `minify_assets.py --check`), a fresh
+  checkout had no minified copies to verify and the v1.8.0 tag build
+  failed before publishing. The minified assets now ship in the repo
+  like the existing `.gz` / `.br` precompressed copies, so CI verifies
+  the committed artifacts match the minify output of the sources.
+
 ## [1.8.0] - 2026-07-19
 
 ### Added

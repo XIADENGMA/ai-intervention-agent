@@ -264,13 +264,9 @@ TODO.md
 specs/
 .coveragerc
 
-# 忽略压缩后的静态资源（R76 起静态资源迁入 ``src/ai_intervention_agent/static/``，
-# 旧路径 ``static/`` 仍保留作为防御以兼容历史 working tree）。
-src/ai_intervention_agent/static/css/*.min.css
-src/ai_intervention_agent/static/js/*.min.js
-!src/ai_intervention_agent/static/js/prism-components/
-!src/ai_intervention_agent/static/js/lottie.min.js
-static/css/*.min.css
-static/js/*.min.js
-!static/js/prism-components/
-!static/js/lottie.min.js
+# 压缩后的静态资源（.min.js / .min.css）自 v1.8.1 起入库跟踪：
+# ci_gate --ci（88a84d2 起）以 check-only 模式运行 minify_assets.py --check，
+# fresh checkout 里若无 .min 文件该检查必然失败（v1.8.0 release 流水线
+# 即因此中断）。.min 与既有 .gz/.br 预压缩副本同属"生成产物 + 新鲜度
+# 校验"矩阵（R242/R246），一并入库让 CI 校验"提交的产物 = 源文件的
+# minify 输出"这一可复现性契约。
