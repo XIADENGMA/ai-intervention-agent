@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-07-19
+
+### Fixed
+
+- Refresh `package-lock.json` so the existing security `overrides`
+  actually pin the patched transitive versions: `serialize-javascript`
+  7.0.7 (CVE-2026-34043 DoS + GHSA-5c6j-r48x-rmvq RCE, both fixed
+  since 7.0.5/7.0.3) and `diff` 8.0.4 in mocha's dependency chain. The
+  v1.8.1 tag build stopped at the release-gate dependency audit because
+  the lockfile still resolved the vulnerable 6.0.2 / 7.0.0 pins.
+
 ## [1.8.1] - 2026-07-19
 
 ### Fixed
