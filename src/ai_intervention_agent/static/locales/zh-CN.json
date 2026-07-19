@@ -68,7 +68,15 @@
     "copyCode": "复制代码",
     "copied": "已复制",
     "copyFailed": "复制失败",
-    "skipToContent": "跳转到内容"
+    "skipToContent": "跳转到内容",
+    "loopIdTitle": "循环 ID",
+    "loopPhaseTitle": "循环阶段",
+    "loopIterTitle": "轮次",
+    "loopObjectiveLabel": "循环目标",
+    "loopCriteriaLabel": "完成标准",
+    "loopHistoryToggle": "历史轮次",
+    "loopHistoryEmpty": "暂无已完成轮次",
+    "loopHistoryError": "循环历史加载失败"
   },
   "quickPhrases": {
     "label": "常用回复",

@@ -300,9 +300,11 @@ class StaticRoutesMixin:
                 navigation request fetch 失败时（用户离线 / 后台中
                 断），SW 返回此页面给浏览器替代默认的网络错误页。
 
-                页面自带双语提示（中/英）、重连按钮、5s 间隔后台 ping
-                自动检测服务恢复、``online`` 事件监听 —— 服务恢复时
-                自动 reload。
+                页面复用主界面设计 token（暖炭暗色 / 米白亮色 +
+                localStorage 主题偏好），文案按浏览器语言单语显示
+                （en / zh-CN / zh-TW 内联），并提供重连按钮、指数退避
+                后台 ping（5s → 60s）自动检测服务恢复、``online``
+                事件监听 —— 服务恢复时自动 reload。
 
             返回值：
                 offline.html 内容（text/html MIME；``Cache-Control:

@@ -1,33 +1,80 @@
 <!doctype html>
-<html lang="zh-CN" dir="ltr">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#D97757" />
-    <title>离线 — AI Intervention Agent</title>
-    <!-- R249 / mining-9 Track B —— PWA offline fallback page
-         设计目标：
-         - 极简（< 5 KB）让 SW 预缓存零负担
-         - 不依赖外部 CSS / JS（self-contained inline）
-         - 提供重连按钮 + 自动后台 ping 检测恢复
-         - 双语兜底（en + zh-CN）让用户一眼能读懂 -->
+    <title>Offline — AI Intervention Agent</title>
+    <!-- PWA offline fallback page（R249 引入 / R306 补 nonce）
+         设计契约：
+         - 自包含（inline CSS/JS，无外部依赖）—— SW 预缓存零负担，
+           断网时不依赖任何静态资源路由
+         - 视觉与主界面同源：复用 main.css 的 Anthropic 设计 token
+           （暖炭暗色 #1f1e1d/#262624、米白亮色 #e8e6dc/#faf9f5、
+           陶土橙 #d97757），支持 data-theme 覆盖 + 系统偏好回退
+         - 主题跟随主界面 localStorage['theme-preference']（与
+           web_ui.html anti-FOUC bootstrap 同款解析逻辑）
+         - 单语言显示：运行时按 navigator.language 选择 en / zh-CN /
+           zh-TW（与 static/js/i18n.js normalizeLang 同源折叠规则；
+           离线态无法 fetch 语言包，故三份文案全部内联，HTML 默认英文）
+         - 重连按钮 + 指数退避后台 ping（5s → 60s）自动检测恢复 -->
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
     <style>
+      /* 设计 token —— 与 static/css/main.css 主题变量保持同值同名。
+         暗色（默认）：Claude 暖炭家族；亮色：Anthropic 品牌米色家族。 */
       :root {
-        --bg: #0f0f12;
-        --fg: #f5f5f7;
-        --muted: rgba(245, 245, 247, 0.62);
-        --accent: #d97757;
-        --card-bg: rgba(255, 255, 255, 0.04);
-        --card-border: rgba(255, 255, 255, 0.08);
+        color-scheme: dark;
+        --bg-primary: #1f1e1d;
+        --bg-secondary: #262624;
+        --text-primary: #faf9f5;
+        --text-secondary: #b8b4ab;
+        --border-secondary: rgba(255, 255, 255, 0.08);
+        --card-hairline: rgba(255, 255, 255, 0.1);
+        --primary-500: #d97757;
+        --focus-ring-color: #d97757;
+        --success-500: #22c55e;
+        --shadow-card: 0 6px 12px rgba(0, 0, 0, 0.3);
+        --btn-hover-transform: translateY(-1px);
+        --btn-hover-shadow: 0 4px 12px rgba(217, 119, 87, 0.3);
+        --font-sans:
+          system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji",
+          "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
       }
+      /* 亮色主题（用户在主界面手动选择时，由脚本写入 data-theme） */
+      [data-theme="light"] {
+        color-scheme: light;
+        --bg-primary: #e8e6dc;
+        --bg-secondary: #faf9f5;
+        --text-primary: #141413;
+        --text-secondary: #5a5955;
+        --border-secondary: rgba(176, 174, 165, 0.2);
+        --card-hairline: rgba(176, 174, 165, 0.35);
+        --focus-ring-color: #b35a3c;
+        --success-500: #506840;
+        --shadow-card:
+          0 4px 8px rgba(20, 20, 19, 0.08), 0 8px 16px rgba(20, 20, 19, 0.12);
+        /* R64 同款：亮色按钮 hover 不位移，阴影换 Orange 淡化 */
+        --btn-hover-transform: none;
+        --btn-hover-shadow: 0 2px 6px rgba(217, 119, 87, 0.25);
+      }
+      /* 无显式偏好时跟随系统（与 main.css :root:not([data-theme]) 一致） */
       @media (prefers-color-scheme: light) {
-        :root {
-          --bg: #f4f5f8;
-          --fg: rgba(28, 28, 30, 0.95);
-          --muted: rgba(60, 60, 67, 0.62);
-          --card-bg: rgba(255, 255, 255, 0.7);
-          --card-border: rgba(0, 0, 0, 0.06);
+        :root:not([data-theme]) {
+          color-scheme: light;
+          --bg-primary: #e8e6dc;
+          --bg-secondary: #faf9f5;
+          --text-primary: #141413;
+          --text-secondary: #5a5955;
+          --border-secondary: rgba(176, 174, 165, 0.2);
+          --card-hairline: rgba(176, 174, 165, 0.35);
+          --focus-ring-color: #b35a3c;
+          --success-500: #506840;
+          --shadow-card:
+            0 4px 8px rgba(20, 20, 19, 0.08),
+            0 8px 16px rgba(20, 20, 19, 0.12);
+          --btn-hover-transform: none;
+          --btn-hover-shadow: 0 2px 6px rgba(217, 119, 87, 0.25);
         }
       }
       * {
@@ -39,87 +86,105 @@
         padding: 0;
       }
       body {
-        background: var(--bg);
-        color: var(--fg);
-        font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-family: var(--font-sans);
         line-height: 1.5;
         min-height: 100vh;
+        min-height: 100dvh;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 1rem;
+        padding: 1.5rem;
       }
       .card {
+        position: relative;
         max-width: 460px;
         width: 100%;
-        background: var(--card-bg);
-        border: 1px solid var(--card-border);
-        border-radius: 18px;
-        padding: 2rem 1.75rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-secondary);
+        border-radius: 24px;
+        padding: 2.5rem 2rem;
         text-align: center;
-        backdrop-filter: blur(20px);
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+      }
+      /* 顶部渐变发丝线 —— 与主界面 .container::before 同款装饰 */
+      .card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--card-hairline),
+          transparent
+        );
       }
       .icon {
-        width: 64px;
-        height: 64px;
-        margin: 0 auto 1.2rem;
-        color: var(--accent);
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 1.25rem;
+        color: var(--primary-500);
         opacity: 0.9;
       }
       h1 {
-        font-size: 1.4rem;
-        margin: 0 0 0.5rem;
+        font-size: 1.35rem;
+        margin: 0 0 0.75rem;
         font-weight: 600;
-      }
-      .subtitle {
-        color: var(--muted);
-        margin: 0 0 1.5rem;
-        font-size: 0.95rem;
+        color: var(--text-primary);
       }
       .hint {
-        font-size: 0.85rem;
-        color: var(--muted);
-        margin: 1.25rem 0 0;
-        line-height: 1.6;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin: 0 0 1.5rem;
+        line-height: 1.7;
       }
       .actions {
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-        margin-top: 1.25rem;
       }
+      /* 按钮 —— 对齐 main.css .btn（半透明陶土橙 + hover 提亮） */
       button {
-        background: var(--accent);
-        color: white;
-        border: none;
+        background: rgba(217, 119, 87, 0.8);
+        border: 1px solid rgba(217, 119, 87, 0.3);
         border-radius: 10px;
-        padding: 0.7rem 1.5rem;
+        color: #ffffff;
+        padding: 0.75rem 1.5rem;
+        min-height: 44px;
+        font-family: inherit;
         font-size: 0.95rem;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.2s ease;
+        box-shadow: 0 2px 8px rgba(217, 119, 87, 0.2);
       }
       button:hover {
-        filter: brightness(1.1);
-        transform: translateY(-1px);
+        background: rgba(217, 119, 87, 0.9);
+        border-color: rgba(217, 119, 87, 0.5);
+        transform: var(--btn-hover-transform);
+        box-shadow: var(--btn-hover-shadow);
       }
       button:active {
         transform: translateY(0);
+        background: rgba(217, 119, 87, 0.7);
       }
       button:focus-visible {
-        outline: 2px solid rgba(139, 92, 246, 0.6);
+        outline: 2px solid var(--focus-ring-color);
         outline-offset: 2px;
       }
       .status {
         font-size: 0.82rem;
-        color: var(--muted);
-        margin-top: 1rem;
+        color: var(--text-secondary);
+        margin: 1rem 0 0;
         min-height: 1.2em;
       }
       .status.is-online {
-        color: #34d399;
+        color: var(--success-500);
       }
       @media (prefers-reduced-motion: reduce) {
         button {
@@ -150,31 +215,142 @@
         <line x1="12" y1="20" x2="12.01" y2="20" />
         <line x1="23" y1="1" x2="1" y2="23" />
       </svg>
-      <h1 lang="zh-CN">无法连接到 AI Intervention Agent</h1>
-      <p class="subtitle" lang="en">
-        Can't reach AI Intervention Agent
-      </p>
-      <p class="hint" lang="zh-CN">
-        服务可能已停止，或您当前处于离线状态。
-        <br />
-        Service may be stopped, or you're offline.
+      <h1 id="offline-title">Can't reach AI Intervention Agent</h1>
+      <p class="hint" id="offline-hint">
+        The service may be stopped, or your device is offline. The page will
+        reload automatically once the connection is restored.
       </p>
       <div class="actions">
-        <button id="retry-btn" type="button" autofocus>
-          重试 / Retry
-        </button>
+        <button id="retry-btn" type="button" autofocus>Retry</button>
       </div>
       <p class="status" id="status" aria-live="polite"></p>
     </main>
     <!-- R306: offline.html 通过 Flask render_template() serve, 经过
          after_request 钩子会附加 CSP `script-src 'self' 'nonce-...'`
-         头。原 R249 mining-9 引入时漏加 nonce 属性, 浏览器 CSP 阻止
-         该 inline script 执行, "重试 / Retry" 按钮事件监听器永不绑定
-         → 用户离线后点击重试无反应。补 nonce 后 CSP 允许执行, retry
-         按钮恢复正常。invariant: tests/test_feat_csp_nonce_consistency_r306.py -->
+         头。inline script 必须携带 nonce 属性, 否则浏览器 CSP 阻止执行,
+         "Retry" 按钮事件监听器永不绑定。
+         invariant: tests/test_feat_csp_nonce_consistency_r306.py
+
+         注意: tests/test_offline_reconnect_lifecycle_r452.py 会提取本页
+         第一个带 nonce 的 <script> 在 Node VM 沙箱中执行（沙箱无
+         navigator / localStorage / documentElement）——保持全页仅此一个
+         inline script, 且所有宿主 API 访问都有 typeof 守卫或 try/catch。 -->
     <script nonce="{{ csp_nonce }}">
       (function () {
         "use strict";
+
+        /* ---- 单语言文案：运行时按浏览器语言选择 ----
+           离线页无法 fetch /static/locales/*.json，三份文案全部内联；
+           HTML 静态默认为英文，非英文环境由下方逻辑整体替换。 */
+        var MESSAGES = {
+          en: {
+            docTitle: "Offline — AI Intervention Agent",
+            title: "Can't reach AI Intervention Agent",
+            hint:
+              "The service may be stopped, or your device is offline. " +
+              "The page will reload automatically once the connection is restored.",
+            retry: "Retry",
+            retrying: "Retrying…",
+            online: "Network restored — retrying…",
+            back: "Service restored — reloading…"
+          },
+          "zh-CN": {
+            docTitle: "离线 — AI Intervention Agent",
+            title: "无法连接到 AI Intervention Agent",
+            hint: "服务可能已停止，或设备当前处于离线状态。连接恢复后将自动重新加载。",
+            retry: "重试",
+            retrying: "正在重试…",
+            online: "网络已恢复，正在重试…",
+            back: "服务已恢复，正在重新加载…"
+          },
+          "zh-TW": {
+            docTitle: "離線 — AI Intervention Agent",
+            title: "無法連接到 AI Intervention Agent",
+            hint: "服務可能已停止，或裝置目前處於離線狀態。連線恢復後將自動重新載入。",
+            retry: "重試",
+            retrying: "正在重試…",
+            online: "網路已恢復，正在重試…",
+            back: "服務已恢復，正在重新載入…"
+          }
+        };
+
+        // 与 static/js/i18n.js normalizeLang 同源的折叠规则：
+        // zh-TW/HK/MO/Hant → zh-TW；其余 zh-* → zh-CN；en-* → en；
+        // 未支持语言回退英文。
+        function normalizeLang(raw) {
+          var s = String(raw || "")
+            .trim()
+            .toLowerCase();
+          if (s.indexOf("zh") === 0) {
+            if (
+              s === "zh-tw" ||
+              s === "zh-hk" ||
+              s === "zh-mo" ||
+              s === "zh-hant" ||
+              s.indexOf("zh-hant-") === 0
+            ) {
+              return "zh-TW";
+            }
+            return "zh-CN";
+          }
+          if (s.indexOf("en") === 0) return "en";
+          return "en";
+        }
+
+        function detectLang() {
+          try {
+            if (typeof navigator !== "undefined" && navigator.language) {
+              return normalizeLang(navigator.language);
+            }
+          } catch (_e) {
+            /* noop */
+          }
+          return "en";
+        }
+
+        var LANG = detectLang();
+        var T = MESSAGES[LANG] || MESSAGES.en;
+
+        /* ---- 主题：跟随主界面 localStorage['theme-preference']，
+                无存储/auto 时回退系统偏好（与 web_ui.html anti-FOUC
+                bootstrap 同款解析）。localStorage 不可用时由 CSS
+                prefers-color-scheme 媒体查询自然兜底。 ---- */
+        try {
+          var storedTheme = null;
+          if (typeof localStorage !== "undefined") {
+            storedTheme = localStorage.getItem("theme-preference");
+          }
+          var resolvedTheme = storedTheme;
+          if (!storedTheme || storedTheme === "auto") {
+            resolvedTheme =
+              typeof window.matchMedia === "function" &&
+              window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark";
+          }
+          if (resolvedTheme === "dark" || resolvedTheme === "light") {
+            document.documentElement.setAttribute("data-theme", resolvedTheme);
+          }
+        } catch (_e) {
+          /* noop */
+        }
+
+        /* ---- 非英文环境：整体替换页面文案 ---- */
+        try {
+          if (LANG !== "en") {
+            document.documentElement.lang = LANG;
+            document.title = T.docTitle;
+            var titleEl = document.getElementById("offline-title");
+            if (titleEl) titleEl.textContent = T.title;
+            var hintEl = document.getElementById("offline-hint");
+            if (hintEl) hintEl.textContent = T.hint;
+            var retryBtnEl = document.getElementById("retry-btn");
+            if (retryBtnEl) retryBtnEl.textContent = T.retry;
+          }
+        } catch (_e) {
+          /* noop：替换失败时保留英文静态兜底 */
+        }
+
         var btn = document.getElementById("retry-btn");
         var status = document.getElementById("status");
         var pingTimer = null;
@@ -288,7 +464,7 @@
           var ok = await ping();
           if (generation !== pollGeneration || isHidden()) return;
           if (ok) {
-            setStatus("服务已恢复，正在重新加载… / Service back, reloading…", true);
+            setStatus(T.back, true);
             scheduleReload(600);
             return;
           }
@@ -311,7 +487,7 @@
         // 误报，下一轮失败会再次开始 backoff 累积）
         window.addEventListener("online", function () {
           pauseAutoCheck();
-          setStatus("网络已连接，重试中… / Online, retrying…", true);
+          setStatus(T.online, true);
           resumeAutoCheck(true);
         });
 
@@ -336,7 +512,7 @@
             // 手动 retry 也重置 backoff
             pauseAutoCheck();
             currentDelayMs = BACKOFF_INITIAL_MS;
-            setStatus("正在重试… / Retrying…");
+            setStatus(T.retrying);
             reload();
           });
         }

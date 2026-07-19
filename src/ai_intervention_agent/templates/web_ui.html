@@ -734,6 +734,112 @@
             </div>
           </div>
 
+          <!--
+            Loop 工程 P2（docs/loop-engineering-design-notes.zh-CN.md §3.3）：
+            活动任务的 loop 上下文条。agent 在多轮循环里传入 loop_id /
+            loop_phase / iteration_label / loop_objective / success_criteria
+            时展示，让人在几十轮交互中不丢失"这一轮属于哪个目标、进行到
+            哪个阶段"的脉络。默认 display:none，由 JS ``updateLoopContext``
+            控制显隐；全部字段用 textContent 填充（XSS 安全）。
+          -->
+          <div
+            class="task-loop-context"
+            id="task-loop-context"
+            style="display: none"
+            role="status"
+          >
+            <div class="loop-context-chips">
+              <span
+                class="loop-chip loop-chip-id"
+                id="loop-chip-id"
+                style="display: none"
+                data-i18n-title="page.loopIdTitle"
+                title="Loop ID"
+              ></span>
+              <span
+                class="loop-chip loop-chip-phase"
+                id="loop-chip-phase"
+                style="display: none"
+                data-i18n-title="page.loopPhaseTitle"
+                title="Loop phase"
+              ></span>
+              <span
+                class="loop-chip loop-chip-iter"
+                id="loop-chip-iter"
+                style="display: none"
+                data-i18n-title="page.loopIterTitle"
+                title="Iteration"
+              ></span>
+            </div>
+            <div
+              class="loop-context-line"
+              id="loop-objective-line"
+              style="display: none"
+            >
+              <span
+                class="loop-context-label"
+                data-i18n="page.loopObjectiveLabel"
+                >Objective</span
+              >
+              <span
+                class="loop-context-value"
+                id="loop-objective-value"
+              ></span>
+            </div>
+            <div
+              class="loop-context-line"
+              id="loop-criteria-line"
+              style="display: none"
+            >
+              <span
+                class="loop-context-label"
+                data-i18n="page.loopCriteriaLabel"
+                >Success criteria</span
+              >
+              <span
+                class="loop-context-value"
+                id="loop-criteria-value"
+              ></span>
+            </div>
+            <!--
+              Loop 视图（设计笔记 §3.3 的分组折叠初版）：历史轮次时间线。
+              点击 toggle 拉取 GET /api/loops，按当前 loop_id 渲染已完成
+              轮次（轮次标签 / 阶段 / 完成时间 / verdict 摘要）。由
+              ``toggleLoopHistory`` 控制，全部 textContent 填充。
+            -->
+            <button
+              type="button"
+              class="loop-history-toggle"
+              id="loop-history-toggle"
+              aria-expanded="false"
+              aria-controls="loop-history-list"
+            >
+              <svg
+                class="loop-history-caret"
+                width="10"
+                height="10"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <polyline points="5 3 11 8 5 13" />
+              </svg>
+              <span data-i18n="page.loopHistoryToggle">Rounds</span>
+              <span class="loop-history-count" id="loop-history-count"></span>
+            </button>
+            <div
+              class="loop-history-list"
+              id="loop-history-list"
+              style="display: none"
+              role="list"
+            ></div>
+          </div>
+
           <div
             class="description markdown-content"
             id="description"

@@ -165,6 +165,42 @@ These four parameters compose: a typical Agent-mode call combines
 `predefined_options` (multi-select) or `question_type='yesno'`
 (binary). See the full Agent-mode example below.
 
+#### Loop-engineering parameters (long autonomous runs)
+
+Five optional metadata fields for **multi-round loop workflows** (e.g.
+Ralph-loop style "keep iterating until the TODO is done" sessions).
+They carry the *why* behind each feedback request so the human reviewer
+retains context across dozens of rounds. All are plain strings, stored
+on the task, persisted across restarts, and returned by
+`GET /api/tasks` / `GET /api/tasks/<id>` / `GET /api/config` /
+`GET /api/tasks/export` — they do **not** change tool behavior.
+
+- `loop_id` (string, optional, max **64** chars) — stable identifier
+  shared by every round of one loop, e.g. `"auth-refactor"`. Lets the
+  UI / export group tasks belonging to the same long-running objective.
+- `loop_objective` (string, optional, max **500** chars) — the loop's
+  overall goal, e.g. `"migrate auth to PyJWT 2.x with zero API break"`.
+- `loop_phase` (string, optional, max **32** chars) — current stage,
+  e.g. `"plan"` / `"implement"` / `"verify"` / `"blocked"`.
+- `success_criteria` (string, optional, max **500** chars) — the
+  loop's definition of done, e.g. `"pytest green + docs updated"`.
+- `iteration_label` (string, optional, max **32** chars) — human-readable
+  round marker, e.g. `"iter-3"` / `"round 7/10"`; shown alongside the
+  task so the reviewer can see loop progress at a glance.
+
+All five follow the same normalization as `header_label`: leading and
+trailing whitespace stripped, empty string → `None`, overflow clamped
+server-side, non-string values silently ignored. Omit them entirely for
+normal (non-loop) calls — the tool behaves exactly as before.
+
+Completed loop rounds are additionally preserved in a bounded in-memory
+ledger (20 loops × 50 rounds; verdict text truncated to 200 chars,
+images stored as a count only) that survives the regular 10-second
+completed-task cleanup and server restarts. `GET /api/loops` returns
+the ledger grouped by `loop_id` together with the loop's still-queued
+tasks, so a reviewer can replay "which rounds did this objective go
+through, and what did the human say each time".
+
 #### Returns
 
 `interactive_feedback` returns a **list of MCP Content blocks**:

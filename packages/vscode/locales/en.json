@@ -138,6 +138,16 @@
       "switchFailed": "Switch task failed: {{reason}}",
       "activateTimeoutCheckServer": "Activate task timeout: please check server availability"
     },
+    "loop": {
+      "idTitle": "Loop ID",
+      "phaseTitle": "Loop phase",
+      "iterTitle": "Iteration",
+      "objectiveLabel": "Objective",
+      "criteriaLabel": "Success criteria",
+      "historyToggle": "Rounds",
+      "historyEmpty": "No completed rounds yet",
+      "historyError": "Failed to load loop history"
+    },
     "clipboard": {
       "empty": "Clipboard is empty, please copy some code first.",
       "noCode": "Insert failed: no valid code detected",

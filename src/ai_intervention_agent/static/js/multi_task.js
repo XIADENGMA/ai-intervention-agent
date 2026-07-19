@@ -2942,6 +2942,20 @@ function createTaskTab(task) {
   // 先添加文本（左边）
   tab.appendChild(textSpan);
 
+  // Loop 工程 P2：iteration_label 轮次徽标（如 "iter-3"）。
+  // 放在任务名右侧，让用户扫一眼 tab 栏就能看出每个任务处于
+  // loop 的第几轮；非 loop 任务（无该字段）不渲染任何额外 DOM。
+  if (
+    typeof task.iteration_label === "string" &&
+    task.iteration_label.trim() !== ""
+  ) {
+    const iterBadge = document.createElement("span");
+    iterBadge.className = "task-tab-iter";
+    iterBadge.textContent = task.iteration_label.trim();
+    iterBadge.setAttribute("aria-hidden", "true");
+    tab.appendChild(iterBadge);
+  }
+
   // SVG圆环倒计时（总是显示，在右边）
   if (task.status !== "completed") {
     const countdownRing = document.createElement("div");
@@ -3126,6 +3140,8 @@ async function switchTask(taskId) {
     // mining-cycle-3 §2.1 borrow #1 (gemini-cli header chip):
     // 切换任务时立即应用 header_label
     updateHeaderChip(cachedTask.header_label);
+    // Loop 工程 P2：切换任务时立即应用 loop 上下文条
+    updateLoopContext(cachedTask);
   }
 
   try {
@@ -3291,6 +3307,9 @@ async function loadTaskDetails(taskId) {
       updateYesnoButtonGroup(task.question_type);
       // mining-cycle-3 §2.1 borrow #1 (gemini-cli header chip):
       updateHeaderChip(task.header_label);
+      // Loop 工程 P2：异步详情回来后再次同步 loop 上下文
+      // （cache 路径可能取到旧字段）
+      updateLoopContext(task);
 
       // 恢复该任务之前保存的textarea内容
       const textarea = document.getElementById("feedback-text");
@@ -3521,6 +3540,272 @@ function updateHeaderChip(label) {
     chip.style.display = "none";
     chip.removeAttribute("aria-label");
   }
+}
+
+/**
+ * Loop 工程 P2 —— 活动任务的 loop 上下文条。
+ *
+ * 数据源：task 上的 5 个可选 loop 字段（loop_id / loop_phase /
+ * iteration_label / loop_objective / success_criteria），由
+ * ``interactive_feedback`` 的同名可选参数写入，服务端已 strip + clamp。
+ *
+ * 行为：
+ *   - 任一字段非空 → 显示 ``#task-loop-context``，逐字段填充；
+ *     空字段各自隐藏（chips 行 / objective 行 / criteria 行独立显隐）
+ *   - 全部为空（普通非 loop 任务）→ 整条隐藏，UI 与之前逐字节一致
+ *
+ * 安全：全部走 textContent 赋值，不解析 HTML；值本身在服务端已按
+ * task_constants 的 LOOP_*_MAX_LENGTH 截断，这里不再二次 clamp。
+ *
+ * 渲染锚点：``#task-loop-context``（web_ui.html 预留）。模板缺 anchor
+ * 时 silent no-op，与 updateHeaderChip 同一容错约定。
+ */
+function updateLoopContext(task) {
+  var container = document.getElementById("task-loop-context");
+  if (!container) return;
+
+  function _clean(value) {
+    return typeof value === "string" && value.trim() !== ""
+      ? value.trim()
+      : null;
+  }
+  var loopId = _clean(task && task.loop_id);
+  var loopPhase = _clean(task && task.loop_phase);
+  var iterLabel = _clean(task && task.iteration_label);
+  var objective = _clean(task && task.loop_objective);
+  var criteria = _clean(task && task.success_criteria);
+
+  // Loop 视图：记录当前 loop_id 供历史轮次面板拉取；loop 变化时收起
+  // 已展开的旧面板（跨 loop 残留时间线会误导）。typeof 守卫：部分
+  // 单测 harness 只提取本函数体独立运行（与 webview updateUI 同约定）。
+  if (
+    typeof window !== "undefined" &&
+    typeof updateLoopHistoryToggle === "function"
+  ) {
+    if (window.__aiiaCurrentLoopId !== loopId) {
+      window.__aiiaCurrentLoopId = loopId;
+      collapseLoopHistory();
+    }
+    updateLoopHistoryToggle(loopId);
+  }
+
+  if (!loopId && !loopPhase && !iterLabel && !objective && !criteria) {
+    container.style.display = "none";
+    return;
+  }
+
+  function _setChip(elementId, value) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
+    if (value) {
+      el.textContent = value;
+      el.style.display = "";
+    } else {
+      el.textContent = "";
+      el.style.display = "none";
+    }
+  }
+  _setChip("loop-chip-id", loopId);
+  _setChip("loop-chip-phase", loopPhase);
+  _setChip("loop-chip-iter", iterLabel);
+
+  function _setLine(lineId, valueId, value) {
+    var line = document.getElementById(lineId);
+    var valueEl = document.getElementById(valueId);
+    if (!line || !valueEl) return;
+    if (value) {
+      valueEl.textContent = value;
+      line.style.display = "";
+    } else {
+      valueEl.textContent = "";
+      line.style.display = "none";
+    }
+  }
+  _setLine("loop-objective-line", "loop-objective-value", objective);
+  _setLine("loop-criteria-line", "loop-criteria-value", criteria);
+
+  container.style.display = "";
+}
+
+/**
+ * Loop 视图 —— 历史轮次折叠面板（设计笔记 §3.3 分组折叠的初版实现）。
+ *
+ * 交互：loop 任务的上下文条内显示「历史轮次」toggle；点击展开时拉取
+ * ``GET /api/loops``，按当前 loop_id 渲染已完成轮次时间线（最近在前）：
+ * 轮次标签 + 阶段 + 完成时间 + verdict 摘要（服务端已截断 200 字符、
+ * 图片只记数量）。再次点击收起。任务/loop 切换时自动收起，防止旧
+ * loop 的时间线残留误导。
+ *
+ * 安全：全部 textContent 填充；无任何 innerHTML 拼接。
+ */
+function updateLoopHistoryToggle(loopId) {
+  var toggle = document.getElementById("loop-history-toggle");
+  if (!toggle) return;
+  if (loopId) {
+    toggle.style.display = "";
+    if (!toggle.dataset.bound) {
+      toggle.dataset.bound = "1";
+      toggle.addEventListener("click", toggleLoopHistory);
+    }
+  } else {
+    toggle.style.display = "none";
+  }
+}
+
+function collapseLoopHistory() {
+  var toggle = document.getElementById("loop-history-toggle");
+  var list = document.getElementById("loop-history-list");
+  var count = document.getElementById("loop-history-count");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.classList.remove("expanded");
+  }
+  if (list) {
+    list.style.display = "none";
+    list.textContent = "";
+  }
+  if (count) count.textContent = "";
+}
+
+async function toggleLoopHistory() {
+  var toggle = document.getElementById("loop-history-toggle");
+  var list = document.getElementById("loop-history-list");
+  if (!toggle || !list) return;
+
+  if (toggle.getAttribute("aria-expanded") === "true") {
+    collapseLoopHistory();
+    return;
+  }
+
+  var loopId = window.__aiiaCurrentLoopId;
+  if (!loopId) return;
+
+  var t =
+    typeof window !== "undefined" &&
+    window.AIIA_I18N &&
+    typeof window.AIIA_I18N.t === "function"
+      ? window.AIIA_I18N.t.bind(window.AIIA_I18N)
+      : function () {
+          return null;
+        };
+
+  toggle.setAttribute("aria-expanded", "true");
+  toggle.classList.add("expanded");
+  list.textContent = "";
+  list.style.display = "";
+
+  var loop = null;
+  try {
+    var resp = await fetchWithTimeout("/api/loops", { cache: "no-store" }, 8000);
+    if (resp && resp.ok) {
+      var data = await resp.json();
+      if (data && data.success && Array.isArray(data.loops)) {
+        for (var i = 0; i < data.loops.length; i++) {
+          if (data.loops[i] && data.loops[i].loop_id === loopId) {
+            loop = data.loops[i];
+            break;
+          }
+        }
+      }
+    } else {
+      renderLoopHistoryMessage(
+        list,
+        t("page.loopHistoryError") || "Failed to load loop history",
+      );
+      return;
+    }
+  } catch (e) {
+    renderLoopHistoryMessage(
+      list,
+      t("page.loopHistoryError") || "Failed to load loop history",
+    );
+    return;
+  }
+
+  // 用户可能在 await 期间切换了任务 → 面板已被 collapse，丢弃过期渲染
+  if (window.__aiiaCurrentLoopId !== loopId) return;
+  if (toggle.getAttribute("aria-expanded") !== "true") return;
+
+  var rounds = loop && Array.isArray(loop.rounds) ? loop.rounds : [];
+  var countEl = document.getElementById("loop-history-count");
+  if (countEl) countEl.textContent = rounds.length ? String(rounds.length) : "";
+
+  if (!rounds.length) {
+    renderLoopHistoryMessage(
+      list,
+      t("page.loopHistoryEmpty") || "No completed rounds yet",
+    );
+    return;
+  }
+
+  // 最近轮次在前（台账按完成顺序 append，故倒序渲染）
+  for (var r = rounds.length - 1; r >= 0; r--) {
+    var round = rounds[r];
+    if (!round || typeof round !== "object") continue;
+    list.appendChild(buildLoopHistoryRow(round));
+  }
+}
+
+function renderLoopHistoryMessage(list, message) {
+  var row = document.createElement("div");
+  row.className = "loop-history-empty";
+  row.textContent = message;
+  list.appendChild(row);
+}
+
+function buildLoopHistoryRow(round) {
+  var row = document.createElement("div");
+  row.className = "loop-history-row";
+  row.setAttribute("role", "listitem");
+
+  var head = document.createElement("div");
+  head.className = "loop-history-row-head";
+
+  var iter = document.createElement("span");
+  iter.className = "loop-history-iter";
+  iter.textContent =
+    (typeof round.iteration_label === "string" && round.iteration_label) ||
+    (typeof round.task_id === "string" ? round.task_id.slice(0, 12) : "—");
+  head.appendChild(iter);
+
+  if (typeof round.loop_phase === "string" && round.loop_phase) {
+    var phase = document.createElement("span");
+    phase.className = "loop-history-phase";
+    phase.textContent = round.loop_phase;
+    head.appendChild(phase);
+  }
+
+  if (typeof round.completed_at === "string" && round.completed_at) {
+    var time = document.createElement("span");
+    time.className = "loop-history-time";
+    var parsed = new Date(round.completed_at);
+    time.textContent = isNaN(parsed.getTime())
+      ? round.completed_at
+      : parsed.toLocaleString();
+    head.appendChild(time);
+  }
+  row.appendChild(head);
+
+  var verdict = round.verdict && typeof round.verdict === "object"
+    ? round.verdict
+    : {};
+  var parts = [];
+  if (typeof verdict.user_input === "string" && verdict.user_input.trim()) {
+    parts.push(verdict.user_input.trim());
+  }
+  if (Array.isArray(verdict.selected_options) && verdict.selected_options.length) {
+    parts.push("[" + verdict.selected_options.join(", ") + "]");
+  }
+  if (typeof verdict.image_count === "number" && verdict.image_count > 0) {
+    parts.push("(+" + verdict.image_count + " img)");
+  }
+  if (parts.length) {
+    var body = document.createElement("div");
+    body.className = "loop-history-verdict";
+    body.textContent = parts.join(" ");
+    row.appendChild(body);
+  }
+  return row;
 }
 
 /**

@@ -205,7 +205,7 @@ ai-intervention-agent 工具使用细节：
 - ⏱️ **输入即延长** —— 正在输入时倒计时自动延长、归零也绝不打断（无需任何手动按钮；两端一致的 typing-hold 语义，替代旧版 `+60s`/❄️ 冻结按钮）
 - 🟢 **SSE 实时状态指示** —— 角落 3 态徽章（绿/橙/红）提示与后端的同步状况
 - 📱 **PWA 安装支持** —— 提供 `manifest.webmanifest` + Service Worker，Web UI 可通过浏览器原生入口安装（Chrome / Edge 地址栏图标，或 iOS Safari 分享 → 添加到主屏幕）；为 iOS Safari 单独提供引导横幅指向系统原生入口（iOS 不触发 `beforeinstallprompt`，需要单独提示）；支持永久关闭
-- 📡 **离线可用** —— Service Worker 预缓存品牌化 `offline.html`，含中英双语重连提示、深浅色主题 + `prefers-reduced-motion` 支持，以及服务恢复后自动 reload 的后台 ping（替代浏览器默认 "无法访问此网站" 错误页）
+- 📡 **离线可用** —— Service Worker 预缓存品牌化 `offline.html`，复用主界面设计 token（含已保存的主题偏好），重连提示按浏览器语言显示（English / 简体中文 / 繁體中文）并支持 `prefers-reduced-motion`，以及服务恢复后自动 reload 的后台 ping（替代浏览器默认 "无法访问此网站" 错误页）
 - ♿ **WCAG 2.1 AA 无障碍** —— 所有焦点指示器、正文、状态色、模态浮层、主/次按钮、图标按钮均通过 WCAG 2.1 AA 对比度 + Name/Role/Value 审计（cycles 1-40 累计 240+ a11y / 正确性 / 一致性 / 并发安全 / API 契约 invariants 与 8,200+ 测试，每个 cycle 都引入新的 meta-lint 模式：setting 标签必须 i18n、async reset 必须二次确认、finally 块 DOM 引用必须 null-guard，cycle-35 **AST-based 锁获取顺序契约**，cycle-38 **跨运行时资源生命周期审计** (Python/Browser-JS/VS Code TS)，cycle-40 新增 **OpenAPI docstring 覆盖** + **i18n 未翻译键检测**）；键盘快捷键浮层 Tab trap + 关闭时恢复 opener 焦点；三个 `role="dialog"` 模态（设置、图片预览、代码粘贴）拥有一致的 ESC + 关闭按钮 + backdrop 点击关闭行为；支持 `prefers-reduced-motion` 与 `prefers-contrast: more` 适配系统高对比模式
 - 🛡️ **稳定安装** —— 基于 Flask 3.x + 保守的依赖锁版
   - 免疫 2026 年初 [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) —— 该 bug 让若干 MCP feedback 同类项目 `uvx ...@latest` 默认安装即报错
@@ -361,10 +361,18 @@ sequenceDiagram
 | `feedback_placeholder` | 每任务文本框 placeholder（覆盖全局 i18n） | 200 字符 | gemini-cli `ask_user` |
 | `auto_resubmit_timeout` | 每任务倒计时覆盖（0 = 禁用） | `[0, 3600]` 秒 | AIIA 原生 |
 | `predefined_options` | 多选 chip，可选 `default: true` 标记推荐项 | 10000 字符/条 | AIIA + 上游 parity |
+| `loop_id` + 4 个 loop 字段 | 把多轮反馈串成一个循环：目标、阶段、完成标准、轮次标签 | 32–500 字符 | AIIA loop 工程 |
 
 完整参数参考 + 一个综合调用示例（`Auth` 重构流程，组合全部 4 个 +
 `predefined_options`）见
 [`docs/mcp_tools.zh-CN.md#agent-模式专用参数cursor--composer--cline--augment--trae`](docs/mcp_tools.zh-CN.md#agent-模式专用参数cursor--composer--cline--augment--trae)。
+
+**Loop 工程**（长程自主循环）：携带同一 `loop_id` 的多轮任务会在
+prompt 上方渲染 loop 上下文条（目标/阶段/轮次 chip + 完成标准）、在
+任务 tab 上显示轮次徽标，并提供可折叠的「历史轮次」时间线（每轮的
+人类裁决摘要）——数据来自 `GET /api/loops` 的有界台账，不受「完成任
+务 10 秒清理」影响且跨服务重启保留。详见
+[`docs/mcp_tools.zh-CN.md#loop-工程参数长程自主循环`](docs/mcp_tools.zh-CN.md#loop-工程参数长程自主循环)。
 
 ### 用户端工作流特性（内置在 Web UI）
 
@@ -432,7 +440,7 @@ sequenceDiagram
 ```bash
 export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # 默认 127.0.0.1
 export AI_INTERVENTION_AGENT_WEB_UI_PORT=8181         # 默认 8080，范围 [1, 65535]
-export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=zh-CN    # auto / en / zh-CN
+export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=zh-CN    # auto / en / zh-CN / zh-TW
 uvx ai-intervention-agent
 ```
 

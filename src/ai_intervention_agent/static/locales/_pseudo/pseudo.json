@@ -68,7 +68,15 @@
     "copyCode": "[!! Çö·þý· çö·đé· !!]",
     "copied": "[!! Çö·þí·éđ· !!]",
     "copyFailed": "[!! Çö·þý· ƒá·íł·éđ· !!]",
-    "skipToContent": "[!! Šķ·íþ· ŧö· çö·ñŧ·éñ·ŧ !!]"
+    "skipToContent": "[!! Šķ·íþ· ŧö· çö·ñŧ·éñ·ŧ !!]",
+    "loopIdTitle": "[!! Łö·öþ· ÍĐ· !!]",
+    "loopPhaseTitle": "[!! Łö·öþ· þĥ·áš·é !!]",
+    "loopIterTitle": "[!! Íŧ·éř·áŧ·íö·ñ !!]",
+    "loopObjectiveLabel": "[!! Öƀ·ĵé·çŧ·íʋ·é !!]",
+    "loopCriteriaLabel": "[!! Šů·çç·éš·š ç·ří·ŧé·ří·á !!]",
+    "loopHistoryToggle": "[!! Řö·ůñ·đš· !!]",
+    "loopHistoryEmpty": "[!! Ñö· çö·ɱþ·łé·ŧé·đ ř·öů·ñđ·š ý·éŧ· !!]",
+    "loopHistoryError": "[!! Ƒá·íł·éđ· ŧö· łö·áđ· łö·öþ· ĥí·šŧ·öř·ý !!]"
   },
   "quickPhrases": {
     "label": "[!! Ǫů·íç·ķ ř·éþ·łí·éš· !!]",

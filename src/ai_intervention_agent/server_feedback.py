@@ -989,6 +989,59 @@ async def interactive_feedback(
             "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user.header`` schema.)"
         ),
     ),
+    loop_id: str | None = Field(
+        default=None,
+        description=(
+            "Loop engineering: optional stable identifier shared by every "
+            "feedback round that belongs to the same goal / outer loop "
+            "(agent-chosen, e.g. 'auth-refactor-2026-07'). Rounds that carry "
+            "the same loop_id are grouped in the UI so the human reviewer can "
+            "replay 'which rounds did this objective go through, and what was "
+            "decided each time'. Length: clamped to 64 characters server-side. "
+            "Omit for standalone one-shot questions (default behavior "
+            "unchanged)."
+        ),
+    ),
+    loop_objective: str | None = Field(
+        default=None,
+        description=(
+            "Loop engineering: optional one-sentence description of the "
+            "loop's goal (e.g. 'Migrate auth/session.py to PyJWT 2.x with "
+            "green integration tests'). Pass it on the first round of a "
+            "loop_id; later rounds may omit it. Shown to the reviewer as "
+            "loop context above the prompt. Length: clamped to 500 "
+            "characters server-side."
+        ),
+    ),
+    loop_phase: str | None = Field(
+        default=None,
+        description=(
+            "Loop engineering: optional free-form phase tag for this round, "
+            "e.g. 'investigate' / 'implement' / 'verify' / 'review'. Helps "
+            "the reviewer see where in the inner loop the agent currently "
+            "is. Length: clamped to 32 characters server-side."
+        ),
+    ),
+    success_criteria: str | None = Field(
+        default=None,
+        description=(
+            "Loop engineering: optional verifiable completion criteria the "
+            "human should judge the evidence against (e.g. 'pytest all "
+            "green + no new ruff warnings + docs regenerated'). Rendered "
+            "alongside the loop context so the verdict is made against an "
+            "explicit baseline. Length: clamped to 500 characters "
+            "server-side."
+        ),
+    ),
+    iteration_label: str | None = Field(
+        default=None,
+        description=(
+            "Loop engineering: optional round label such as 'iter-3' or "
+            "'attempt-2'. Shown with the loop context so multiple rounds "
+            "of the same loop are distinguishable at a glance. Length: "
+            "clamped to 32 characters server-side."
+        ),
+    ),
     feedback_type: str | None = Field(
         default=None,
         description="Accepted for compatibility; ignored by this server.",
@@ -1222,6 +1275,13 @@ async def interactive_feedback(
                     "feedback_placeholder": feedback_placeholder,
                     "question_type": question_type,
                     "header_label": header_label,
+                    # Loop engineering P1：loop 上下文透传；normalize/clamp
+                    # 统一在 task_queue.add_task 完成。
+                    "loop_id": loop_id,
+                    "loop_objective": loop_objective,
+                    "loop_phase": loop_phase,
+                    "success_criteria": success_criteria,
+                    "iteration_label": iteration_label,
                 },
                 timeout=5,
             )
@@ -1351,6 +1411,32 @@ async def interactive_feedback(
             # 返回配置的提示语，引导 AI 重新调用工具
             return server_config._make_resubmit_response()
 
+        # wait_for_task_completion 的降级返回（超时/任务 404）形态是
+        # ``{"text": resubmit_prompt}``——只可能来自 ``_make_resubmit_response
+        # (as_mcp=False)``（真实反馈 result 恒含 user_input / selected_options
+        # / images 键）。按 R47 计数器契约，"wait 阶段超时 / 任务丢失"属于
+        # ``failed_total``，不能记为 completed；R40 事件链同理应打
+        # ``task.failed(stage=wait)`` 而非 ``task.completed``。
+        if (
+            isinstance(result, dict)
+            and set(result.keys()) == {"text"}
+            and isinstance(result.get("text"), str)
+        ):
+            logger.event(
+                "task.failed",
+                task_id=task_id,
+                stage="wait",
+                reason="timeout_or_task_lost",
+                duration_ms=int((time.monotonic() - _task_t0) * 1000),
+            )
+            _bump_feedback_counter("failed_total")
+            await _emit_ctx_info(
+                ctx,
+                f"Task {task_id} timed out or was lost before human feedback arrived",
+                task_id=task_id,
+            )
+            return [TextContent(type="text", text=str(result["text"]))]
+
         logger.info("反馈请求处理完成")
         _completed_duration_ms = int((time.monotonic() - _task_t0) * 1000)
         logger.event(
@@ -1366,12 +1452,8 @@ async def interactive_feedback(
             duration_ms=_completed_duration_ms,
         )
 
-        # 解析返回：兼容新旧格式 + 兜底处理 {"text": "..."} 降级返回
+        # 解析返回：兼容新旧格式
         if isinstance(result, dict):
-            # wait_for_task_completion 的降级返回（超时/404）：{"text": "..."}
-            if set(result.keys()) == {"text"} and isinstance(result.get("text"), str):
-                return [TextContent(type="text", text=str(result["text"]))]
-
             # 新格式（结构化 JSON，可能含 images）
             if (
                 "images" in result

@@ -6,6 +6,8 @@
 
 ### `_prompt_utf8_size_for_guard(prompt: str) -> int`
 
+### `_normalize_optional_text(value: Any, max_length: int) -> str | None`
+
 ### `_capture_all_thread_stacks() -> str`
 
 ### `_scan_pending_and_dump_slow() -> int`
@@ -42,7 +44,7 @@
 
 ##### `clear_all_tasks(self) -> int`
 
-##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, predefined_options_defaults: list[bool] | None = None, feedback_placeholder: str | None = None, question_type: str | None = None, header_label: str | None = None, auto_resubmit_timeout_explicit: bool = False) -> bool`
+##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, predefined_options_defaults: list[bool] | None = None, feedback_placeholder: str | None = None, question_type: str | None = None, header_label: str | None = None, auto_resubmit_timeout_explicit: bool = False, loop_id: str | None = None, loop_objective: str | None = None, loop_phase: str | None = None, success_criteria: str | None = None, iteration_label: str | None = None) -> bool`
 
 ##### `get_task(self, task_id: str) -> Task | None`
 
@@ -65,6 +67,8 @@
 ##### `set_active_task(self, task_id: str) -> bool`
 
 ##### `complete_task(self, task_id: str, result: dict[str, Any]) -> bool`
+
+##### `get_loops_snapshot(self) -> list[dict[str, Any]]`
 
 ##### `remove_task(self, task_id: str) -> bool`
 

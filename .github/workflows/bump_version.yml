@@ -54,7 +54,13 @@ jobs:
             pyproject.toml
 
       - name: 执行版本号同步
-        run: uv run python scripts/bump_version.py ${{ inputs.version }}
+        # 通过 env 间接传入而不是直接 ${{ }} 内插到 shell：workflow_dispatch
+        # 仅维护者可触发，但 GitHub 官方 script-injection 加固指南（以及
+        # OSSF Scorecard）推荐所有用户可控输入一律走 env 变量 + 引号，
+        # 与下方 dependabot-auto-merge.yml 的 PR_URL 模式保持一致。
+        env:
+          NEW_VERSION: ${{ inputs.version }}
+        run: uv run python scripts/bump_version.py "$NEW_VERSION"
 
       # bump_version.py 内部已做跨文件写入，再跑一次 --check 等于冗余校验：
       # 任何文件漏刷、被其他工具回滚、手工输入错位，这一步都能立即失败，
@@ -63,9 +69,11 @@ jobs:
         run: uv run python scripts/bump_version.py --check
 
       - name: 提交并推送
+        env:
+          NEW_VERSION: ${{ inputs.version }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -m ":wrench: chore: bump version to ${{ inputs.version }}"
+          git commit -m ":wrench: chore: bump version to $NEW_VERSION"
           git push

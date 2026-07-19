@@ -347,17 +347,18 @@ def test_online_event_pings_before_reload_and_pagehide_clears_reload_timer() -> 
         """
     )
 
+    # 沙箱无 navigator → detectLang() 回退 'en' → 状态文案为英文
     assert json.loads(_run_node(script)) == {
         "afterOnline": {
             "timers": [{"id": 2, "delay": 0}],
             "reloads": 0,
-            "status": "网络已连接，重试中… / Online, retrying…",
+            "status": "Network restored — retrying…",
         },
         "afterPing": {
             "timers": [{"id": 4, "delay": 600}],
             "fetchCalls": 1,
             "reloads": 0,
-            "status": "服务已恢复，正在重新加载… / Service back, reloading…",
+            "status": "Service restored — reloading…",
         },
         "afterPagehide": {
             "timers": [],

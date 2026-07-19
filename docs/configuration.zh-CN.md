@@ -82,7 +82,7 @@ dev 模式内部优先级顺序：
 | --------------------------------------- | ----------------- | ----------------------- | ------------------------------------------------------------------- |
 | `AI_INTERVENTION_AGENT_WEB_UI_HOST`     | `web_ui.host`     | string                  | 典型值：`127.0.0.1`（loopback）/ `0.0.0.0`（局域网 / SSH 远程访问） |
 | `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int，`[1, 65535]`       | 越界或非数字会记 WARNING 并忽略，server 继续用 `config.toml` 中的值 |
-| `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN` | 强制设置 Web UI 语言，忽略系统 locale 与已保存的偏好                |
+| `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN` / `zh-TW` | 强制设置 Web UI 语言，忽略系统 locale 与已保存的偏好                |
 
 Server runtime 选择刻意**不是** env-var override。本地桌面 profile 继续使用
 `WebFeedbackUI.run()`；需要长期运行 / 远程访问时，应按
@@ -257,7 +257,7 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 
 | 配置项                 | 类型    | 默认值      | 说明                                                                                                                                                                                                                                                                                   |
 | ---------------------- | ------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"`                                                                                                                                                              |
+| `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"` / `"zh-TW"`                                                                                                                                                  |
 | `host`                 | string  | `127.0.0.1` | 可能会被 `network_security.bind_interface` 覆盖                                                                                                                                                                                                                                        |
 | `port`                 | number  | `8080`      | 范围 `[1, 65535]`                                                                                                                                                                                                                                                                      |
 | `debug`                | boolean | `false`     | 调试模式                                                                                                                                                                                                                                                                               |

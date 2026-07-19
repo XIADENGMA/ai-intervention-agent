@@ -1,5 +1,6 @@
 """任务队列管理 - 线程安全、状态管理、自动清理、延迟删除、持久化。"""
 
+import copy
 import json
 import logging
 import os
@@ -24,7 +25,15 @@ from ai_intervention_agent.runtime_constants import (
     AUTO_RESUBMIT_TIMEOUT_MIN,
 )
 from ai_intervention_agent.rw_lock import ReadWriteLock
-from ai_intervention_agent.task_constants import PLACEHOLDER_MAX_LENGTH
+from ai_intervention_agent.task_constants import (
+    LOOP_HISTORY_MAX_LOOPS,
+    LOOP_HISTORY_MAX_ROUNDS,
+    LOOP_ID_MAX_LENGTH,
+    LOOP_LABEL_MAX_LENGTH,
+    LOOP_TEXT_MAX_LENGTH,
+    LOOP_VERDICT_MAX_LENGTH,
+    PLACEHOLDER_MAX_LENGTH,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +108,22 @@ HEADER_LABEL_MAX_LENGTH: int = 16
 源自 gemini-cli ``ask_user.header`` 设计（≤16 chars, "chip/tag" 显示）。
 理由：chip 必须能在 multi-task pane 顶部窄横条内 fit；长 label
 会折行或被截断，反而损害"快速识别领域"的本意。"""
+
+
+def _normalize_optional_text(value: Any, max_length: int) -> str | None:
+    """Loop engineering P1 — 可选自由文本字段的统一 normalize。
+
+    规则与 ``feedback_placeholder`` / ``header_label`` 的既有路径一致：
+    非 str → None；strip 后为空 → None；超长静默截断到 ``max_length``。
+    ``add_task``（入参）与 ``_restore``（快照 round-trip）共用本函数，
+    避免两处 clamp 逻辑漂移。
+    """
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    return stripped[:max_length]
 
 
 _LOCK_WATCHDOG_TIMEOUT_S: float = 30.0
@@ -315,6 +340,24 @@ class Task(BaseModel):
     # 设计点：clamp 16 chars；为何不放 task tab —— tab 已挤
     # (id + ring)；task pane 顶部空间充裕且与 prompt 视觉相邻。
     header_label: str | None = None
+    # ------------------------------------------------------------------
+    # Loop engineering P1（docs/loop-engineering-design-notes.zh-CN.md）
+    # ------------------------------------------------------------------
+    # 5 个可选字段让 agent 把"同一目标的多轮任务"串成一个 loop：
+    #   - loop_id：同一目标多轮任务共享的稳定 ID（agent 自定义，≤64 chars）；
+    #   - loop_objective：目标一句话描述（首轮传入即可，≤500 chars）；
+    #   - loop_phase：当前阶段（investigate/implement/verify/review 等
+    #     自由文本，≤32 chars）；
+    #   - success_criteria：可验证的完成判据，人审阅时的对照基准（≤500）；
+    #   - iteration_label：轮次标签，如 "iter-3" / "attempt-2"（≤32）。
+    # 全部 None 时行为与历史版本逐字节一致（旧客户端零破坏）；持久化
+    # round-trip 兼容模式与 R702 的 auto_resubmit_timeout_explicit 相同
+    # （旧快照缺 key → item.get 返回 None → 默认值）。
+    loop_id: str | None = None
+    loop_objective: str | None = None
+    loop_phase: str | None = None
+    success_criteria: str | None = None
+    iteration_label: str | None = None
 
     def get_remaining_time(self, now_monotonic: float | None = None) -> int:
         """计算剩余倒计时（使用单调时间）。
@@ -593,6 +636,17 @@ class TaskQueue:
         self._last_hotpath_cleanup_monotonic: float = float("-inf")
         self._hotpath_cleanup_lock = Lock()
 
+        # Loop 工程 P3：完成轮次台账。key = loop_id，value 形如
+        # {"loop_id", "objective", "success_criteria", "updated_at",
+        #  "rounds": [{"task_id", "iteration_label", "loop_phase",
+        #              "header_label", "completed_at", "verdict"}]}。
+        # 「已完成任务 10s 清理」只删任务本体；台账保留压缩 metadata
+        # （verdict 文本截断、图片只记数量），让人回看「这个目标经历了
+        # 哪几轮、每轮人说了什么」。dict 迭代顺序即更新顺序（每次更新
+        # pop 后重插到尾部），驱逐时弹队首 = 最久未更新的 loop。
+        # 与 _tasks 共用 self._lock（写路径都在 complete_task 内）。
+        self._loop_history: dict[str, dict[str, Any]] = {}
+
         self._persist_path: Path | None = Path(persist_path) if persist_path else None
         if self._persist_path:
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
@@ -614,16 +668,20 @@ class TaskQueue:
         """清理所有任务（重置队列）
 
         删除所有任务并重置队列状态，用于服务启动时清理残留任务。
+        Loop 工程 P3：「重置队列」语义下 loop 台账一并清空（历史轮次
+        与任务同源；测试隔离也依赖这里的全量重置）。
 
         """
         with _watched_write_lock(self._lock, "clear_all_tasks"):
             count = len(self._tasks)
+            had_loop_history = bool(self._loop_history)
             self._tasks.clear()
+            self._loop_history.clear()
             self._active_task_id = None
             if count > 0:
                 logger.info(f"清理了所有残留任务，共 {count} 个")
 
-        if count > 0:
+        if count > 0 or had_loop_history:
             self._persist()
         return count
 
@@ -638,6 +696,11 @@ class TaskQueue:
         question_type: str | None = None,
         header_label: str | None = None,
         auto_resubmit_timeout_explicit: bool = False,
+        loop_id: str | None = None,
+        loop_objective: str | None = None,
+        loop_phase: str | None = None,
+        success_criteria: str | None = None,
+        iteration_label: str | None = None,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
         # R53-A：在拿写锁之前先做 prompt size 校验。锁外校验有两个好处：
@@ -725,6 +788,19 @@ class TaskQueue:
                 feedback_placeholder=normalized_placeholder,
                 question_type=normalized_question_type,
                 header_label=normalized_header_label,
+                # Loop engineering P1：5 个可选字段统一 normalize
+                # （strip → 空归 None → 截断），与既有可选文本字段同模式。
+                loop_id=_normalize_optional_text(loop_id, LOOP_ID_MAX_LENGTH),
+                loop_objective=_normalize_optional_text(
+                    loop_objective, LOOP_TEXT_MAX_LENGTH
+                ),
+                loop_phase=_normalize_optional_text(loop_phase, LOOP_LABEL_MAX_LENGTH),
+                success_criteria=_normalize_optional_text(
+                    success_criteria, LOOP_TEXT_MAX_LENGTH
+                ),
+                iteration_label=_normalize_optional_text(
+                    iteration_label, LOOP_LABEL_MAX_LENGTH
+                ),
             )
 
             # 【性能优化】直接添加到字典，Python 3.7+ 保持插入顺序
@@ -1147,6 +1223,15 @@ class TaskQueue:
             task.completed_at = datetime.now(UTC)
             status_events.append((task_id, old_status, TaskStatus.COMPLETED))
 
+            # Loop 工程 P3：loop 成员任务完成时把压缩 metadata 记入台账
+            # （任务本体仍按 10s 清理）。锁内执行：只做有界 dict/list
+            # 操作，代价 O(1)；放锁外会与 cleanup 竞态（任务先被删）。
+            # 仅在 pending/active → completed 的**首次**转换时记录：
+            # double-complete（用户提交与自动重提并发）会二次进入本方法，
+            # 不加 old_status 守卫会写出重复轮次。
+            if task.loop_id and old_status != TaskStatus.COMPLETED:
+                self._record_loop_round(task, result)
+
             if self._active_task_id == task_id:
                 self._active_task_id = None
                 logger.info(f"任务完成并清空激活任务: {task_id}")
@@ -1171,6 +1256,166 @@ class TaskQueue:
 
         self._persist()
         return True
+
+    def _record_loop_round(self, task: Task, result: dict[str, Any]) -> None:
+        """把完成的 loop 成员任务压缩为台账轮次条目（调用方必须已持写锁）。
+
+        Loop 工程 P3 核心：任务本体 10s 后被清理，但 loop 的历史轮次
+        需要可回看。条目只保留**压缩 metadata**：
+
+        - verdict 文本按 ``LOOP_VERDICT_MAX_LENGTH`` 截断（提交内容摘要，
+          不是全文档案——全文导出走 ``GET /api/tasks/export``）；
+        - 图片**只记数量**，绝不存 base64（单图可达 MB 级，台账要常驻内存）；
+        - prompt 大字段完全不进台账。
+
+        目标/完成标准是 loop 级属性（多轮重复传或只在首轮传），采用
+        「最后一个非空值胜出」：后续轮次省略时保留旧值，显式更新时跟进。
+
+        有界性：
+
+        - 每 loop 最多 ``LOOP_HISTORY_MAX_ROUNDS`` 轮（丢最旧）；
+        - 全局最多 ``LOOP_HISTORY_MAX_LOOPS`` 个 loop（驱逐最久未更新，
+          dict 迭代顺序即更新顺序——每次更新 pop 后重插到尾部）。
+        """
+        loop_id = task.loop_id
+        if not loop_id:
+            return
+
+        user_input = result.get("user_input") or result.get("feedback") or ""
+        if not isinstance(user_input, str):
+            user_input = str(user_input)
+        selected = result.get("selected_options")
+        if not isinstance(selected, list):
+            selected = []
+        images = result.get("images")
+        image_count = len(images) if isinstance(images, list) else 0
+
+        entry: dict[str, Any] = {
+            "task_id": task.task_id,
+            "iteration_label": task.iteration_label,
+            "loop_phase": task.loop_phase,
+            "header_label": task.header_label,
+            "completed_at": (
+                task.completed_at.isoformat()
+                if task.completed_at
+                else datetime.now(UTC).isoformat()
+            ),
+            "verdict": {
+                "user_input": user_input[:LOOP_VERDICT_MAX_LENGTH],
+                "selected_options": [
+                    str(opt)[:LOOP_VERDICT_MAX_LENGTH] for opt in selected
+                ],
+                "image_count": image_count,
+            },
+        }
+
+        bucket = self._loop_history.pop(loop_id, None)
+        if bucket is None:
+            bucket = {
+                "loop_id": loop_id,
+                "objective": None,
+                "success_criteria": None,
+                "rounds": [],
+            }
+        if task.loop_objective:
+            bucket["objective"] = task.loop_objective
+        if task.success_criteria:
+            bucket["success_criteria"] = task.success_criteria
+
+        rounds = bucket.get("rounds")
+        if not isinstance(rounds, list):
+            rounds = []
+            bucket["rounds"] = rounds
+        rounds.append(entry)
+        if len(rounds) > LOOP_HISTORY_MAX_ROUNDS:
+            del rounds[: len(rounds) - LOOP_HISTORY_MAX_ROUNDS]
+        bucket["updated_at"] = entry["completed_at"]
+
+        # pop + 重插 = 移到尾部（最近更新）；超限弹队首（最久未更新）
+        self._loop_history[loop_id] = bucket
+        while len(self._loop_history) > LOOP_HISTORY_MAX_LOOPS:
+            evicted_id = next(iter(self._loop_history))
+            self._loop_history.pop(evicted_id, None)
+            logger.info(f"loop 台账超限，驱逐最久未更新的 loop: {evicted_id}")
+
+    def get_loops_snapshot(self) -> list[dict[str, Any]]:
+        """获取 loop 台账快照 + 各 loop 当前在队列中的活跃轮次。
+
+        Loop 工程 P3 读路径（``GET /api/loops`` 的数据源）：
+
+        - ``rounds``：已完成轮次的压缩台账（见 ``_record_loop_round``）；
+        - ``live_tasks``：仍在队列中、携带同一 ``loop_id`` 的任务
+          （pending/active/completed-未清理），轻量投影（不含 prompt 全文）；
+        - 一个 loop 允许只有 live_tasks 没有 rounds（首轮尚未完成），
+          也允许只有 rounds 没有 live_tasks（全部轮次已完成清理）。
+
+        返回:
+            list[dict]: 最近更新的 loop 在前。每项含 loop_id / objective /
+            success_criteria / updated_at / rounds / live_tasks。
+
+        线程安全:
+            读锁下深拷贝台账 + 投影活任务，返回值与内部状态零共享。
+        """
+        with self._lock.read_lock():
+            snapshot: list[dict[str, Any]] = []
+            live_by_loop: dict[str, list[dict[str, Any]]] = {}
+            for task in self._tasks.values():
+                if not task.loop_id:
+                    continue
+                live_by_loop.setdefault(task.loop_id, []).append(
+                    {
+                        "task_id": task.task_id,
+                        "status": task.status,
+                        "iteration_label": task.iteration_label,
+                        "loop_phase": task.loop_phase,
+                        "header_label": task.header_label,
+                        "created_at": task.created_at.isoformat(),
+                    }
+                )
+
+            seen: set[str] = set()
+            # dict 迭代顺序 = 更新顺序（旧→新）；reversed 让最近更新在前
+            for loop_id in reversed(list(self._loop_history)):
+                bucket = self._loop_history[loop_id]
+                seen.add(loop_id)
+                snapshot.append(
+                    {
+                        "loop_id": loop_id,
+                        "objective": bucket.get("objective"),
+                        "success_criteria": bucket.get("success_criteria"),
+                        "updated_at": bucket.get("updated_at"),
+                        "rounds": copy.deepcopy(bucket.get("rounds", [])),
+                        "live_tasks": live_by_loop.get(loop_id, []),
+                    }
+                )
+
+            # 只有活任务、还没有任何完成轮次的 loop（首轮进行中）
+            for loop_id, live_tasks in live_by_loop.items():
+                if loop_id in seen:
+                    continue
+                # 从活任务里提取 loop 级属性（最后一个非空值胜出，
+                # 与台账同一语义）
+                objective = None
+                criteria = None
+                for task in self._tasks.values():
+                    if task.loop_id != loop_id:
+                        continue
+                    if task.loop_objective:
+                        objective = task.loop_objective
+                    if task.success_criteria:
+                        criteria = task.success_criteria
+                snapshot.append(
+                    {
+                        "loop_id": loop_id,
+                        "objective": objective,
+                        "success_criteria": criteria,
+                        "updated_at": None,
+                        "rounds": [],
+                        "live_tasks": live_tasks,
+                    }
+                )
+
+            return snapshot
 
     def remove_task(self, task_id: str) -> bool:
         """移除任务（立即删除）
@@ -1734,11 +1979,22 @@ class TaskQueue:
                             "feedback_placeholder": task.feedback_placeholder,
                             "question_type": task.question_type,
                             "header_label": task.header_label,
+                            # Loop engineering P1：loop 上下文随快照落盘，
+                            # 重启后仍能按 loop_id 关联多轮任务。
+                            "loop_id": task.loop_id,
+                            "loop_objective": task.loop_objective,
+                            "loop_phase": task.loop_phase,
+                            "success_criteria": task.success_criteria,
+                            "iteration_label": task.iteration_label,
                         }
                     )
                 active_id = self._active_task_id
+                # Loop 工程 P3：台账随快照落盘（锁内深拷贝——dump 在锁外
+                # 执行，浅引用会与下一次 complete_task 的就地 append 竞态）。
+                # 台账有界（20 loop × 50 轮 × 压缩条目），拷贝代价可忽略。
+                loop_history_snapshot = copy.deepcopy(self._loop_history)
 
-            if not snapshot:
+            if not snapshot and not loop_history_snapshot:
                 self._persist_path.unlink(missing_ok=True)
                 logger.debug("任务快照为空，已删除持久化文件")
                 return
@@ -1747,6 +2003,7 @@ class TaskQueue:
                 "version": 1,
                 "active_task_id": active_id,
                 "tasks": snapshot,
+                "loop_history": loop_history_snapshot,
                 "saved_at": datetime.now(UTC).isoformat(),
             }
 
@@ -1890,7 +2147,9 @@ class TaskQueue:
                         predefined_options_defaults=item.get(
                             "predefined_options_defaults"
                         ),
-                        auto_resubmit_timeout=item.get("auto_resubmit_timeout", 240),
+                        auto_resubmit_timeout=item.get(
+                            "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
+                        ),
                         # R702：显式标记 round-trip——旧快照无该 key 时
                         # bool(None)=False，行为与修复前一致（跟随热更新）
                         auto_resubmit_timeout_explicit=bool(
@@ -1902,6 +2161,24 @@ class TaskQueue:
                         feedback_placeholder=restored_placeholder,
                         question_type=restored_qt,
                         header_label=restored_header,
+                        # Loop engineering P1 round-trip：旧快照缺 key 时
+                        # ``item.get`` 返回 None → normalize 归 None，行为
+                        # 与新增前逐字节一致（向后兼容）。
+                        loop_id=_normalize_optional_text(
+                            item.get("loop_id"), LOOP_ID_MAX_LENGTH
+                        ),
+                        loop_objective=_normalize_optional_text(
+                            item.get("loop_objective"), LOOP_TEXT_MAX_LENGTH
+                        ),
+                        loop_phase=_normalize_optional_text(
+                            item.get("loop_phase"), LOOP_LABEL_MAX_LENGTH
+                        ),
+                        success_criteria=_normalize_optional_text(
+                            item.get("success_criteria"), LOOP_TEXT_MAX_LENGTH
+                        ),
+                        iteration_label=_normalize_optional_text(
+                            item.get("iteration_label"), LOOP_LABEL_MAX_LENGTH
+                        ),
                     )
                 except Exception as task_err:
                     skipped += 1
@@ -1922,6 +2199,12 @@ class TaskQueue:
                 self._active_task_id = first_id
                 self._tasks[first_id].status = TaskStatus.ACTIVE
 
+            # Loop 工程 P3：台账 round-trip。旧快照缺 key → 空台账
+            # （向后兼容）；单个 loop 条目损坏只跳过该条（与任务恢复的
+            # per-item 容错同一模式）。恢复时重新 clamp 边界，防手改
+            # 文件绕过上限。
+            self._restore_loop_history(data.get("loop_history"))
+
             if restored > 0:
                 logger.info(
                     f"从持久化文件恢复了 {restored} 个未完成任务"
@@ -1933,6 +2216,46 @@ class TaskQueue:
         except Exception as e:
             logger.warning(f"任务恢复失败（将使用空队列）: {e}", exc_info=True)
             self._quarantine_corrupt_persist_file(reason=str(e))
+
+    def _restore_loop_history(self, raw: Any) -> None:
+        """从快照数据恢复 loop 台账（仅在 ``_restore`` 内调用，无需持锁——
+        ``__init__`` 阶段尚无并发访问者）。
+
+        防御性解析：非 dict 整体忽略；单个 loop 条目形状不对只跳过该条；
+        rounds 裁到 ``LOOP_HISTORY_MAX_ROUNDS``，loop 总数裁到
+        ``LOOP_HISTORY_MAX_LOOPS``（保留迭代顺序的最后 N 个 = 最近更新）。
+        """
+        if not isinstance(raw, dict):
+            return
+        restored: dict[str, dict[str, Any]] = {}
+        for loop_id, bucket in raw.items():
+            if not isinstance(loop_id, str) or not loop_id.strip():
+                continue
+            if not isinstance(bucket, dict):
+                continue
+            rounds_raw = bucket.get("rounds")
+            rounds = (
+                [r for r in rounds_raw if isinstance(r, dict)]
+                if isinstance(rounds_raw, list)
+                else []
+            )
+            restored[loop_id] = {
+                "loop_id": loop_id,
+                "objective": _normalize_optional_text(
+                    bucket.get("objective"), LOOP_TEXT_MAX_LENGTH
+                ),
+                "success_criteria": _normalize_optional_text(
+                    bucket.get("success_criteria"), LOOP_TEXT_MAX_LENGTH
+                ),
+                "updated_at": bucket.get("updated_at"),
+                "rounds": rounds[-LOOP_HISTORY_MAX_ROUNDS:],
+            }
+        if len(restored) > LOOP_HISTORY_MAX_LOOPS:
+            keep = list(restored)[-LOOP_HISTORY_MAX_LOOPS:]
+            restored = {k: restored[k] for k in keep}
+        if restored:
+            self._loop_history = restored
+            logger.info(f"从持久化文件恢复了 {len(restored)} 个 loop 台账")
 
     def _quarantine_corrupt_persist_file(self, *, reason: str) -> None:
         """把损坏的 persist 文件重命名为 ``<path>.corrupt-<ISO>``，避免被

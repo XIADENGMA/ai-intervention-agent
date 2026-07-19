@@ -3162,6 +3162,20 @@
 
       tab.appendChild(taskId)
 
+      // Loop 工程 P4（与 web 端 .task-tab-iter 同构）：轮次徽标。
+      // 多任务并行时让用户扫一眼 tab 栏就能看出各任务处于第几轮；
+      // 非 loop 任务不渲染额外 DOM。
+      if (
+        typeof task.iteration_label === 'string' &&
+        task.iteration_label.trim() !== ''
+      ) {
+        const iterBadge = document.createElement('span')
+        iterBadge.className = 'task-tab-iter'
+        iterBadge.textContent = task.iteration_label.trim()
+        iterBadge.setAttribute('aria-hidden', 'true')
+        tab.appendChild(iterBadge)
+      }
+
       /* 为设置了自动重调超时的任务添加倒计时圆环显示 */
       if (task.auto_resubmit_timeout > 0) {
         const countdown = document.createElement('div')
@@ -3625,6 +3639,20 @@
         prompt_html: '',
         predefined_options: predefined,
         predefined_options_defaults: predefinedDefaults,
+        // R691 任务级字段：降级路径（config 拉取失败 → 任务详情兜底）
+        // 历史上漏传这三个字段，导致兜底渲染时 header chip / 占位符 /
+        // yesno 按钮组被误清空——GET /api/tasks/<id> 本就返回它们，
+        // 一并透传（loop 自审查时发现的同类既有缺口）。
+        header_label: t.header_label,
+        feedback_placeholder: t.feedback_placeholder,
+        question_type: t.question_type,
+        // Loop 工程 P4：降级路径也透传 loop 上下文，loop 任务在兜底
+        // 渲染时不丢上下文条
+        loop_id: t.loop_id,
+        loop_objective: t.loop_objective,
+        loop_phase: t.loop_phase,
+        success_criteria: t.success_criteria,
+        iteration_label: t.iteration_label,
         task_id: t.task_id ? String(t.task_id) : id,
         auto_resubmit_timeout:
           typeof t.auto_resubmit_timeout === 'number' && Number.isFinite(t.auto_resubmit_timeout)
@@ -3993,6 +4021,10 @@
     }
     if (typeof updateYesnoButtonGroup === 'function') {
       updateYesnoButtonGroup(config.question_type)
+    }
+    // Loop 工程 P4：loop 上下文条（/api/config 已随 P1 返回 5 字段）
+    if (typeof updateLoopContext === 'function') {
+      updateLoopContext(config)
     }
 
     // 【对齐原始实现】任务切换时恢复输入/图片，避免串任务；同任务轮询不覆盖用户输入
@@ -4557,6 +4589,216 @@
       chip.textContent = ''
       chip.classList.add('hidden')
       chip.removeAttribute('aria-label')
+    }
+  }
+
+  // Loop 工程 P4（与 web 端 multi_task.js::updateLoopContext 同构）：
+  // 活动任务的 loop 上下文条。5 个可选 loop 字段任一非空 → 显示并逐
+  // 字段填充（textContent，XSS 安全）；全空（普通任务）→ 整条隐藏。
+  function updateLoopContext(task) {
+    const container = document.getElementById('taskLoopContext')
+    if (!container) return
+
+    function clean(value) {
+      return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+    }
+    const loopId = clean(task && task.loop_id)
+    const loopPhase = clean(task && task.loop_phase)
+    const iterLabel = clean(task && task.iteration_label)
+    const objective = clean(task && task.loop_objective)
+    const criteria = clean(task && task.success_criteria)
+
+    // Loop 视图：同步历史轮次 toggle（loop 变化时自动收起旧面板）。
+    // 放在 early-return 之前，切到非 loop 任务时也能复位面板状态。
+    // typeof 守卫：部分单测 harness 只提取本函数体独立运行。
+    if (typeof updateLoopHistoryToggle === 'function') {
+      updateLoopHistoryToggle(loopId)
+    }
+
+    if (!loopId && !loopPhase && !iterLabel && !objective && !criteria) {
+      container.classList.add('hidden')
+      return
+    }
+
+    function setChip(elementId, value) {
+      const el = document.getElementById(elementId)
+      if (!el) return
+      if (value) {
+        el.textContent = value
+        el.classList.remove('hidden')
+      } else {
+        el.textContent = ''
+        el.classList.add('hidden')
+      }
+    }
+    setChip('loopChipId', loopId)
+    setChip('loopChipPhase', loopPhase)
+    setChip('loopChipIter', iterLabel)
+
+    function setLine(lineId, valueId, value) {
+      const line = document.getElementById(lineId)
+      const valueEl = document.getElementById(valueId)
+      if (!line || !valueEl) return
+      if (value) {
+        valueEl.textContent = value
+        line.classList.remove('hidden')
+      } else {
+        valueEl.textContent = ''
+        line.classList.add('hidden')
+      }
+    }
+    setLine('loopObjectiveLine', 'loopObjectiveValue', objective)
+    setLine('loopCriteriaLine', 'loopCriteriaValue', criteria)
+
+    container.classList.remove('hidden')
+  }
+
+  // Loop 视图（与 web 端 multi_task.js 同构）：历史轮次折叠面板。
+  // 点击展开时拉取 GET /api/loops，按当前 loop_id 渲染已完成轮次
+  // 时间线（最近在前）；任务/loop 切换时自动收起。textContent 填充。
+  let currentLoopId = null
+
+  function updateLoopHistoryToggle(loopId) {
+    const toggle = document.getElementById('loopHistoryToggle')
+    if (!toggle) return
+    if (currentLoopId !== loopId) {
+      currentLoopId = loopId
+      collapseLoopHistory()
+    }
+    if (loopId) {
+      toggle.classList.remove('hidden')
+      if (!toggle.dataset.bound) {
+        toggle.dataset.bound = '1'
+        toggle.addEventListener('click', toggleLoopHistory)
+      }
+    } else {
+      toggle.classList.add('hidden')
+    }
+  }
+
+  function collapseLoopHistory() {
+    const toggle = document.getElementById('loopHistoryToggle')
+    const list = document.getElementById('loopHistoryList')
+    const count = document.getElementById('loopHistoryCount')
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', 'false')
+      toggle.classList.remove('expanded')
+    }
+    if (list) {
+      list.classList.add('hidden')
+      list.textContent = ''
+    }
+    if (count) count.textContent = ''
+  }
+
+  function renderLoopHistoryMessage(list, message) {
+    const row = document.createElement('div')
+    row.className = 'loop-history-empty'
+    row.textContent = message
+    list.appendChild(row)
+  }
+
+  function buildLoopHistoryRow(round) {
+    const row = document.createElement('div')
+    row.className = 'loop-history-row'
+    row.setAttribute('role', 'listitem')
+
+    const head = document.createElement('div')
+    head.className = 'loop-history-row-head'
+
+    const iter = document.createElement('span')
+    iter.className = 'loop-history-iter'
+    iter.textContent =
+      (typeof round.iteration_label === 'string' && round.iteration_label) ||
+      (typeof round.task_id === 'string' ? round.task_id.slice(0, 12) : '—')
+    head.appendChild(iter)
+
+    if (typeof round.loop_phase === 'string' && round.loop_phase) {
+      const phase = document.createElement('span')
+      phase.className = 'loop-history-phase'
+      phase.textContent = round.loop_phase
+      head.appendChild(phase)
+    }
+
+    if (typeof round.completed_at === 'string' && round.completed_at) {
+      const time = document.createElement('span')
+      time.className = 'loop-history-time'
+      const parsed = new Date(round.completed_at)
+      time.textContent = isNaN(parsed.getTime())
+        ? round.completed_at
+        : parsed.toLocaleString()
+      head.appendChild(time)
+    }
+    row.appendChild(head)
+
+    const verdict = round.verdict && typeof round.verdict === 'object' ? round.verdict : {}
+    const parts = []
+    if (typeof verdict.user_input === 'string' && verdict.user_input.trim()) {
+      parts.push(verdict.user_input.trim())
+    }
+    if (Array.isArray(verdict.selected_options) && verdict.selected_options.length) {
+      parts.push('[' + verdict.selected_options.join(', ') + ']')
+    }
+    if (typeof verdict.image_count === 'number' && verdict.image_count > 0) {
+      parts.push('(+' + verdict.image_count + ' img)')
+    }
+    if (parts.length) {
+      const body = document.createElement('div')
+      body.className = 'loop-history-verdict'
+      body.textContent = parts.join(' ')
+      row.appendChild(body)
+    }
+    return row
+  }
+
+  async function toggleLoopHistory() {
+    const toggle = document.getElementById('loopHistoryToggle')
+    const list = document.getElementById('loopHistoryList')
+    if (!toggle || !list) return
+
+    if (toggle.getAttribute('aria-expanded') === 'true') {
+      collapseLoopHistory()
+      return
+    }
+
+    const loopId = currentLoopId
+    if (!loopId) return
+
+    toggle.setAttribute('aria-expanded', 'true')
+    toggle.classList.add('expanded')
+    list.textContent = ''
+    list.classList.remove('hidden')
+
+    let loop = null
+    try {
+      const resp = await fetch(SERVER_URL + '/api/loops', { cache: 'no-store' })
+      if (!resp.ok) throw new Error('HTTP ' + resp.status)
+      const data = await resp.json()
+      if (data && data.success && Array.isArray(data.loops)) {
+        loop = data.loops.find(l => l && l.loop_id === loopId) || null
+      }
+    } catch (e) {
+      renderLoopHistoryMessage(list, t('ui.loop.historyError'))
+      return
+    }
+
+    // 用户可能在 await 期间切换了任务 → 面板已被 collapse，丢弃过期渲染
+    if (currentLoopId !== loopId) return
+    if (toggle.getAttribute('aria-expanded') !== 'true') return
+
+    const rounds = loop && Array.isArray(loop.rounds) ? loop.rounds : []
+    const countEl = document.getElementById('loopHistoryCount')
+    if (countEl) countEl.textContent = rounds.length ? String(rounds.length) : ''
+
+    if (!rounds.length) {
+      renderLoopHistoryMessage(list, t('ui.loop.historyEmpty'))
+      return
+    }
+
+    for (let r = rounds.length - 1; r >= 0; r--) {
+      const round = rounds[r]
+      if (!round || typeof round !== 'object') continue
+      list.appendChild(buildLoopHistoryRow(round))
     }
   }
 

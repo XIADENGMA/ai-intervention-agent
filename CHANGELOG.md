@@ -11,6 +11,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Loop engineering (P1+P2, design notes in
+  `docs/loop-engineering-design-notes.zh-CN.md`): `interactive_feedback`
+  accepts five optional loop-context parameters (`loop_id`,
+  `loop_objective`, `loop_phase`, `success_criteria`,
+  `iteration_label`) so multi-round autonomous loops can tell the human
+  reviewer which objective, phase, and iteration each feedback request
+  belongs to. The fields are normalized and clamped like other per-task
+  metadata, persist across restarts (older snapshots restore with the
+  fields unset), and flow through `POST /api/tasks`, `GET /api/tasks`,
+  `GET /api/tasks/<id>`, `GET /api/config`, and the task export. The
+  Web UI renders a loop-context strip above the prompt (loop / phase /
+  iteration chips plus objective and success-criteria lines) and an
+  iteration badge on task tabs; non-loop tasks render exactly as
+  before. The VS Code webview mirrors both surfaces (P4) with the same
+  helper semantics, VS Code theme variables, and `ui.loop.*` i18n keys
+  across en / zh-CN / zh-TW. Completed loop rounds are preserved past
+  the 10-second completed-task cleanup in a bounded ledger (P3: 20
+  loops x 50 rounds, verdict text truncated to 200 chars, images stored
+  as a count only) that persists across restarts, and the new
+  `GET /api/loops` endpoint returns the ledger grouped by `loop_id`
+  together with each loop's still-queued tasks. The loop-context strip
+  gains a collapsible "Rounds" timeline (web + VS Code webview) that
+  loads the ledger on demand and shows each completed round's iteration
+  label, phase, completion time, and verdict summary.
 - Keep the countdown alive while the user is typing: the frontend
   auto-extends the deadline through the server extend endpoint (R689,
   bounded by the per-task extends quota), and the MCP backend wait now
@@ -25,6 +49,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Pass `header_label` / `feedback_placeholder` / `question_type` (and the
+  new loop-context fields) through the VS Code webview's config-fallback
+  path: when `/api/config` fails and the webview renders from the task
+  detail endpoint instead, these task-level fields were silently dropped,
+  so the header chip, per-task placeholder, and yes/no button group
+  disappeared on fallback renders.
+- Give zh-TW the same first-screen treatment as en / zh-CN: the template
+  context now inlines `zh-TW.json` (skipping the extra locale fetch that
+  Traditional Chinese users always paid) and renders `<html lang="zh-TW">`
+  instead of falling back to `en` before client-side i18n kicks in.
+- Document `zh-TW` in the `web_ui.language` value lists (configuration
+  docs + README env-var examples); the code and `config.toml.default`
+  already accepted it but the docs still said `auto / en / zh-CN` only.
+- Harden the `bump_version.yml` workflow against shell script injection:
+  `${{ inputs.version }}` is now passed through a quoted `NEW_VERSION`
+  env var instead of being interpolated directly into `run:` commands,
+  matching the GitHub Actions security guide and the existing
+  `dependabot-auto-merge.yml` pattern.
+- Count backend-timeout / task-lost fallbacks as `failed_total` (with a
+  `task.failed` stage=wait event) instead of `completed_total` in the
+  `interactive_feedback` runtime counters, matching the documented R47
+  counter contract.
+- Probe the task-queue snapshot in `aiia://server/info` through the real
+  `get_task_count()` API; the old probe looked up `size()` /
+  `pending_count()` methods that never existed, so the block never
+  reported queue depth.
+- Restore persisted tasks with the shared `AUTO_RESUBMIT_TIMEOUT_DEFAULT`
+  constant instead of a hardcoded `240` literal.
 - Fix the "ghost submit" root cause (R702): after a server restart, the
   first task/config request lazily registered the feedback hot-reload
   callback and immediately ran a sync that overwrote every open task's
@@ -59,6 +111,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Redesign the PWA offline fallback page (`offline.html`) to match the
+  main web UI: it reuses the Anthropic design tokens (warm charcoal
+  dark / cream light backgrounds, terracotta button with the shared
+  `.btn` hover treatment, hairline card top border) and follows the
+  theme saved in `localStorage['theme-preference']` before falling back
+  to the system preference. The copy is no longer bilingual — the page
+  picks a single language at runtime from the browser preference
+  (`navigator.language`, folded with the same rules as `i18n.js`:
+  en / zh-CN / zh-TW, unknown → English), with all three message sets
+  inlined so the page stays self-contained offline.
 - Migrate the dark theme to a Claude-style warm charcoal palette
   (R697): backgrounds move from the cool purple-gray family to
   `#1f1e1d`/`#262624`/`#30302e`, the primary accent changes from purple

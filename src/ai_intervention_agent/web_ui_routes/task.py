@@ -1203,6 +1203,26 @@ class TaskRoutesMixin:
                             type: string
                             nullable: true
                             description: 短标签 chip (≤16 chars), 渲染在 task pane prompt 之上
+                          loop_id:
+                            type: string
+                            nullable: true
+                            description: Loop engineering P1 — 同一目标多轮任务共享的稳定 ID (≤64 chars, agent 自定义)
+                          loop_objective:
+                            type: string
+                            nullable: true
+                            description: loop 目标一句话描述 (≤500 chars, 首轮传入即可)
+                          loop_phase:
+                            type: string
+                            nullable: true
+                            description: 当前阶段 (investigate/implement/verify/review 等自由文本, ≤32 chars)
+                          success_criteria:
+                            type: string
+                            nullable: true
+                            description: 可验证的完成判据 (≤500 chars, 人审阅时的对照基准)
+                          iteration_label:
+                            type: string
+                            nullable: true
+                            description: 轮次标签 (如 iter-3 / attempt-2, ≤32 chars)
                     stats:
                       type: object
                       properties:
@@ -1281,6 +1301,13 @@ class TaskRoutesMixin:
                             "question_type": task.question_type,
                             # mining-cycle-3 §2.1 borrow #1: header chip
                             "header_label": task.header_label,
+                            # Loop engineering P1：loop 上下文（前端按
+                            # loop_id 聚合 / 显示轮次标签）
+                            "loop_id": task.loop_id,
+                            "loop_objective": task.loop_objective,
+                            "loop_phase": task.loop_phase,
+                            "success_criteria": task.success_criteria,
+                            "iteration_label": task.iteration_label,
                         }
                     )
 
@@ -1295,6 +1322,145 @@ class TaskRoutesMixin:
             except Exception as e:
                 logger.error(f"获取任务列表失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
+
+        # Loop 工程 P3：按 loop_id 聚合的轮次视图。已完成轮次来自
+        # TaskQueue 的有界台账（任务本体 10s 清理后 metadata 仍可回看），
+        # 进行中轮次来自当前队列的轻量投影。未来 Web UI「Loop 视图」
+        # 的数据源；当前消费者：curl / 第三方监控。
+        @self.app.route("/api/loops", methods=["GET"])
+        @self.limiter.limit("120 per minute")
+        def get_loops() -> ResponseReturnValue:
+            """获取按 loop_id 聚合的多轮任务视图（loop engineering P3）
+            ---
+            tags:
+              - Tasks
+            responses:
+              200:
+                description: loop 台账 + 各 loop 当前在队列中的活跃轮次
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    loops:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          loop_id:
+                            type: string
+                            description: 同一目标多轮任务共享的稳定 ID
+                          objective:
+                            type: string
+                            nullable: true
+                            description: loop 目标 (最后一个非空值胜出)
+                          success_criteria:
+                            type: string
+                            nullable: true
+                            description: 可验证的完成判据 (最后一个非空值胜出)
+                          updated_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                            description: 最近一轮完成时间 (尚无完成轮次时为 null)
+                          rounds:
+                            type: array
+                            description: 已完成轮次的压缩台账 (最多 50 轮, verdict 文本截断 200 字符, 图片只记数量)
+                            items:
+                              type: object
+                              properties:
+                                task_id:
+                                  type: string
+                                  description: 该轮任务 ID (任务本体可能已被清理)
+                                iteration_label:
+                                  type: string
+                                  nullable: true
+                                  description: 该轮轮次标签 (如 iter-3)
+                                loop_phase:
+                                  type: string
+                                  nullable: true
+                                  description: 该轮所处阶段 (如 verify)
+                                header_label:
+                                  type: string
+                                  nullable: true
+                                  description: 该轮任务的短标签 chip
+                                completed_at:
+                                  type: string
+                                  format: date-time
+                                  description: 该轮完成时间 (ISO 8601)
+                                verdict:
+                                  type: object
+                                  description: 该轮人类裁决的压缩摘要
+                                  properties:
+                                    user_input:
+                                      type: string
+                                      description: 用户提交文本 (截断至 200 字符)
+                                    selected_options:
+                                      type: array
+                                      description: 用户勾选的预定义选项
+                                      items:
+                                        type: string
+                                    image_count:
+                                      type: integer
+                                      description: 附图数量 (不存 base64 本体)
+                          live_tasks:
+                            type: array
+                            description: 仍在队列中的同 loop 任务 (轻量投影, 不含 prompt 全文)
+                            items:
+                              type: object
+                              properties:
+                                task_id:
+                                  type: string
+                                  description: 队列中任务的 ID
+                                status:
+                                  type: string
+                                  enum: [pending, active, completed]
+                                  description: 任务状态
+                                iteration_label:
+                                  type: string
+                                  nullable: true
+                                  description: 轮次标签 (如 iter-3)
+                                loop_phase:
+                                  type: string
+                                  nullable: true
+                                  description: 所处阶段 (如 implement)
+                                header_label:
+                                  type: string
+                                  nullable: true
+                                  description: 短标签 chip
+                                created_at:
+                                  type: string
+                                  format: date-time
+                                  description: 任务创建时间 (ISO 8601)
+                    server_time:
+                      type: number
+                      description: 服务器当前时间 (Unix timestamp 秒)
+              500:
+                description: 服务器内部错误
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 服务器异常详情或通用提示
+            """
+            try:
+                task_queue = get_task_queue()
+                loops = task_queue.get_loops_snapshot()
+                return jsonify(
+                    {
+                        "success": True,
+                        "loops": loops,
+                        "server_time": time.time(),
+                    }
+                )
+            except Exception as e:
+                logger.error(f"获取 loop 视图失败: {e}")
+                return jsonify({"success": False, "error": str(e)}), 500
 
         # NOTE(feat-remove-download): web 右上角"下载任务"按钮已下线（见
         # ``templates/web_ui.html`` 中说明注释 + ``tests/test_feat_remove_download_button.py``）。
@@ -1470,6 +1636,13 @@ class TaskRoutesMixin:
                             "question_type": task.question_type,
                             # mining-cycle-3 §2.1 borrow #1: header chip
                             "header_label": task.header_label,
+                            # Loop engineering P1：export 同样携带 loop 上下文，
+                            # 便于 audit / 备份还原后按 loop 回放多轮裁决。
+                            "loop_id": task.loop_id,
+                            "loop_objective": task.loop_objective,
+                            "loop_phase": task.loop_phase,
+                            "success_criteria": task.success_criteria,
+                            "iteration_label": task.iteration_label,
                             "created_at": task.created_at.isoformat(),
                             "completed_at": completed_at_iso,
                             "result": sanitized_result,
@@ -1741,6 +1914,19 @@ class TaskRoutesMixin:
             # 接受 header_label（≤16 chars clamp 由 add_task 做）。
             hl_raw = data.get("header_label")
             header_label: str | None = hl_raw if isinstance(hl_raw, str) else None
+            # Loop engineering P1：5 个可选 loop 字段。类型校验宽松（非 str
+            # 静默丢弃，与 feedback_placeholder 同等待遇）；strip / clamp
+            # 归一在 ``task_queue.add_task`` 中统一完成。
+            loop_fields: dict[str, str | None] = {}
+            for loop_key in (
+                "loop_id",
+                "loop_objective",
+                "loop_phase",
+                "success_criteria",
+                "iteration_label",
+            ):
+                loop_raw = data.get(loop_key)
+                loop_fields[loop_key] = loop_raw if isinstance(loop_raw, str) else None
 
             if not isinstance(task_id_raw, str) or not task_id_raw.strip():
                 return (
@@ -1876,6 +2062,11 @@ class TaskRoutesMixin:
                     feedback_placeholder=feedback_placeholder,
                     question_type=question_type,
                     header_label=header_label,
+                    loop_id=loop_fields["loop_id"],
+                    loop_objective=loop_fields["loop_objective"],
+                    loop_phase=loop_fields["loop_phase"],
+                    success_criteria=loop_fields["success_criteria"],
+                    iteration_label=loop_fields["iteration_label"],
                 )
             except Exception as e:
                 logger.error(f"创建任务失败: {e}", exc_info=True)
@@ -2033,6 +2224,12 @@ class TaskRoutesMixin:
                             "question_type": task.question_type,
                             # mining-cycle-3 §2.1 borrow #1: header chip
                             "header_label": task.header_label,
+                            # Loop engineering P1：loop 上下文
+                            "loop_id": task.loop_id,
+                            "loop_objective": task.loop_objective,
+                            "loop_phase": task.loop_phase,
+                            "success_criteria": task.success_criteria,
+                            "iteration_label": task.iteration_label,
                         },
                     }
                 )

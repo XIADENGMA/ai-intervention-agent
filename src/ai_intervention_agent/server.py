@@ -974,14 +974,17 @@ def server_info_resource() -> dict[str, object]:
         else:
             task_queue_info["initialized"] = True
             try:
-                # 新版 TaskQueue 暴露 ``size()`` / ``pending_count()``，但为了向后
-                # 兼容（万一旧分支没有），这里 best-effort 探测，缺什么写什么。
-                size_attr = getattr(existing, "size", None)
-                if callable(size_attr):
-                    task_queue_info["size"] = int(size_attr())
-                pending_attr = getattr(existing, "pending_count", None)
-                if callable(pending_attr):
-                    task_queue_info["pending"] = int(pending_attr())
+                # ``TaskQueue.get_task_count()`` 返回 ``{total, pending, active,
+                # completed, max}`` 统计 dict（read_lock 保护）。best-effort
+                # getattr 探测保持向后兼容——旧分支缺方法时只报 initialized。
+                # （历史勘误：早期此处探测的 ``size()`` / ``pending_count()``
+                # 在 TaskQueue 上从未存在过，导致该子块永远只有 initialized。）
+                count_attr = getattr(existing, "get_task_count", None)
+                if callable(count_attr):
+                    counts = count_attr()
+                    if isinstance(counts, dict):
+                        task_queue_info["size"] = int(counts.get("total", 0))
+                        task_queue_info["pending"] = int(counts.get("pending", 0))
             except Exception as q_probe_exc:
                 task_queue_info["probe_error"] = (
                     f"{type(q_probe_exc).__name__}: {q_probe_exc}"

@@ -1041,6 +1041,19 @@ class WebFeedbackUI(
                                 active_task, "question_type", None
                             ),
                             "header_label": getattr(active_task, "header_label", None),
+                            # Loop engineering P1：loop 上下文（getattr 兜底
+                            # 兼容 duck-typed task，与 header_label 同模式）
+                            "loop_id": getattr(active_task, "loop_id", None),
+                            "loop_objective": getattr(
+                                active_task, "loop_objective", None
+                            ),
+                            "loop_phase": getattr(active_task, "loop_phase", None),
+                            "success_criteria": getattr(
+                                active_task, "success_criteria", None
+                            ),
+                            "iteration_label": getattr(
+                                active_task, "iteration_label", None
+                            ),
                         }
                     )
                 else:
@@ -1082,6 +1095,18 @@ class WebFeedbackUI(
                                 ),
                                 "header_label": getattr(
                                     first_task, "header_label", None
+                                ),
+                                # Loop engineering P1：同 active-task 分支
+                                "loop_id": getattr(first_task, "loop_id", None),
+                                "loop_objective": getattr(
+                                    first_task, "loop_objective", None
+                                ),
+                                "loop_phase": getattr(first_task, "loop_phase", None),
+                                "success_criteria": getattr(
+                                    first_task, "success_criteria", None
+                                ),
+                                "iteration_label": getattr(
+                                    first_task, "iteration_label", None
                                 ),
                             }
                         )
@@ -1443,7 +1468,8 @@ class WebFeedbackUI(
 
         # HTML 根 lang 属性："auto" 时退化为 "en"（客户端 i18n 会在 DOM 上再改 <html lang>）。
         # 必须是有效 BCP-47 tag，避免 <html lang="auto"> 导致屏幕阅读器判断错乱。
-        html_lang = ui_lang if ui_lang in ("en", "zh-CN") else "en"
+        # feat-zhtw-locale 后 zh-TW 是一等支持语言，与 en / zh-CN 同等对待。
+        html_lang = ui_lang if ui_lang in ("en", "zh-CN", "zh-TW") else "en"
 
         # HTML 根 dir 属性：用 R26.2 的模块级 frozenset 做 O(1) 成员查询。
         # 取 ``html_lang`` 的 BCP-47 主语言子标签（hyphen 之前的部分），与 RTL
@@ -1459,9 +1485,11 @@ class WebFeedbackUI(
         # R20.12-B: 当后端已经知道首屏语言（非 ``auto``）时，把对应 locale JSON 内联进 HTML，
         # 让 ``i18n.init()`` 跳过一次 ``fetch /static/locales/<lang>.json``（11 KB / 30-80 ms RTT）。
         # ``auto`` 模式时浏览器要先探测 ``navigator.language`` 才能决定下载哪个 locale，
-        # server 没法预知，故仅在显式设置语言时启用。
+        # server 没法预知，故仅在显式设置语言时启用。zh-TW（feat-zhtw-locale）
+        # 与 en / zh-CN 一样享受内联优化——历史上此处漏加导致繁中用户始终
+        # 多付一次 locale fetch。
         inline_locale_json: str | None = None
-        if ui_lang in ("en", "zh-CN"):
+        if ui_lang in ("en", "zh-CN", "zh-TW"):
             locale_path = static_dir / "locales" / f"{ui_lang}.json"
             inline_locale_json = _read_inline_locale_json(str(locale_path))
 

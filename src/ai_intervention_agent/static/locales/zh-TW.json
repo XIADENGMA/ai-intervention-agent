@@ -73,7 +73,15 @@
     "copyCode": "複製程式碼",
     "copied": "已複製",
     "copyFailed": "複製失敗",
-    "skipToContent": "跳轉到內容"
+    "skipToContent": "跳轉到內容",
+    "loopIdTitle": "循環 ID",
+    "loopPhaseTitle": "循環階段",
+    "loopIterTitle": "輪次",
+    "loopObjectiveLabel": "循環目標",
+    "loopCriteriaLabel": "完成標準",
+    "loopHistoryToggle": "歷史輪次",
+    "loopHistoryEmpty": "暫無已完成輪次",
+    "loopHistoryError": "循環歷史載入失敗"
   },
   "quickPhrases": {
     "label": "常用回覆",

@@ -7352,6 +7352,254 @@ code,
   user-select: text; /* user 应能复制 chip 内容 */
 }
 
+/* Loop 工程 P2 —— 活动任务的 loop 上下文条。
+ * 视觉语言（用户验收意见 + R698 中性平底方向）：与「常用回复」面板
+ * 同一族——白色低透明度平底卡 + var(--border-secondary) 细边 + 16px
+ * 圆角，不使用品牌色底/彩色左边框；chips 走中性胶囊（与 quick-phrases
+ * 按钮同形）。由 multi_task.js 的 ``updateLoopContext`` 控制显隐。 */
+.task-loop-context {
+  margin: 0 0 0.75rem 0;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.loop-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.loop-chip {
+  display: inline-block;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #f5f5f7;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  user-select: text; /* user 应能复制 loop_id / 轮次 */
+}
+
+.loop-context-line {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.loop-context-label {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(245, 245, 247, 0.85);
+  letter-spacing: 0.02em;
+}
+
+.loop-context-label::after {
+  content: ":";
+}
+
+.loop-context-value {
+  color: var(--text-primary);
+  overflow-wrap: anywhere; /* objective/criteria 最长 500 字符，允许折行 */
+  user-select: text;
+}
+
+/* Loop 视图 —— 历史轮次折叠面板（loop 上下文条内）。
+   toggle 与 quick-phrases 的「添加」按钮同形（中性胶囊）。 */
+.loop-history-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+  padding: 0.25rem 0.85rem;
+  font-size: 0.8rem;
+  color: #f5f5f7;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.loop-history-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.loop-history-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring-color, var(--primary-500, #d97757));
+  outline-offset: 2px;
+}
+
+.loop-history-caret {
+  transition: transform 0.15s ease-out;
+}
+
+.loop-history-toggle.expanded .loop-history-caret {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loop-history-caret {
+    transition: none;
+  }
+}
+
+.loop-history-count {
+  /* a11y invariant：--text-tertiary 作前景色仅限 strikethrough；
+     这里用 secondary（双主题 AA-normal） */
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.loop-history-count:empty {
+  display: none;
+}
+
+.loop-history-list {
+  margin-top: 0.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/* 历史轮次行：与 quick-phrase chip 容器同一族的中性平底小卡 */
+.loop-history-row {
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.loop-history-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.loop-history-iter {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.loop-history-phase {
+  color: rgba(245, 245, 247, 0.85);
+  font-weight: 500;
+}
+
+.loop-history-time {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+}
+
+.loop-history-verdict {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.loop-history-empty {
+  padding: 0.25rem 0.1rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+/* 移动端收紧 —— 与 quick-phrases 面板同断点同幅度 */
+@media (max-width: 768px) {
+  .task-loop-context {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .loop-chip,
+  .loop-history-toggle {
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+  }
+}
+
+/* 浅色主题 override —— 与 quick-phrases 面板同一套值（R696 惯例：
+   theme.js 始终显式写入 data-theme，无需 prefers-color-scheme 镜像）。 */
+:root[data-theme="light"] .task-loop-context,
+[data-theme="light"] .task-loop-context {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .loop-chip,
+[data-theme="light"] .loop-chip,
+:root[data-theme="light"] .loop-history-toggle,
+[data-theme="light"] .loop-history-toggle {
+  background: rgba(0, 0, 0, 0.04);
+  color: #1c1c1e;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme="light"] .loop-history-toggle:hover,
+[data-theme="light"] .loop-history-toggle:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .loop-context-label,
+[data-theme="light"] .loop-context-label,
+:root[data-theme="light"] .loop-history-phase,
+[data-theme="light"] .loop-history-phase {
+  color: rgba(28, 28, 30, 0.85);
+}
+
+:root[data-theme="light"] .loop-history-row,
+[data-theme="light"] .loop-history-row {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Loop 工程 P2 —— task tab 上的轮次徽标（如 "iter-3"）。
+ * 与 tab 文本同行，弱化展示：比正文小一号 + 次级文本色，
+ * active tab 上跟随反白。 */
+.task-tab-iter {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border-radius: 9999px;
+  white-space: nowrap;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.task-tab.active .task-tab-iter {
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.18);
+}
+
 /* R274 / cycle-24 t24-1: ``.export-tasks-*`` 样式已按用户偏好整体下架，
  * 见 web_ui.html line 1741 注释。 */
 

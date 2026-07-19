@@ -43,7 +43,10 @@ class TestOfflineHtml(unittest.TestCase):
             self.html.lower().startswith("<!doctype html>"),
             "必须以 doctype 开头",
         )
-        self.assertIn('lang="zh-CN"', self.html)
+        # 静态 HTML 以英文为默认兜底；非英文环境由 inline script 按
+        # navigator.language 运行时切换（documentElement.lang 同步更新）
+        self.assertIn('lang="en"', self.html)
+        self.assertIn("document.documentElement.lang = LANG", self.html)
 
     def test_self_contained_no_external_css_link(self) -> None:
         # 只允许 favicon link，**不允许** 外部 <link rel="stylesheet">
@@ -134,14 +137,39 @@ class TestOfflineHtml(unittest.TestCase):
     def test_reduced_motion_supported(self) -> None:
         self.assertIn("@media (prefers-reduced-motion: reduce)", self.html)
 
-    def test_bilingual_text_present(self) -> None:
-        # 中文 + 英文兜底（无需 i18n runtime；offline.html 必须 self-explain）
-        self.assertIn("无法连接", self.html)
-        self.assertIn("Retry", self.html)
+    def test_single_language_runtime_selection(self) -> None:
+        # 单语言显示：运行时按 navigator.language 选择 en / zh-CN / zh-TW
+        # （离线态无法 fetch 语言包，三份文案必须全部内联 self-contained）
+        self.assertIn("navigator.language", self.html)
+        self.assertIn("normalizeLang", self.html)
+        # 三份内联文案齐备
+        self.assertIn('"zh-CN":', self.html)
+        self.assertIn('"zh-TW":', self.html)
+        self.assertIn("无法连接", self.html)  # zh-CN 文案
+        self.assertIn("無法連接", self.html)  # zh-TW 文案
+        self.assertIn("Retry", self.html)  # en 文案（静态默认兜底）
+
+    def test_no_bilingual_mixed_text(self) -> None:
+        # 文案不再中英双语并排（如「重试 / Retry」）；语言由运行时单选
+        self.assertNotIn("重试 / Retry", self.html)
+        self.assertNotIn("Can't reach AI Intervention Agent</p>", self.html)
+
+    def test_theme_follows_main_ui_preference(self) -> None:
+        # 主题跟随主界面 localStorage['theme-preference']（anti-FOUC 同款），
+        # 无存储时回退 prefers-color-scheme
+        self.assertIn("theme-preference", self.html)
+        self.assertIn("data-theme", self.html)
 
     def test_brand_accent(self) -> None:
         # R697：品牌强调色统一为 Anthropic 陶土橙（原紫色随主题迁移退役）
         self.assertIn("#d97757", self.html.lower())
+
+    def test_design_tokens_match_main_ui(self) -> None:
+        # 视觉与主界面同源：main.css 的暖炭暗色 / 米白亮色背景 token
+        self.assertIn("#1f1e1d", self.html.lower())  # dark bg-primary
+        self.assertIn("#262624", self.html.lower())  # dark bg-secondary
+        self.assertIn("#e8e6dc", self.html.lower())  # light bg-primary
+        self.assertIn("#faf9f5", self.html.lower())  # light bg-secondary / dark text
 
 
 # ---------------------------------------------------------------------------

@@ -41,6 +41,11 @@ if str(REPO_ROOT) not in sys.path:
 import ai_intervention_agent.server as server
 from ai_intervention_agent.server import mcp
 from ai_intervention_agent.server_config import MAX_MESSAGE_LENGTH, MAX_OPTION_LENGTH
+from ai_intervention_agent.task_constants import (
+    LOOP_ID_MAX_LENGTH,
+    LOOP_LABEL_MAX_LENGTH,
+    LOOP_TEXT_MAX_LENGTH,
+)
 from ai_intervention_agent.task_queue import (
     HEADER_LABEL_MAX_LENGTH,
     PLACEHOLDER_MAX_LENGTH,
@@ -107,6 +112,10 @@ class TestMcpToolsDocLimitsMatchCode(unittest.TestCase):
             # R287 / R291：Agent-mode 参数 max-length 常量（task_queue 单一真相源）
             str(HEADER_LABEL_MAX_LENGTH),  # 16 — header_label chip 最长字符数
             str(PLACEHOLDER_MAX_LENGTH),  # 200 — feedback_placeholder 最长字符数
+            # Loop 工程参数 max-length 常量（task_constants 单一真相源）
+            str(LOOP_ID_MAX_LENGTH),  # 64 — loop_id 最长字符数
+            str(LOOP_TEXT_MAX_LENGTH),  # 500 — loop_objective / success_criteria
+            str(LOOP_LABEL_MAX_LENGTH),  # 32 — loop_phase / iteration_label
         }
         # R166：放宽正则匹配 2-7 位整数（旧版只到 5 位，新 MAX_MESSAGE_LENGTH=1_000_000 有 7 位）
         bold_int_re = re.compile(r"\*\*(\d{2,7})\*\*")

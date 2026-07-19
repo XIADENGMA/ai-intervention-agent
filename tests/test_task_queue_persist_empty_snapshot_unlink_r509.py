@@ -30,10 +30,12 @@ class TestTaskQueuePersistEmptySnapshotUnlink(unittest.TestCase):
     def test_persist_unlinks_empty_snapshot_before_json_dump(self) -> None:
         source = inspect.getsource(TaskQueue._persist)
 
-        self.assertIn("if not snapshot:", source)
+        # Loop 工程 P3 起：只有当任务快照与 loop 台账**都**为空时才删除
+        # 持久化文件——台账要跨重启保留，即使所有轮次任务都已完成清理。
+        self.assertIn("if not snapshot and not loop_history_snapshot:", source)
         self.assertIn("self._persist_path.unlink(missing_ok=True)", source)
         self.assertLess(
-            source.index("if not snapshot:"),
+            source.index("if not snapshot and not loop_history_snapshot:"),
             source.index("json.dump("),
         )
 

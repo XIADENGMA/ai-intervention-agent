@@ -138,6 +138,16 @@
       "switchFailed": "切换任务失败：{{reason}}",
       "activateTimeoutCheckServer": "激活任务超时：请检查服务端是否可用"
     },
+    "loop": {
+      "idTitle": "循环 ID",
+      "phaseTitle": "循环阶段",
+      "iterTitle": "轮次",
+      "objectiveLabel": "循环目标",
+      "criteriaLabel": "完成标准",
+      "historyToggle": "历史轮次",
+      "historyEmpty": "暂无已完成轮次",
+      "historyError": "循环历史加载失败"
+    },
     "clipboard": {
       "empty": "剪贴板为空，请先复制一段代码。",
       "noCode": "插入失败：未检测到有效代码",

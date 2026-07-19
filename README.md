@@ -206,7 +206,7 @@ ai-intervention-agent usage details:
 - ⏱️ **Typing-hold** — the countdown auto-extends while you type and never fires mid-input, even at zero (no manual buttons needed; consistent semantics on both the web page and the VS Code extension, replacing the legacy `+60s`/❄️ freeze buttons)
 - 🟢 **SSE liveness indicator** — 3-state corner badge (good / degraded / offline) so you always know whether the page is in sync with the backend
 - 📱 **PWA install support** — `manifest.webmanifest` + Service Worker so the Web UI is installable from the browser's native menu (Chrome / Edge address-bar icon, or iOS Safari Share → Add to Home Screen); a dedicated iOS Safari hint banner reminds users where the native option lives (since iOS doesn't fire `beforeinstallprompt`); permanently dismissable
-- 📡 **Offline-aware** — service worker pre-caches a branded `offline.html` shell with bilingual reconnect hints, dark/light theme + reduced-motion respect, and an auto-recovery ping that reloads when service returns (replaces the default browser "site can't be reached" screen)
+- 📡 **Offline-aware** — service worker pre-caches a branded `offline.html` shell that reuses the main UI design tokens (incl. your saved theme preference), shows reconnect hints in your browser's language (English / 简体中文 / 繁體中文) with reduced-motion respect, and runs an auto-recovery ping that reloads when service returns (replaces the default browser "site can't be reached" screen)
 - ♿ **WCAG 2.1 AA accessible** — every focus indicator, body text, status color, modal overlay, primary/secondary button, and icon-only button passes WCAG 2.1 AA contrast + Name/Role/Value rules (audited cycles 1-40, 240+ a11y / correctness / consistency / concurrency-safety / API-contract invariants and 8,200+ tests, with new meta-lint patterns each cycle for setting labels, async reset confirmations, finally-block DOM null guards, **AST-based lock-acquisition-order contracts** (cycle-35), **cross-runtime resource lifecycle audits** (cycle-38, Python/Browser-JS/VS Code TS), and (new in cycle-40) **OpenAPI docstring coverage** + **i18n untranslated keys detection**); keyboard cheatsheet overlay traps Tab + restores opener focus on close; all three `role="dialog"` modals (settings, image preview, code paste) have consistent ESC + close-button + backdrop-click handling; supports `prefers-reduced-motion` and `prefers-contrast: more` for high-contrast OS modes
 - 🛡️ **Stable install** — built on Flask 3.x with conservative dependency pins
   - Immune to the [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) that left several MCP feedback servers broken-on-default-install in early 2026
@@ -373,10 +373,19 @@ sequenceDiagram
 | `feedback_placeholder` | Per-task textarea hint (overrides global i18n) | 200 chars | gemini-cli `ask_user` |
 | `auto_resubmit_timeout` | Per-task countdown override (0 = disable) | `[0, 3600]` sec | AIIA native |
 | `predefined_options` | Multi-select chips with optional `default: true` recommendation | 10000 chars/each | AIIA + upstream parity |
+| `loop_id` + 4 loop fields | Group multi-round feedback into one loop: objective, phase, success criteria, iteration label | 32–500 chars | AIIA loop engineering |
 
 Full parameter reference + a single complete Agent-mode call example
 (`Auth` refactor flow combining all 4 + `predefined_options`) lives in
 [`docs/mcp_tools.md#agent-mode-parameters-cursor--composer--cline--augment--trae`](docs/mcp_tools.md#agent-mode-parameters-cursor--composer--cline--augment--trae).
+
+**Loop engineering** (long autonomous runs): rounds that share a
+`loop_id` render a loop-context strip (objective / phase / iteration
+chips + success criteria) above the prompt, an iteration badge on each
+task tab, and a collapsible "Rounds" timeline showing every completed
+round's verdict — served by `GET /api/loops` from a bounded ledger that
+survives the 10-second completed-task cleanup and server restarts. See
+[`docs/mcp_tools.md#loop-engineering-parameters-long-autonomous-runs`](docs/mcp_tools.md#loop-engineering-parameters-long-autonomous-runs).
 
 ### User-side workflow features (built into the Web UI)
 
@@ -448,7 +457,7 @@ overridden by env var at process startup:
 ```bash
 export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # default 127.0.0.1
 export AI_INTERVENTION_AGENT_WEB_UI_PORT=8181         # default 8080, range [1, 65535]
-export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=en       # auto / en / zh-CN
+export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=en       # auto / en / zh-CN / zh-TW
 uvx ai-intervention-agent
 ```
 

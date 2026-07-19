@@ -768,6 +768,186 @@ body.vscode-light .no-content-progress-bar {
   border-radius: 9px;
 }
 
+/* Loop 工程 P4（与 web 端 .task-loop-context 同构）：活动任务 loop
+   上下文条。用户验收意见后与 web 端同一方向：中性平底卡（无品牌色
+   底/彩色左边框），chips 走中性胶囊；全部跟随 VSCode 主题变量。 */
+.task-loop-context {
+  margin: 2px 0 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.55;
+  background: var(--vscode-textBlockQuote-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.loop-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.loop-chip {
+  display: inline-block;
+  padding: 1px 9px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  color: var(--vscode-foreground);
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 999px;
+  white-space: nowrap;
+  user-select: text; /* user 应能复制 loop_id / 轮次 */
+}
+
+.loop-context-line {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.loop-context-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+}
+
+.loop-context-label::after {
+  content: ":";
+}
+
+.loop-context-value {
+  color: var(--vscode-foreground);
+  overflow-wrap: anywhere; /* objective/criteria 最长 500 字符，允许折行 */
+  user-select: text;
+}
+
+/* Loop 视图（与 web 端同构）：历史轮次折叠面板。 */
+.loop-history-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--vscode-foreground);
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.loop-history-toggle:hover {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+}
+
+.loop-history-caret {
+  transition: transform 0.15s ease-out;
+}
+
+.loop-history-toggle.expanded .loop-history-caret {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loop-history-caret {
+    transition: none;
+  }
+}
+
+.loop-history-count {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 500;
+}
+
+.loop-history-count:empty {
+  display: none;
+}
+
+.loop-history-list {
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.loop-history-list.hidden {
+  display: none;
+}
+
+.loop-history-row {
+  padding: 5px 8px;
+  background: var(--vscode-textBlockQuote-background, rgba(128, 128, 128, 0.06));
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.loop-history-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: baseline;
+}
+
+.loop-history-iter {
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.loop-history-phase {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 500;
+}
+
+.loop-history-time {
+  margin-left: auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 9.5px;
+}
+
+.loop-history-verdict {
+  margin-top: 2px;
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.loop-history-empty {
+  padding: 3px 2px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+}
+
+/* Loop 工程 P4（与 web 端 .task-tab-iter 同构）：task tab 轮次徽标。 */
+.task-tab-iter {
+  display: inline-block;
+  padding: 0 5px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  border-radius: 7px;
+  white-space: nowrap;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
 /* R691（TODO#5 跨端一致性）：question_type="yesno" 的一行 Yes/No 按钮组。 */
 .yesno-button-group {
   display: flex;

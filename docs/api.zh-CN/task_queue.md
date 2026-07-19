@@ -15,6 +15,15 @@ is irrelevant because no log/reject decision can change. Near the threshold
 return an exact UTF-8 byte count so warning/rejection metadata remains
 unchanged.
 
+### `_normalize_optional_text(value: Any, max_length: int) -> str | None`
+
+Loop engineering P1 — 可选自由文本字段的统一 normalize。
+
+规则与 ``feedback_placeholder`` / ``header_label`` 的既有路径一致：
+非 str → None；strip 后为空 → None；超长静默截断到 ``max_length``。
+``add_task``（入参）与 ``_restore``（快照 round-trip）共用本函数，
+避免两处 clamp 逻辑漂移。
+
 ### `_capture_all_thread_stacks() -> str`
 
 采集进程内所有线程的当前调用栈，拼成可读字符串。
@@ -270,8 +279,10 @@ remove_task()     → 直接删除
 清理所有任务（重置队列）
 
 删除所有任务并重置队列状态，用于服务启动时清理残留任务。
+Loop 工程 P3：「重置队列」语义下 loop 台账一并清空（历史轮次
+与任务同源；测试隔离也依赖这里的全量重置）。
 
-##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, predefined_options_defaults: list[bool] | None = None, feedback_placeholder: str | None = None, question_type: str | None = None, header_label: str | None = None, auto_resubmit_timeout_explicit: bool = False) -> bool`
+##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, predefined_options_defaults: list[bool] | None = None, feedback_placeholder: str | None = None, question_type: str | None = None, header_label: str | None = None, auto_resubmit_timeout_explicit: bool = False, loop_id: str | None = None, loop_objective: str | None = None, loop_phase: str | None = None, success_criteria: str | None = None, iteration_label: str | None = None) -> bool`
 
 添加任务，无活动任务时自动激活
 
@@ -505,6 +516,25 @@ Thread-safety: 写锁串行化整个操作。
     - 前端应在收到完成状态后停止轮询
     - 自动激活逻辑只查找pending状态的任务
     - 如果没有pending任务，_active_task_id 保持为 None
+
+##### `get_loops_snapshot(self) -> list[dict[str, Any]]`
+
+获取 loop 台账快照 + 各 loop 当前在队列中的活跃轮次。
+
+Loop 工程 P3 读路径（``GET /api/loops`` 的数据源）：
+
+- ``rounds``：已完成轮次的压缩台账（见 ``_record_loop_round``）；
+- ``live_tasks``：仍在队列中、携带同一 ``loop_id`` 的任务
+  （pending/active/completed-未清理），轻量投影（不含 prompt 全文）；
+- 一个 loop 允许只有 live_tasks 没有 rounds（首轮尚未完成），
+  也允许只有 rounds 没有 live_tasks（全部轮次已完成清理）。
+
+返回:
+    list[dict]: 最近更新的 loop 在前。每项含 loop_id / objective /
+    success_criteria / updated_at / rounds / live_tasks。
+
+线程安全:
+    读锁下深拷贝台账 + 投影活任务，返回值与内部状态零共享。
 
 ##### `remove_task(self, task_id: str) -> bool`
 

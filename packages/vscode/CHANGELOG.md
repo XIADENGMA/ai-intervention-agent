@@ -14,6 +14,24 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+### Added
+
+- Loop-engineering surfaces in the webview, mirroring the Web UI:
+  tasks that carry a `loop_id` render a loop-context strip (loop /
+  phase / iteration chips plus objective and success-criteria lines)
+  above the prompt, an iteration badge on each task tab, and a
+  collapsible "Rounds" timeline that loads completed-round verdicts
+  from `GET /api/loops` on demand. Non-loop tasks render exactly as
+  before. Includes `ui.loop.*` strings for en / zh-CN / zh-TW.
+
+### Fixed
+
+- The config-fallback render path (used when `/api/config` is
+  unreachable and the webview falls back to the task detail endpoint)
+  now carries `header_label`, `feedback_placeholder`, and
+  `question_type`, so the header chip, per-task placeholder, and
+  yes/no button group no longer disappear on fallback renders.
+
 ## [1.6.0] — 2026-05-08
 
 > Server-side cleanup + repo-shape release; no extension-facing

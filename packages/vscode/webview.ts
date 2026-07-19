@@ -2073,6 +2073,35 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     <!-- R691（TODO#5 跨端一致性）：任务级 header chip（≤16 字符领域标签），
                          与 web 端 #task-header-chip 同构；无 header_label 时隐藏。 -->
                     <div class="task-header-chip hidden" id="taskHeaderChip" aria-hidden="false"></div>
+                    <!-- Loop 工程 P4（与 web 端 #task-loop-context 同构）：活动任务的
+                         loop 上下文条。agent 传 loop_id / loop_phase / iteration_label /
+                         loop_objective / success_criteria 时显示；由 updateLoopContext
+                         控制显隐，textContent 填充（XSS 安全）。 -->
+                    <div class="task-loop-context hidden" id="taskLoopContext" role="status">
+                        <div class="loop-context-chips">
+                            <span class="loop-chip hidden" id="loopChipId" title="${tl("ui.loop.idTitle")}" data-i18n-title="ui.loop.idTitle"></span>
+                            <span class="loop-chip hidden" id="loopChipPhase" title="${tl("ui.loop.phaseTitle")}" data-i18n-title="ui.loop.phaseTitle"></span>
+                            <span class="loop-chip hidden" id="loopChipIter" title="${tl("ui.loop.iterTitle")}" data-i18n-title="ui.loop.iterTitle"></span>
+                        </div>
+                        <div class="loop-context-line hidden" id="loopObjectiveLine">
+                            <span class="loop-context-label" data-i18n="ui.loop.objectiveLabel">${tl("ui.loop.objectiveLabel")}</span>
+                            <span class="loop-context-value" id="loopObjectiveValue"></span>
+                        </div>
+                        <div class="loop-context-line hidden" id="loopCriteriaLine">
+                            <span class="loop-context-label" data-i18n="ui.loop.criteriaLabel">${tl("ui.loop.criteriaLabel")}</span>
+                            <span class="loop-context-value" id="loopCriteriaValue"></span>
+                        </div>
+                        <!-- Loop 视图（与 web 端同构）：历史轮次折叠面板。点击拉取
+                             GET /api/loops，按当前 loop_id 渲染已完成轮次时间线。 -->
+                        <button type="button" class="loop-history-toggle hidden" id="loopHistoryToggle" aria-expanded="false" aria-controls="loopHistoryList">
+                            <svg class="loop-history-caret" width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                <polyline points="5 3 11 8 5 13" />
+                            </svg>
+                            <span data-i18n="ui.loop.historyToggle">${tl("ui.loop.historyToggle")}</span>
+                            <span class="loop-history-count" id="loopHistoryCount"></span>
+                        </button>
+                        <div class="loop-history-list hidden" id="loopHistoryList" role="list"></div>
+                    </div>
                     <div class="markdown-content" id="markdownContent"></div>
 
                     <div class="form-section hidden" id="optionsSection">

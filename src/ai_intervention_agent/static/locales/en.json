@@ -68,7 +68,15 @@
     "copyCode": "Copy code",
     "copied": "Copied",
     "copyFailed": "Copy failed",
-    "skipToContent": "Skip to content"
+    "skipToContent": "Skip to content",
+    "loopIdTitle": "Loop ID",
+    "loopPhaseTitle": "Loop phase",
+    "loopIterTitle": "Iteration",
+    "loopObjectiveLabel": "Objective",
+    "loopCriteriaLabel": "Success criteria",
+    "loopHistoryToggle": "Rounds",
+    "loopHistoryEmpty": "No completed rounds yet",
+    "loopHistoryError": "Failed to load loop history"
   },
   "quickPhrases": {
     "label": "Quick replies",

@@ -292,6 +292,22 @@ class TestTemplateContextInlineLocale(unittest.TestCase):
         ctx = self._build_ctx_with_language("en")
         self.assertIsNotNone(ctx["inline_locale_json"])
 
+    def test_zh_tw_language_includes_inline_locale_json(self) -> None:
+        """feat-zhtw-locale 回归：zh-TW 与 en / zh-CN 同等享受内联优化。
+
+        历史 bug：``_get_template_context`` 的 inline 白名单漏了 zh-TW，
+        繁中用户始终多付一次 ``fetch /static/locales/zh-TW.json``，且
+        ``<html lang>`` 首屏错误地退化为 ``en``。
+        """
+        ctx = self._build_ctx_with_language("zh-TW")
+        self.assertIsNotNone(
+            ctx["inline_locale_json"],
+            msg="lang=zh-TW 时必须读到 zh-TW.json 内容（内联优化与 en/zh-CN 对齐）",
+        )
+        parsed = json.loads(ctx["inline_locale_json"])
+        self.assertIsInstance(parsed, dict)
+        self.assertEqual(ctx["html_lang"], "zh-TW")
+
 
 class TestTemplateInlineLocaleSourceInvariants(unittest.TestCase):
     """R20.12-B: ``templates/web_ui.html`` 必须按契约注入 + 转义 inline locale。"""
