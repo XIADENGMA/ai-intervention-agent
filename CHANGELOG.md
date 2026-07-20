@@ -9,6 +9,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.3] - 2026-07-20
+
+### Fixed
+
+- R703: stop the R686 macOS legacy-config migration from wiping the
+  live config on every startup when the shell exports
+  `XDG_CONFIG_HOME`. platformdirs >= 4.5.0 honours XDG env vars on
+  macOS, so the "standard" path resolved by `user_config_dir()` and the
+  hard-coded legacy path `~/.config/ai-intervention-agent/` collapsed
+  into the same file; the R686 content-equality check then compared the
+  file with itself (always equal) and retired it to
+  `config.toml.migrated-<ts>`, after which a pristine default config
+  was recreated — user customisations never survived a restart and the
+  authoritative `~/Library/Application Support/...` config was never
+  read. Two guards: (1) the macOS standard config dir is now always the
+  Apple-convention path regardless of `XDG_CONFIG_HOME` (use
+  `AI_INTERVENTION_AGENT_CONFIG_FILE` for custom locations), and (2)
+  the retire/migrate branches are skipped when both paths resolve to
+  the same physical file (covers symlinked dotfiles setups too). Linux
+  XDG semantics are unchanged.
+
+### Changed
+
+- Slim down both READMEs (EN −136 lines rewritten to 86, zh-CN
+  −117/+86): long feature bullets compressed to one line each, the
+  architecture invariants list now links to the contributor guide
+  catalogue instead of inlining five test descriptions, the
+  `--print-config` field-by-field listing became a summary sentence,
+  and the related-projects comparison was tightened — all
+  R222/R233/R239/R288/R300/R311/R340 README invariants stay green.
+
 ## [1.8.2] - 2026-07-19
 
 ### Fixed

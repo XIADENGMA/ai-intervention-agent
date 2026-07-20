@@ -453,6 +453,91 @@ def _files_have_same_content(a: Path, b: Path) -> bool:
         return False
 
 
+def _is_same_physical_file(a: Path, b: Path) -> bool:
+    """R703：判断两个路径是否解析到同一物理文件（samefile 优先，降级 resolve）。
+
+    R686 的"双路径内容一致性检查 → 退休 legacy"隐含假设：标准路径与 legacy
+    路径是**两个不同的文件**。该假设在以下场景被打破：
+
+    * ``XDG_CONFIG_HOME=~/.config`` 且 platformdirs >= 4.5.0（macOS 加入
+      ``XDGMixin``，环境变量优先于 Apple 标准路径）→ "标准路径"与 legacy
+      解析到同一文件；
+    * 用户把 ``~/.config/ai-intervention-agent`` 软链接到标准目录（跨平台
+      dotfiles 常见做法）→ 两个路径名指向同一真身。
+
+    此时"内容一致性检查"变成同文件自比恒真，随即触发退休分支把**唯一的**
+    配置文件改名 ``*.migrated-<时间戳>``，再因"配置不存在"重建纯默认——
+    每次启动配置清零。调用方必须先用本函数排除"同一文件"再进入 R686 分支。
+    """
+    try:
+        return a.samefile(b)
+    except OSError:
+        # 极小概率的 race（探测后文件被移走）或权限问题，降级为路径解析比较
+        try:
+            return a.resolve() == b.resolve()
+        except OSError:
+            return False
+
+
+def _resolve_standard_user_config_dir() -> Path:
+    """解析"标准用户配置目录"（R703：macOS 上免疫 ``XDG_CONFIG_HOME`` 改写）。
+
+    背景
+    ----
+    platformdirs 4.5.0（2025-10）起在 macOS 上引入 ``XDGMixin``：只要用户
+    shell 导出了 ``XDG_CONFIG_HOME``，``user_config_dir()`` 就返回
+    ``$XDG_CONFIG_HOME/ai-intervention-agent`` 而不是 Apple 标准的
+    ``~/Library/Application Support/ai-intervention-agent``。
+
+    这对本项目是灾难性的：R113/R686 把 macOS 上的
+    ``~/.config/ai-intervention-agent/`` 定义为**待迁移的 legacy 路径**，
+    而最常见的导出值恰是 ``XDG_CONFIG_HOME=~/.config``——"标准路径"与
+    legacy 路径解析到同一个文件，R686 的同文件自比恒判"一致"，每次启动
+    都把唯一配置改名迁移掉再重建默认（见 :func:`_is_same_physical_file`）。
+
+    决策
+    ----
+    本项目在 macOS 上的标准配置路径**始终**是 Apple 惯例路径
+    ``~/Library/Application Support/ai-intervention-agent/``（文档、R113、
+    R686 的语义都建立在此之上），优先级恒高于 ``~/.config/...``。因此
+    macOS 上检测到 platformdirs 结果被 ``XDG_CONFIG_HOME`` 改写时，强制
+    改回 Apple 标准路径。希望在 macOS 上使用自定义位置的用户请配置最高
+    优先级的 ``AI_INTERVENTION_AGENT_CONFIG_FILE`` 环境变量。
+
+    Linux 不受影响：``$XDG_CONFIG_HOME`` 本来就是 Linux 的标准语义。
+    """
+    try:
+        if not PLATFORMDIRS_AVAILABLE:
+            raise ImportError("platformdirs not available")
+        resolved = Path(user_config_dir("ai-intervention-agent"))
+    except ImportError:
+        resolved = _get_user_config_dir_fallback()
+
+    if platform.system().lower() != "darwin":
+        return resolved
+
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    if not xdg_config_home:
+        return resolved
+
+    try:
+        xdg_app_dir = Path(xdg_config_home).expanduser() / "ai-intervention-agent"
+        hijacked = resolved == xdg_app_dir
+    except Exception:
+        hijacked = False
+    if not hijacked:
+        return resolved
+
+    # _get_user_config_dir_fallback 的 darwin 分支即 Apple 标准路径
+    apple_dir = _get_user_config_dir_fallback()
+    logger.info(
+        "[R703] macOS 上 platformdirs 受 XDG_CONFIG_HOME 影响返回了 "
+        f"{resolved}；本项目在 macOS 上以 Apple 标准路径为准，已改用 "
+        f"{apple_dir}（如需自定义位置请配置 AI_INTERVENTION_AGENT_CONFIG_FILE）"
+    )
+    return apple_dir
+
+
 def find_config_file(config_filename: str = "config.toml") -> Path:
     """查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。
 
@@ -477,9 +562,10 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
     ----
     * Linux：``$XDG_CONFIG_HOME/ai-intervention-agent`` 或 ``~/.config/ai-intervention-agent``
     * macOS：``~/Library/Application Support/ai-intervention-agent``
+      （**恒定**——即使导出了 ``XDG_CONFIG_HOME`` 也不改变，见 R703）
     * Windows：``%APPDATA%\\ai-intervention-agent``
 
-    macOS 兼容性（R113 + R686）
+    macOS 兼容性（R113 + R686 + R703）
     ----
     在 macOS 上**额外**检查 ``~/.config/ai-intervention-agent/`` 是否有残留 config
     （历史版本 / 第三方脚本 / 手动 mkdir 都可能创建）。规则（R686 起标准路径
@@ -492,6 +578,15 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
     * 仅 ``.config/`` 有 → **自动迁移**到标准路径（copy2 + 重命名备份，零数据
       丢失）后使用标准路径；迁移失败才降级为临时采用 legacy
     * 仅标准路径或都没有 → 行为不变
+
+    R703 两条守卫（修复 v1.8.2 "每次启动配置被迁移清零"事故）：
+
+    * 标准路径解析对 ``XDG_CONFIG_HOME`` 免疫——platformdirs >= 4.5.0 在
+      macOS 上会让 ``XDG_CONFIG_HOME`` 覆盖 Apple 标准路径，导致"标准路径"
+      与 legacy 路径同一化；:func:`_resolve_standard_user_config_dir` 检测到
+      改写后强制改回 Apple 标准路径。
+    * 标准路径与 legacy 命中**同一物理文件**（symlink / XDG 改写残留）时跳过
+      退休/迁移——同文件自比恒"一致"，若不守卫会把唯一配置真身改名掉。
 
     Linux 上 ``.config/`` 是 XDG 标准，本逻辑不触发。
 
@@ -574,12 +669,9 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
             return cwd_hit
 
     try:
-        try:
-            if not PLATFORMDIRS_AVAILABLE:
-                raise ImportError("platformdirs not available")
-            user_config_dir_path = Path(user_config_dir("ai-intervention-agent"))
-        except ImportError:
-            user_config_dir_path = _get_user_config_dir_fallback()
+        # R703：macOS 上免疫 XDG_CONFIG_HOME 对 platformdirs 的改写，
+        # 保证标准路径恒为 ~/Library/Application Support/ai-intervention-agent
+        user_config_dir_path = _resolve_standard_user_config_dir()
 
         user_hit = _pick_existing(user_config_dir_path)
 
@@ -593,10 +685,20 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
 
         if user_hit is not None:
             if legacy_macos_hit is not None:
+                # R703 守卫：标准路径与 legacy 解析到同一物理文件时（XDG
+                # 改写残留 / 用户 symlink），不存在"双路径歧义"，绝不能进入
+                # 退休/迁移分支——那会把唯一的配置真身改名掉，导致每次启动
+                # 配置被重置为默认值。
+                if _is_same_physical_file(user_hit, legacy_macos_hit):
+                    logger.info(
+                        "[R703] 标准路径与 legacy 路径解析到同一物理文件"
+                        f"（symlink 或 XDG 改写）: {user_hit}；跳过 R686 "
+                        "退休/迁移逻辑，直接使用该文件"
+                    )
                 # R686：标准路径始终优先。legacy 与标准内容一致 → 自动把
                 # legacy 重命名为备份，一次性消除歧义（幂等）；内容不一致 →
                 # 不擅自动用户数据，warn 让用户自行取舍。
-                if _files_have_same_content(user_hit, legacy_macos_hit):
+                elif _files_have_same_content(user_hit, legacy_macos_hit):
                     if _retire_legacy_config_file(legacy_macos_hit):
                         logger.info(
                             "[R686] macOS legacy 配置与标准路径内容一致，"

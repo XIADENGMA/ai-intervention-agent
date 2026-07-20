@@ -211,7 +211,7 @@ If a `config.jsonc` or `config.json` file is found via auto-discovery (not expli
 - macOS: `~/Library/Application Support/ai-intervention-agent/`
 - Windows: `%APPDATA%/ai-intervention-agent/`
 
-> **macOS legacy `.config/` compatibility (R113 + R686)**
+> **macOS legacy `.config/` compatibility (R113 + R686 + R703)**
 >
 > If your macOS box also has `~/.config/ai-intervention-agent/config.toml` (left over from
 > early versions, cross-platform dotfiles, or third-party scripts that hard-coded the XDG
@@ -232,6 +232,21 @@ If a `config.jsonc` or `config.json` file is found via auto-discovery (not expli
 >
 > Linux users are not affected — `~/.config/` is the XDG standard there and the check is
 > macOS-specific.
+>
+> **R703 guards (fixes the v1.8.2 "config never survives a restart" incident)**
+>
+> - **The macOS standard path is immune to `XDG_CONFIG_HOME`**: platformdirs >= 4.5.0
+>   lets `XDG_CONFIG_HOME` override the Apple-standard path on macOS. If your shell
+>   exports `XDG_CONFIG_HOME=~/.config`, the "standard" and legacy paths resolve to the
+>   **same file**, the R686 content-equality check degenerates into a file comparing
+>   itself (always true), and every startup renames the only config away and rebuilds
+>   defaults. Since R703 the macOS standard path is **always**
+>   `~/Library/Application Support/...`, regardless of `XDG_CONFIG_HOME`; to use a custom
+>   location on macOS, set the top-priority `AI_INTERVENTION_AGENT_CONFIG_FILE` env var.
+> - **Same-physical-file guard**: when the standard and legacy paths hit the same
+>   physical file (e.g. dotfiles users who symlink `~/.config/ai-intervention-agent` to
+>   the standard directory), the retire/migrate logic is skipped entirely and the file is
+>   used as-is — the only real copy is never renamed.
 
 ## Backward compatibility
 

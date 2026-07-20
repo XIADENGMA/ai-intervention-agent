@@ -188,7 +188,7 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 - macOS：`~/Library/Application Support/ai-intervention-agent/`
 - Windows：`%APPDATA%/ai-intervention-agent/`
 
-> **macOS 上 `.config/` 残留兼容（R113 + R686）**
+> **macOS 上 `.config/` 残留兼容（R113 + R686 + R703）**
 >
 > 如果你的 macOS 上存在 `~/.config/ai-intervention-agent/config.toml`（可能是早期
 > 版本残留、跨平台 dotfiles 抄过来、或第三方安装脚本硬编码了 XDG 风格路径），agent
@@ -203,6 +203,19 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 >    （权限 / 只读卷）才临时采用 legacy 路径并打印手动迁移命令。
 >
 > Linux 用户不受影响——`~/.config/` 在 Linux 上是 XDG 标准，本检测仅 macOS 触发。
+>
+> **R703 两条守卫（修复 v1.8.2 "配置活不过重启"事故）**
+>
+> - **macOS 标准路径对 `XDG_CONFIG_HOME` 免疫**：platformdirs >= 4.5.0 在 macOS 上
+>   会让 `XDG_CONFIG_HOME` 覆盖 Apple 标准路径。若你的 shell 导出了
+>   `XDG_CONFIG_HOME=~/.config`，"标准路径"与 legacy 路径会解析到**同一个文件**，
+>   R686 的内容一致性检查变成同文件自比恒真，每次启动都把唯一配置改名迁移掉再重建
+>   默认值。R703 起 macOS 标准路径**恒为** `~/Library/Application Support/...`，
+>   不受 `XDG_CONFIG_HOME` 影响；在 macOS 上想自定义位置请使用最高优先级的
+>   `AI_INTERVENTION_AGENT_CONFIG_FILE` 环境变量。
+> - **同一物理文件守卫**：标准路径与 legacy 命中同一物理文件时（如把
+>   `~/.config/ai-intervention-agent` 软链到标准目录的 dotfiles 用户），跳过
+>   退休/迁移逻辑直接使用该文件，绝不改名唯一真身。
 
 ## 向后兼容
 

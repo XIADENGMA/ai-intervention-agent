@@ -378,6 +378,7 @@ Code 跑不了？" 几小时的 debug 节约多了。
 | R695    | `tests/test_web_countdown_header_visibility_r695.py`                     | 模式 C + CSS/JS                   | **Web 倒计时冻结语义保护**。锁定冻结成功路径整体注销倒计时条目、重建倒计时前必须带显式禁用守卫——确保冻结不会触发自动提交。R700 起 `.header-info-container` 整行有意隐藏（标签页圆环是倒计时唯一展示位），测试同步锁定该下线决策。 |
 | R696    | `tests/test_lottie_eager_countdown_icon_r696.py`                          | 模式 C + 模板/CSS                 | **Lottie 直出与倒计时图标主题化保护**。锁定 lottie.min.js 随首屏 `<script defer>` 预加载且排在 app.js 之前（空态动画从第一帧即为 Lottie，无降级动画热切换；降级仅限 reduced-motion / 加载失败），倒计时标签为 `currentColor` 内联 SVG 时钟而非 ⏰ emoji。 |
 | R702    | `tests/test_task_timeout_explicit_guard_r702.py`                          | 模式 A + 源码契约                 | **显式 per-task 超时的热更新保护（幽灵提交根因）**。锁定 `Task.auto_resubmit_timeout_explicit`：API 调用方显式传入 timeout 的任务永不被 `frontend_countdown` 配置热更新同步覆盖；回调注册路径只记录基准、不执行同步（注册不等于配置变更）。 |
+| R703    | `tests/test_macos_xdg_hijack_guard_r703.py`                               | 模式 A + 配置路径                 | **macOS XDG 骑劫与同文件迁移守卫（配置清零根因）**。锁定 macOS 标准配置目录恒为 Apple 惯例路径、不被 `XDG_CONFIG_HOME` 改写（platformdirs >= 4.5.0 会让它与 legacy `~/.config/...` 同一化），并锁定 R686 退休/迁移分支在标准与 legacy 解析到同一物理文件（symlink）时跳过——唯一配置真身绝不被改名，用户设置活过重启。 |
 
 ## 7. 进一步阅读
 

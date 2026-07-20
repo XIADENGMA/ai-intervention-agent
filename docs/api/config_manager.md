@@ -28,6 +28,10 @@
 
 ### `_files_have_same_content(a: Path, b: Path) -> bool`
 
+### `_is_same_physical_file(a: Path, b: Path) -> bool`
+
+### `_resolve_standard_user_config_dir() -> Path`
+
 ### `find_config_file(config_filename: str = 'config.toml') -> Path`
 
 ### `_get_user_config_dir_fallback() -> Path`

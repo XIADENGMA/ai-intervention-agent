@@ -108,7 +108,16 @@ class TestAuditTodoStatusScriptR286(unittest.TestCase):
         )
 
     def test_script_md_flag_renders_table(self) -> None:
-        """``--md`` 必须输出 markdown 表格 (含 ``|`` 分隔符与 header 行)。"""
+        """``--md`` 必须输出 markdown 表格 (含 ``|`` 分隔符与 header 行)。
+
+        两个合法的空数据分支跳过表格断言（TODO.md 是 gitignored 的
+        user scratchpad，内容完全由用户掌控）：
+
+        * TODO.md 不存在 → 脚本 fallback warn + exit 0；
+        * TODO.md 存在但没有任何 ``- [ ]`` / ``- [x]`` checkbox 项
+          （例如用户把它当纯笔记用）→ 脚本正确输出 ``(no TODO items)``，
+          此时没有表格可断言。
+        """
         result = subprocess.run(
             [self.python, str(AUDIT_SCRIPT), "--md"],
             capture_output=True,
@@ -117,8 +126,7 @@ class TestAuditTodoStatusScriptR286(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
         out = result.stdout
-        # 如果 TODO.md 不存在 → fallback warn，跳过本断言
-        if "TODO.md 不存在" not in result.stderr:
+        if "TODO.md 不存在" not in result.stderr and "(no TODO items)" not in out:
             self.assertIn(
                 "|",
                 out,
