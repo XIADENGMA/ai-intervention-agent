@@ -6155,44 +6155,33 @@ h1 {
  *   - 相对定位，外边距1.5rem 0，圆角20px
  *   - 隐藏溢出（overflow: hidden）
  *
- * 视觉设计：
- *   - 渐变背景（深色调）
- *   - 边框1px solid rgba(255, 255, 255, 0.12)
- *   - 多层阴影和内部高光
- *   - 毛玻璃效果
+ * 视觉设计（TODO#10 扫平：嵌入面板而非悬浮卡片）：
+ *   - 纯色深底（比 .description 内容卡片再深一档，区分层次）
+ *   - 细边框 var(--border-secondary)，与 .description 同体系
+ *   - 无阴影 / 无毛玻璃 / 无渐变——页面嵌套链 .container(32px) →
+ *     .description(24px) → 代码块(12px) 曾是三层"悬浮卡片"叠罗汉
+ *     （卡片套卡片），本次与 R698/R700 的宁静化方向对齐：代码块
+ *     视觉上属于内容卡片内部，而不是浮在其上的第三张卡片。
  *
  * 交互效果：
- *   - 过渡动画：all 0.3s ease
- *   - 悬停时向上平移2px、阴影增强、边框变蓝（由:hover规则控制）
+ *   - 无悬停动效（延续既有决定）
  */
 .code-block-container {
   position: relative; /* 相对定位 */
   margin: 1.5rem 0; /* 外边距 */
-  border-radius: 20px; /* 圆角 */
-  background: linear-gradient(
-    135deg,
-    rgba(24, 23, 22, 0.95) 0%,
-    rgba(25, 25, 40, 0.9) 50%,
-    rgba(20, 20, 35, 0.95) 100%
-  ); /* 渐变背景 */
-  border: 1px solid rgba(255, 255, 255, 0.12); /* 边框 */
-  box-shadow:
-    0 12px 24px rgba(0, 0, 0, 0.4),
-    0 4px 8px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1); /* 多层阴影 */
+  border-radius: 12px; /* 内层圆角递减（32→24→12） */
+  background: rgba(0, 0, 0, 0.28); /* 纯色深底（嵌入面板，非悬浮卡片） */
+  border: 1px solid var(--border-secondary); /* 细边框，与内容卡片同体系 */
+  box-shadow: none; /* 扫平：无阴影 */
   overflow: hidden; /* 隐藏溢出 */
-  backdrop-filter: blur(10px); /* 毛玻璃效果 */
   transition: none; /* 按需求：移除鼠标悬停动效（禁用过渡动画） */
 }
 
 /** 代码块容器悬停效果：已禁用（按需求移除鼠标移上去的动态效果） */
 .code-block-container:hover {
   transform: none;
-  box-shadow:
-    0 12px 24px rgba(0, 0, 0, 0.4),
-    0 4px 8px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+  border-color: var(--border-secondary);
 }
 
 /**
@@ -6225,7 +6214,7 @@ h1 {
   padding: 3.25rem 1.75rem 1.5rem; /* 内边距（上 52px 避让工具栏） */
   margin: 0; /* 外边距 */
   overflow-x: auto; /* 水平滚动 */
-  border-radius: 20px; /* 圆角 */
+  border-radius: 12px; /* 圆角（与扫平后的容器一致，TODO#10） */
   font-size: 0.9rem; /* 字号（14.4px） */
   line-height: 1.6; /* 行高 */
   position: relative; /* 相对定位 */
@@ -6762,9 +6751,10 @@ code,
   }
 
   /* ===== 代码块 ===== */
-  /** code-block-container：圆角16px，外边距1rem 0，禁用transform悬停效果 */
+  /** code-block-container：圆角10px（扫平后内层递减），外边距1rem 0，
+      禁用transform悬停效果 */
   .code-block-container {
-    border-radius: 16px;
+    border-radius: 10px;
     margin: 1rem 0;
     transform: none !important;
   }
@@ -6772,12 +6762,12 @@ code,
     transform: none !important;
   }
   /** markdown pre：顶部 2.5rem 避让工具栏（top:10px + 按钮高 ~23px），
-      字号0.85rem，水平滚动，圆角16px */
+      字号0.85rem，水平滚动，圆角10px */
   .markdown-content pre {
     padding: 2.5rem 1.25rem 1rem;
     font-size: 0.85rem;
     overflow-x: auto;
-    border-radius: 16px;
+    border-radius: 10px;
   }
   /** markdown code：字号0.8rem，内边距0.1rem 0.3rem，圆角4px */
   .markdown-content code {
@@ -8238,19 +8228,15 @@ code,
   text-decoration-color: var(--text-secondary); /* 深色删除线 */
 }
 
-/* 浅色主题 - 代码块容器 (浅色背景) */
+/* 浅色主题 - 代码块容器（TODO#10 扫平：嵌入面板，无阴影） */
 [data-theme="light"] .code-block-container {
   background: #f5f2e9 !important; /* Anthropic Light - 温暖的米白色 */
   border: 1px solid var(--border-primary);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.06),
-    0 2px 6px rgba(0, 0, 0, 0.04);
+  box-shadow: none;
 }
 
 [data-theme="light"] .code-block-container:hover {
-  box-shadow:
-    0 6px 16px rgba(0, 0, 0, 0.08),
-    0 3px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: none;
 }
 
 [data-theme="light"] .code-block {

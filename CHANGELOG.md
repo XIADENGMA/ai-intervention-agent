@@ -11,6 +11,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Flattened the code-block container from a floating card into an
+  embedded panel (the "card inside a card inside a card" nesting:
+  `.container` 32px → `.description` 24px → code block 20px, each with
+  its own border/shadow/gradient stack). The code block now uses a flat
+  one-step-darker background, a hairline `var(--border-secondary)`
+  border, no shadows, no backdrop-filter, and a 12px radius (10px at the
+  ≤768px breakpoint) so the corner rhythm decreases inward (32 → 24 →
+  12). Light mode drops its double drop-shadow the same way. Syntax
+  highlighting, the toolbar, and copy interactions are untouched —
+  aligned with the R698/R700 quiet-UI direction.
+
 - Refreshed all 12 README screenshots ({desktop, mobile} x {light, dark}
   x {feedback, empty-state, settings}) to match the current UI: the new
   non-repetitive empty-state copy, the brand-orange dark-mode progress
