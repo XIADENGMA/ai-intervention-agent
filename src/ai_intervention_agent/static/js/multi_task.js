@@ -1364,11 +1364,9 @@ function _connectDirectSSE(sharedLeaderMode) {
       _lastEventId = e.lastEventId;
     }
     _debugSseTaskChanged(e && typeof e.data === "string" ? e.data : "{}");
-    if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
-    _sseDebounceTimer = setTimeout(function () {
-      _sseDebounceTimer = null;
-      fetchAndApplyTasks("sse");
-    }, 80);
+    // 与 follower 路径共用 helper：前台 80ms debounce，hidden 时直通
+    // （TODO#8-A，规避后台 timer 节流拖慢系统通知）。
+    _scheduleSharedSseFetch("sse", 80);
     if (sharedLeaderMode) {
       _postSseSharedMessage({
         kind: "event",
@@ -1389,11 +1387,7 @@ function _connectDirectSSE(sharedLeaderMode) {
       "SSE gap_warning detail:",
       e && typeof e.data === "string" ? e.data : "{}",
     );
-    if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
-    _sseDebounceTimer = setTimeout(function () {
-      _sseDebounceTimer = null;
-      fetchAndApplyTasks("sse-gap");
-    }, 0);
+    _scheduleSharedSseFetch("sse-gap", 0);
     if (sharedLeaderMode) {
       _postSseSharedMessage({
         kind: "event",
@@ -1622,6 +1616,15 @@ function _updateSharedLastEventId(lastEventId) {
 
 function _scheduleSharedSseFetch(reason, delayMs) {
   if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
+  // TODO#8-A：页面 hidden 时跳过 debounce timer 直接拉取。后台标签页的
+  // setTimeout 被 Chrome 节流（普通 ~1s，intensive throttling 下最长
+  // 1 分钟），会把"新任务 → 系统桌面通知"整条链路拖到分钟级；而
+  // fetch/promise 微任务不受节流。后台 SSE 事件本就稀少，没有需要
+  // debounce 合并的高频场景，直接执行是安全的。
+  if (typeof document !== "undefined" && document.hidden) {
+    fetchAndApplyTasks(reason);
+    return;
+  }
   _sseDebounceTimer = setTimeout(function () {
     _sseDebounceTimer = null;
     fetchAndApplyTasks(reason);
@@ -1910,8 +1913,12 @@ function getNextBackoffMs(currentMs) {
 }
 
 async function fetchAndApplyTasks(reason) {
-  // 页面不可见：不发请求（由 visibilitychange 负责 stop，但这里再兜底）
-  if (typeof document !== "undefined" && document.hidden) {
+  // 页面不可见：默认不发请求（由 visibilitychange 负责 stop，这里兜底
+  // 拦截 stray timer）。例外（TODO#8-A）：SSE 推送的任务变更必须放行——
+  // 后台弹系统桌面通知依赖它感知新任务；hidden 时轮询已全停，SSE 驱动
+  // 的拉取频率完全由服务端事件决定，不构成后台流量压力。
+  var sseDriven = reason === "sse" || reason === "sse-gap";
+  if (typeof document !== "undefined" && document.hidden && !sseDriven) {
     return false;
   }
 
@@ -2125,7 +2132,11 @@ function startTasksPolling() {
       if (document.hidden) {
         // R123：visibility 隐藏时同步停健康检查，让后台 30s tick
         // 完全静止；可见时重新拉起（``startTasksHealthCheck`` 幂等）。
-        stopTasksPolling();
+        // TODO#8-A：keepSse —— SSE 连接在后台保留，收到 task_changed
+        // 时仍能拉取任务并发系统桌面通知（notifyNewTasks 的 pageAway
+        // 分支）。历史行为是 hidden 全断链，导致后台永远无法感知新
+        // 任务、桌面通知形同虚设。
+        stopTasksPolling({ keepSse: true });
         stopTasksHealthCheck();
       } else {
         startTasksPolling();
@@ -2224,8 +2235,13 @@ function startTasksPolling() {
  *
  * - 多次调用是安全的（会检查定时器是否存在）
  * - 停止后需要手动调用 `startTasksPolling` 重新启动
+ * - `options.keepSse === true` 时只停轮询 timer / in-flight 请求，
+ *   保留 SSE 连接（TODO#8-A：页面 hidden 期间仍需感知新任务以发
+ *   系统桌面通知；SSE 是服务端推送的挂起连接，无 timer、不受后台
+ *   节流，维持成本可忽略）。unload / 显式停止路径不传该选项，
+ *   维持"全部断开"的既有语义。
  */
-function stopTasksPolling() {
+function stopTasksPolling(options) {
   if (tasksPollingTimer) {
     clearTimeout(tasksPollingTimer);
     tasksPollingTimer = null;
@@ -2244,7 +2260,9 @@ function stopTasksPolling() {
     tasksPollAbortController = null;
   }
 
-  _disconnectSSE();
+  if (!(options && options.keepSse)) {
+    _disconnectSSE();
+  }
 }
 
 // R123：tasks polling 的健康检查（独立于轮询本身，30s 兜底重启）。
@@ -2352,8 +2370,13 @@ function updateTasksList(tasks) {
     _debugLog(`Detected ${addedTasks.length} new task(s)`);
 
     if (!isInitialTaskSnapshot) {
+      // 页面 hidden 时跳过 150ms 合并 timer 直接通知（TODO#8-A）：
+      // 后台 setTimeout 被 Chrome 节流（intensive throttling 下最长
+      // 1 分钟），会拖慢系统桌面通知；后台事件稀少无合并压力。
+      const pageHidden =
+        typeof document !== "undefined" && document.hidden === true;
       // 如果当前有活动任务，使用合并机制避免短时间内频繁弹出多个通知
-      if (activeTaskId) {
+      if (activeTaskId && !pageHidden) {
         pendingNewTaskCount += addedTasks.length;
         window.pendingNewTaskCount = pendingNewTaskCount;
 

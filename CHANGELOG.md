@@ -9,7 +9,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Background desktop notifications for new tasks (Web UI): when the page
+  is hidden or the window has lost focus — exactly when the in-page
+  visual hint is invisible — `notifyNewTasks` now routes to a system
+  notification (fixed `aiia-new-tasks` tag collapses bursts; clicking
+  focuses the page via the existing service-worker `notificationclick`
+  router). The foreground experience keeps the non-intrusive visual
+  hint. To make the background path actually observable, the
+  `visibilitychange` hidden branch now keeps the SSE connection alive
+  (`stopTasksPolling({ keepSse: true })` — polling and the 30s health
+  check still stop; `beforeunload` still tears everything down),
+  `fetchAndApplyTasks` lets SSE-driven reasons through while hidden, and
+  the SSE debounce / notification merge timers are bypassed when hidden
+  so Chrome's background timer throttling cannot delay the notification
+  by up to a minute. Verified end-to-end with an automated headless-CDP
+  probe (page hidden → task created via API → `aiia-new-tasks`
+  notification present in `registration.getNotifications()` within 2s).
+
 ### Fixed
+
+- Web notification icon switched from `icon.svg` to `icon-192.png`: the
+  WHATWG Notifications spec leaves image-format support to the platform
+  and silently drops unsupported formats, and Chrome's own guidance
+  recommends 192px+ raster icons — the SVG icon could vanish on some
+  platforms.
 
 - Code-block toolbar overlap: the absolutely-positioned language label /
   copy button hovers at `top:16px`, but `pre` only reserved 24px of top

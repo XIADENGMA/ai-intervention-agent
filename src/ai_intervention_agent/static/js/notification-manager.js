@@ -115,7 +115,11 @@ class NotificationManager {
       soundMute: false,
       autoRequestPermission: true,
       timeout: 5000,
-      icon: '/icons/icon.svg',
+      // TODO#8-B：通知图标用 192px PNG 而非 SVG。WHATWG Notifications 标准
+      // 规定图标格式支持由平台决定、不支持时**静默丢弃**（无图标）；Chrome
+      // 官方（web.dev）最佳实践推荐 192px 以上的位图。icon-192.png 与页面
+      // favicon 同源同设计，各平台显示稳定。
+      icon: '/icons/icon-192.png',
       mobileOptimized: true,
       mobileVibrate: true
     }
@@ -978,9 +982,14 @@ class NotificationManager {
   }
 
   /**
-   * 新任务通知（Web UI 侧：仅做桌面 Visual Hint + 声音提示；
-   * 移动端 Bark 推送由后端 MCP 主进程在 server_feedback.py 里统一发送，
-   * 前端不再调用 /api/notify-new-tasks 以避免双推）
+   * 新任务通知（Web UI 侧）：
+   * - 页面可见且聚焦：桌面 Visual Hint + 声音提示（页内提示足够，不打扰）
+   * - 页面不可见或窗口失焦（TODO#8-A）：改发系统桌面通知——用户切走
+   *   标签页/最小化/在 IDE 等其他应用工作时，页内 Visual Hint 无人看见，
+   *   这正是 Web Notification API 的目标场景。点击通知会聚焦回本页面
+   *   （页面路径由 service worker ``notificationclick`` 路由匹配）。
+   * - 移动端 Bark 推送由后端 MCP 主进程在 server_feedback.py 里统一发送，
+   *   前端不再调用 /api/notify-new-tasks 以避免双推
    */
   async notifyNewTasks(event = {}) {
     const countRaw = event && typeof event === 'object' ? event.count : null
@@ -1013,16 +1022,46 @@ class NotificationManager {
     const message =
       count === 1 && taskIdCount === 1 ? `New task added: ${taskIds[0]}` : `Received ${count} new task(s)`
 
-    // 1) 桌面端：Visual Hint（不依赖系统通知权限）
+    // TODO#8-A：判断用户注意力是否在本页面。document.hidden 覆盖"切走
+    // 标签页/最小化"，!document.hasFocus() 覆盖"窗口可见但焦点在其他
+    // 应用（IDE 等）"。任一成立都说明页内 Visual Hint 无人看见。
+    // 防御性 try/catch + typeof 检查：测试 harness / 旧浏览器的 document
+    // 可能缺这些成员，此时按"页面可见"处理（维持原 Visual Hint 行为）。
+    let pageAway = false
     try {
-      if (typeof window.showNewTaskVisualHint === 'function') {
-        window.showNewTaskVisualHint(count)
-      } else {
-        // 兜底：页面内通知（非系统通知）
-        this.showInPageNotification(title, message, { timeout: 3000 })
+      if (typeof document !== 'undefined') {
+        const hidden = document.hidden === true
+        const unfocused = typeof document.hasFocus === 'function' && !document.hasFocus()
+        pageAway = hidden || unfocused
       }
     } catch (e) {
-      // 忽略：视觉提示失败不应影响主流程
+      pageAway = false
+    }
+
+    if (pageAway) {
+      // 1a) 页面不在前台：发系统桌面通知。固定 tag 让连续到达的多个
+      // 任务折叠为一条（替换旧通知），避免通知轰炸。权限未授予时
+      // showNotification 内部自动降级（标题闪烁 + 页内提示）。
+      try {
+        await this.showNotification(title, message, {
+          tag: 'aiia-new-tasks',
+          requireInteraction: false
+        })
+      } catch (e) {
+        // 忽略：系统通知失败不应影响主流程（内部已有降级路径）
+      }
+    } else {
+      // 1b) 页面在前台：Visual Hint（不依赖系统通知权限）
+      try {
+        if (typeof window.showNewTaskVisualHint === 'function') {
+          window.showNewTaskVisualHint(count)
+        } else {
+          // 兜底：页面内通知（非系统通知）
+          this.showInPageNotification(title, message, { timeout: 3000 })
+        }
+      } catch (e) {
+        // 忽略：视觉提示失败不应影响主流程
+      }
     }
 
     // 2) 声音提示：仍沿用现有配置（不使用系统通知）

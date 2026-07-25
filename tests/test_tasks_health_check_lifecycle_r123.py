@@ -168,11 +168,25 @@ class TestVisibilityChangeStopsHealthCheck(unittest.TestCase):
         # 锚点：``visibilitychange``
         start = self.src.find('"visibilitychange"')
         self.assertGreater(start, 0, "找不到 visibilitychange 事件注册")
-        # handler body 大致是 ``visibilitychange``, function() { ... } 一段；
-        # 找下一个 ``});`` 或 ``})`` 当结尾
-        end = self.src.find("});", start)
-        self.assertGreater(end, start, "找不到 visibilitychange handler 结束")
-        body = self.src[start:end]
+        # handler body：从 function 的开括号做括号平衡截取。
+        # （TODO#8-A 之前用 ``src.find("});")`` 截取，但 handler 体内出现
+        # ``stopTasksPolling({ keepSse: true });`` 这类"对象字面量实参"
+        # 后启发式会提前截断——平衡截取对代码形态不敏感。）
+        func_kw = self.src.find("function", start)
+        self.assertGreater(func_kw, start, "找不到 visibilitychange handler function")
+        open_brace = self.src.find("{", func_kw)
+        self.assertGreater(open_brace, func_kw, "找不到 handler 开括号")
+        depth = 1
+        i = open_brace + 1
+        while i < len(self.src) and depth > 0:
+            char = self.src[i]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+            i += 1
+        self.assertEqual(depth, 0, "visibilitychange handler 括号不平衡")
+        body = self.src[start:i]
 
         # hidden 分支必须包含 stopTasksHealthCheck
         # 用 if (document.hidden) { ... stopTasksHealthCheck ... } 的宽松匹配
