@@ -16,6 +16,11 @@ package, MCP server, Web UI internals), see the
 
 ### Added
 
+- Settings panel: an "Open" button next to the read-only config file
+  path opens `config.toml` directly in the current editor tab
+  (`vscode.window.showTextDocument` with absolute-path validation,
+  Windows drive letters included). Localized in en / zh-CN / zh-TW.
+
 - Loop-engineering surfaces in the webview, mirroring the Web UI:
   tasks that carry a `loop_id` render a loop-context strip (loop /
   phase / iteration chips plus objective and success-criteria lines)

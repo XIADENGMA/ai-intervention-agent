@@ -1382,6 +1382,23 @@ body.vscode-light .no-content-progress-bar {
   border-color: var(--vscode-focusBorder);
 }
 
+/* TODO#12：配置路径行——只读路径 input 与「在编辑器中打开」按钮同行 */
+.settings-config-path-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.settings-config-path-row input[type='text'] {
+  flex: 1;
+  min-width: 0; /* 长路径可收缩，避免把按钮挤出面板 */
+}
+
+.settings-config-open-btn {
+  flex: none;
+  white-space: nowrap;
+}
+
 .settings-field textarea {
   width: 100%;
   padding: 8px 10px;

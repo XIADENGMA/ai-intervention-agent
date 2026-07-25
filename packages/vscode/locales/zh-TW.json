@@ -52,7 +52,9 @@
     "config": {
       "title": "設定",
       "path": "目前設定檔案路径",
-      "pathPlaceholder": "載入中…"
+      "pathPlaceholder": "載入中…",
+      "openInEditor": "打開",
+      "openInEditorTitle": "在目前編輯器中打開設定檔案"
     },
     "hint": {
       "loading": "載入中…",

@@ -45,6 +45,8 @@ export type I18nKey =
   | "settings.bark.urlTemplateHint"
   | "settings.bark.urlTemplatePlaceholder"
   | "settings.close"
+  | "settings.config.openInEditor"
+  | "settings.config.openInEditorTitle"
   | "settings.config.path"
   | "settings.config.pathPlaceholder"
   | "settings.config.title"
@@ -211,6 +213,8 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "settings.bark.urlTemplateHint",
   "settings.bark.urlTemplatePlaceholder",
   "settings.close",
+  "settings.config.openInEditor",
+  "settings.config.openInEditorTitle",
   "settings.config.path",
   "settings.config.pathPlaceholder",
   "settings.config.title",

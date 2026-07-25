@@ -47,7 +47,9 @@
     "config": {
       "title": "配置",
       "path": "当前配置文件路径",
-      "pathPlaceholder": "加载中…"
+      "pathPlaceholder": "加载中…",
+      "openInEditor": "打开",
+      "openInEditorTitle": "在当前编辑器中打开配置文件"
     },
     "hint": {
       "loading": "加载中…",

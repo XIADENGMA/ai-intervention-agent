@@ -981,6 +981,26 @@
         );
       }
 
+      // TODO#12：「在编辑器中打开配置文件」——把只读 input 里的路径
+      // （来自 /api/get-feedback-prompts 的 meta.config_file）交给宿主，
+      // 宿主用 vscode.window.showTextDocument 在当前编辑器 tab 打开。
+      const openConfigBtn = document.getElementById("settingsOpenConfigBtn");
+      if (openConfigBtn) {
+        openConfigBtn.addEventListener("click", (e) => {
+          try {
+            e.preventDefault();
+            e.stopPropagation();
+            const pathInput = document.getElementById("settingsConfigPath");
+            const configPath =
+              pathInput && pathInput.value ? String(pathInput.value).trim() : "";
+            if (!configPath) return;
+            postMessage({ type: "openConfigFile", path: configPath });
+          } catch (_e) {
+            // 忽略：打开配置失败不影响设置面板主流程
+          }
+        });
+      }
+
       if (settingsOverlay) {
         settingsOverlay.addEventListener("click", (e) => {
           if (e.target === settingsOverlay) {

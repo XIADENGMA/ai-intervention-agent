@@ -47,7 +47,9 @@
     "config": {
       "title": "Configuration",
       "path": "Config file path",
-      "pathPlaceholder": "Loading…"
+      "pathPlaceholder": "Loading…",
+      "openInEditor": "Open",
+      "openInEditorTitle": "Open the config file in this editor"
     },
     "hint": {
       "loading": "Loading…",

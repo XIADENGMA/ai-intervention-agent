@@ -9,6 +9,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- VS Code settings panel: an "Open" button next to the read-only config
+  file path opens `config.toml` directly in the current editor
+  (`vscode.window.showTextDocument`, absolute-path validated,
+  Windows-drive aware). Localized in en / zh-CN / zh-TW.
+
 ### Fixed
 
 - VS Code webview now follows server-side language changes at runtime:

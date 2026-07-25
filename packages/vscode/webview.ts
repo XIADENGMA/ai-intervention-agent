@@ -1107,6 +1107,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       case "openExternal":
         this._handleOpenExternal(message);
         break;
+      case "openConfigFile":
+        this._handleOpenConfigFile(message);
+        break;
       case "langDetected":
         try {
           const lang =
@@ -1396,6 +1399,60 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       });
     } catch {
       // 忽略：openExternal 异常不应影响主流程
+    }
+  }
+
+  /**
+   * TODO#12：在当前编辑器里打开服务器的 config.toml。
+   *
+   * 路径来源是设置面板里由 ``/api/get-feedback-prompts`` 的
+   * ``meta.config_file`` 填充的只读 input（webview 属同扩展打包的受信
+   * 代码，但仍做防御性校验：非空 + 绝对路径 + 无 URI scheme，拒绝
+   * 相对路径 / http(s) 等意外输入透传到文件系统 API）。
+   * 用 ``vscode.window.showTextDocument`` 在当前编辑器 tab 打开——
+   * 相比 Web UI 的「用 IDE 打开」（要探测 PATH 里的 CLI），扩展宿主
+   * 自身就是编辑器，原生 API 即可。
+   */
+  _handleOpenConfigFile(message: WebviewMessage): void {
+    try {
+      const rawPath = message && (message as Record<string, unknown>).path;
+      const filePath = typeof rawPath === "string" ? rawPath.trim() : "";
+      // 绝对路径白名单：POSIX 以 / 开头，Windows 盘符 C:\ / C:/ 开头。
+      // 该判断天然排除 http(s)://、file:// 等 URL 形态（不以 / 或盘符
+      // 开头），无需额外 scheme 黑名单（盘符 C: 反而会被 scheme 正则误伤）。
+      const isAbsolute =
+        filePath.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(filePath);
+      if (!filePath || !isAbsolute) {
+        try {
+          if (this._logger && typeof this._logger.warn === "function") {
+            this._logger.warn(
+              `Refused openConfigFile for non-absolute path: ${filePath.slice(0, 120)}`,
+            );
+          }
+        } catch {
+          // 忽略
+        }
+        return;
+      }
+      const uri = vscode.Uri.file(filePath);
+      void Promise.resolve(
+        vscode.window.showTextDocument(uri, { preview: false }),
+      ).catch((e) => {
+        try {
+          if (this._logger && typeof this._logger.warn === "function") {
+            this._logger.warn(
+              `showTextDocument failed for config file: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+        } catch {
+          // 忽略
+        }
+        void vscode.window.showErrorMessage(
+          vscode.l10n.t("Failed to open config file: {0}", filePath),
+        );
+      });
+    } catch {
+      // 忽略：打开配置文件异常不应影响主流程
     }
   }
 
@@ -2258,10 +2315,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 <div class="settings-divider"></div>
 
                 <div class="settings-section-title" data-i18n="settings.config.title">${tl("settings.config.title")}</div>
-                <label class="settings-field">
+                <!-- TODO#12: div 而非 label —— label 内的 button 点击会触发
+                     label 默认行为（把焦点转给关联控件），readonly input 也
+                     无需 label 语义。按钮通过 openConfigFile 消息让宿主用
+                     vscode.window.showTextDocument 在当前编辑器打开配置。 -->
+                <div class="settings-field">
                     <span class="settings-label" data-i18n="settings.config.path">${tl("settings.config.path")}</span>
-                    <input type="text" id="settingsConfigPath" readonly placeholder="${tl("settings.config.pathPlaceholder")}" data-i18n-placeholder="settings.config.pathPlaceholder">
-                </label>
+                    <div class="settings-config-path-row">
+                        <input type="text" id="settingsConfigPath" readonly placeholder="${tl("settings.config.pathPlaceholder")}" data-i18n-placeholder="settings.config.pathPlaceholder">
+                        <button type="button" class="settings-action secondary settings-config-open-btn" id="settingsOpenConfigBtn" title="${tl("settings.config.openInEditorTitle")}" data-i18n="settings.config.openInEditor" data-i18n-title="settings.config.openInEditorTitle">${tl("settings.config.openInEditor")}</button>
+                    </div>
+                </div>
 
                 <div class="settings-divider"></div>
 
