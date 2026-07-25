@@ -147,11 +147,11 @@ ai-intervention-agent 工具使用细节：
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_content.png">
-    <img alt="桌面端 - 反馈页（多任务标签、代码高亮、预设选项）" src=".github/assets/desktop_light_content.png" width="600" height="501" />
+    <img alt="桌面端 - 反馈页（多任务标签、代码高亮、预设选项）" src=".github/assets/desktop_light_content.png" width="600" height="625" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
-    <img alt="移动端 - 反馈页" src=".github/assets/mobile_light_content.png" width="180" height="447" />
+    <img alt="移动端 - 反馈页" src=".github/assets/mobile_light_content.png" width="180" height="644" />
   </picture>
 </p>
 

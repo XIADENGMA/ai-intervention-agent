@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed all 12 README screenshots ({desktop, mobile} x {light, dark}
+  x {feedback, empty-state, settings}) to match the current UI: the new
+  non-repetitive empty-state copy, the brand-orange dark-mode progress
+  bar, the code-block toolbar that no longer overlaps long first lines,
+  and a realistic multi-task demo (auth-token race fix with Python
+  highlighting, predefined options with a pre-checked default, countdown
+  badges on task tabs). Content-shot aspect ratios in both READMEs were
+  updated accordingly (600x625 desktop, 180x644 mobile).
+
 ### Added
 
 - Background desktop notifications for new tasks (Web UI): when the page
