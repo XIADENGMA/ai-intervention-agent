@@ -9,6 +9,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.5] - 2026-07-26
+
+### Fixed
+
+- Refresh `package-lock.json` to pick up the ReDoS/DoS fixes disclosed
+  on 2026-07-23..25 in the dev toolchain's transitive dependencies:
+  `brace-expansion` 1.1.14 → 1.1.16 (CVE-2026-13149, exponential-time
+  expansion of consecutive non-expanding `{}` groups; the 2.x/5.x
+  copies were already on patched 2.1.2/5.0.7) plus `eslint` 9.39.5 /
+  `@eslint/eslintrc` 3.3.6 patch bumps. The v1.8.4 tag build stopped
+  at the release-gate dependency audit because the runner's `npm
+  audit` already saw the fresh advisories (the local endpoint lagged),
+  so v1.8.5 supersedes v1.8.4 — same code, patched lockfile.
+
 ## [1.8.4] - 2026-07-26
 
 ### Removed
