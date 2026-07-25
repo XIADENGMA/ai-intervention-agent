@@ -9,6 +9,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- Code-block toolbar overlap: the absolutely-positioned language label /
+  copy button hovers at `top:16px`, but `pre` only reserved 24px of top
+  padding, so a long first code line — and, on narrow mobile viewports,
+  every wrapped line — ran underneath the toolbar. `pre` now reserves
+  3.25rem of top padding on desktop and 2.5rem at the ≤768px breakpoint,
+  giving the toolbar its own row.
+
+### Changed
+
+- Empty-state copy no longer repeats itself: the title stays
+  "暂无交互反馈请求" / "No feedback requests", while the description now
+  explains the auto-refresh behaviour instead of restating the title —
+  "保持页面打开，新请求到达时会自动显示" / "Keep this page open — new
+  requests will appear automatically" across zh-CN / en / zh-TW (hand
+  polished, script left in `--check` mode) plus the HTML fallback and the
+  regenerated pseudo locale.
+- Dark-mode empty-state progress bar switched from the checkbox/slider
+  deep blue (#517fae) to translucent brand orange rgba(217, 119, 87, 0.65)
+  so the waiting screen stays within the warm palette; light mode keeps
+  its cream bar and the checkbox/slider blue accent system is untouched.
+
 ## [1.8.3] - 2026-07-20
 
 ### Fixed

@@ -7,7 +7,7 @@
   "page": {
     "noContent": {
       "title": "暫無交互回饋要求",
-      "description": "等待新的交互回饋要求…",
+      "description": "保持頁面打開，新要求到達時會自動顯示",
       "newTasks": "收到 {count, plural, other {# 個新的交互回饋要求}}"
     },
     "countdown": "{seconds, plural, other {# 秒後自動重新調用}}",

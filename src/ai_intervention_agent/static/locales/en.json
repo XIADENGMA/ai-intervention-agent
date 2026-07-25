@@ -2,7 +2,7 @@
   "page": {
     "noContent": {
       "title": "No feedback requests",
-      "description": "Waiting for new feedback requests…",
+      "description": "Keep this page open — new requests will appear automatically",
       "newTasks": "Received {count, plural, one {# new feedback request} other {# new feedback requests}}"
     },
     "countdown": "{seconds, plural, one {#s until auto-resubmit} other {#s until auto-resubmit}}",

@@ -2,7 +2,7 @@
   "page": {
     "noContent": {
       "title": "暂无交互反馈请求",
-      "description": "等待新的交互反馈请求…",
+      "description": "保持页面打开，新请求到达时会自动显示",
       "newTasks": "收到 {count, plural, other {# 个新的交互反馈请求}}"
     },
     "countdown": "{seconds, plural, other {# 秒后自动重调}}",

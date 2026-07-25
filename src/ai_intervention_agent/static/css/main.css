@@ -1587,13 +1587,16 @@ h1 {
  *   - 水平滑动效果（由@keyframes loading定义）
  *
  * 视觉设计：
- *   - 背景：#d97757（iOS蓝色）
+ *   - 背景：半透明品牌橙（深色模式）
  *   - 圆角：8px
  */
 .no-content-progress-bar {
   width: 100%; /* 全宽 */
   height: 100%; /* 全高 */
-  background: #517fae; /* 深色模式：深蓝色（与复选框和滑块一致） */
+  /* 空态页整体是暖色调（品牌橙 #d97757 家族），此前的深蓝 #517fae
+     （复选框/滑块辅助色）在这里非常突兀。改用半透明品牌橙让空态页
+     色彩统一；复选框/滑块保持深蓝辅助色体系不动。 */
+  background: rgba(217, 119, 87, 0.65); /* 深色模式：半透明品牌橙 */
   animation: loading 1.5s linear infinite; /* 加载动画 */
   border-radius: 8px; /* 圆角 */
 }
@@ -6216,7 +6219,10 @@ h1 {
 .markdown-content pre {
   background: transparent; /* 透明背景 */
   border: none; /* 无边框 */
-  padding: 1.5rem 1.75rem; /* 内边距 */
+  /* 顶部 3.25rem 为绝对定位的 .code-toolbar（top:16px + 按钮高 ~28px）
+     预留垂直空间——否则第一行长代码会从语言标签/复制按钮下方穿过（重叠）。
+     移动端窄屏折行后每行都可能延伸到工具栏区域，问题更明显。 */
+  padding: 3.25rem 1.75rem 1.5rem; /* 内边距（上 52px 避让工具栏） */
   margin: 0; /* 外边距 */
   overflow-x: auto; /* 水平滚动 */
   border-radius: 20px; /* 圆角 */
@@ -6765,9 +6771,10 @@ code,
   .code-block-container:hover {
     transform: none !important;
   }
-  /** markdown pre：内边距1rem 1.25rem，字号0.85rem，水平滚动，圆角16px */
+  /** markdown pre：顶部 2.5rem 避让工具栏（top:10px + 按钮高 ~23px），
+      字号0.85rem，水平滚动，圆角16px */
   .markdown-content pre {
-    padding: 1rem 1.25rem;
+    padding: 2.5rem 1.25rem 1rem;
     font-size: 0.85rem;
     overflow-x: auto;
     border-radius: 16px;
