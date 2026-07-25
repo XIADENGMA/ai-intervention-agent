@@ -749,11 +749,16 @@ class SettingsManager {
       const meta = notificationManager.getCustomSoundMeta();
       if (meta) {
         const kb = Math.round((meta.size || 0) / 1024);
+        // R709：动态值（用户文件名）生效期间摘掉 data-i18n，否则语言
+        // 切换触发的 translateDOM 会把它覆盖回「未上传」静态文案。
+        statusEl.removeAttribute("data-i18n");
         statusEl.textContent = `${meta.name} (${kb} KB)`;
         statusEl.setAttribute("data-status", "uploaded");
         testBtn.disabled = false;
         clearBtn.disabled = false;
       } else {
+        // R709：回到静态文案时恢复 data-i18n（跟随语言切换）。
+        statusEl.setAttribute("data-i18n", "settings.customSound.notUploaded");
         statusEl.textContent = t("settings.customSound.notUploaded");
         statusEl.setAttribute("data-status", "empty");
         testBtn.disabled = true;
@@ -798,10 +803,17 @@ class SettingsManager {
             else if (code === "storage_failed") msgKey = "settings.customSound.errors.storageFailed";
             else if (code === "decode_failed") msgKey = "settings.customSound.errors.decodeFailed";
             else if (code === "duration_too_long") msgKey = "settings.customSound.errors.durationTooLong";
+            // R709：错误文案是静态 i18n key——同步 data-i18n 让其跟随
+            // 语言切换。
+            statusEl.setAttribute("data-i18n", msgKey);
             statusEl.textContent = t(msgKey);
             statusEl.setAttribute("data-status", "error");
           }
         } catch (_e) {
+          statusEl.setAttribute(
+            "data-i18n",
+            "settings.customSound.errors.generic",
+          );
           statusEl.textContent = t("settings.customSound.errors.generic");
           statusEl.setAttribute("data-status", "error");
         } finally {

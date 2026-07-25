@@ -1260,6 +1260,18 @@ function _setSseStatus(state) {
   var label = _resolveSseStatusLabel(state);
   el.setAttribute("title", label);
   el.setAttribute("aria-label", label);
+  // R709：把 data-i18n-title / data-i18n-aria-label 同步到**当前状态**
+  // 的 key。模板初始值是 connected；若断线期间发生语言切换，
+  // translateDOM 会按旧属性把 title 覆盖回「已连接」——与真实状态
+  // （reconnecting/disconnected）矛盾。
+  var stateKey =
+    state === SSE_STATUS_CONNECTED
+      ? "page.sseStatus.connected"
+      : state === SSE_STATUS_RECONNECTING
+        ? "page.sseStatus.reconnecting"
+        : "page.sseStatus.disconnected";
+  el.setAttribute("data-i18n-title", stateKey);
+  el.setAttribute("data-i18n-aria-label", stateKey);
 }
 
 // BUG1：本地保存回响静音窗口（local-save echo suppression window）
@@ -3468,6 +3480,16 @@ async function updateDescriptionDisplay(prompt) {
   }
 
   try {
+    // R709：写入真实 prompt 前摘掉 data-i18n（初始
+    // ``data-i18n="page.loading"``）。否则语言切换 / 慢网络下
+    // ``translateDOM()`` 会把已渲染的任务内容整体覆盖成「加载中…」，
+    // 且 R687 签名仍匹配导致后续轮询短路、破坏永久化。
+    try {
+      descriptionElement.removeAttribute("data-i18n");
+    } catch (_e) {
+      // 测试桩元素可能没有 removeAttribute
+    }
+
     // 同步渲染（立即显示，不使用 requestAnimationFrame）
     let htmlContent = prompt;
 
@@ -3968,10 +3990,27 @@ function updateFeedbackPlaceholder(placeholder) {
   var textarea = document.getElementById("feedback-text");
   if (!textarea) return;
   if (typeof placeholder === "string" && placeholder.trim() !== "") {
+    // R709：任务自定义 placeholder 生效期间摘掉 data-i18n-placeholder，
+    // 否则语言切换触发的 translateDOM 会把它覆盖回默认翻译。
+    try {
+      textarea.removeAttribute("data-i18n-placeholder");
+    } catch (_e) {
+      // 测试桩元素可能没有 removeAttribute
+    }
     textarea.setAttribute("placeholder", placeholder);
   } else if (typeof window !== "undefined" && window.AIIA_I18N && typeof window.AIIA_I18N.t === "function") {
     var defaultText = window.AIIA_I18N.t("page.feedbackPlaceholder");
     if (typeof defaultText === "string" && defaultText) {
+      // R709：回到默认文案时恢复 data-i18n-placeholder，让默认
+      // placeholder 继续跟随语言切换。
+      try {
+        textarea.setAttribute(
+          "data-i18n-placeholder",
+          "page.feedbackPlaceholder",
+        );
+      } catch (_e) {
+        // 忽略
+      }
       textarea.setAttribute("placeholder", defaultText);
     }
   }

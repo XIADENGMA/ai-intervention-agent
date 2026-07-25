@@ -678,10 +678,12 @@
                   <path d="M12 7v5l3 3" />
                 </svg>
               </span>
-              <span
-                class="countdown-text"
-                id="countdown-text"
-                data-i18n="page.countdown"
+              <!-- R709：不带 data-i18n——文案由 multi_task.js 每秒以
+                   _t("page.countdown", {seconds}) 重写（带参数插值）；
+                   translateDOM 的静态翻译会把它覆盖成未替换的
+                   "{seconds}s" 字面量。容器默认 hidden，初始静态文案
+                   不可见，无需模板级翻译。 -->
+              <span class="countdown-text" id="countdown-text"
                 >0s until auto-resubmit</span
               >
               <!-- feat-countdown-extend (§3.2): +60s 扩展按钮，靠在

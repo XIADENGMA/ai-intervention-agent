@@ -145,15 +145,38 @@ def _send_with_optional_gzip(
     accepts_brotli = "br" in accepted_encodings or "*" in accepted_encodings
     accepts_gzip = "gzip" in accepted_encodings or "*" in accepted_encodings
 
+    # R710：压缩副本必须**不旧于**源文件才允许使用。此前只查
+    # ``is_file()``——源文件更新而 ``.br``/``.gz`` 未重建的窗口期
+    # （dev 改代码只跑 minify 没跑 precompress、部署产物不完整），
+    # 支持 br 的浏览器会拿到旧内容，并被 ``?v=<新版本>`` +
+    # ``Cache-Control: immutable`` 钉死在缓存里长达一年——比响应变慢
+    # 严重得多。过期副本直接回退 identity 源文件：宁可这次不压缩，
+    # 也绝不把陈旧字节配着新版本号发出去。
+    def _compressed_is_fresh(compressed_path: Path, source_path: Path) -> bool:
+        try:
+            return compressed_path.stat().st_mtime >= source_path.stat().st_mtime
+        except OSError:
+            return False
+
+    source_path = directory / filename
+
     response: Response | None = None
     try:
-        if accepts_brotli and br_path.is_file():
+        if (
+            accepts_brotli
+            and br_path.is_file()
+            and _compressed_is_fresh(br_path, source_path)
+        ):
             # R21.4：Brotli 优先（实测体积比 gzip 小 17-23%，主流 client 全支持）
             response = send_from_directory(
                 str(directory), br_filename, mimetype=mimetype
             )
             response.headers["Content-Encoding"] = "br"
-        elif accepts_gzip and gz_path.is_file():
+        elif (
+            accepts_gzip
+            and gz_path.is_file()
+            and _compressed_is_fresh(gz_path, source_path)
+        ):
             response = send_from_directory(
                 str(directory), gz_filename, mimetype=mimetype
             )

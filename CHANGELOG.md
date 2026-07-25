@@ -23,6 +23,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Switching the UI language (or a slow locale fetch finishing late) no
+  longer wipes the rendered task prompt to "Loading…". `translateDOM()`
+  rewrites every `[data-i18n*]` element, and `#description` ships
+  `data-i18n="page.loading"` for its first-paint skeleton — one
+  retranslation replaced the whole prompt, and because the R687 render
+  signature still matched, polling short-circuited and the damage was
+  permanent (verified in-browser). Both prompt render entry points now
+  strip `data-i18n` before writing real content; the per-task feedback
+  placeholder removes/restores `data-i18n-placeholder` two-way; the
+  custom-sound status and clipboard-failure hint sync the attribute to
+  the concrete key (the hint helper returns `{key, text}` keeping
+  literal `t("…")` calls for the orphan-key scanner); and
+  `#countdown-text` drops its template `data-i18n` (its text is
+  rewritten every second with `{seconds}` interpolation, which a static
+  retranslation would render as a raw placeholder) (R709; guarded by
+  `tests/test_i18n_dynamic_content_guard_r709.py`).
+
+- Stale precompressed assets can no longer poison browser caches. The
+  static-asset encoder negotiation picked `.br`/`.gz` siblings by
+  existence alone, so in the window between editing a JS file (new
+  `?v=<mtime>` URL) and re-running precompression, Brotli-capable
+  browsers received the old bytes under the new URL with
+  `Cache-Control: immutable` — pinning stale code for a year with no
+  self-healing (this bit the R709 verification run). A compressed
+  sibling is now served only when at least as new as its source file;
+  stale `.br` falls through to a fresh `.gz`, and stale-everything
+  falls back to the identity source (R710; guarded by
+  `tests/test_stale_precompressed_fallback_r710.py`).
+
 - The image drag-and-drop overlay now actually appears while dragging
   files over the page. It never had: the element ships with
   `class="drag-overlay hidden"` and the drag handlers only set inline

@@ -662,6 +662,17 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
   // 使用requestAnimationFrame优化渲染时机
   _scheduleNextFrame(() => {
     if (content) {
+      // R709：写入真实动态内容前摘掉 data-i18n。#description 初始带
+      // ``data-i18n="page.loading"``（首屏骨架占位文案跟随语言），但
+      // ``translateDOM()`` 会对所有 ``[data-i18n]`` 元素整体覆盖
+      // ``textContent``——语言切换 / 慢网络下 ensureDefaultLocale 迟到
+      // 时，正在显示的任务 prompt 会被抹成「加载中…」；且 R687 渲染
+      // 签名仍匹配，下一轮轮询短路不重渲染，破坏是**永久的**。
+      try {
+        element.removeAttribute("data-i18n");
+      } catch (_e) {
+        // 测试桩元素可能没有 removeAttribute
+      }
       let htmlContent = content;
 
       // 如果是 Markdown 文本，先用 marked.js 解析
@@ -1410,30 +1421,44 @@ function insertCodeBlockIntoFeedbackTextarea(text) {
   textarea.focus();
 }
 
+// R709：返回 ``{ key, text }``——调用方（openCodePasteModal）把 key 同步
+// 写进 ``data-i18n``，让 hint 在语言切换（translateDOM 重跑）时按正确
+// 原因重翻译，而不是被覆盖回默认 key 的翻译。每个分支保留
+// ``t("字面量")`` 调用形式，供 check_i18n_orphan_keys.py 的
+// ``JS_T_CALL_RE`` 识别（动态 key 变量无法被静态扫描器追踪）。
 function getClipboardFailureHint(error) {
   // 针对常见失败原因给出更明确的提示（尤其是 iOS/HTTP/权限）
   try {
     if (!window.isSecureContext) {
-      return t("status.clipboardHttp");
+      return { key: "status.clipboardHttp", text: t("status.clipboardHttp") };
     }
 
     const name = error && error.name ? String(error.name) : "";
     if (name === "NotAllowedError") {
-      return t("status.clipboardDenied");
+      return {
+        key: "status.clipboardDenied",
+        text: t("status.clipboardDenied"),
+      };
     }
     if (name === "NotFoundError") {
-      return t("status.clipboardEmpty");
+      return { key: "status.clipboardEmpty", text: t("status.clipboardEmpty") };
     }
     if (name === "Error" && error && error.message === "ClipboardReadTimeout") {
-      return t("status.clipboardTimeout");
+      return {
+        key: "status.clipboardTimeout",
+        text: t("status.clipboardTimeout"),
+      };
     }
     if (name === "Error" && error && error.message === "ClipboardEmpty") {
-      return t("status.clipboardNoText");
+      return {
+        key: "status.clipboardNoText",
+        text: t("status.clipboardNoText"),
+      };
     }
   } catch (e) {
     // 忽略：解析失败时走兜底提示文案
   }
-  return t("status.clipboardDefault");
+  return { key: "status.clipboardDefault", text: t("status.clipboardDefault") };
 }
 
 // cycle-22 / cr51 follow-up #1：与 image-modal R263a / settings-panel 同套
@@ -1561,7 +1586,15 @@ function openCodePasteModal(error) {
   }
 
   if (hint) {
-    hint.textContent = getClipboardFailureHint(error);
+    // R709：同步 data-i18n 为具体失败原因的 key——语言切换触发的
+    // translateDOM 会按此 key 重翻译，而不是覆盖回默认提示。
+    const hintInfo = getClipboardFailureHint(error);
+    try {
+      hint.setAttribute("data-i18n", hintInfo.key);
+    } catch (_e) {
+      // 忽略
+    }
+    hint.textContent = hintInfo.text;
   }
 
   textarea.value = "";
