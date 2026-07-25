@@ -25,18 +25,42 @@ from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 NPM_TRIAGE_DOC = ROOT / "docs" / "security" / "npm-audit-2026-06-21.md"
+# R711：2026-07-20..24 披露的 brace-expansion DoS/ReDoS 家族 triage 文档。
+# 上游只为 5.x 发了 5.0.8 修复（GHSA-mh99 宣告 <= 5.0.7 全部受影响且无
+# 1.x/2.x backport），eslint/minimatch 3.x 的 CJS 消费端与 5.x 的 named
+# export 不兼容（overrides 强钉会让 dev 工具链直接崩），只能豁免等上游。
+NPM_TRIAGE_DOC_BRACE_EXPANSION = ROOT / "docs" / "security" / "npm-audit-2026-07-26.md"
+# brace-expansion advisory 家族的根因 GHSA（豁免锚点：finding 的 via 链
+# 必须直接命中这些 advisory，或经由下方 dev 工具链家族包传递）。
+BRACE_EXPANSION_REDOS_GHSAS = {
+    "GHSA-3jxr-9vmj-r5cp",  # CVE-2026-13149 连续非展开 {} 组的指数展开
+    "GHSA-mh99-v99m-4gvg",  # <= 5.0.7 无界展开长度 OOM
+}
+# 该家族 advisory 在本仓 lockfile 里的完整传递链（全部是 packages/vscode
+# 的 devDependencies 工具链；不进 VSIX / wheel，由
+# ``_assert_accepted_npm_not_packaged`` 的 dry-run 验证兜底）。
+BRACE_EXPANSION_DEV_CHAIN = {
+    "brace-expansion",
+    "minimatch",
+    "glob",
+    "mocha",
+    "eslint",
+    "@eslint/config-array",
+    "@eslint/eslintrc",
+}
 ACCEPTED_NPM_FINDINGS = {
     "@vscode/test-cli",
     "mocha",
     "diff",
     "serialize-javascript",
-}
+} | BRACE_EXPANSION_DEV_CHAIN
 FORBIDDEN_PACKAGED_TOKENS = (
     "node_modules/",
     "@vscode/test-cli",
     "mocha",
     "diff",
     "serialize-javascript",
+    "brace-expansion",
 )
 
 
@@ -116,6 +140,50 @@ def _nodes(finding: dict[str, Any]) -> set[str]:
     return {str(item) for item in finding.get("nodes", [])}
 
 
+def _via_ghsa_ids(finding: dict[str, Any]) -> set[str]:
+    """提取 finding.via 中 advisory 对象的 GHSA id（url 末段）。"""
+    ghsas: set[str] = set()
+    for item in finding.get("via", []):
+        if isinstance(item, dict):
+            url = item.get("url")
+            if isinstance(url, str) and "/GHSA-" in url:
+                ghsas.add(url.rsplit("/", 1)[-1])
+    return ghsas
+
+
+def _is_accepted_brace_expansion_family(name: str, finding: dict[str, Any]) -> bool:
+    """R711：brace-expansion 2026-07 advisory 家族的 dev-only 豁免。
+
+    接受条件（两者满足其一）：
+    1. finding 的 via 直接命中 ``BRACE_EXPANSION_REDOS_GHSAS`` 之一
+       （链条根部：brace-expansion 自身，或 npm audit 把 advisory 挂到
+       family 内更高层包时）；
+    2. via 的包名全部落在 ``BRACE_EXPANSION_DEV_CHAIN`` 内（纯传递
+       finding：minimatch → eslint → … 的中间层，via 只会是家族内包）。
+
+    锚点设计：不放行任何 via 里出现家族外包名 / 家族外 advisory 的
+    finding——未来同名包出现**新的**无关漏洞时，条件 2 因 via 里出现
+    新 advisory 对象（dict 非 str，且 GHSA 不在锚点集合）而 fail-close。
+    """
+    if name not in BRACE_EXPANSION_DEV_CHAIN:
+        return False
+    if not NPM_TRIAGE_DOC_BRACE_EXPANSION.exists():
+        return False
+
+    via_ghsas = _via_ghsa_ids(finding)
+    if via_ghsas and not via_ghsas <= BRACE_EXPANSION_REDOS_GHSAS:
+        # via 里出现未 triage 的 advisory —— fail-close
+        return False
+
+    # 传递部分（via 中的包名 str，advisory dict 的 name 也会出现在
+    # _via_names 里）必须全部落在家族内；advisory dict 的 name 即
+    # brace-expansion 自身，天然属于家族。
+    via_names = _via_names(finding)
+    if not via_names and not via_ghsas:
+        return False
+    return via_names <= BRACE_EXPANSION_DEV_CHAIN
+
+
 def _is_accepted_npm_finding(name: str, finding: dict[str, Any]) -> bool:
     if not NPM_TRIAGE_DOC.exists() or name not in ACCEPTED_NPM_FINDINGS:
         return False
@@ -127,7 +195,19 @@ def _is_accepted_npm_finding(name: str, finding: dict[str, Any]) -> bool:
     if name == "@vscode/test-cli":
         return "mocha" in via and "node_modules/@vscode/test-cli" in nodes
     if name == "mocha":
-        return "@vscode/test-cli" in effects and {"diff", "serialize-javascript"} <= via
+        if (
+            "@vscode/test-cli" in effects
+            and {
+                "diff",
+                "serialize-javascript",
+            }
+            <= via
+        ):
+            return True
+        # R711：mocha 也在 brace-expansion 家族传递链上（mocha →
+        # glob/minimatch → brace-expansion），旧专属条件不命中时落到
+        # 家族豁免判定。
+        return _is_accepted_brace_expansion_family(name, finding)
     if name == "diff":
         return "mocha" in effects and "node_modules/mocha/node_modules/diff" in nodes
     if name == "serialize-javascript":
@@ -135,7 +215,7 @@ def _is_accepted_npm_finding(name: str, finding: dict[str, Any]) -> bool:
             "mocha" in effects
             and "node_modules/mocha/node_modules/serialize-javascript" in nodes
         )
-    return False
+    return _is_accepted_brace_expansion_family(name, finding)
 
 
 def _packaged_paths() -> list[str]:

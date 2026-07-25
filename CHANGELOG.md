@@ -9,6 +9,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.6] - 2026-07-26
+
+### Fixed
+
+- Accept the remaining `brace-expansion` advisory family findings as a
+  documented dev-tool exception
+  (`docs/security/npm-audit-2026-07-26.md`), superseding v1.8.5 whose
+  tag build stopped at the same release-gate audit: GHSA-mh99-v99m-4gvg
+  declares `<= 5.0.7` vulnerable with 5.0.8 as the **only** patched
+  version — no 1.x/2.x backport exists, and force-pinning 5.0.8
+  tree-wide breaks the ESLint family's CJS `require("brace-expansion")`
+  callable contract (verified: 5.x exports `{ expand }`, 1.x exports
+  the function). The audit-gate exception is anchored to the triaged
+  GHSA ids and the documented dev-only chain, so any unrelated future
+  advisory on the same package names fails closed.
+
 ## [1.8.5] - 2026-07-26
 
 ### Fixed
