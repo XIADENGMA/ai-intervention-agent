@@ -9,6 +9,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.4] - 2026-07-26
+
 ### Removed
 
 - The Quick Phrases / quick replies panel (R130 family) is gone by owner
