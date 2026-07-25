@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import textwrap
@@ -56,7 +57,8 @@ def test_process_code_blocks_uses_indexed_loop_without_nodelist_foreach() -> Non
     body = _extract_function(_source(), "function processCodeBlocks(")
 
     assert "codeBlocks.forEach" not in body
-    assert "for (let codeBlockIndex = 0;" in body
+    # 正则兼容 Prettier 对超长 for 头的折行（单行 / 多行语义等价）
+    assert re.search(r"for \(\s*let codeBlockIndex = 0;", body)
     assert "codeBlockIndex < codeBlockCount" in body
     assert "const pre = codeBlocks[codeBlockIndex]" in body
     assert "if (!pre) continue" in body

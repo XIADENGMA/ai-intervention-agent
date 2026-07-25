@@ -7,8 +7,9 @@
    再热切换——两套动画风格不同，切换过程肉眼可见且不流畅。R696 改为
    lottie.min.js 随首屏 ``<script defer>`` 预加载（排在 app.js 之前，
    defer 按文档顺序执行），``initHourglassAnimation`` 直接创建 Lottie
-   动画；SVG 降级仅保留两个场景——prefers-reduced-motion 与 lottie
-   运行时加载失败。
+   动画；SVG 降级仅保留 lottie 运行时加载失败一个场景（R704 起
+   prefers-reduced-motion 不再降级，改为加载 Lottie 后静止到完整帧，
+   详见 test_lottie_reduced_motion_rest_frame_r704.py）。
 2. **倒计时条图标**：``.countdown-label`` 从 ⏰ emoji 改为
    stroke:currentColor 的内联 SVG 时钟，颜色随主题（暗色琥珀 /
    浅色深陶土橙），与页面风格一致。
@@ -91,16 +92,23 @@ class TestInitCreatesLottieDirectly(unittest.TestCase):
         self.assertNotIn("IntersectionObserver", self.body)
         self.assertNotIn("requestIdleCallback", self.body)
 
-    def test_fallback_only_for_reduced_motion_or_load_failure(self) -> None:
-        # 降级渲染仅出现在 prefers-reduced-motion 分支与 !ok（运行时
-        # 加载失败）分支——不允许回到「先降级后切换」的旧流程。
+    def test_fallback_only_for_load_failure(self) -> None:
+        # 降级渲染仅出现在 !ok（运行时加载失败）分支——不允许回到
+        # 「先降级后切换」的旧流程，也不允许恢复 R704 移除的
+        # prefers-reduced-motion 提前降级分支。
         occurrences = self.body.count("renderSproutFallback(container)")
         self.assertEqual(
             occurrences,
-            2,
-            "renderSproutFallback 应恰好出现 2 次（reduced-motion / 加载失败）",
+            1,
+            "renderSproutFallback 应恰好出现 1 次（仅运行时加载失败）",
         )
-        self.assertIn("prefers-reduced-motion: reduce", self.body)
+        self.assertNotIn(
+            "prefers-reduced-motion: reduce",
+            self.body,
+            "R704：reduced-motion 不再提前降级，偏好判断移入 "
+            "_createLottieAnimation（autoplay）与 DOMLoaded（静止帧）",
+        )
+        self.assertIn("_installReducedMotionWatcher()", self.body)
         self.assertIn("_ensureLottieLoaded().then", self.body)
         self.assertIn("_createLottieAnimation(container, token)", self.body)
 

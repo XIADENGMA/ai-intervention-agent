@@ -104,6 +104,16 @@ if (typeof window.tasksHealthCheckTimer === "undefined") {
 if (typeof window.hasLoadedTaskSnapshot === "undefined") {
   window.hasLoadedTaskSnapshot = false; // 首次任务快照仅用于建立基线，不触发系统通知
 }
+// R705 (TODO#38)：最近一次**成功渲染**过详情（prompt/选项全量数据）的
+// 任务 ID。``/api/tasks`` 列表不含 predefined_options（prompt 也截断到
+// 100 字符），完整渲染只能靠 ``loadTaskDetails``；此前该请求失败后，
+// pending 任务场景（serverActiveTask 不存在）的轮询条件永不成立，
+// 选项区停留在初始 hidden 态——"只显示主体内容，多选选项不显示"。
+// 记录成功水位后，轮询发现 activeTaskId 尚未成功加载过详情就重试，
+// 网络恢复即自愈。
+if (typeof window.lastLoadedDetailsTaskId === "undefined") {
+  window.lastLoadedDetailsTaskId = null;
+}
 // 【优化】服务器时间同步机制 - 解决切换标签页后倒计时不准的问题
 if (typeof window.serverTimeOffset === "undefined") {
   window.serverTimeOffset = 0; // 服务器时间与本地时间的偏移量（秒）
@@ -2582,9 +2592,16 @@ function updateTasksList(tasks) {
 
   // 如果activeTaskId刚刚被同步更新，加载其详情
   // （activeTask已在上面定义，不重复声明）
+  //
+  // R705 (TODO#38)：追加 ``lastLoadedDetailsTaskId !== activeTaskId``
+  // 重试条件——activeTaskId 从未成功加载过详情（首次 loadTaskDetails
+  // 因网络抖动/超时失败）时，每轮轮询都重试，直到成功渲染出完整
+  // prompt + 选项。旧条件在 pending 任务场景（serverActiveTask 不存在
+  // 且 activeTaskChanged 已回落 false）下永不重试，选项永久不可见。
   if (
     activeTaskId &&
     (activeTaskChanged ||
+      window.lastLoadedDetailsTaskId !== activeTaskId ||
       (activeTask && getTaskIdString(activeTask) === activeTaskId))
   ) {
     loadTaskDetails(activeTaskId);
@@ -3323,6 +3340,9 @@ async function loadTaskDetails(taskId) {
         task.predefined_options,
         task.predefined_options_defaults,
       );
+      // R705 (TODO#38)：详情成功渲染，推进成功水位——轮询侧据此判断
+      // 是否需要为"从未成功加载过详情"的任务重试 loadTaskDetails。
+      window.lastLoadedDetailsTaskId = taskId;
       // mining-cycle-3 §2.1 borrow #3 (gemini-cli placeholder):
       // 异步详情回来后再次同步（cache 路径可能取到旧 placeholder）
       updateFeedbackPlaceholder(task.feedback_placeholder);

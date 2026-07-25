@@ -26,7 +26,7 @@
  * 单一真源为 static/css/tri-state-panel.css；packages/vscode/tri-state-panel.css
  * 是打包期字节级拷贝，由 tests/test_tri_state_panel_parity.py 守护 sha256 一致。
  * 自带 @layer components 声明，层级由本文件顶部的声明顺序统一排序。 */
-@import url('./tri-state-panel.css');
+@import url("./tri-state-panel.css");
 
 /* [hidden] 属性全局兜底：放在任何 @layer 之外，优先级最高；
  * 即使后续规则用 display:flex/grid 覆盖，也能被 !important 强制隐藏。 */
@@ -73,10 +73,10 @@ body {
 }
 
 /* 通过 attribute 驱动 color-scheme（避免 JS 写 inline style 触发 CSP） */
-html[data-vscode-theme-kind='dark'] {
+html[data-vscode-theme-kind="dark"] {
   color-scheme: dark;
 }
-html[data-vscode-theme-kind='light'] {
+html[data-vscode-theme-kind="light"] {
   color-scheme: light;
 }
 
@@ -111,7 +111,10 @@ body {
 .tabs-container {
   display: flex;
   align-items: center;
-  background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background));
+  background: var(
+    --vscode-sideBarSectionHeader-background,
+    var(--vscode-sideBar-background)
+  );
   border-bottom: 1px solid var(--vscode-panel-border);
   overflow-x: auto;
   overflow-y: hidden;
@@ -157,7 +160,10 @@ body {
 
 .settings-btn:hover {
   opacity: 1;
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(
+    --vscode-toolbar-hoverBackground,
+    var(--vscode-list-hoverBackground)
+  );
   border-color: var(--vscode-panel-border);
 }
 
@@ -171,7 +177,10 @@ body {
   gap: 6px;
   padding: 5px 10px;
   background: transparent;
-  color: var(--vscode-list-inactiveSelectionForeground, var(--vscode-tab-inactiveForeground));
+  color: var(
+    --vscode-list-inactiveSelectionForeground,
+    var(--vscode-tab-inactiveForeground)
+  );
   border: 1px solid var(--vscode-panel-border);
   border-radius: 6px;
   cursor: pointer;
@@ -387,7 +396,11 @@ body {
 .no-content-progress {
   width: 180px;
   height: 6px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.05)
+  );
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) inset;
@@ -403,12 +416,12 @@ body {
 }
 
 /* VSCode 浅色主题：参考原项目的浅色进度条配色 */
-html[data-vscode-theme-kind='light'] .no-content-progress,
+html[data-vscode-theme-kind="light"] .no-content-progress,
 body.vscode-light .no-content-progress {
   box-shadow: none;
   background: rgba(0, 0, 0, 0.05);
 }
-html[data-vscode-theme-kind='light'] .no-content-progress-bar,
+html[data-vscode-theme-kind="light"] .no-content-progress-bar,
 body.vscode-light .no-content-progress-bar {
   background: var(--vscode-progressBar-background);
 }
@@ -502,7 +515,7 @@ body.vscode-light .no-content-progress-bar {
   gap: 8px;
 }
 
-.markdown-content .task-item input[type='checkbox'] {
+.markdown-content .task-item input[type="checkbox"] {
   margin-top: 4px;
   pointer-events: none;
 }
@@ -511,7 +524,10 @@ body.vscode-light .no-content-progress-bar {
   margin: 12px 0;
   padding: 8px 12px;
   border-left: 3px solid var(--vscode-textBlockQuote-border, #666);
-  background: var(--vscode-textBlockQuote-background, var(--vscode-editorWidget-background));
+  background: var(
+    --vscode-textBlockQuote-background,
+    var(--vscode-editorWidget-background)
+  );
   color: var(--vscode-textBlockQuote-foreground, inherit);
 }
 
@@ -564,7 +580,10 @@ body.vscode-light .no-content-progress-bar {
 }
 
 .markdown-content th {
-  background: var(--vscode-sideBarSectionHeader-background, var(--vscode-editorWidget-background));
+  background: var(
+    --vscode-sideBarSectionHeader-background,
+    var(--vscode-editorWidget-background)
+  );
   font-weight: 600;
 }
 
@@ -647,7 +666,7 @@ body.vscode-light .no-content-progress-bar {
 
 .textarea-resize-handle:hover::before,
 .textarea-resize-handle:active::before {
-  content: '';
+  content: "";
   width: 40px;
   height: 3px;
   background: var(--vscode-focusBorder);
@@ -688,7 +707,10 @@ body.vscode-light .no-content-progress-bar {
 }
 
 .feedback-textarea:hover:not(:focus) {
-  border-color: var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder));
+  border-color: var(
+    --vscode-inputOption-activeBorder,
+    var(--vscode-focusBorder)
+  );
   background: transparent;
 }
 
@@ -722,12 +744,18 @@ body.vscode-light .no-content-progress-bar {
 
 .insert-code-btn,
 .upload-btn {
-  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  background: var(
+    --vscode-button-secondaryBackground,
+    var(--vscode-button-background)
+  );
 }
 
 .insert-code-btn:hover:not(:disabled),
 .upload-btn:hover:not(:disabled) {
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    var(--vscode-button-hoverBackground)
+  );
 }
 
 .submit-btn-embedded:hover:not(:disabled) {
@@ -776,7 +804,10 @@ body.vscode-light .no-content-progress-bar {
   padding: 8px 10px;
   font-size: 11px;
   line-height: 1.55;
-  background: var(--vscode-textBlockQuote-background, rgba(128, 128, 128, 0.05));
+  background: var(
+    --vscode-textBlockQuote-background,
+    rgba(128, 128, 128, 0.05)
+  );
   border: 1px solid var(--vscode-panel-border);
   border-radius: 10px;
   display: flex;
@@ -847,7 +878,10 @@ body.vscode-light .no-content-progress-bar {
 }
 
 .loop-history-toggle:hover {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  background: var(
+    --vscode-list-activeSelectionBackground,
+    var(--vscode-list-hoverBackground)
+  );
 }
 
 .loop-history-caret {
@@ -888,7 +922,10 @@ body.vscode-light .no-content-progress-bar {
 
 .loop-history-row {
   padding: 5px 8px;
-  background: var(--vscode-textBlockQuote-background, rgba(128, 128, 128, 0.06));
+  background: var(
+    --vscode-textBlockQuote-background,
+    rgba(128, 128, 128, 0.06)
+  );
   border: 1px solid var(--vscode-panel-border);
   border-radius: 8px;
   font-size: 10.5px;
@@ -959,8 +996,14 @@ body.vscode-light .no-content-progress-bar {
   flex: 1;
   padding: 6px 0;
   font-size: 13px;
-  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
-  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  background: var(
+    --vscode-button-secondaryBackground,
+    var(--vscode-button-background)
+  );
+  color: var(
+    --vscode-button-secondaryForeground,
+    var(--vscode-button-foreground)
+  );
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
@@ -976,7 +1019,10 @@ body.vscode-light .no-content-progress-bar {
 }
 
 .yesno-btn-no:hover:not(:disabled) {
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    var(--vscode-button-hoverBackground)
+  );
 }
 
 .yesno-btn:disabled {
@@ -1000,15 +1046,24 @@ body.vscode-light .no-content-progress-bar {
   padding: 2px 10px;
   font-size: 11px;
   line-height: 18px;
-  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
-  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  background: var(
+    --vscode-button-secondaryBackground,
+    var(--vscode-button-background)
+  );
+  color: var(
+    --vscode-button-secondaryForeground,
+    var(--vscode-button-foreground)
+  );
   border: 1px solid transparent;
   border-radius: 10px;
   cursor: pointer;
 }
 
 .countdown-ctrl-btn:hover:not(:disabled) {
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    var(--vscode-button-hoverBackground)
+  );
 }
 
 .countdown-ctrl-btn:disabled {
@@ -1351,8 +1406,8 @@ body.vscode-light .no-content-progress-bar {
   opacity: 0.9;
 }
 
-.settings-field input[type='text'],
-.settings-field input[type='number'] {
+.settings-field input[type="text"],
+.settings-field input[type="number"] {
   width: 100%;
   padding: 8px 10px;
   border-radius: 8px;
@@ -1375,8 +1430,8 @@ body.vscode-light .no-content-progress-bar {
   appearance: auto;
 }
 
-.settings-field input[type='text']:focus,
-.settings-field input[type='number']:focus,
+.settings-field input[type="text"]:focus,
+.settings-field input[type="number"]:focus,
 .settings-field select:focus,
 .settings-field textarea:focus {
   border-color: var(--vscode-focusBorder);
@@ -1389,7 +1444,7 @@ body.vscode-light .no-content-progress-bar {
   gap: 6px;
 }
 
-.settings-config-path-row input[type='text'] {
+.settings-config-path-row input[type="text"] {
   flex: 1;
   min-width: 0; /* 长路径可收缩，避免把按钮挤出面板 */
 }
@@ -1469,12 +1524,18 @@ body.vscode-light .no-content-progress-bar {
 }
 
 .settings-action.secondary {
-  background: var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.06));
+  background: var(
+    --vscode-button-secondaryBackground,
+    rgba(255, 255, 255, 0.06)
+  );
   color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
 }
 
 .settings-action.secondary:hover {
-  background: var(--vscode-button-secondaryHoverBackground, rgba(255, 255, 255, 0.1));
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    rgba(255, 255, 255, 0.1)
+  );
 }
 
 .settings-hint {
@@ -1632,7 +1693,10 @@ body.vscode-light .no-content-progress-bar {
 }
 
 .code-toolbar .copy-button:hover {
-  background: var(--vscode-button-secondaryHoverBackground, rgba(0, 0, 0, 0.28));
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    rgba(0, 0, 0, 0.28)
+  );
 }
 
 .code-toolbar .copy-button.copied {
@@ -1669,8 +1733,12 @@ body.vscode-light .no-content-progress-bar {
   max-width: 100%;
   padding: 7px 10px;
   border-radius: 6px;
-  border: 1px solid var(--vscode-notifications-border, var(--vscode-panel-border));
-  background: var(--vscode-notifications-background, var(--vscode-editorWidget-background));
+  border: 1px solid
+    var(--vscode-notifications-border, var(--vscode-panel-border));
+  background: var(
+    --vscode-notifications-background,
+    var(--vscode-editorWidget-background)
+  );
   color: var(--vscode-notifications-foreground, var(--vscode-foreground));
   font-size: 12px;
   line-height: 1.35;
@@ -1775,7 +1843,10 @@ body.aiia-repainting {
 .aiia-boot-skeleton__bar {
   height: 12px;
   border-radius: 4px;
-  background-color: var(--vscode-editorWidget-background, rgba(127, 127, 127, 0.18));
+  background-color: var(
+    --vscode-editorWidget-background,
+    rgba(127, 127, 127, 0.18)
+  );
   background-image: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0) 0%,
@@ -1820,7 +1891,7 @@ body.aiia-repainting {
 }
 
 /* 浅色主题下 shimmer 改成淡黑色反光，避免白底上白光不可见 */
-html[data-vscode-theme-kind='light'] .aiia-boot-skeleton__bar,
+html[data-vscode-theme-kind="light"] .aiia-boot-skeleton__bar,
 body.vscode-light .aiia-boot-skeleton__bar {
   background-color: rgba(0, 0, 0, 0.06);
   background-image: linear-gradient(

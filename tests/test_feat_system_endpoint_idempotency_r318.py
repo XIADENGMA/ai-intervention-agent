@@ -53,7 +53,11 @@ _NOTIFICATION_PY = SRC / "ai_intervention_agent" / "web_ui_routes" / "notificati
 _SYSTEM_PY = SRC / "ai_intervention_agent" / "web_ui_routes" / "system.py"
 
 
-_IDEMPOTENT_SYSTEM_ENDPOINTS_WHITELIST = ("system_log_level_post",)
+_IDEMPOTENT_SYSTEM_ENDPOINTS_WHITELIST = (
+    "system_log_level_post",
+    # R707: 重复 dismiss N 次 → 配置收敛为 true（已 true 时跳过写盘）
+    "ios_a2hs_dismiss",
+)
 """幂等 ``/api/system/*`` POST endpoints — docstring 必须显式声明幂等性。"""
 
 _NON_IDEMPOTENT_SYSTEM_ENDPOINTS_BLACKLIST = (

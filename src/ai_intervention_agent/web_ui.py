@@ -1493,6 +1493,15 @@ class WebFeedbackUI(
             locale_path = static_dir / "locales" / f"{ui_lang}.json"
             inline_locale_json = _read_inline_locale_json(str(locale_path))
 
+        # R707：iOS A2HS 横幅的服务端 dismiss 状态。快捷指令 WebView 的
+        # localStorage 不持久，dismiss 必须由后端记忆并随首屏注入。
+        try:
+            ios_a2hs_dismissed = bool(
+                get_config().get_section("web_ui").get("ios_a2hs_hint_dismissed", False)
+            )
+        except Exception:
+            ios_a2hs_dismissed = False
+
         return {
             "csp_nonce": self._get_csp_nonce(),
             "version": get_project_version(),
@@ -1500,6 +1509,7 @@ class WebFeedbackUI(
             "language": ui_lang,
             "html_lang": html_lang,
             "html_dir": html_dir,
+            "ios_a2hs_dismissed": ios_a2hs_dismissed,
             "css_version": _compute_file_version(str(static_dir / "css" / "main.css")),
             "multi_task_version": _compute_file_version(
                 str(static_dir / "js" / "multi_task.js")

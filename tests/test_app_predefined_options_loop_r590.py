@@ -74,10 +74,17 @@ def test_load_config_preserves_option_dom_order_defaults_and_sparse_skip() -> No
 
         function makeClassList() {{
           const values = [];
+          const removed = [];
           return {{
             values,
+            removed,
             add(name) {{
               values.push(name);
+            }},
+            // R705：回退分支用 classList.remove("hidden") 摘掉初始隐藏类
+            // （inline display 盖不过 .hidden 的 !important）
+            remove(name) {{
+              removed.push(name);
             }},
           }};
         }}
@@ -170,8 +177,14 @@ def test_load_config_preserves_option_dom_order_defaults_and_sparse_skip() -> No
 
         process.stdout.write(JSON.stringify({{
           calls,
-          optionsDisplay: elements['options-container'].style.display,
-          separatorDisplay: elements.separator.style.display,
+          // R705：显隐必须走 classList（remove hidden / add visible），
+          // 禁止 inline style.display（.hidden 的 !important 盖过它）
+          optionsInlineDisplay: elements['options-container'].style.display || null,
+          separatorInlineDisplay: elements.separator.style.display || null,
+          optionsClassAdds: elements['options-container'].classList.values,
+          optionsClassRemovals: elements['options-container'].classList.removed,
+          separatorClassAdds: elements.separator.classList.values,
+          separatorClassRemovals: elements.separator.classList.removed,
           rendered,
         }}));
         }})().catch((error) => {{
@@ -188,8 +201,12 @@ def test_load_config_preserves_option_dom_order_defaults_and_sparse_skip() -> No
             ["showContentPage"],
             ["renderMarkdownContent", "description", "<p>Prompt</p>"],
         ],
-        "optionsDisplay": "block",
-        "separatorDisplay": "block",
+        "optionsInlineDisplay": None,
+        "separatorInlineDisplay": None,
+        "optionsClassAdds": ["visible"],
+        "optionsClassRemovals": ["hidden"],
+        "separatorClassAdds": ["visible"],
+        "separatorClassRemovals": ["hidden"],
         "rendered": [
             {
                 "className": "option-item",

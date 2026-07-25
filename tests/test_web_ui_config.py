@@ -2374,9 +2374,13 @@ class TestGetTemplateContext(unittest.TestCase):
         # 仍必须是 str —— 否则 Jinja 模板插值会抛或输出 "None"。
         nullable_keys = {"inline_locale_json"}
         json_map_keys = {"locale_versions"}
+        # R707：布尔型注入值（模板经 ``|tojson`` 输出 true/false 给 JS）。
+        bool_keys = {"ios_a2hs_dismissed"}
         for k, v in ctx.items():
             if k in nullable_keys:
                 self.assertIsInstance(v, (str, type(None)))
+            elif k in bool_keys:
+                self.assertIsInstance(v, bool)
             elif k in json_map_keys:
                 self.assertIsInstance(v, dict)
                 self.assertTrue(v)

@@ -63,6 +63,15 @@
   }
 
   function _isDismissed() {
+    // R707：优先读服务端注入的持久化状态。快捷指令「显示网页」
+    // （SFSafariViewController）的 localStorage 与 Safari 不共享且
+    // 跨会话不持久——纯本地 dismiss 在该环境每次都会丢，横幅反复
+    // 出现。服务端记忆（config.toml）跨设备/跨会话一次生效。
+    try {
+      if (window.AIIA_IOS_A2HS_DISMISSED === true) return true;
+    } catch (_e) {
+      // 注入缺失（旧模板/测试桩）→ 继续走 localStorage
+    }
     if (!_isStorageAvailable()) return false;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -74,7 +83,29 @@
     }
   }
 
+  function _persistDismissToServer() {
+    // R707：fire-and-forget——失败静默（localStorage 仍是本地兜底，
+    // 且下次真 Safari 会话还有机会再写）。keepalive 让请求在 banner
+    // 移除 / 页面即将关闭时也尽量送达。
+    try {
+      fetch("/api/system/ios-a2hs-dismiss", {
+        method: "POST",
+        keepalive: true,
+      }).catch(function () {
+        /* 网络失败静默 */
+      });
+    } catch (_e) {
+      // fetch 不可用（极老 WebView）→ 仅本地持久化
+    }
+  }
+
   function _setDismissed() {
+    try {
+      window.AIIA_IOS_A2HS_DISMISSED = true;
+    } catch (_e) {
+      // window 只读代理等极端环境，忽略
+    }
+    _persistDismissToServer();
     if (!_isStorageAvailable()) return;
     try {
       localStorage.setItem(

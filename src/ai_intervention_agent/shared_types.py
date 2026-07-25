@@ -170,7 +170,10 @@ class NotificationSectionConfig(BaseModel):
     bark_timeout: Annotated[int, BeforeValidator(_clamp_int(1, 300, 10))] = 10
     # bark_url_template: 当 bark_action == "url" 且事件 metadata 未提供具体链接时，
     # 用此模板生成点击跳转 URL；支持 {task_id} / {event_id} / {base_url} 占位符，
-    # 未识别的占位符会原样保留，不会抛出 KeyError
+    # 未识别的占位符会原样保留，不会抛出 KeyError。
+    # R706：接受任意合法 "scheme://" URL——除 http(s) 外也支持
+    # "shortcuts://run-shortcut?name=ai%20intervention%20agent" 这类
+    # iOS 深链（点击 Bark 通知直接打开快捷指令）
     bark_url_template: SafeStr = "{base_url}/?task_id={task_id}"
 
 
@@ -200,6 +203,13 @@ class WebUISectionConfig(BaseModel):
     # http://{host}:{port}；用户可填反代域名，例如 "https://ai.example.com"。
     # 末尾斜杠会被视为同义字符，运行时会做规范化。
     external_base_url: SafeStr = ""
+    # ios_a2hs_hint_dismissed: iOS「安装到桌面」引导横幅的服务端 dismiss
+    # 状态（R707）。快捷指令「显示网页」（SFSafariViewController）的
+    # localStorage 与 Safari 不共享且跨会话不持久——纯前端 dismiss 存不
+    # 住，横幅每次都重新弹。用户点叉后前端调
+    # POST /api/system/ios-a2hs-dismiss 写入 true，模板渲染时注入该值，
+    # 任何设备/会话关一次就永久不再显示（单用户工具的全局语义）。
+    ios_a2hs_hint_dismissed: SafeBool = False
 
 
 class MdnsSectionConfig(BaseModel):

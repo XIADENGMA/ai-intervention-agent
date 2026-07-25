@@ -2120,6 +2120,69 @@ class SystemRoutesMixin:
                     500,
                 )
 
+        @self.app.route("/api/system/ios-a2hs-dismiss", methods=["POST"])
+        @self.limiter.limit("10 per minute")
+        def ios_a2hs_dismiss() -> ResponseReturnValue:
+            """持久化 iOS「安装到桌面」引导横幅的 dismiss 状态（R707）
+
+            ---
+            tags:
+              - System
+            description: |
+                iOS A2HS 横幅的「永久不再显示」此前只写 localStorage——但
+                快捷指令「显示网页」（SFSafariViewController）的 localStorage
+                与 Safari 不共享且跨会话不持久，用户每次通过快捷指令打开
+                Web UI 都会重新看到横幅。
+
+                本端点把 dismiss 写入 ``web_ui.ios_a2hs_hint_dismissed``
+                （config.toml），模板渲染时注入
+                ``window.AIIA_IOS_A2HS_DISMISSED``——任何设备/会话点一次叉，
+                所有后续访问都不再显示（单用户工具的全局语义）。
+
+                **幂等**：重复调用结果一致（true 只会被写成 true）。
+                **任意来源**允许调用——横幅本来就只出现在远程 iOS 设备上，
+                限制 loopback 会让功能完全失效；写入内容是固定布尔值，
+                无注入面。
+            responses:
+              200:
+                description: dismiss 状态已持久化
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+              500:
+                description: 配置写入失败
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+            """
+            try:
+                cfg = get_config()
+                web_section = cfg.get_section("web_ui") or {}
+                if not web_section.get("ios_a2hs_hint_dismissed"):
+                    web_section["ios_a2hs_hint_dismissed"] = True
+                    cfg.update_section("web_ui", web_section)
+                    logger.info("iOS A2HS 横幅已被用户永久关闭（服务端持久化）")
+                return jsonify({"success": True})
+            except Exception as exc:
+                logger.warning(f"ios-a2hs-dismiss 写入失败: {exc}", exc_info=True)
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Failed to persist dismiss state",
+                        }
+                    ),
+                    500,
+                )
+
         # NOTE(feat-remove-test): 设置页"活动面板"已下线（见 ``templates/web_ui.html``
         # 中说明注释 + ``tests/test_feat_remove_test_uis_removed.py``）。
         # 此 endpoint 仍**保留**供性能基线脚本、dev 调试、监控 dashboards

@@ -2285,6 +2285,9 @@
       window.AIIA_CONFIG_LANG = {{ language|tojson }};
       window.AIIA_LOTTIE_JS_URL = "/static/js/lottie.min.js?v={{ lottie_min_version }}";
       window.AIIA_LOCALE_VERSIONS = {{ locale_versions|tojson }};
+      /* R707：iOS A2HS 横幅的服务端 dismiss 状态（快捷指令 WebView 的
+         localStorage 不持久，横幅显隐必须以后端记忆为准）。 */
+      window.AIIA_IOS_A2HS_DISMISSED = {{ ios_a2hs_dismissed|tojson }};
       document.addEventListener('DOMContentLoaded', function() {
         if (window.AIIA_I18N) {
           var cfgLang = window.AIIA_CONFIG_LANG;

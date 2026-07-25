@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `_is_acceptable_bark_click_url(url: str) -> bool`
+
 ### `_bark_url_is_loopback(url: str) -> bool`
 
 ### `_coerce_bark_format_value(value: Any) -> str`

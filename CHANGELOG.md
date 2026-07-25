@@ -18,6 +18,71 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Predefined options no longer intermittently missing after page load
+  (only the prompt body showed). Root cause was a dual render path:
+  `loadConfig` (app.js) appended checkboxes but only set inline
+  `style.display = "block"`, which can never override the container's
+  initial `class="hidden"` (`display: none !important`) — the options
+  were in the DOM yet invisible, and only became visible when
+  multi_task's `loadTaskDetails` happened to rebuild them 1-2s later.
+  When that request failed (mobile network blips, background-resume,
+  server restart windows) the page stayed body-only; in the pending-task
+  scenario the old polling condition never retried, making it permanent.
+  `loadConfig` now delegates to `updateOptionsDisplay` (single render
+  source; the guarded local fallback clears the container and toggles
+  `hidden`/`visible` classes instead of inline display), and polling
+  tracks `lastLoadedDetailsTaskId` so a task whose details never loaded
+  successfully is retried every cycle until it heals (R705; guarded by
+  `tests/test_options_render_single_source_r705.py`).
+
+- Bark tap-through URLs now accept any `scheme://` deep link — most
+  importantly `shortcuts://run-shortcut?name=...`, the recommended way
+  to open the Web UI on iPhone (tap notification → launch a Shortcuts
+  automation whose "Show Web Page" action loads the UI). The old
+  validation required `bark_url_template` render results to start with
+  `http(s)://` and silently dropped custom schemes. Scheme syntax
+  follows RFC 3986 §3.1 with a mandatory `://`, so `javascript:` /
+  `data:` (no authority) stay rejected; loopback suppression now only
+  applies to http(s) URLs so `shortcuts://localhost` can't be
+  misclassified, while `http://localhost:8080` keeps being suppressed.
+  Explicit metadata URL candidates are validated the same way (garbage
+  values skip to the template fallback). Both READMEs gained a
+  "Recommended iPhone setup: Shortcuts + Bark" walkthrough (R706;
+  guarded by `tests/test_bark_custom_scheme_url_r706.py`).
+
+- The iOS "Add to Home Screen" hint banner no longer reappears on every
+  visit from the Shortcuts "Show Web Page" WebView. That environment
+  (SFSafariViewController) neither shares localStorage with Safari nor
+  persists it across sessions, so the banner's "permanent" dismiss was
+  lost every time — and the environment is deliberately undetectable
+  from JS. The dismiss state is now persisted server-side:
+  `web_ui.ios_a2hs_hint_dismissed` (config.toml) is written via the new
+  idempotent `POST /api/system/ios-a2hs-dismiss` endpoint (any origin —
+  the banner only ever shows on remote iOS devices), injected into the
+  page as `window.AIIA_IOS_A2HS_DISMISSED`, and checked before
+  localStorage; closing the banner once now silences it for every
+  device and session (R707; guarded by
+  `tests/test_ios_a2hs_server_dismiss_r707.py`).
+
+- Mobile empty-state animation no longer degrades to the hand-drawn
+  fallback SVG for users with "Reduce Motion" enabled (iOS Settings >
+  Accessibility > Motion — a device-wide, always-on setting, so those
+  users never saw the Lottie artwork at all). `initHourglassAnimation`
+  now always loads the Lottie sprout and, when
+  `prefers-reduced-motion: reduce` matches, parks it motionless on the
+  fully-grown frame (`SPROUT_REST_FRAME` 42, inside the 36-48 stable
+  segment verified frame-by-frame; frame 71 loops back to the bare
+  mound) instead of rendering the fallback. A MediaQueryList watcher
+  (with the legacy WebKit `addListener` branch) toggles play/rest live
+  when the OS preference changes. The fallback SVG is now reserved for
+  actual Lottie runtime load failures — and the `error` handler
+  destroys the failed instance before painting the fallback, fixing a
+  latent bug where the stale instance made the next
+  `initHourglassAnimation` return early (stuck on a blank/degraded
+  icon) and the deferred `destroy()` would wipe the freshly painted
+  fallback (R704; guarded by
+  `tests/test_lottie_reduced_motion_rest_frame_r704.py`).
+
 - VS Code webview now follows server-side language changes at runtime:
   `applyServerLanguage` used a one-shot boolean latch, so after the
   first switch the webview ignored every later `language` value from

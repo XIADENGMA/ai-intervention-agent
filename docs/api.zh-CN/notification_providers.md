@@ -8,6 +8,10 @@
 
 ## 函数
 
+### `_is_acceptable_bark_click_url(url: str) -> bool`
+
+判断字符串是否可作为 Bark 点击跳转 URL（任意 ``scheme://`` 形式）。
+
 ### `_bark_url_is_loopback(url: str) -> bool`
 
 Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。
@@ -16,6 +20,10 @@ Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。
 手机自身解析（RFC 6762 §11 / RFC 5735）—— 把这种 URL 推过去等于让用户
 点开后看到 "无法访问"，反而不如不附 ``url`` 字段（这样 Bark 默认行为
 是停留在通知中心，体验更可控）。
+
+R706：loopback 抑制仅对 ``http(s)://`` 生效——自定义 scheme
+（``shortcuts://`` 等）由 iOS 系统按 App 深链处理，不涉及网络 host
+解析，``shortcuts://localhost`` 这类奇异值也不该被误杀。
 
 实现 lazy import ``server_config.is_loopback_url`` 以避免触发 ``mcp.types``
 的级联加载（参见 ``server_config._lazy_mcp_types``），任何 import / 解析

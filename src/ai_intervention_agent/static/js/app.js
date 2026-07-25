@@ -208,8 +208,14 @@ configureMarkedSecurity();
 //   - 深色模式：通过 CSS filter: invert(1) 反转为白色线条
 //   - 叶子颜色因 invert 也会变化（可接受的视觉效果）
 //
+// 无障碍（R704）：
+//   prefers-reduced-motion 开启时仍加载 Lottie，但静止显示在
+//   「完整长成」帧（SPROUT_REST_FRAME）——尊重系统偏好（无运动）
+//   的同时保持与动画版一致的视觉质量；系统偏好切换时实时
+//   播放 / 静止（_installReducedMotionWatcher）。
+//
 // 降级处理：
-//   若 Lottie 库加载失败，显示内置 SVG/CSS 备用图标
+//   仅当 Lottie 运行时加载失败时，显示内置 SVG/CSS 备用图标
 // ==================================================================
 
 // Lottie 动画实例引用（用于后续控制如暂停/销毁）
@@ -224,6 +230,84 @@ let _hourglassThemeTimer = null;
 let _hourglassLifecycleToken = 0;
 let _hourglassLifecycleDisposed = false;
 let _hourglassLifecycleHandlersInstalled = false;
+let _reducedMotionQueryList = null;
+
+// R704：prefers-reduced-motion 时静止展示的帧。sprout.json 共 72 帧
+// （12fps / 6s 循环）：0-36 生长、36-48 长成后的稳定摆动、之后回缩，
+// 71 帧是循环回起点的土丘画面——静止帧必须落在稳定段中部，
+// 才能展示「完整长成」的嫩芽而不是空土丘。
+const SPROUT_REST_FRAME = 42;
+
+/**
+ * 读取系统「减弱动态效果」偏好（prefers-reduced-motion: reduce）
+ *
+ * 优先复用 _installReducedMotionWatcher 缓存的 MediaQueryList，
+ * 未安装监听时回退到一次性 matchMedia 查询。
+ */
+function _prefersReducedMotion() {
+  if (_reducedMotionQueryList) return _reducedMotionQueryList.matches;
+  return (
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+/**
+ * 把 Lottie 动画静止到「完整长成」帧（无运动的精美静态画面）
+ */
+function _applySproutRestFrame() {
+  if (!hourglassAnimation) return;
+  try {
+    const lastFrame = Math.max((hourglassAnimation.totalFrames || 1) - 1, 0);
+    hourglassAnimation.goToAndStop(
+      Math.min(SPROUT_REST_FRAME, lastFrame),
+      true,
+    );
+  } catch (_e) {
+    // 忽略
+  }
+}
+
+/**
+ * 监听系统「减弱动态效果」偏好变化，实时切换 播放 / 静止帧
+ *
+ * 只安装一次；回调操作当前 hourglassAnimation 实例（dispose 后为
+ * null，回调空操作，无需拆除监听）。旧版 WebKit（iOS 13 及更早）
+ * 的 MediaQueryList 只有 addListener，做兼容分支。
+ */
+function _installReducedMotionWatcher() {
+  if (_reducedMotionQueryList) return;
+  if (typeof window.matchMedia !== "function") return;
+  try {
+    _reducedMotionQueryList = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    );
+  } catch (_e) {
+    _reducedMotionQueryList = null;
+    return;
+  }
+  const onPreferenceChange = () => {
+    if (!hourglassAnimation) return;
+    if (_reducedMotionQueryList.matches) {
+      _applySproutRestFrame();
+    } else {
+      try {
+        hourglassAnimation.play();
+      } catch (_e) {
+        // 忽略
+      }
+    }
+  };
+  try {
+    if (typeof _reducedMotionQueryList.addEventListener === "function") {
+      _reducedMotionQueryList.addEventListener("change", onPreferenceChange);
+    } else if (typeof _reducedMotionQueryList.addListener === "function") {
+      _reducedMotionQueryList.addListener(onPreferenceChange);
+    }
+  } catch (_e) {
+    // 忽略
+  }
+}
 
 function _isHourglassLifecycleActive(container, token) {
   if (_hourglassLifecycleDisposed) return false;
@@ -412,8 +496,7 @@ function _ensureLottieLoaded() {
   if (_lottieLoadPromise) return _lottieLoadPromise;
   _lottieLoadPromise = new Promise((resolve) => {
     const script = document.createElement("script");
-    script.src =
-      window.AIIA_LOTTIE_JS_URL || "/static/js/lottie.min.js";
+    script.src = window.AIIA_LOTTIE_JS_URL || "/static/js/lottie.min.js";
     script.onload = () => resolve(typeof lottie !== "undefined");
     script.onerror = () => {
       _lottieLoadPromise = null;
@@ -432,16 +515,23 @@ function _createLottieAnimation(container, token) {
       container,
       renderer: "svg",
       loop: true,
-      autoplay: true,
+      // R704：减弱动态偏好开启时不自动播放（DOMLoaded 后静止到
+      // SPROUT_REST_FRAME），关闭时保持原有循环播放行为。
+      autoplay: !_prefersReducedMotion(),
       path: "/static/lottie/sprout.json",
       rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
     });
     hourglassAnimation.addEventListener("DOMLoaded", () => {
       if (!_isHourglassLifecycleActive(container, token)) return;
+      if (_prefersReducedMotion()) _applySproutRestFrame();
       updateLottieAnimationColor();
     });
     hourglassAnimation.addEventListener("error", () => {
       if (!_isHourglassLifecycleActive(container, token)) return;
+      // 先销毁失败实例再渲染降级 SVG：残留的实例会让下一次
+      // initHourglassAnimation 误判「动画健在」而直接 return，
+      // 且 destroy 会清空容器，必须在重绘 fallback 之前执行。
+      destroyHourglassAnimation();
       renderSproutFallback(container);
       container.style.opacity = "1";
     });
@@ -450,6 +540,7 @@ function _createLottieAnimation(container, token) {
   } catch (error) {
     console.error("Lottie animation init failed:", error);
     if (_isHourglassLifecycleActive(container, token)) {
+      destroyHourglassAnimation();
       renderSproutFallback(container);
       container.style.opacity = "1";
     }
@@ -463,10 +554,14 @@ function _createLottieAnimation(container, token) {
  * 策略（R696）：lottie.min.js 已随首屏 ``<script defer>`` 预加载（见
  * web_ui.html），本函数直接创建 Lottie 动画——空态从第一帧起就是
  * Lottie，不再先渲染 SVG 降级动画再热切换（旧流程的可见跳变即由
- * 该切换引起）。仅两种情形回退到零依赖 SVG：
- *   1. 用户开启 prefers-reduced-motion（保持静态、尊重系统偏好）；
- *   2. lottie 运行时加载失败（离线/CDN 故障，走 AIIA_LOTTIE_JS_URL
- *      动态加载兜底后仍失败）。
+ * 该切换引起）。
+ *
+ * 无障碍（R704）：prefers-reduced-motion 开启时不再降级到简笔 SVG，
+ * 而是同样加载 Lottie 并静止在「完整长成」帧——无运动（尊重系统
+ * 偏好）且视觉与动画版一致；iPhone「减弱动态效果」用户此前永远只能
+ * 看到降级 SVG，即本修复的目标场景。仅一种情形回退到零依赖 SVG：
+ * lottie 运行时加载失败（离线/CDN 故障，走 AIIA_LOTTIE_JS_URL 动态
+ * 加载兜底后仍失败）。
  */
 function initHourglassAnimation() {
   installHourglassAnimationLifecycleHandlers();
@@ -487,13 +582,7 @@ function initHourglassAnimation() {
   const token = _hourglassLifecycleToken + 1;
   _hourglassLifecycleToken = token;
 
-  const prefersReducedMotion =
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (prefersReducedMotion) {
-    renderSproutFallback(container);
-    return;
-  }
+  _installReducedMotionWatcher();
 
   _ensureLottieLoaded().then((ok) => {
     if (!_isHourglassLifecycleActive(container, token)) return;
@@ -533,7 +622,6 @@ function updateLottieAnimationColor() {
     // 深色模式：反转颜色（深色线条变为白色，在深色背景上清晰可见）
     container.style.filter = "invert(1)";
   }
-
 }
 
 // 监听主题变化事件（由 ThemeManager 在 theme.js 中派发）
@@ -642,7 +730,11 @@ function processCodeBlocks(container) {
 
   const codeBlockCount =
     codeBlocks && Number.isFinite(codeBlocks.length) ? codeBlocks.length : 0;
-  for (let codeBlockIndex = 0; codeBlockIndex < codeBlockCount; codeBlockIndex += 1) {
+  for (
+    let codeBlockIndex = 0;
+    codeBlockIndex < codeBlockCount;
+    codeBlockIndex += 1
+  ) {
     const pre = codeBlocks[codeBlockIndex];
     if (!pre) continue;
     // 检查是否已经被处理过
@@ -709,7 +801,10 @@ function _clearCopyButtonRestoreTimer(button) {
 function _beginCopyButtonTransientFeedback(button) {
   _clearCopyButtonRestoreTimer(button);
   if (
-    !Object.prototype.hasOwnProperty.call(button, COPY_BUTTON_ORIGINAL_HTML_PROP)
+    !Object.prototype.hasOwnProperty.call(
+      button,
+      COPY_BUTTON_ORIGINAL_HTML_PROP,
+    )
   ) {
     button[COPY_BUTTON_ORIGINAL_HTML_PROP] = button.innerHTML;
   }
@@ -841,7 +936,11 @@ function processStrikethrough(container) {
   }
 
   // 处理每个文本节点（使用 DOM API 避免 innerHTML 注入风险）
-  for (let textNodeIndex = 0; textNodeIndex < textNodes.length; textNodeIndex += 1) {
+  for (
+    let textNodeIndex = 0;
+    textNodeIndex < textNodes.length;
+    textNodeIndex += 1
+  ) {
     const textNode = textNodes[textNodeIndex];
     const text = textNode.textContent;
     const strikethroughRegex = /~~([^~\n]+?)~~/g;
@@ -904,11 +1003,34 @@ async function loadConfig() {
       );
     }
 
-    if (config.predefined_options && config.predefined_options.length > 0) {
+    // R705 (TODO#38 选项偶发不可见根因修复)：选项渲染统一委托
+    // multi_task.js 的 ``updateOptionsDisplay`` 单一入口。
+    //
+    // 旧实现的两个缺陷：
+    //   1. append 后只设 inline ``style.display = "block"``，但容器初始
+    //      ``class="hidden"`` 是 ``display: none !important``——inline
+    //      永远盖不过它，选项渲染进 DOM 却完全不可见；平时靠 1-2s 后
+    //      multi_task 的 ``loadTaskDetails`` 重建才"碰巧"变可见，一旦
+    //      该请求失败（移动端网络抖动 / 页面后台恢复），页面只剩主体
+    //      内容，选项永久隐藏。
+    //   2. 不清空容器直接 append——与 updateOptionsDisplay 的清空重建
+    //      语义不一致，是重复渲染的潜在源头。
+    //
+    // multi_task.js 在 app.js 之前以 defer 加载（模板顺序锁定），
+    // 此处函数必然已定义；typeof 守卫仅为独立加载 app.js 的测试桩兜底。
+    if (typeof updateOptionsDisplay === "function") {
+      updateOptionsDisplay(
+        config.predefined_options,
+        config.predefined_options_defaults,
+      );
+    } else if (
+      config.predefined_options &&
+      config.predefined_options.length > 0
+    ) {
       const optionsContainer = document.getElementById("options-container");
       const separator = document.getElementById("separator");
 
-      // R285: 同上，options-container / separator 任一缺失即跳过 options
+      // R285: options-container / separator 任一缺失即跳过 options
       // 渲染，不报"加载失败"。
       if (!optionsContainer || !separator) {
         console.warn(
@@ -919,6 +1041,7 @@ async function loadConfig() {
         const optionDefaults = Array.isArray(config.predefined_options_defaults)
           ? config.predefined_options_defaults
           : [];
+        optionsContainer.innerHTML = "";
         const predefinedOptionCount = config.predefined_options.length;
         for (let index = 0; index < predefinedOptionCount; index += 1) {
           if (!(index in config.predefined_options)) continue;
@@ -944,8 +1067,12 @@ async function loadConfig() {
           optionsContainer.appendChild(optionDiv);
         }
 
-        optionsContainer.style.display = "block";
-        separator.style.display = "block";
+        // R705：必须用 classList 摘掉 ``.hidden``（display:none
+        // !important），inline display 无法覆盖它。
+        optionsContainer.classList.remove("hidden");
+        optionsContainer.classList.add("visible");
+        separator.classList.remove("hidden");
+        separator.classList.add("visible");
       }
     }
   } catch (error) {
@@ -1163,14 +1290,20 @@ function _showToast(message) {
   let hideTimerId = null;
   toast.textContent = message;
   _scheduleNextFrame(() => {
-    if (toastGeneration !== _toastGeneration || _toastHideTimerId !== hideTimerId) {
+    if (
+      toastGeneration !== _toastGeneration ||
+      _toastHideTimerId !== hideTimerId
+    ) {
       return;
     }
     toast.style.transform = "translateX(-50%) translateY(0)";
     toast.style.opacity = "1";
   });
   hideTimerId = setTimeout(() => {
-    if (toastGeneration !== _toastGeneration || _toastHideTimerId !== hideTimerId) {
+    if (
+      toastGeneration !== _toastGeneration ||
+      _toastHideTimerId !== hideTimerId
+    ) {
       return;
     }
     toast.style.transform = "translateX(-50%) translateY(-120%)";
@@ -1469,7 +1602,11 @@ function closeCodePasteModal() {
 
   const prev = _codePasteModalPreviouslyFocusedElement;
   _codePasteModalPreviouslyFocusedElement = null;
-  if (prev && document.contains(prev) && focusCodePasteModalRestoreTarget(prev)) {
+  if (
+    prev &&
+    document.contains(prev) &&
+    focusCodePasteModalRestoreTarget(prev)
+  ) {
     return;
   }
   const feedbackTextarea = document.getElementById("feedback-text");
@@ -1701,7 +1838,11 @@ async function submitFeedback() {
     );
     const checkboxCount =
       checkboxes && Number.isFinite(checkboxes.length) ? checkboxes.length : 0;
-    for (let checkboxIndex = 0; checkboxIndex < checkboxCount; checkboxIndex += 1) {
+    for (
+      let checkboxIndex = 0;
+      checkboxIndex < checkboxCount;
+      checkboxIndex += 1
+    ) {
       const checkbox = checkboxes[checkboxIndex];
       if (!checkbox) continue;
       // 使用 checkbox 的 value 属性获取选项文本
@@ -1785,7 +1926,9 @@ async function submitFeedback() {
         if (fbTextEl) {
           fbTextEl.value = "";
         }
-        const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+        const allCheckboxes = document.querySelectorAll(
+          'input[type="checkbox"]',
+        );
         const allCheckboxCount =
           allCheckboxes && Number.isFinite(allCheckboxes.length)
             ? allCheckboxes.length

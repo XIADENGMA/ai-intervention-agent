@@ -21,6 +21,27 @@ from ai_intervention_agent.notification_models import (
 logger = EnhancedLogger(__name__)
 
 
+# R706 (TODO#14/32)：Bark 点击跳转 URL 的宽松 scheme 校验。
+#
+# iOS Bark 客户端的 ``url`` 字段支持**任意 URL scheme** 跳转——
+# ``shortcuts://run-shortcut?name=xxx`` 打开快捷指令、``bark://``、
+# 第三方 App 深链等，不限于 http(s)。旧实现要求渲染结果以
+# ``http(s)://`` 开头，把 ``shortcuts://`` 模板整个丢弃，导致
+# "点击通知打开快捷指令" 的推荐用法完全不可用。
+#
+# 正则说明：scheme 语法遵循 RFC 3986 §3.1（字母开头 + 字母/数字/
+# ``+ - .``），并强制 ``://`` 层级形式——``javascript:`` /
+# ``data:`` 等无 authority 的 scheme 天然不匹配，不会被误放行。
+_BARK_CLICK_URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://\S+$")
+
+
+def _is_acceptable_bark_click_url(url: str) -> bool:
+    """判断字符串是否可作为 Bark 点击跳转 URL（任意 ``scheme://`` 形式）。"""
+    if not isinstance(url, str):
+        return False
+    return bool(_BARK_CLICK_URL_SCHEME_RE.match(url))
+
+
 def _bark_url_is_loopback(url: str) -> bool:
     """Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。
 
@@ -29,11 +50,17 @@ def _bark_url_is_loopback(url: str) -> bool:
     点开后看到 "无法访问"，反而不如不附 ``url`` 字段（这样 Bark 默认行为
     是停留在通知中心，体验更可控）。
 
+    R706：loopback 抑制仅对 ``http(s)://`` 生效——自定义 scheme
+    （``shortcuts://`` 等）由 iOS 系统按 App 深链处理，不涉及网络 host
+    解析，``shortcuts://localhost`` 这类奇异值也不该被误杀。
+
     实现 lazy import ``server_config.is_loopback_url`` 以避免触发 ``mcp.types``
     的级联加载（参见 ``server_config._lazy_mcp_types``），任何 import / 解析
     异常都返回 ``False``，让通知链路按 "未识别即放行" 优雅降级。
     """
     if not isinstance(url, str) or not url:
+        return False
+    if not url.lower().startswith(("http://", "https://")):
         return False
     try:
         from ai_intervention_agent.server_config import is_loopback_url
@@ -388,12 +415,23 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 if bark_action in ("url", "copy"):
                     if bark_action == "url":
                         # 优先从事件元数据中取 URL（例如 web_ui_url/url/action_url）
+                        # R706：候选校验为「任意合法 scheme://」（shortcuts://
+                        # 等自定义 scheme 可用于打开快捷指令 / App 深链）。
                         url_value = None
                         if event.metadata:
                             for key in ("url", "web_ui_url", "action_url", "link"):
                                 value = event.metadata.get(key)
                                 if isinstance(value, str) and value.strip():
                                     candidate = value.strip()
+                                    if not _is_acceptable_bark_click_url(candidate):
+                                        # 非 ``scheme://`` 形态（裸词 /
+                                        # ``javascript:`` 等）——发给 Bark 也
+                                        # 无法跳转，跳过让 fallback 模板兜底。
+                                        logger.warning(
+                                            f"event.metadata['{key}']={candidate!r} "
+                                            "不是合法跳转 URL，已忽略此候选"
+                                        )
+                                        continue
                                     if _bark_url_is_loopback(candidate):
                                         # 跨设备推送场景下 loopback 必然解析到手机
                                         # 自身，丢弃后让 fallback 模板再尝试一次。
@@ -425,7 +463,11 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                     "base_url": (base_url or "").rstrip("/"),
                                 }
                                 rendered = render_bark_url_template(template, params)
-                                if rendered.startswith(("http://", "https://")):
+                                # R706：接受任意合法 ``scheme://`` 形式——
+                                # ``shortcuts://run-shortcut?name=xxx`` 等自定义
+                                # scheme 是 Bark 推荐用法（点击通知打开快捷
+                                # 指令）；loopback 抑制仅对 http(s) 生效。
+                                if _is_acceptable_bark_click_url(rendered):
                                     if _bark_url_is_loopback(rendered):
                                         # 模板里包含 loopback host 时，例如用户写
                                         # ``http://127.0.0.1:8080/...`` 或上游

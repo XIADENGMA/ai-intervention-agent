@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import textwrap
@@ -56,7 +57,8 @@ def test_process_strikethrough_uses_indexed_loop_without_foreach() -> None:
     body = _extract_function(_source(), "function processStrikethrough(")
 
     assert "textNodes.forEach" not in body
-    assert "for (let textNodeIndex = 0;" in body
+    # 正则兼容 Prettier 对超长 for 头的折行（单行 / 多行语义等价）
+    assert re.search(r"for \(\s*let textNodeIndex = 0;", body)
     assert "textNodeIndex < textNodes.length" in body
     assert "const textNode = textNodes[textNodeIndex]" in body
     assert "continue;" in body

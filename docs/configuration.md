@@ -310,6 +310,7 @@ Controls the Web UI server and HTTP client behavior.
 | `http_retry_delay`     | number  | `1.0`       | Seconds, range `[0, 60]`                                                                                                                                                                                                                                                                                                    |
 | `log_level`            | string  | `"WARNING"` | Standalone-server enhanced_logging level. Case-insensitive; valid: `"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` / `"CRITICAL"`. Override at runtime with env var `AI_INTERVENTION_AGENT_LOG_LEVEL` (env wins). VS Code extension users tune `ai-intervention-agent.logLevel` in VS Code settings instead (separate axis). |
 | `external_base_url`    | string  | `""`        | Public Web UI base URL for notification click links, e.g. `http://ai.local:8080`. Empty falls back to mDNS (`http://ai.local:{port}`) when enabled, then `http://{host}:{port}`                                                                                                                                             |
+| `ios_a2hs_hint_dismissed` | boolean | `false`  | Server-side dismiss state of the iOS "Add to Home Screen" hint banner (R707). Auto-set to `true` via `POST /api/system/ios-a2hs-dismiss` when the user taps the banner's close button — persisted here because the Shortcuts "Show Web Page" WebView does not retain localStorage across sessions. Reset to `false` to show the banner again. |
 
 ### `network_security`
 

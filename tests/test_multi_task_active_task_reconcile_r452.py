@@ -296,6 +296,9 @@ def test_missing_active_task_reconciles_to_first_open_task() -> None:
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 def test_valid_open_active_task_is_preserved_without_detail_reload() -> None:
+    # R705：稳态前提是「详情已成功渲染过」——lastLoadedDetailsTaskId
+    # 水位必须与 activeTaskId 一致，否则轮询会（正确地）发起自愈重载。
+    # 本测试锁定的是稳态下不发多余请求的原意。
     script = _multi_task_harness(
         """
         window.currentTasks = [
@@ -304,6 +307,7 @@ def test_valid_open_active_task_is_preserved_without_detail_reload() -> None:
         ];
         currentTasks = window.currentTasks;
         setActiveTaskId('keep');
+        window.lastLoadedDetailsTaskId = 'keep';
 
         updateTasksList([
           { task_id: 'keep', status: 'pending', auto_resubmit_timeout: 0 },
@@ -322,6 +326,36 @@ def test_valid_open_active_task_is_preserved_without_detail_reload() -> None:
         "activeTaskId": "keep",
         "windowActiveTaskId": "keep",
         "loadRequests": [],
+    }
+
+
+@unittest.skipUnless(_node_available(), "node runtime unavailable")
+def test_never_loaded_active_task_retries_detail_load() -> None:
+    # R705 (TODO#38)：详情从未成功渲染过（水位缺失/不匹配）的 pending
+    # 活动任务，每轮 reconcile 都必须重试 loadTaskDetails——旧条件在
+    # 该场景永不重试，首次加载失败后选项区永久停留在 hidden 态。
+    script = _multi_task_harness(
+        """
+        window.currentTasks = [
+          { task_id: 'keep', status: 'pending', auto_resubmit_timeout: 0 },
+        ];
+        currentTasks = window.currentTasks;
+        setActiveTaskId('keep');
+
+        updateTasksList([
+          { task_id: 'keep', status: 'pending', auto_resubmit_timeout: 0 },
+        ]);
+
+        process.stdout.write(JSON.stringify({
+          activeTaskId,
+          loadRequests: window.__loadRequests,
+        }));
+        """
+    )
+
+    assert json.loads(_run_node(script)) == {
+        "activeTaskId": "keep",
+        "loadRequests": ["/api/tasks/keep"],
     }
 
 

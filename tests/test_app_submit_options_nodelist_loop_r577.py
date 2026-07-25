@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -55,7 +56,8 @@ def test_app_submit_feedback_uses_indexed_selected_options_loop() -> None:
 
     assert "checkboxes.forEach((checkbox)" not in submit_body
     assert "const checkboxCount =" in submit_body
-    assert "for (let checkboxIndex = 0;" in submit_body
+    # 正则兼容 Prettier 对超长 for 头的折行（单行 / 多行语义等价）
+    assert re.search(r"for \(\s*let checkboxIndex = 0;", submit_body)
     assert "const checkbox = checkboxes[checkboxIndex]" in submit_body
     assert "if (!checkbox) continue" in submit_body
     assert "selectedOptions.push(checkbox.value)" in submit_body
