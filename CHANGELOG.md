@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- VS Code webview now follows server-side language changes at runtime:
+  `applyServerLanguage` used a one-shot boolean latch, so after the
+  first switch the webview ignored every later `language` value from
+  `/api/config` — editing `web_ui.language` in `config.toml` (hot
+  reloaded by the server) never reached an open panel until it was
+  closed and reopened. The latch is now a last-applied-value comparison:
+  first connect still switches immediately, identical values stay
+  idempotent across the 2s polling, and a changed value re-localizes the
+  panel in place (`setLang` + retranslate, no HTML rebuild).
+
 ### Changed
 
 - Flattened the code-block container from a floating card into an

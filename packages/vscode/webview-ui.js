@@ -142,8 +142,13 @@
     return key
   }
 
-  // 服务器 TOML 配置驱动的语言切换：首次从 /api/config 收到 language 字段后检测并切换
-  let _serverLangApplied = false
+  // 服务器 TOML 配置驱动的语言切换（TODO#11）：记录上次已应用的语言值，
+  // 值发生变化时允许再次切换。历史实现是布尔标志（只允许首次切换），
+  // 后果：运行时修改 config.toml 的 web_ui.language 后，轮询每 2 秒都
+  // 拿到新 language 却被布尔标志跳过——webview 语言"永远更新不及时"，
+  // 直到用户重开面板。值比较天然幂等（同语言轮询不会重复重翻译），
+  // 同时保留了"连接成功第一次就切换"的既有行为。
+  let _serverLangLastApplied = ''
 
   function getI18n() {
     try {
@@ -158,8 +163,8 @@
   }
 
   function applyServerLanguage(lang) {
-    if (!lang || lang === 'auto' || _serverLangApplied) return
-    _serverLangApplied = true
+    if (!lang || lang === 'auto' || lang === _serverLangLastApplied) return
+    _serverLangLastApplied = lang
     try {
       vscode.postMessage({ type: 'langDetected', language: lang })
     } catch (e) {
@@ -3743,8 +3748,10 @@
 
       const config = await response.json()
 
-      // TOML 配置驱动的语言切换（仅首次生效，避免轮询时重复切换）
-      if (config && config.language && !_serverLangApplied) {
+      // TOML 配置驱动的语言切换：applyServerLanguage 自带值比较幂等
+      // （同语言轮询直接 return），language 变化时（含运行时改 config.toml
+      // 热更新）立即就地切换（TODO#11）。
+      if (config && config.language) {
         applyServerLanguage(config.language)
       }
 

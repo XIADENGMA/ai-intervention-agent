@@ -26,6 +26,13 @@ package, MCP server, Web UI internals), see the
 
 ### Fixed
 
+- The webview now follows server-side language changes at runtime.
+  Previously a one-shot latch applied the server's `language` only on
+  the first `/api/config` response, so editing `web_ui.language` in
+  `config.toml` never updated an open panel until it was closed and
+  reopened. First connect still switches immediately; identical values
+  remain idempotent across polling; a changed value re-localizes the
+  panel in place without an HTML rebuild.
 - The config-fallback render path (used when `/api/config` is
   unreachable and the webview falls back to the task detail endpoint)
   now carries `header_label`, `feedback_placeholder`, and
