@@ -38,9 +38,8 @@
  * - **lifecycle-aware** — ``visibilitychange`` 是主生命周期信号；
  *   ``pagehide`` 只做最后一次同步 flush；不安装常驻 ``beforeunload``
  *   listener，避免移动端不可靠信号和 Firefox bfcache 性能回退。
- * - **schema_version envelope** — 与 R130 quick_phrases / R137 textarea-
- *   height 同款 ``aiia.<feature>.v<schema>`` 命名约定，未来 schema
- *   升级有迁移空间。
+ * - **schema_version envelope** — 与 R137 textarea-height 同款
+ *   ``aiia.<feature>.v<schema>`` 命名约定，未来 schema 升级有迁移空间。
  */
 
 (function () {

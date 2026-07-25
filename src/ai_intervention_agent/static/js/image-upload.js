@@ -1066,10 +1066,16 @@ function initializeDragAndDrop() {
   }
 
   // 节流的拖拽处理函数
+  //
+  // R708：显隐必须走 classList（remove/add "hidden"）而不是 inline
+  // style.display——容器初始 ``class="drag-overlay hidden"``，`.hidden`
+  // 是 ``display: none !important``，inline flex 永远盖不过它，旧实现
+  // 的拖拽提示层从未真正显示过（R705 同型根因）。`.drag-overlay` 基础
+  // 规则自带 display:flex，去掉 hidden 类即可见。
   const throttledFileDragEnter = throttle((e) => {
     dragCounter++;
     rafUpdate(() => {
-      dragOverlay.style.display = "flex";
+      dragOverlay.classList.remove("hidden");
       textarea.classList.add("textarea-drag-over");
     });
   }, 100);
@@ -1081,7 +1087,7 @@ function initializeDragAndDrop() {
       clearTimeout(dragTimer);
       dragTimer = setTimeout(() => {
         rafUpdate(() => {
-          dragOverlay.style.display = "none";
+          dragOverlay.classList.add("hidden");
           textarea.classList.remove("textarea-drag-over");
         });
       }, 100);
@@ -1112,7 +1118,7 @@ function initializeDragAndDrop() {
     clearTimeout(dragTimer);
 
     rafUpdate(() => {
-      dragOverlay.style.display = "none";
+      dragOverlay.classList.add("hidden");
       textarea.classList.remove("textarea-drag-over");
     });
 
@@ -1144,7 +1150,7 @@ function initializeDragAndDrop() {
     }
     clearTimeout(dragTimer);
     dragCounter = 0;
-    dragOverlay.style.display = "none";
+    dragOverlay.classList.add("hidden");
     textarea.classList.remove("textarea-drag-over");
     if (window.__aiInterventionAgentDragDropCleanup === cleanupDragAndDrop) {
       window.__aiInterventionAgentDragDropCleanup = null;

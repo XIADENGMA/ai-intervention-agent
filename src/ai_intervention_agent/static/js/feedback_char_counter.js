@@ -60,7 +60,7 @@
     return String(count);
   }
 
-  // 与 quick_phrases.js / app.js 同款 i18n fallback：runtime 缺失 /
+  // 与 app.js 同款 i18n fallback：runtime 缺失 /
   // i18n 加载前页面已就绪等罕见路径下，用模块内 FALLBACK_TEXT 兜底，
   // 走 ``{{count}}`` mustache 替换与 ``static/js/i18n.js::
   // _interpolateMustache`` 完全一致。fallback 用英文与项目级 i18n
@@ -70,7 +70,7 @@
     "feedback.charCounter": "{{count}} chars",
   };
 
-  // 模块内 ``_t`` helper，与 quick_phrases.js / app.js 同款实现。
+  // 模块内 ``_t`` helper，与 app.js 同款实现。
   // 走顶层 helper 名（不是 ``window.AIIA_I18N.t`` 字面调用）让 i18n
   // orphan / dead-key 扫描器（``scripts/check_i18n_orphan_keys.py::
   // JS_T_CALL_RE``）能匹配模块内 helper 的字面 key 调用形式，避免

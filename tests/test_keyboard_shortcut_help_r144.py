@@ -38,8 +38,8 @@ R144 落地一个最小可行 overlay：
    同款）。
 
 6. **i18n 全覆盖** — 中英两份 locale 的 ``shortcuts`` namespace 必含
-   新增的 ``helpSubtitle / helpEscHint / quickPhrase /
-   submitCtrlEnter / submitEnter / newline`` 6 个 key；既有
+   新增的 ``helpSubtitle / helpEscHint /
+   submitCtrlEnter / submitEnter / newline`` 5 个 key；既有
    ``helpTitle / showHelp / closeModal`` 复用不变。
 
 7. **触发条件 (_shouldTriggerHelp 契约描述)** — 源码中含「不在 input
@@ -120,7 +120,6 @@ class TestConstants(unittest.TestCase):
         keys_in_table = (
             "shortcuts.showHelp",
             "shortcuts.closeModal",
-            "shortcuts.quickPhrase",
             "shortcuts.submitCtrlEnter",
             "shortcuts.submitEnter",
             "shortcuts.newline",
@@ -245,7 +244,6 @@ class TestI18nCoverage(unittest.TestCase):
     expected_new_keys = {
         "shortcuts.helpSubtitle",
         "shortcuts.helpEscHint",
-        "shortcuts.quickPhrase",
         "shortcuts.submitCtrlEnter",
         "shortcuts.submitEnter",
         "shortcuts.newline",

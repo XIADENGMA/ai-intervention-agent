@@ -1048,10 +1048,10 @@
             </div>
           </div>
 
-          <!-- 隐藏的文件上传input (R235 / Cycle 14: 与 #quick-phrases-import-file
-               L852 一样标 aria-hidden=true + tabindex=-1, 防止键盘 Tab 落焦
-               到不可见 input, 也防止屏幕阅读器读出无名字的 "file upload" 控件;
-               实际操作通过 #upload-image-btn 按钮触发 .click() 把焦点路由过来。) -->
+          <!-- 隐藏的文件上传input (R235 / Cycle 14: 标 aria-hidden=true +
+               tabindex=-1, 防止键盘 Tab 落焦到不可见 input, 也防止屏幕阅读器
+               读出无名字的 "file upload" 控件; 实际操作通过 #upload-image-btn
+               按钮触发 .click() 把焦点路由过来。) -->
           <input
             type="file"
             id="file-upload-input"
@@ -1061,86 +1061,6 @@
             aria-hidden="true"
             tabindex="-1"
           />
-
-          <!-- R130 — 常用回复 / Quick Phrases 面板（纯前端 + localStorage） -->
-          <div
-            class="quick-phrases-container"
-            id="quick-phrases-container"
-            role="region"
-            aria-label="Quick replies"
-            data-i18n-aria-label="quickPhrases.label"
-          >
-            <div class="quick-phrases-header">
-              <span
-                class="quick-phrases-label"
-                data-i18n="quickPhrases.label"
-                >Quick replies</span
-              >
-              <button
-                type="button"
-                class="quick-phrases-add-btn"
-                id="quick-phrases-add-btn"
-                data-i18n="quickPhrases.addBtn"
-                data-i18n-aria-label="quickPhrases.addBtnAriaLabel"
-                aria-label="Add quick reply"
-              >
-                Add
-              </button>
-              <!-- R131b — JSON 导出 / 导入按钮（跨设备 / 跨浏览器迁移）。
-                   R700 优雅审计 #4：低频管理操作收进「⋯」溢出菜单，
-                   头部只保留高频的「添加」；details/summary 原生实现，
-                   零 JS 依赖（导出/导入按钮 id 与事件绑定不变）。 -->
-              <details class="quick-phrases-more" id="quick-phrases-more">
-                <summary
-                  class="quick-phrases-more-summary"
-                  data-i18n-aria-label="quickPhrases.moreAriaLabel"
-                  aria-label="More quick reply actions"
-                  title="⋯"
-                >
-                  ⋯
-                </summary>
-                <div class="quick-phrases-more-menu">
-                  <button
-                    type="button"
-                    class="quick-phrases-export-btn"
-                    id="quick-phrases-export-btn"
-                    data-i18n="quickPhrases.exportBtn"
-                    data-i18n-aria-label="quickPhrases.exportBtnAriaLabel"
-                    aria-label="Export quick replies as a JSON file"
-                  >
-                    Export
-                  </button>
-                  <button
-                    type="button"
-                    class="quick-phrases-import-btn"
-                    id="quick-phrases-import-btn"
-                    data-i18n="quickPhrases.importBtn"
-                    data-i18n-aria-label="quickPhrases.importBtnAriaLabel"
-                    aria-label="Import quick replies from a JSON file"
-                  >
-                    Import
-                  </button>
-                </div>
-              </details>
-              <input
-                type="file"
-                id="quick-phrases-import-file"
-                accept="application/json,.json"
-                class="hidden"
-                aria-hidden="true"
-                tabindex="-1"
-              />
-            </div>
-            <div
-              class="quick-phrases-list"
-              id="quick-phrases-list"
-              role="list"
-            ></div>
-            <div
-              class="quick-phrases-form-host"
-              id="quick-phrases-form-host"
-            ></div>
-          </div>
 
           <div class="textarea-container">
             <textarea
@@ -2337,13 +2257,6 @@
     <script
       defer
       src="/static/js/app.js?v={{ app_version }}"
-      nonce="{{ csp_nonce }}"
-    ></script>
-
-    <!-- R130 — 常用回复 / Quick Phrases 模块（依赖：i18n.js / DOM 渲染） -->
-    <script
-      defer
-      src="/static/js/quick_phrases.js?v={{ quick_phrases_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 

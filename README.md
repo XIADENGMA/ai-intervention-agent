@@ -202,7 +202,6 @@ ai-intervention-agent usage details:
 - 🎨 **Custom placeholder hints** — per-task `feedback_placeholder` overrides the textarea hint
 - 🌏 **i18n** — Web UI + VS Code extension shipped in `en` / `zh-CN` / `zh-TW`
 - ⚡ **Productivity shortcuts** — keyboard cheatsheet (press `?`), per-task draft autosave, configurable submit mode, live character counter
-- 💬 **Quick reply phrases** — save / reuse canned responses with JSON export + import
 - 🟢 **SSE liveness indicator** — 3-state corner badge shows whether the page is in sync with the backend
 - 📱 **PWA + offline-aware** — installable from the browser's native menu; a branded offline page with auto-recovery replaces the default error screen
 - ♿ **WCAG 2.1 AA accessible** — contrast, Name/Role/Value, focus management, `prefers-reduced-motion` / `prefers-contrast: more` all audited and locked by invariant tests
@@ -370,8 +369,6 @@ See [`docs/mcp_tools.md#loop-engineering-parameters-long-autonomous-runs`](docs/
   in-progress reply
 - **Typing-hold auto-extension** — the countdown extends itself while
   you type and never fires mid-input
-- **Quick reply phrases** — canned replies saved to `localStorage`,
-  one-click insert
 - **Custom notification sound** — upload a short audio file for a
   distinct Agent-mode chime
 - **Per-task images** — paste screenshots inline, returned to the agent

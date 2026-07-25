@@ -297,8 +297,8 @@ class SettingsManager {
   // 取消则直接 noop，保留全部既有偏好。
   //
   // 选型理由：
-  // - 与 ``quick_phrases.js`` 的删除短语 / 全量替换确认走同一套范式，
-  //   不引入额外 modal 组件，最小变更面 + 行为一致。
+  // - 走原生 confirm 范式，不引入额外 modal 组件，最小变更面 +
+  //   行为一致。
   // - i18n key ``settings.resetConfirm`` / ``settings.resetCancelled``
   //   覆盖 en / zh-CN / pseudo；缺 key 时退到内置英文 fallback，与
   //   其它 ``_tl`` 调用站对齐。

@@ -9,6 +9,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Removed
+
+- The Quick Phrases / quick replies panel (R130 family) is gone by owner
+  decision: the panel DOM, `quick_phrases.js` (+ minified/precompressed
+  variants), its CSS block, the `quickPhrases.*` i18n namespace in all
+  three locales, the Alt+1-9 cheatsheet row, both README feature
+  mentions, and the 16 dedicated regression-test files. The feature was
+  also structurally unsound on the primary mobile path: phrases lived
+  only in `localStorage`, which the Shortcuts "Show Web Page" WebView
+  discards between sessions (same storage-isolation root cause as the
+  R707 A2HS-banner fix).
+
+### Fixed
+
+- The image drag-and-drop overlay now actually appears while dragging
+  files over the page. It never had: the element ships with
+  `class="drag-overlay hidden"` and the drag handlers only set inline
+  `style.display = "flex"`, which loses to `.hidden`'s
+  `display: none !important` — the exact CSS-specificity blind spot
+  behind R705, found by sweeping every inline `style.display` writer
+  against its target's initial classes. Handlers now toggle the
+  `hidden` class (the base `.drag-overlay` rule already provides
+  `display: flex`), and the R452/R595 runtime harnesses assert the
+  classList semantics (R708).
+
 ### Added
 
 - VS Code settings panel: an "Open" button next to the read-only config

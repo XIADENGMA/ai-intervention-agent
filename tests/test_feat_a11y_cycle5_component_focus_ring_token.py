@@ -22,12 +22,6 @@ cycle-5 Track C 把这 8 个组件迁到 ``var(--focus-ring-color, var(--primary
 
 1. ``.upload-btn-label``
 2. ``.custom-sound-btn``
-3. ``.quick-phrases-add-btn``
-4. ``.quick-phrases-export-btn``
-5. ``.quick-phrases-import-btn``
-6. ``.quick-phrase-chip``
-7. ``.quick-phrase-chip-edit``
-8. ``.quick-phrase-chip-delete``
 
 未来如果有新组件 ``:focus-visible``，按 §3.ter / §3.quater CONTRIBUTING
 checklist 也应该跟随这个模式。
@@ -52,12 +46,6 @@ CSS_PATH = (
 REQUIRED_SELECTORS = [
     ".upload-btn-label",
     ".custom-sound-btn",
-    ".quick-phrases-add-btn",
-    ".quick-phrases-export-btn",
-    ".quick-phrases-import-btn",
-    ".quick-phrase-chip",
-    ".quick-phrase-chip-edit",
-    ".quick-phrase-chip-delete",
 ]
 
 

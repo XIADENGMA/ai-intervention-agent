@@ -105,11 +105,6 @@
       i18nKey: "shortcuts.newline",
       fallback: "Insert newline (when Enter mode is selected)",
     },
-    {
-      keys: ["Alt", "1-9"],
-      i18nKey: "shortcuts.quickPhrase",
-      fallback: "Insert Quick Phrase chip 1..9 (R131d)",
-    },
     // R267：补 keyboard-shortcuts.js system shortcuts
     {
       keys: ["Ctrl", ","],
@@ -168,9 +163,6 @@
     }
     if (i18nKey === "shortcuts.closeModal") {
       return _t("shortcuts.closeModal", fallback);
-    }
-    if (i18nKey === "shortcuts.quickPhrase") {
-      return _t("shortcuts.quickPhrase", fallback);
     }
     if (i18nKey === "shortcuts.submitCtrlEnter") {
       return _t("shortcuts.submitCtrlEnter", fallback);

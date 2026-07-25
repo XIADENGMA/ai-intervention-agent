@@ -386,7 +386,7 @@ def test_non_file_drag_events_are_not_suppressed() -> None:
           nonFileEnterStopPropagationCalls: nonFileEnter.stopPropagationCalls,
           fileEnterPreventDefaultCalls: fileEnter.preventDefaultCalls,
           fileEnterStopPropagationCalls: fileEnter.stopPropagationCalls,
-          overlayDisplay: controls.overlay.style.display,
+          overlayHiddenAfterFileEnter: controls.overlay.classList.contains('hidden'),
           textareaClasses: controls.textarea.classList.toArray(),
           dragoverListeners: documentListenerCounts().dragover,
         }));
@@ -404,7 +404,7 @@ def test_non_file_drag_events_are_not_suppressed() -> None:
         "nonFileEnterStopPropagationCalls": 0,
         "fileEnterPreventDefaultCalls": 1,
         "fileEnterStopPropagationCalls": 1,
-        "overlayDisplay": "flex",
+        "overlayHiddenAfterFileEnter": False,
         "textareaClasses": ["textarea-drag-over"],
         "dragoverListeners": 2,
     }

@@ -7352,8 +7352,7 @@ code,
 /* Loop 工程 P2 —— 活动任务的 loop 上下文条。
  * 视觉语言（用户验收意见 + R698 中性平底方向）：与「常用回复」面板
  * 同一族——白色低透明度平底卡 + var(--border-secondary) 细边 + 16px
- * 圆角，不使用品牌色底/彩色左边框；chips 走中性胶囊（与 quick-phrases
- * 按钮同形）。由 multi_task.js 的 ``updateLoopContext`` 控制显隐。 */
+ * 圆角，不使用品牌色底/彩色左边框；chips 走中性胶囊。由 multi_task.js 的 ``updateLoopContext`` 控制显隐。 */
 .task-loop-context {
   margin: 0 0 0.75rem 0;
   padding: 0.75rem 1rem;
@@ -7415,7 +7414,7 @@ code,
 }
 
 /* Loop 视图 —— 历史轮次折叠面板（loop 上下文条内）。
-   toggle 与 quick-phrases 的「添加」按钮同形（中性胶囊）。 */
+   toggle 走中性胶囊按钮形态。 */
 .loop-history-toggle {
   align-self: flex-start;
   display: inline-flex;
@@ -7478,7 +7477,7 @@ code,
   overflow-y: auto;
 }
 
-/* 历史轮次行：与 quick-phrase chip 容器同一族的中性平底小卡 */
+/* 历史轮次行：中性平底小卡 */
 .loop-history-row {
   padding: 0.5rem 0.75rem;
   background: rgba(255, 255, 255, 0.04);
@@ -7524,7 +7523,7 @@ code,
   font-size: 0.75rem;
 }
 
-/* 移动端收紧 —— 与 quick-phrases 面板同断点同幅度 */
+/* 移动端收紧 —— 与页面其余面板同断点同幅度 */
 @media (max-width: 768px) {
   .task-loop-context {
     padding: 0.5rem 0.75rem;
@@ -7537,7 +7536,7 @@ code,
   }
 }
 
-/* 浅色主题 override —— 与 quick-phrases 面板同一套值（R696 惯例：
+/* 浅色主题 override —— 与页面其余面板同一套值（R696 惯例：
    theme.js 始终显式写入 data-theme，无需 prefers-color-scheme 镜像）。 */
 :root[data-theme="light"] .task-loop-context,
 [data-theme="light"] .task-loop-context {
@@ -9245,427 +9244,6 @@ code,
   }
 }
 
-/* ========================================================================
-   R130 — 常用回复 / Quick Phrases 面板
-   --------------------------------------------------------------------
-   位置：feedback textarea 之上、文件上传 input 之下。
-   视觉：与 .option-item / .feedback-textarea 同一视觉权重，但更紧凑——
-   chip 风格，一行可堆放多枚 phrase；空状态 / 禁用状态走低对比度灰
-   提示，避免视觉打架。
-   ======================================================================== */
-
-.quick-phrases-container {
-  /* R700：去掉左右 1.5rem 额外外边距——与选项/输入框同宽，视觉对齐 */
-  margin: 0 0 0.75rem 0;
-  padding: 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.quick-phrases-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.quick-phrases-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: rgba(245, 245, 247, 0.85);
-  letter-spacing: 0.02em;
-  margin-right: auto;
-}
-
-.quick-phrases-add-btn,
-.quick-phrases-export-btn,
-.quick-phrases-import-btn {
-  background: rgba(255, 255, 255, 0.06);
-  color: #f5f5f7;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  padding: 0.25rem 0.85rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.quick-phrases-add-btn:hover:not(:disabled),
-.quick-phrases-export-btn:hover:not(:disabled),
-.quick-phrases-import-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.22);
-}
-
-.quick-phrases-add-btn:focus-visible,
-.quick-phrases-export-btn:focus-visible,
-.quick-phrases-import-btn:focus-visible {
-  /* a11y-audit-cycle-5 Track C (R259g): 继承 --focus-ring-color
-   * cycle-3 R258 WCAG 1.4.11 compliant 色。 */
-  outline: 2px solid
-    var(--focus-ring-color, var(--primary-500, #d97757));
-  outline-offset: 2px;
-}
-
-.quick-phrases-add-btn:disabled,
-.quick-phrases-export-btn:disabled,
-.quick-phrases-import-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* R700 优雅审计 #4：「⋯」溢出菜单——低频的导出/导入收纳于此 */
-.quick-phrases-more {
-  position: relative;
-  display: inline-flex;
-}
-
-.quick-phrases-more-summary {
-  list-style: none;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.25rem 0.6rem;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  line-height: 1;
-}
-
-.quick-phrases-more-summary::-webkit-details-marker {
-  display: none;
-}
-
-.quick-phrases-more-summary:hover,
-.quick-phrases-more[open] > .quick-phrases-more-summary {
-  background: var(--bg-hover);
-  border-color: var(--border-secondary);
-  color: var(--text-primary);
-}
-
-.quick-phrases-more-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.35rem;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-secondary);
-  border-radius: 12px;
-  box-shadow: var(--shadow-md);
-  min-width: 7rem;
-}
-
-.quick-phrases-more-menu .quick-phrases-export-btn,
-.quick-phrases-more-menu .quick-phrases-import-btn {
-  width: 100%;
-  text-align: left;
-  border-radius: 8px;
-  background: transparent;
-  border-color: transparent;
-}
-
-.quick-phrases-more-menu .quick-phrases-export-btn:hover:not(:disabled),
-.quick-phrases-more-menu .quick-phrases-import-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: transparent;
-}
-
-.quick-phrases-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  min-height: 1.5rem;
-}
-
-.quick-phrases-empty {
-  font-size: 0.8rem;
-  color: rgba(245, 245, 247, 0.55);
-  font-style: italic;
-}
-
-.quick-phrase-chip-wrap {
-  display: inline-flex;
-  align-items: center;
-  background: rgba(217, 119, 87, 0.12);
-  border: 1px solid rgba(217, 119, 87, 0.3);
-  border-radius: 999px;
-  overflow: hidden;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.quick-phrase-chip-wrap:hover {
-  background: rgba(217, 119, 87, 0.22);
-  border-color: rgba(217, 119, 87, 0.55);
-}
-
-.quick-phrase-chip {
-  background: transparent;
-  border: none;
-  color: #f5f5f7;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-  max-width: 16rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.quick-phrase-chip:focus-visible {
-  /* a11y-audit-cycle-5 Track C (R259g): 继承 --focus-ring-color。 */
-  outline: 2px solid
-    var(--focus-ring-color, var(--primary-500, #d97757));
-  outline-offset: 2px;
-  border-radius: 999px;
-}
-
-/* R131 — chip 上的 ✎ 编辑按钮：与 × 删除按钮共享视觉权重，但独立 hover 色 */
-.quick-phrase-chip-edit,
-.quick-phrase-chip-delete {
-  background: transparent;
-  border: none;
-  color: rgba(245, 245, 247, 0.55);
-  line-height: 1;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.quick-phrase-chip-edit {
-  font-size: 0.85rem;
-  padding: 0.3rem 0.25rem 0.3rem 0.15rem;
-}
-
-.quick-phrase-chip-delete {
-  font-size: 1rem;
-  padding: 0.3rem 0.55rem 0.3rem 0.2rem;
-}
-
-.quick-phrase-chip-edit:hover {
-  color: var(--primary-500, #d97757);
-}
-
-.quick-phrase-chip-delete:hover {
-  color: rgba(255, 100, 100, 0.95);
-}
-
-.quick-phrase-chip-edit:focus-visible,
-.quick-phrase-chip-delete:focus-visible {
-  /* a11y-audit-cycle-5 Track C (R259g): 继承 --focus-ring-color。 */
-  outline: 2px solid
-    var(--focus-ring-color, var(--primary-500, #d97757));
-  outline-offset: 2px;
-  border-radius: 999px;
-}
-
-.quick-phrases-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 0.75rem;
-}
-
-.quick-phrases-form-label,
-.quick-phrases-form-text {
-  background: rgba(0, 0, 0, 0.2);
-  color: #f5f5f7;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.875rem;
-  font-family: inherit;
-  resize: vertical;
-}
-
-.quick-phrases-form-label:focus,
-.quick-phrases-form-text:focus {
-  outline: 2px solid var(--primary-500, #d97757);
-  outline-offset: 1px;
-}
-
-.quick-phrases-form-error {
-  /* R696：跟随主题错误色令牌（dark #f87171 / light #b03d38，均已过 WCAG） */
-  color: var(--error-500);
-  font-size: 0.8rem;
-  min-height: 1em;
-}
-
-.quick-phrases-form-actions {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: flex-end;
-}
-
-.quick-phrases-form-save,
-.quick-phrases-form-cancel {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  padding: 0.3rem 0.95rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.quick-phrases-form-save {
-  background: var(--primary-500, #d97757);
-  color: #fff;
-  border-color: transparent;
-}
-
-.quick-phrases-form-save:hover {
-  background: var(--primary-600, #c56a4c);
-}
-
-.quick-phrases-form-cancel {
-  background: rgba(255, 255, 255, 0.06);
-  color: #f5f5f7;
-}
-
-.quick-phrases-form-cancel:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-/* 浅色主题：与设置 / 主题切换按钮的浅色块同色系 */
-:root[data-theme="light"] .quick-phrases-container,
-[data-theme="light"] .quick-phrases-container {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-:root[data-theme="light"] .quick-phrases-label,
-[data-theme="light"] .quick-phrases-label {
-  color: rgba(28, 28, 30, 0.85);
-}
-
-:root[data-theme="light"] .quick-phrases-add-btn,
-:root[data-theme="light"] .quick-phrases-export-btn,
-:root[data-theme="light"] .quick-phrases-import-btn,
-[data-theme="light"] .quick-phrases-add-btn,
-[data-theme="light"] .quick-phrases-export-btn,
-[data-theme="light"] .quick-phrases-import-btn {
-  background: rgba(0, 0, 0, 0.04);
-  color: #1c1c1e;
-  border-color: rgba(0, 0, 0, 0.12);
-}
-
-:root[data-theme="light"] .quick-phrases-add-btn:hover:not(:disabled),
-:root[data-theme="light"] .quick-phrases-export-btn:hover:not(:disabled),
-:root[data-theme="light"] .quick-phrases-import-btn:hover:not(:disabled),
-[data-theme="light"] .quick-phrases-add-btn:hover:not(:disabled),
-[data-theme="light"] .quick-phrases-export-btn:hover:not(:disabled),
-[data-theme="light"] .quick-phrases-import-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-/* R696：chip 容器浅色 override —— 暗色紫 chip 在 Anthropic 米白底上
-   突兀，浅色改走品牌陶土橙色系（与 --bg-hover / --accent-primary 同脉）。 */
-:root[data-theme="light"] .quick-phrase-chip-wrap,
-[data-theme="light"] .quick-phrase-chip-wrap {
-  background: rgba(217, 119, 87, 0.1);
-  border-color: rgba(217, 119, 87, 0.35);
-}
-
-:root[data-theme="light"] .quick-phrase-chip-wrap:hover,
-[data-theme="light"] .quick-phrase-chip-wrap:hover {
-  background: rgba(217, 119, 87, 0.18);
-  border-color: rgba(217, 119, 87, 0.55);
-}
-
-:root[data-theme="light"] .quick-phrase-chip,
-[data-theme="light"] .quick-phrase-chip {
-  color: #1c1c1e;
-}
-
-:root[data-theme="light"] .quick-phrases-empty,
-[data-theme="light"] .quick-phrases-empty {
-  color: rgba(28, 28, 30, 0.55);
-}
-
-:root[data-theme="light"] .quick-phrases-form,
-[data-theme="light"] .quick-phrases-form {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-:root[data-theme="light"] .quick-phrases-form-label,
-:root[data-theme="light"] .quick-phrases-form-text,
-[data-theme="light"] .quick-phrases-form-label,
-[data-theme="light"] .quick-phrases-form-text {
-  background: rgba(255, 255, 255, 0.7);
-  color: #1c1c1e;
-  border-color: rgba(0, 0, 0, 0.12);
-}
-
-:root[data-theme="light"] .quick-phrases-form-cancel,
-[data-theme="light"] .quick-phrases-form-cancel {
-  background: rgba(0, 0, 0, 0.04);
-  color: #1c1c1e;
-}
-
-/* 移动端：进一步收紧外边距 + 字号 + header 按钮排版（R133）
- *
- * R130 v1 只动了 container margin / chip 字号；R131b 把 header 从「label
- * + Add」扩到「label + Add + Export + Import」共 4 元素，在 < 480px
- * 设备上很容易撞挤——按钮被挤压到 padding 完全消失、点击区域 < 32×32
- * （iOS HIG 与 Material 都把 44/48px 视为最小可点目标）。
- *
- * R133 把 header 改为 flex-wrap，让按钮在空间不够时换行；同时收紧按钮
- * padding 让单行优先；< 480px 进一步缩小 chip 最大宽度避免单 chip 撑爆
- * 整行；保留所有触摸目标 ≥ 32px（高度走 padding + line-height 支撑）。
- */
-@media (max-width: 768px) {
-  .quick-phrases-container {
-    margin: 0 1rem 0.5rem 1rem;
-    padding: 0.5rem 0.75rem;
-  }
-  .quick-phrases-header {
-    flex-wrap: wrap;
-    row-gap: 0.35rem;
-  }
-  .quick-phrases-add-btn,
-  .quick-phrases-export-btn,
-  .quick-phrases-import-btn {
-    padding: 0.3rem 0.7rem;
-    font-size: 0.78rem;
-  }
-  .quick-phrase-chip {
-    max-width: 10rem;
-    font-size: 0.8rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .quick-phrases-label {
-    /* < 480px 下 label 不再独占左侧——4 元素需要并排，让 label 自动
-       推到下一行（flex-wrap 已经给行了），只去掉 margin-right: auto
-       的"撑满左侧"语义即可 */
-    margin-right: 0;
-    flex-basis: 100%;
-  }
-  .quick-phrases-add-btn,
-  .quick-phrases-export-btn,
-  .quick-phrases-import-btn {
-    /* 进一步收紧到 < 480px 设备的紧凑形态 */
-    padding: 0.28rem 0.55rem;
-    font-size: 0.74rem;
-  }
-  .quick-phrase-chip {
-    max-width: 8rem;
-  }
-}
-
 /* ============================================================================
  * R144 — Keyboard shortcut cheatsheet overlay
  *
@@ -9673,7 +9251,7 @@ code,
  * 触发：在任意 input/textarea 之外按 ? (Shift+/)。
  * 关闭：Esc / 点击遮罩 / 卡片外区域。
  *
- * 与 R130 quick-phrases 模式呼应：CSS 变量复用项目色板，无新增 token。
+ * CSS 变量复用项目色板，无新增 token。
  * ============================================================================ */
 
 .aiia-kshelp-overlay {

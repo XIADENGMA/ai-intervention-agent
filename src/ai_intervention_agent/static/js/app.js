@@ -1439,11 +1439,9 @@ function getClipboardFailureHint(error) {
 // cycle-22 / cr51 follow-up #1：与 image-modal R263a / settings-panel 同套
 // capture-activeElement 模式 — 模态打开前 snapshot 真正触发它的元素，
 // 关闭时回归。比 hardcode 回 ``#feedback-text`` 更鲁棒的场景：
-//   1. 用户从 quick-phrases 面板 paste 触发剪贴板降级，关闭后焦点应回
-//      到 quick-phrases 按钮，而非跳走打断 quick-phrases 流；
-//   2. 多 task tab 场景下 ``#feedback-text`` 可能并非当前 active task 的
+//   1. 多 task tab 场景下 ``#feedback-text`` 可能并非当前 active task 的
 //      textarea（旧 hardcode 会跳到 cached 的第一个 textarea ID）；
-//   3. ``#feedback-text`` 元素本身可能在 SSE 重渲染后被替换，``getElementById``
+//   2. ``#feedback-text`` 元素本身可能在 SSE 重渲染后被替换，``getElementById``
 //      返回旧引用 → focus 失败 silent fail。
 // 仍保留 fallback 到 ``#feedback-text``，对齐升级前的语义。
 let _codePasteModalPreviouslyFocusedElement = null;

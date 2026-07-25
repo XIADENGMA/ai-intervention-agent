@@ -13,7 +13,7 @@ every ``<textarea>`` in ``web_ui.html`` must have an accessible name
 exposed to assistive technology — or be explicitly removed from the
 a11y tree via ``aria-hidden="true"`` (the
 programmatically-driven-hidden-file-input pattern, e.g.
-``#file-upload-input`` + ``#quick-phrases-import-file``).
+``#file-upload-input``；quickPhrases 面板移除后仅剩此一个).
 
 Accepted accessible-name sources (WCAG 4.1.2 + WAI-ARIA 1.2):
 
@@ -36,8 +36,8 @@ Discovery context
 
 The audit script that produced R235 found 2 inputs in ``web_ui.html``
 with no accessible name: ``#file-upload-input`` (L799) had only
-``class="hidden"`` while ``#quick-phrases-import-file`` (L852) had
-``aria-hidden="true"`` + ``tabindex="-1"``. R235 brings them to a
+``class="hidden"`` while the since-removed quickPhrases import input
+had ``aria-hidden="true"`` + ``tabindex="-1"``. R235 brought them to a
 single pattern and locks it.
 """
 
@@ -171,10 +171,9 @@ class TestEveryFormInputHasAccessibleName(unittest.TestCase):
 class TestHiddenFileInputPatternIsConsistent(unittest.TestCase):
     """programmatically-clicked <input type='file' class='hidden'> 必须用 R235 pattern.
 
-    web_ui.html 现有 2 个 #file-upload-input + #quick-phrases-import-file,
-    两个都用 class='hidden' 隐藏后由可见按钮 .click() 路由焦点。R235 之前
-    这两个 input 配置不一致, R235 后必须统一为
-    `aria-hidden='true' + tabindex='-1'`。
+    web_ui.html 现有 #file-upload-input（quickPhrases 面板移除后仅剩
+    此一个），用 class='hidden' 隐藏后由可见按钮 .click() 路由焦点。
+    R235 锁定统一 pattern：`aria-hidden='true' + tabindex='-1'`。
     """
 
     def test_all_hidden_file_inputs_use_the_pattern(self) -> None:
@@ -193,11 +192,11 @@ class TestHiddenFileInputPatternIsConsistent(unittest.TestCase):
 
         self.assertGreaterEqual(
             len(hidden_file_inputs),
-            2,
+            1,
             msg=(
-                "R235 sanity: 至少存在 2 个 hidden file input "
-                "(file-upload-input + quick-phrases-import-file); "
-                "若少于 2, pattern 可能被重构, 请更新此测试。"
+                "R235 sanity: 至少存在 1 个 hidden file input "
+                "(file-upload-input); "
+                "若为 0, pattern 可能被重构, 请更新此测试。"
             ),
         )
 

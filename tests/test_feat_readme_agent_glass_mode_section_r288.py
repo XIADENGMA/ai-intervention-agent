@@ -23,7 +23,7 @@ R288 在双语 README 添加 ``## Agent / Glass mode workflow`` H2 section，
 - 双语 H2 section heading 必须存在
 - mermaid diagram 必须存在 + 包含 5 个 participant
 - 5 个 Agent 端参数都必须在表格中
-- 7 个 user-side features 都必须 mention
+- 6 个 user-side features 都必须 mention（quick_phrases 功能已按用户决策整体移除）
 - mermaid 跨语言一致 (复用同一份 diagram block)
 """
 
@@ -46,13 +46,12 @@ AGENT_MODE_PARAMS_FOR_TABLE = [
     "predefined_options",
 ]
 
-# 7 个 user-side feature 关键词
+# 6 个 user-side feature 关键词（quick_phrases 已移除）
 USER_SIDE_FEATURES_EN = [
     "Multi-task tabs",
     "Per-task draft autosave",
     # R700：+60s/freeze 按钮下线，特性改述为 typing-hold 自动延长
     "Typing-hold auto-extension",
-    "Quick reply phrases",
     "Custom notification sound",
     "Per-task images",
     "SSE liveness badge",
@@ -62,7 +61,6 @@ USER_SIDE_FEATURES_ZH = [
     "多任务标签页",
     "每任务草稿自动保存",
     "输入即延长",  # R700：freeze/+60s 下线后的 typing-hold 述法
-    "常用回复短语",
     "自定义通知音效",
     "每任务图片",
     "SSE 实时连接徽章",
@@ -153,14 +151,14 @@ class TestEnReadmeAgentGlassSection(unittest.TestCase):
                 f"parameters table (5 params total: 4 Agent-mode + predefined_options)",
             )
 
-    def test_all_7_user_side_features_listed(self) -> None:
+    def test_all_user_side_features_listed(self) -> None:
         body = self._extract_section_body()
         for feat in USER_SIDE_FEATURES_EN:
             self.assertIn(
                 feat,
                 body,
                 f"Agent / Glass section must mention `{feat}` in the "
-                f"user-side workflow features list (7 features total)",
+                f"user-side workflow features list (6 features total)",
             )
 
     def test_links_to_mcp_tools_docs(self) -> None:
@@ -227,7 +225,7 @@ class TestZhReadmeAgentGlassSection(unittest.TestCase):
         for param in AGENT_MODE_PARAMS_FOR_TABLE:
             self.assertIn(param, body, f"中文 README must list `{param}`")
 
-    def test_all_7_user_side_features_listed_in_chinese(self) -> None:
+    def test_all_user_side_features_listed_in_chinese(self) -> None:
         body = self._extract_section_body()
         for feat in USER_SIDE_FEATURES_ZH:
             self.assertIn(

@@ -13,8 +13,8 @@
  * --------
  * - ``localStorage`` 持久化，per-domain（loopback http://127.0.0.1:8888 共
  *   享一份），不引入服务端状态。
- * - schema_version envelope 与 R130 quick_phrases 同款，让未来 v2 可
- *   以加 migrator 而不破坏 v1 用户。
+ * - schema_version envelope（``aiia.<feature>.v<schema>`` 约定），让
+ *   未来 v2 可以加 migrator 而不破坏 v1 用户。
  * - clamp 到 ``[MIN_HEIGHT_PX, MAX_HEIGHT_PX]`` 防止用户误拖到极端值
  *   （0 / 全屏）导致 UX 异常。
  * - 优先 ``ResizeObserver``（现代浏览器），fallback ``mouseup``（旧
