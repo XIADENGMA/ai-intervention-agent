@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- Declare `globals` explicitly in `packages/vscode` devDependencies
+  (`globals@^17.7.0`) instead of relying on the phantom copy hoisted
+  from ESLint 9's own dependency tree: `eslint.config.mjs` imports the
+  package directly, and ESLint 10 drops that transitive edge, which
+  made the Dependabot `eslint` 9 → 10 PR fail its lint job with
+  `ERR_MODULE_NOT_FOUND: Cannot find package 'globals'`. All four
+  consumed export sets (`commonjs` / `node` / `mocha` / `browser`)
+  verified present on 17.x.
+
 ## [1.8.6] - 2026-07-26
 
 ### Fixed
