@@ -79,12 +79,14 @@ class TestLayer2SectionIndexParity:
     一致, 不要求字面翻译)。"""
 
     # 已审查的章节语义 mapping (English heading prefix → 中文 heading prefix)
+    # README 结构重构（学顶级仓库精简首页）：Screenshots 提前到 Quick
+    # start 之后、Agent / Glass 深水内容迁往 docs/architecture{,.zh-CN}.md
+    # （由 R288 / R300 / R311 守卫继续锁定），首页收敛为 10 个 H2。
     EXPECTED_MAPPING = (
         ("Quick start", "快速开始"),
         ("Screenshots", "界面截图"),
         ("Key features", "主要特性"),
         ("Architecture overview", "架构总览"),
-        ("Agent / Glass mode", "Agent / Glass 模式"),
         ("VS Code extension", "VS Code 插件"),
         ("Configuration", "配置说明"),
         ("Documentation", "文档"),

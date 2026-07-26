@@ -43,8 +43,11 @@ import unittest
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-README_EN = PROJECT_ROOT / "README.md"
-README_ZH = PROJECT_ROOT / "README.zh-CN.md"
+# README 结构重构（学顶级仓库精简首页）后，Architecture overview 的
+# mermaid component diagram 整体迁移到 docs/architecture{,.zh-CN}.md；
+# 本守卫跟随迁移，锁定的图形内容契约不变。
+README_EN = PROJECT_ROOT / "docs" / "architecture.md"
+README_ZH = PROJECT_ROOT / "docs" / "architecture.zh-CN.md"
 
 
 def _read(p: Path) -> str:
@@ -73,55 +76,46 @@ class TestH2HeadingsPresent(unittest.TestCase):
 
 
 # ============================================================
-# #2: 章节位置 (Key features 之后 + Agent / Glass 之前)
+# #2: 章节位置 (Architecture overview 在 Agent / Glass 之前 —— 先总览后
+# workflow 的递进 narrative；README 时代的 Key features 锚点已随迁移移除)
 # ============================================================
 class TestSectionPosition(unittest.TestCase):
-    def test_en_position_between_key_features_and_agent_glass(self) -> None:
+    def test_en_position_before_agent_glass(self) -> None:
         content = _read(README_EN)
-        m_key = re.search(r"^##\s+Key features\s*$", content, re.MULTILINE)
         m_arch = re.search(r"^##\s+Architecture overview\s*$", content, re.MULTILINE)
         m_agent = re.search(
             r"^##\s+Agent / Glass mode workflow\s*$", content, re.MULTILINE
         )
-        self.assertIsNotNone(m_key, "README.md 必须有 Key features 章节作位置锚点")
-        self.assertIsNotNone(m_arch, "README.md 必须有 Architecture overview 章节")
         self.assertIsNotNone(
-            m_agent, "README.md 必须有 Agent / Glass mode workflow 章节作位置锚点"
+            m_arch, "docs/architecture.md 必须有 Architecture overview 章节"
         )
-        assert m_key and m_arch and m_agent
-        self.assertLess(
-            m_key.start(),
-            m_arch.start(),
-            "README.md Architecture overview 必须在 Key features 之后",
+        self.assertIsNotNone(
+            m_agent,
+            "docs/architecture.md 必须有 Agent / Glass mode workflow 章节作位置锚点",
         )
+        assert m_arch and m_agent
         self.assertLess(
             m_arch.start(),
             m_agent.start(),
-            "README.md Architecture overview 必须在 Agent / Glass mode workflow 之前",
+            "Architecture overview 必须在 Agent / Glass mode workflow 之前",
         )
 
-    def test_zh_position_between_key_features_and_agent_glass(self) -> None:
+    def test_zh_position_before_agent_glass(self) -> None:
         content = _read(README_ZH)
-        m_key = re.search(r"^##\s+主要特性\s*$", content, re.MULTILINE)
         m_arch = re.search(r"^##\s+架构总览\s*$", content, re.MULTILINE)
         m_agent = re.search(
             r"^##\s+Agent / Glass 模式工作流\s*$", content, re.MULTILINE
         )
-        self.assertIsNotNone(m_key, "README.zh-CN.md 必须有 主要特性 章节作位置锚点")
-        self.assertIsNotNone(m_arch, "README.zh-CN.md 必须有 架构总览 章节")
+        self.assertIsNotNone(m_arch, "docs/architecture.zh-CN.md 必须有 架构总览 章节")
         self.assertIsNotNone(
-            m_agent, "README.zh-CN.md 必须有 Agent / Glass 模式工作流 章节作位置锚点"
+            m_agent,
+            "docs/architecture.zh-CN.md 必须有 Agent / Glass 模式工作流 章节作位置锚点",
         )
-        assert m_key and m_arch and m_agent
-        self.assertLess(
-            m_key.start(),
-            m_arch.start(),
-            "README.zh-CN.md 架构总览必须在 主要特性 之后",
-        )
+        assert m_arch and m_agent
         self.assertLess(
             m_arch.start(),
             m_agent.start(),
-            "README.zh-CN.md 架构总览必须在 Agent / Glass 模式工作流 之前",
+            "架构总览必须在 Agent / Glass 模式工作流 之前",
         )
 
 

@@ -47,6 +47,8 @@ SECTION_MAPPING: dict[str, str] = {
     "Backward compatibility": "向后兼容",
     "Sections": "配置段说明",
     "Minimal example": "最小示例",
+    # README 结构重构时从首页迁入的 iPhone 快捷指令 + Bark 教程
+    "Recommended iPhone setup: Shortcuts + Bark": "iPhone 推荐用法：快捷指令 + Bark",
 }
 
 

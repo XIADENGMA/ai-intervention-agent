@@ -47,8 +47,10 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-README_EN = REPO_ROOT / "README.md"
-README_ZH = REPO_ROOT / "README.zh-CN.md"
+# README 结构重构后 Agent / Glass 深水内容（含本守卫锁定的 failure &
+# recovery sequence diagram）整体迁移到 docs/architecture{,.zh-CN}.md。
+README_EN = REPO_ROOT / "docs" / "architecture.md"
+README_ZH = REPO_ROOT / "docs" / "architecture.zh-CN.md"
 
 # R311 新 sequence 必须含的 4 个 participant (无 MCP, 因为 failure 聚焦后端↔UI↔人)
 R311_FAILURE_PARTICIPANTS = ["Agent", "AIIA", "UI", "Human"]

@@ -23,6 +23,10 @@ Find your role below to jump straight to the page you need.
 
 ## Contributors · adding code or translations
 
+- [`architecture.md`](architecture.md) · [`architecture.zh-CN.md`](architecture.zh-CN.md)
+  — component diagram (clients / backend / external), the Agent /
+  Glass-mode interaction + failure-recovery sequence diagrams, the
+  agent-side MCP parameter table, and the key runtime invariants.
 - [`workflow.md`](workflow.md) · [`workflow.zh-CN.md`](workflow.zh-CN.md)
   — recommended dev cycle: branching strategy, local CI Gate
   command, release flow.

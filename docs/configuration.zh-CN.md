@@ -358,3 +358,30 @@ port = 8080
 [feedback]
 frontend_countdown = 240
 ```
+
+## iPhone 推荐用法：快捷指令 + Bark
+
+手机上最顺手的打开方式是把 Web UI 包进一个快捷指令（Shortcuts），
+再让 [Bark](https://github.com/Finb/Bark) 通知点击后直接启动它——
+免地址栏、免安装、原生 App 般的体验：
+
+1. 打开 iPhone 自带的「快捷指令」（Shortcuts）App。
+2. 点击右上角 **+** 新建一个快捷指令，顶部命名为 `ai intervention agent`。
+3. 添加第一个动作：搜索 **URL**，填入你的 Web UI 地址（例如 `http://ai.local:8081`）。
+4. 添加第二个动作：搜索 **显示网页**（旧版本叫「显示网页视图」），它会自动连接上一步的 URL。
+
+然后在 `config.toml` 的 `[notification]` 段启用 Bark，并把点击行为指向这个快捷指令：
+
+```toml
+[notification]
+bark_enabled = true
+bark_url = "https://api.day.app/push"   # 或自建 Bark 服务器地址
+bark_device_key = "你的设备密钥"
+bark_action = "url"
+# 点击 Bark 通知 → 启动快捷指令 →「显示网页」打开 Web UI
+bark_url_template = "shortcuts://run-shortcut?name=ai%20intervention%20agent"
+```
+
+> `bark_url_template` 接受任意 `scheme://` 深链（不限于 http/https）；
+> 快捷指令名称含空格时需 URL 编码（空格 → `%20`）。若想点击通知直接用
+> 浏览器打开对应任务页，保持默认值 `{base_url}/?task_id={task_id}` 即可。

@@ -11,6 +11,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- README restructure (both languages), modelled on top-tier OSS
+  landing pages: dropped all decorative emoji, merged the folded
+  bottom badge block into a single flat-square badge row up top,
+  compressed Key features 14 → 10 plain bullets, and moved the
+  deep-dive content off the landing page — the component diagram,
+  the interaction / failure-recovery sequence diagrams, the agent-side
+  MCP parameter table and the invariant list now live in the new
+  bilingual `docs/architecture{,.zh-CN}.md`, and the iPhone
+  Shortcuts + Bark walkthrough moved into
+  `docs/configuration{,.zh-CN}.md`. The R288 / R300 / R311 content
+  guards followed their sections to the new host files and the R340
+  section map shrank to 10 H2s; every content contract they lock is
+  unchanged.
 - The GitHub Releases page now keeps only the three most recent
   stable releases: `release.yml` gained a post-publish cleanup step
   that deletes older release entries automatically (drafts and

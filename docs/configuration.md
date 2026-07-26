@@ -389,3 +389,35 @@ port = 8080
 [feedback]
 frontend_countdown = 240
 ```
+
+## Recommended iPhone setup: Shortcuts + Bark
+
+The smoothest way to open the Web UI on an iPhone is to wrap it in a
+Shortcuts automation, then point [Bark](https://github.com/Finb/Bark)
+notification taps straight at it — no address bar, no install, an
+app-like experience:
+
+1. Open the built-in **Shortcuts** app on your iPhone.
+2. Tap **+** to create a new shortcut and name it `ai intervention agent`.
+3. Add the first action: search for **URL** and enter your Web UI address
+   (e.g. `http://ai.local:8081`).
+4. Add the second action: search for **Show Web Page** (older iOS versions
+   call it "Show Web View"); it automatically consumes the URL from step 3.
+
+Then enable Bark in the `[notification]` section of `config.toml` and point
+the tap action at that shortcut:
+
+```toml
+[notification]
+bark_enabled = true
+bark_url = "https://api.day.app/push"   # or your self-hosted Bark server
+bark_device_key = "your-device-key"
+bark_action = "url"
+# Tap the Bark notification → launch the shortcut → "Show Web Page" opens the Web UI
+bark_url_template = "shortcuts://run-shortcut?name=ai%20intervention%20agent"
+```
+
+> `bark_url_template` accepts any `scheme://` deep link (not just
+> http/https); URL-encode spaces in the shortcut name (space → `%20`).
+> To open the task page directly in the browser instead, keep the default
+> `{base_url}/?task_id={task_id}`.

@@ -22,6 +22,9 @@
 
 ## 贡献者 · 改代码或翻译
 
+- [`architecture.zh-CN.md`](architecture.zh-CN.md) · [`architecture.md`](architecture.md)
+  —— 组件图（客户端 / 后端 / 外部）、Agent / Glass 模式交互与异常恢复
+  时序图、agent 端 MCP 参数表、关键运行时不变量。
 - [`workflow.zh-CN.md`](workflow.zh-CN.md) · [`workflow.md`](workflow.md)
   — 推荐开发流程：分支策略、本地 CI Gate 命令、发布流程。
 - [`i18n.md`](i18n.md) — i18n 唯一权威：`t()` 运行时合约、每条

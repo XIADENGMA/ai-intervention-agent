@@ -1,16 +1,16 @@
-"""R288 invariant: README.md + README.zh-CN.md 必须有 "Agent / Glass mode
-workflow" 专项 H2 section，统一展示对 Agent 模式有帮助的全部 features。
+"""R288 invariant: docs/architecture.md + docs/architecture.zh-CN.md 必须有
+"Agent / Glass mode workflow" 专项 H2 section，统一展示对 Agent 模式有帮助
+的全部 features。
 
 背景
 ----
 cr56 §5 #1 推荐 "README 同类产品功能调研 + Agent 模式专项审计"。
-当前 README 把 Agent 模式 features（`header_label` / `question_type` /
-`feedback_placeholder` / multi-task / countdown freeze）都散落在 "Key
-features" 列表里，没有给 Agent 用户一个统一的工作流视图。Glass / Composer
-模式新用户读 README 时无法立刻 "看到这是个 Agent 工具"。
+最初该 section 落在双语 README；README 结构重构（学顶级仓库精简首页）
+后，Agent / Glass 深水内容整体迁移到 ``docs/architecture{,.zh-CN}.md``，
+本守卫跟随迁移——锁定的内容契约不变，只是宿主文件变了。
 
-R288 在双语 README 添加 ``## Agent / Glass mode workflow`` H2 section，
-内含：
+R288 在双语 architecture 文档锁定 ``## Agent / Glass mode workflow``
+H2 section，内含：
 
 1. 一句话定位 (long-running autonomous agent loops, < 5s per task)
 2. mermaid sequence diagram (Agent → MCP → AIIA → User → Agent)
@@ -34,8 +34,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-README_EN = REPO_ROOT / "README.md"
-README_ZH = REPO_ROOT / "README.zh-CN.md"
+README_EN = REPO_ROOT / "docs" / "architecture.md"
+README_ZH = REPO_ROOT / "docs" / "architecture.zh-CN.md"
 
 # 5 个 Agent-mode 关键参数（必须在表格中）
 AGENT_MODE_PARAMS_FOR_TABLE = [
@@ -96,7 +96,7 @@ class TestEnReadmeAgentGlassSection(unittest.TestCase):
     def _extract_section_body(self) -> str:
         """提取 ``## Agent / Glass mode workflow`` section 的内容（到下一个 H2 为止）。"""
         match = re.search(
-            r"##\s+Agent / Glass mode workflow.*?(?=^##\s+\S)",
+            r"##\s+Agent / Glass mode workflow.*?(?=^##\s+\S|\Z)",
             self.source,
             re.MULTILINE | re.DOTALL,
         )
@@ -163,10 +163,11 @@ class TestEnReadmeAgentGlassSection(unittest.TestCase):
 
     def test_links_to_mcp_tools_docs(self) -> None:
         body = self._extract_section_body()
+        # 迁入 docs/ 后链接是同目录相对路径（mcp_tools.md 而非 docs/mcp_tools.md）
         self.assertIn(
-            "docs/mcp_tools.md",
+            "mcp_tools.md",
             body,
-            "Agent / Glass section must link to docs/mcp_tools.md for the "
+            "Agent / Glass section must link to mcp_tools.md for the "
             "complete Agent-mode parameter reference (R287 lives there)",
         )
 
@@ -190,7 +191,7 @@ class TestZhReadmeAgentGlassSection(unittest.TestCase):
 
     def _extract_section_body(self) -> str:
         match = re.search(
-            r"##\s+Agent / Glass 模式工作流.*?(?=^##\s+\S)",
+            r"##\s+Agent / Glass 模式工作流.*?(?=^##\s+\S|\Z)",
             self.source,
             re.MULTILINE | re.DOTALL,
         )
@@ -237,10 +238,10 @@ class TestZhReadmeAgentGlassSection(unittest.TestCase):
     def test_links_to_mcp_tools_docs_zh(self) -> None:
         body = self._extract_section_body()
         self.assertIn(
-            "docs/mcp_tools.zh-CN.md",
+            "mcp_tools.zh-CN.md",
             body,
-            "中文 README Agent / Glass section must link to "
-            "docs/mcp_tools.zh-CN.md (not English version)",
+            "中文 architecture 文档 Agent / Glass section must link to "
+            "mcp_tools.zh-CN.md (not English version)",
         )
 
 
@@ -258,7 +259,7 @@ class TestBilingualParityForAgentGlass(unittest.TestCase):
             else r"##\s+Agent / Glass 模式工作流"
         )
         section_match = re.search(
-            heading + r".*?(?=^##\s+\S)",
+            heading + r".*?(?=^##\s+\S|\Z)",
             source,
             re.MULTILINE | re.DOTALL,
         )
@@ -290,12 +291,12 @@ class TestBilingualParityForAgentGlass(unittest.TestCase):
     def test_both_sections_link_to_mcp_tools_docs(self) -> None:
         """双语都必须 link 到对应语言的 docs/mcp_tools.{md,zh-CN.md}。"""
         en_section = re.search(
-            r"##\s+Agent / Glass mode workflow.*?(?=^##\s+\S)",
+            r"##\s+Agent / Glass mode workflow.*?(?=^##\s+\S|\Z)",
             self.en,
             re.MULTILINE | re.DOTALL,
         )
         zh_section = re.search(
-            r"##\s+Agent / Glass 模式工作流.*?(?=^##\s+\S)",
+            r"##\s+Agent / Glass 模式工作流.*?(?=^##\s+\S|\Z)",
             self.zh,
             re.MULTILINE | re.DOTALL,
         )
@@ -303,8 +304,8 @@ class TestBilingualParityForAgentGlass(unittest.TestCase):
         self.assertIsNotNone(zh_section)
         assert en_section is not None
         assert zh_section is not None
-        self.assertIn("docs/mcp_tools.md", en_section.group(0))
-        self.assertIn("docs/mcp_tools.zh-CN.md", zh_section.group(0))
+        self.assertIn("mcp_tools.md", en_section.group(0))
+        self.assertIn("mcp_tools.zh-CN.md", zh_section.group(0))
 
 
 if __name__ == "__main__":
