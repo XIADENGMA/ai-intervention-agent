@@ -1382,15 +1382,23 @@ class WebFeedbackUI(
         # after server restart or task TTL expiry); pretty page gives a
         # clear "task not found" message + Home link + i18n.
         #
-        # 仅对 HTML 请求（``Accept: text/html``）生效；JSON API 路由
-        # 走 AIAgentError("not_found") 已有的 JSON 路径。
+        # JSON / HTML 分流规则（R712 修订）：
+        #   - ``/api/`` 与 ``/metrics`` 前缀 → 永远 JSON（程序化客户端）；
+        #   - 显式 ``Accept`` 含 json → JSON（curl -H / fetch 场景）；
+        #   - 其余 → 品牌 404 页。
+        # 历史版本只看 ``Accept: text/html`` 启发式，但 PWA Service Worker
+        # 转发 navigation 请求时 Accept 头会丢失（实测 SW fetch(request)
+        # 后服务端收不到 text/html），浏览器用户被错误打到 JSON 分支，
+        # 精心做的 not_found.html 反而永远展示不出来。SW 自己的注释都在
+        # 强调"不依赖 Accept 头脆弱启发式"——服务端同样按路径分流兜底。
         @self.app.errorhandler(404)
         def handle_404(exc: object) -> ResponseReturnValue:
             from flask import render_template
             from flask import request as _request
 
-            wants_html = "text/html" in (_request.accept_mimetypes.best or "")
-            if not wants_html:
+            accept_best = _request.accept_mimetypes.best or ""
+            is_api_path = _request.path.startswith(("/api/", "/metrics"))
+            if is_api_path or "json" in accept_best:
                 return jsonify({"success": False, "error": "not_found"}), 404
             try:
                 return (

@@ -66,6 +66,58 @@ window._mathJaxLoaded = false // 是否加载完成
 window._mathJaxPendingElements = [] // 待渲染的元素队列
 
 /**
+ * R712：markdown 渲染前保护 LaTeX 风格数学定界符
+ *
+ * ``\(`` 是合法的 markdown 反斜杠转义（marked 输出 ``(``），因此
+ * ``\(E=mc^2\)`` 经 marked 渲染后定界符被吞，MathJax 找不到公式——
+ * 上面宣称支持的四种定界符里，LaTeX 风格的两种（``\(...\)`` /
+ * ``\[...\]``）在渲染管道上一直是坏的；``$`` / ``$$`` 不含 markdown
+ * 特殊字符、原样穿透，无需保护。
+ *
+ * 方案（Jupyter / GitHub 同款经典占位法）：
+ *   1. protectMathDelimiters(md)：跳过代码区（fenced + inline code），
+ *      把 ``\(...\)`` / ``\[...\]`` 片段抽成占位 token；
+ *   2. marked.parse(受保护文本)；
+ *   3. restoreMathDelimiters(html, segments)：按索引回填 HTML 转义后
+ *      的原片段（转义防止 ``a < b`` 这类数学内容被解析成标签；
+ *      MathJax 读的是 textContent，转义在 DOM 层自动还原）。
+ */
+window.protectMathDelimiters = function (text) {
+  if (
+    typeof text !== 'string' ||
+    (text.indexOf('\\(') === -1 && text.indexOf('\\[') === -1)
+  ) {
+    return { text, segments: [] }
+  }
+  const segments = []
+  const protectedText = text.replace(
+    // 第 1 组：代码区（fenced ``` / ~~~ 与 inline `...`）原样放行，
+    // 避免把代码里的字面 \( 误当公式抽走；第 2 组：数学片段。
+    /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)|(\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g,
+    (match, code, math) => {
+      if (code) return code
+      const index = segments.push(math) - 1
+      return '%%AIIA_MATH_SLOT_' + index + '%%'
+    }
+  )
+  return { text: protectedText, segments }
+}
+
+window.restoreMathDelimiters = function (html, segments) {
+  if (typeof html !== 'string' || !segments || segments.length === 0) {
+    return html
+  }
+  return html.replace(/%%AIIA_MATH_SLOT_(\d+)%%/g, (match, rawIndex) => {
+    const segment = segments[Number(rawIndex)]
+    if (segment === undefined) return match
+    return segment
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+  })
+}
+
+/**
  * 检测内容是否包含数学公式
  * @param {string} text - 要检测的文本内容
  * @returns {boolean} 是否包含数学公式

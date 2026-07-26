@@ -9,6 +9,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- LaTeX-style math delimiters (`\(...\)` / `\[...\]`) finally render:
+  `\(` is a legal markdown backslash-escape, so marked swallowed the
+  delimiters before MathJax could see them (while `$...$` passed
+  through fine) — the loader even detected the math and shipped the
+  1.17MB MathJax runtime without ever typesetting it. Math segments
+  are now placeholder-protected before `marked.parse` and restored
+  (HTML-escaped) afterwards, skipping fenced/inline code, on both
+  render paths (`app.js` / `multi_task.js`) — the classic
+  Jupyter-style guard.
+- The branded 404 page now actually reaches browser users: the PWA
+  service worker drops the `Accept` header when forwarding navigation
+  requests, so the old `Accept: text/html` heuristic sent real
+  browsers to the bare-JSON branch. The 404 handler now splits by
+  path prefix (`/api/`, `/metrics` → JSON; everything else → HTML
+  page), with two new regression tests.
+- Empty-state animations no longer freeze on devices with system
+  "Reduce Motion" enabled (deep-audit follow-up, maintainer's
+  on-device decision): the Lottie sprout drops the R704 rest-frame
+  contract and autoplays unconditionally, and the waiting progress
+  bar gets an exemption from the global reduced-motion kill rule —
+  both are small-area decorative loops with no large translation or
+  parallax; every other animation keeps honoring the preference.
+  The R704 guard is superseded by
+  `test_lottie_plays_despite_reduced_motion_r712.py`.
+
+### Added
+
+- Task-tab overflow is now signalled with edge fades: when tabs
+  exceed the strip width, scroll-position-aware gradient masks appear
+  on the clipped side(s) (dark/light aware) instead of a hard cut.
+
 ### Changed
 
 - Dark-theme form controls unified into the brand-orange family

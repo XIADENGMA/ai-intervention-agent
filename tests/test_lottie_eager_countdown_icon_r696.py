@@ -94,8 +94,8 @@ class TestInitCreatesLottieDirectly(unittest.TestCase):
 
     def test_fallback_only_for_load_failure(self) -> None:
         # 降级渲染仅出现在 !ok（运行时加载失败）分支——不允许回到
-        # 「先降级后切换」的旧流程，也不允许恢复 R704 移除的
-        # prefers-reduced-motion 提前降级分支。
+        # 「先降级后切换」的旧流程，也不允许恢复 R704 时代（已被
+        # R712 整体移除）的 prefers-reduced-motion 提前降级分支。
         occurrences = self.body.count("renderSproutFallback(container)")
         self.assertEqual(
             occurrences,
@@ -105,10 +105,10 @@ class TestInitCreatesLottieDirectly(unittest.TestCase):
         self.assertNotIn(
             "prefers-reduced-motion: reduce",
             self.body,
-            "R704：reduced-motion 不再提前降级，偏好判断移入 "
-            "_createLottieAnimation（autoplay）与 DOMLoaded（静止帧）",
+            "R712：空态动画豁免减弱动态偏好（见 "
+            "test_lottie_plays_despite_reduced_motion_r712.py），init "
+            "路径不得引入偏好判断",
         )
-        self.assertIn("_installReducedMotionWatcher()", self.body)
         self.assertIn("_ensureLottieLoaded().then", self.body)
         self.assertIn("_createLottieAnimation(container, token)", self.body)
 

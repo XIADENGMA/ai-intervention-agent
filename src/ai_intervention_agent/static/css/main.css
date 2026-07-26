@@ -7233,10 +7233,51 @@ code,
   overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  position: relative; /* R712：两侧溢出渐隐遮罩的定位锚 */
 }
 /** task-tabs-container滚动条（WebKit）：隐藏 */
 .task-tabs-container::-webkit-scrollbar {
   display: none;
+}
+
+/**
+ * R712：tab 条溢出渐隐提示（.task-tabs-container::before/::after）：
+ *
+ * 功能说明：
+ *   任务多到超出 tab 条宽度时，两侧渐隐遮罩暗示「还有更多、可横滑」，
+ *   替代此前的硬裁切。multi_task.js 的 _updateTabsOverflowHint 负责
+ *   检测滚动位置并切换 data-overflow-left/right 属性。
+ *
+ * 视觉设计：
+ *   - 渐变端色与容器背景同色（rgba(48,48,46)），向透明过渡
+ *   - pointer-events: none：不拦截 tab 点击与横向滑动
+ *   - opacity 过渡 0.2s，滚动到尽头时平滑消失
+ */
+.task-tabs-container::before,
+.task-tabs-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 36px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 2;
+}
+.task-tabs-container::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(48, 48, 46, 0.95), transparent);
+}
+.task-tabs-container::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(48, 48, 46, 0.95), transparent);
+}
+.task-tabs-container[data-overflow-left="true"]::before {
+  opacity: 1;
+}
+.task-tabs-container[data-overflow-right="true"]::after {
+  opacity: 1;
 }
 
 /**
@@ -8015,6 +8056,14 @@ code,
 [data-theme="light"] .task-tabs-container {
   background: var(--bg-secondary); /* 浅色背景 */
   border-bottom-color: var(--border-primary);
+}
+
+/* R712：浅色主题的 tab 溢出渐隐端色跟随浅色容器背景（--bg-secondary #faf9f5） */
+[data-theme="light"] .task-tabs-container::before {
+  background: linear-gradient(90deg, rgba(250, 249, 245, 0.95), transparent);
+}
+[data-theme="light"] .task-tabs-container::after {
+  background: linear-gradient(270deg, rgba(250, 249, 245, 0.95), transparent);
 }
 
 /* 浅色主题 - 标签栏滚动条 */
@@ -9232,6 +9281,15 @@ code,
   }
   .task-tab-exit {
     animation-duration: 0.01ms !important;
+  }
+  /* R712（配套 app.js 的 Lottie 豁免）：空态页「等待中」进度条豁免
+     减弱动态——上面的全局规则会让它 0.01ms 跑完一次后永久静止，
+     真机上表现为「进度条坏了」。小幅面积装饰动画、低前庭风险，
+     维护者决策照常播放；类选择器优先级高于 *，同为 !important 时
+     本条胜出。 */
+  .no-content-progress-bar {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
   }
 }
 

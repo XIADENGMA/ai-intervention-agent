@@ -208,11 +208,11 @@ configureMarkedSecurity();
 //   - 深色模式：通过 CSS filter: invert(1) 反转为白色线条
 //   - 叶子颜色因 invert 也会变化（可接受的视觉效果）
 //
-// 无障碍（R704）：
-//   prefers-reduced-motion 开启时仍加载 Lottie，但静止显示在
-//   「完整长成」帧（SPROUT_REST_FRAME）——尊重系统偏好（无运动）
-//   的同时保持与动画版一致的视觉质量；系统偏好切换时实时
-//   播放 / 静止（_installReducedMotionWatcher）。
+// 动态效果偏好（R712，推翻 R704 的静止帧契约）：
+//   R704 曾在 prefers-reduced-motion 开启时把 Lottie 静止到「完整
+//   长成」帧。真机验证后按维护者决策豁免：空态页的嫩芽动画（小幅
+//   面积装饰、无大幅位移/视差）照常循环播放，等待进度条同理（见
+//   main.css 的 reduce 块豁免）。页面其余动画继续尊重系统偏好。
 //
 // 降级处理：
 //   仅当 Lottie 运行时加载失败时，显示内置 SVG/CSS 备用图标
@@ -230,84 +230,6 @@ let _hourglassThemeTimer = null;
 let _hourglassLifecycleToken = 0;
 let _hourglassLifecycleDisposed = false;
 let _hourglassLifecycleHandlersInstalled = false;
-let _reducedMotionQueryList = null;
-
-// R704：prefers-reduced-motion 时静止展示的帧。sprout.json 共 72 帧
-// （12fps / 6s 循环）：0-36 生长、36-48 长成后的稳定摆动、之后回缩，
-// 71 帧是循环回起点的土丘画面——静止帧必须落在稳定段中部，
-// 才能展示「完整长成」的嫩芽而不是空土丘。
-const SPROUT_REST_FRAME = 42;
-
-/**
- * 读取系统「减弱动态效果」偏好（prefers-reduced-motion: reduce）
- *
- * 优先复用 _installReducedMotionWatcher 缓存的 MediaQueryList，
- * 未安装监听时回退到一次性 matchMedia 查询。
- */
-function _prefersReducedMotion() {
-  if (_reducedMotionQueryList) return _reducedMotionQueryList.matches;
-  return (
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
-
-/**
- * 把 Lottie 动画静止到「完整长成」帧（无运动的精美静态画面）
- */
-function _applySproutRestFrame() {
-  if (!hourglassAnimation) return;
-  try {
-    const lastFrame = Math.max((hourglassAnimation.totalFrames || 1) - 1, 0);
-    hourglassAnimation.goToAndStop(
-      Math.min(SPROUT_REST_FRAME, lastFrame),
-      true,
-    );
-  } catch (_e) {
-    // 忽略
-  }
-}
-
-/**
- * 监听系统「减弱动态效果」偏好变化，实时切换 播放 / 静止帧
- *
- * 只安装一次；回调操作当前 hourglassAnimation 实例（dispose 后为
- * null，回调空操作，无需拆除监听）。旧版 WebKit（iOS 13 及更早）
- * 的 MediaQueryList 只有 addListener，做兼容分支。
- */
-function _installReducedMotionWatcher() {
-  if (_reducedMotionQueryList) return;
-  if (typeof window.matchMedia !== "function") return;
-  try {
-    _reducedMotionQueryList = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    );
-  } catch (_e) {
-    _reducedMotionQueryList = null;
-    return;
-  }
-  const onPreferenceChange = () => {
-    if (!hourglassAnimation) return;
-    if (_reducedMotionQueryList.matches) {
-      _applySproutRestFrame();
-    } else {
-      try {
-        hourglassAnimation.play();
-      } catch (_e) {
-        // 忽略
-      }
-    }
-  };
-  try {
-    if (typeof _reducedMotionQueryList.addEventListener === "function") {
-      _reducedMotionQueryList.addEventListener("change", onPreferenceChange);
-    } else if (typeof _reducedMotionQueryList.addListener === "function") {
-      _reducedMotionQueryList.addListener(onPreferenceChange);
-    }
-  } catch (_e) {
-    // 忽略
-  }
-}
 
 function _isHourglassLifecycleActive(container, token) {
   if (_hourglassLifecycleDisposed) return false;
@@ -515,15 +437,16 @@ function _createLottieAnimation(container, token) {
       container,
       renderer: "svg",
       loop: true,
-      // R704：减弱动态偏好开启时不自动播放（DOMLoaded 后静止到
-      // SPROUT_REST_FRAME），关闭时保持原有循环播放行为。
-      autoplay: !_prefersReducedMotion(),
+      // R712（推翻 R704 静止帧契约）：空态嫩芽动画豁免系统「减弱
+      // 动态效果」偏好，照常循环播放——小幅面积装饰动画、无大幅
+      // 位移/视差，维护者真机验证后决策豁免；页面其余动画仍尊重
+      // 系统偏好。
+      autoplay: true,
       path: "/static/lottie/sprout.json",
       rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
     });
     hourglassAnimation.addEventListener("DOMLoaded", () => {
       if (!_isHourglassLifecycleActive(container, token)) return;
-      if (_prefersReducedMotion()) _applySproutRestFrame();
       updateLottieAnimationColor();
     });
     hourglassAnimation.addEventListener("error", () => {
@@ -556,12 +479,11 @@ function _createLottieAnimation(container, token) {
  * Lottie，不再先渲染 SVG 降级动画再热切换（旧流程的可见跳变即由
  * 该切换引起）。
  *
- * 无障碍（R704）：prefers-reduced-motion 开启时不再降级到简笔 SVG，
- * 而是同样加载 Lottie 并静止在「完整长成」帧——无运动（尊重系统
- * 偏好）且视觉与动画版一致；iPhone「减弱动态效果」用户此前永远只能
- * 看到降级 SVG，即本修复的目标场景。仅一种情形回退到零依赖 SVG：
- * lottie 运行时加载失败（离线/CDN 故障，走 AIIA_LOTTIE_JS_URL 动态
- * 加载兜底后仍失败）。
+ * 动态效果偏好（R712，推翻 R704）：R704 曾让 prefers-reduced-motion
+ * 用户看到静止帧；真机验证后按维护者决策豁免——嫩芽动画照常循环
+ * 播放（小幅面积装饰、无大幅位移/视差），页面其余动画仍尊重系统
+ * 偏好。仅一种情形回退到零依赖 SVG：lottie 运行时加载失败（离线/
+ * CDN 故障，走 AIIA_LOTTIE_JS_URL 动态加载兜底后仍失败）。
  */
 function initHourglassAnimation() {
   installHourglassAnimationLifecycleHandlers();
@@ -581,8 +503,6 @@ function initHourglassAnimation() {
   _clearHourglassLifecycleTimers();
   const token = _hourglassLifecycleToken + 1;
   _hourglassLifecycleToken = token;
-
-  _installReducedMotionWatcher();
 
   _ensureLottieLoaded().then((ok) => {
     if (!_isHourglassLifecycleActive(container, token)) return;
@@ -678,7 +598,19 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
       // 如果是 Markdown 文本，先用 marked.js 解析
       if (isMarkdown && typeof marked !== "undefined") {
         try {
-          htmlContent = marked.parse(content);
+          // R712：LaTeX 风格数学定界符（\( \) / \[ \]）会被 marked 的
+          // 反斜杠转义吞掉，渲染前抽成占位符、渲染后回填（详见
+          // mathjax-loader.js 的 protectMathDelimiters docstring）。
+          const mathGuard = window.protectMathDelimiters
+            ? window.protectMathDelimiters(content)
+            : { text: content, segments: [] };
+          htmlContent = marked.parse(mathGuard.text);
+          if (window.restoreMathDelimiters) {
+            htmlContent = window.restoreMathDelimiters(
+              htmlContent,
+              mathGuard.segments,
+            );
+          }
         } catch (e) {
           console.warn("marked.js parse failed:", e);
         }

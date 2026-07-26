@@ -95,6 +95,30 @@ class TestRoute(unittest.TestCase):
         self.assertEqual(data["success"], False)
         self.assertEqual(data["error"], "not_found")
 
+    def test_missing_accept_header_still_gets_html_page(self) -> None:
+        """R712：PWA Service Worker 转发 navigation 请求时 Accept 头丢失。
+
+        历史实现只认 ``Accept: text/html``，SW 在场时浏览器用户会被
+        打到 JSON 分支、永远看不到品牌 404 页。现在非 API 路径 +
+        无显式 json Accept → 一律渲染 HTML 404 页。
+        """
+        rv = self.client.get("/this-path-does-not-exist-3", headers={"Accept": "*/*"})
+        self.assertEqual(rv.status_code, 404)
+        body = rv.get_data(as_text=True)
+        self.assertIn("/this-path-does-not-exist-3", body)
+        self.assertIn('href="/"', body)
+
+    def test_api_prefix_404_always_json(self) -> None:
+        """R712：``/api/`` 前缀是程序化 surface，404 永远 JSON——即使
+        请求方伪装浏览器 Accept。"""
+        rv = self.client.get(
+            "/api/this-endpoint-does-not-exist",
+            headers={"Accept": "text/html"},
+        )
+        self.assertEqual(rv.status_code, 404)
+        data = rv.get_json()
+        self.assertEqual(data["error"], "not_found")
+
     def test_pretty_page_includes_subtitle(self) -> None:
         rv = self.client.get(
             "/this-path-does-not-exist-2",

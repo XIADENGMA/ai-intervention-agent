@@ -2880,6 +2880,59 @@ function renderTaskTabs() {
       tab.setAttribute("tabindex", isActive ? "0" : "-1");
     }
   }
+
+  _updateTabsOverflowHint();
+}
+
+/**
+ * R712：tab 条溢出渐隐提示
+ *
+ * 任务多到超出 tab 条宽度时，右缘（以及左滚后左缘）此前是硬裁切，
+ * 用户没有任何「后面还有 tab、可以横滑」的视觉暗示。本函数检测
+ * ``.task-tabs`` 的滚动位置，把结果写到容器的 ``data-overflow-left`` /
+ * ``data-overflow-right`` 属性上，CSS 据此显隐两侧渐隐遮罩
+ * （``.task-tabs-container::before/::after``）。
+ *
+ * 触发时机：每次 renderTaskTabs 收尾 + tab 条横向滚动 + 窗口 resize
+ * （后两者由 _installTabsOverflowHintListeners 一次性安装）。
+ */
+function _updateTabsOverflowHint() {
+  // try/catch + dataset 存在性检查：R607-R611 的循环守卫在 Node vm
+  // 里用极简 DOM 桩执行 renderTaskTabs，桩元素没有 dataset/scrollLeft；
+  // 提示层是纯视觉增强，任何环境缺口都直接静默跳过。
+  try {
+    const tabs = document.getElementById("task-tabs");
+    const container = document.getElementById("task-tabs-container");
+    if (!tabs || !container || !container.dataset) return;
+    _installTabsOverflowHintListeners(tabs);
+    // -1 容差：亚像素滚动位置（DPR 缩放）会让等值比较抖动
+    const scrollLeft = tabs.scrollLeft || 0;
+    const clientWidth = tabs.clientWidth || 0;
+    const scrollWidth = tabs.scrollWidth || 0;
+    const overflowRight = scrollLeft + clientWidth < scrollWidth - 1;
+    const overflowLeft = scrollLeft > 1;
+    container.dataset.overflowRight = overflowRight ? "true" : "false";
+    container.dataset.overflowLeft = overflowLeft ? "true" : "false";
+  } catch (_e) {
+    // 忽略：溢出提示失败不影响 tab 功能
+  }
+}
+
+let _tabsOverflowListenersInstalled = false;
+
+function _installTabsOverflowHintListeners(tabs) {
+  if (_tabsOverflowListenersInstalled) return;
+  _tabsOverflowListenersInstalled = true;
+  try {
+    tabs.addEventListener("scroll", _updateTabsOverflowHint, {
+      passive: true,
+    });
+    window.addEventListener("resize", _updateTabsOverflowHint, {
+      passive: true,
+    });
+  } catch (_e) {
+    // 忽略：提示层是纯增强，监听安装失败不影响 tab 功能
+  }
 }
 
 /**
@@ -3496,7 +3549,18 @@ async function updateDescriptionDisplay(prompt) {
     // 使用 marked.js 解析 Markdown
     if (typeof marked !== "undefined") {
       try {
-        htmlContent = marked.parse(prompt);
+        // R712：与 app.js renderMarkdownContent 同构——LaTeX 风格数学
+        // 定界符渲染前保护、渲染后回填（详见 mathjax-loader.js）。
+        const mathGuard = window.protectMathDelimiters
+          ? window.protectMathDelimiters(prompt)
+          : { text: prompt, segments: [] };
+        htmlContent = marked.parse(mathGuard.text);
+        if (window.restoreMathDelimiters) {
+          htmlContent = window.restoreMathDelimiters(
+            htmlContent,
+            mathGuard.segments,
+          );
+        }
       } catch (e) {
         console.warn("marked.js parse failed:", e);
       }
