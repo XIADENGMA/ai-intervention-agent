@@ -9,6 +9,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.7] - 2026-07-26
+
+### Changed
+
+- Bump the VS Code extension lint toolchain to ESLint 10.8.0 (major,
+  Dependabot PR #75). The upgrade also slims the npm dependency tree
+  (net −178 lockfile lines); lint passes on both CI platforms with the
+  existing flat config unchanged.
+
 ### Fixed
 
 - Declare `globals` explicitly in `packages/vscode` devDependencies
