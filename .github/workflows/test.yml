@@ -96,12 +96,15 @@ jobs:
         run: uv run python scripts/ci_gate.py --ci --skip-version-check
 
       - name: 上传覆盖率报告（coverage.xml）
-        if: always() && matrix.python-version == '3.11'
+        # 不用 always()：上游门禁（audit/gate）失败时 coverage.xml 必然
+        # 不存在，跑上传只会在同一 job 里叠加第二个 failure 噪音，直接
+        # skip。成功路径下文件缺失仍由 if-no-files-found: error fail-closed
+        # 拦截（test_coverage_artifact_missing_file_fails_closed 守卫锁定），
+        # coverage 静默停摆必被发现。
+        if: matrix.python-version == '3.11'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
           path: coverage.xml
-          # warn 而非 error：上游门禁（audit/gate）失败时 coverage.xml
-          # 不存在，error 会在同一 job 里叠加第二个 failure 噪音
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14

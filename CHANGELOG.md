@@ -21,9 +21,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - CI slimming: `vscode.yml` no longer triggers on tag pushes —
   `release.yml`'s Build job already runs the full `vscode:check`,
   so the tag-push matrix was pure duplicate work. The Tests coverage
-  upload switches to `if-no-files-found: warn` (a failed upstream
-  gate no longer stacks a second failure onto the same job) and caps
-  the artifact at `retention-days: 14` instead of the 90-day default.
+  upload drops its `always()` condition (a failed upstream gate now
+  skips the upload instead of stacking a second failure onto the same
+  job; the success path keeps `if-no-files-found: error` fail-closed
+  per the `test_coverage_artifact_missing_file_fails_closed` guard)
+  and caps the artifact at `retention-days: 14` instead of the 90-day
+  default.
 
 ## [1.8.7] - 2026-07-26
 
