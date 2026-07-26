@@ -11,6 +11,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Closing the Web UI now lands on a proper "closed" terminal card
+  instead of an error page: the old flow force-reloaded 2s after
+  `/api/close`, but the server shuts down 0.5s in, so the reload could
+  only hit the service worker's offline fallback ("cannot connect" +
+  a forever-useless Retry button and a background reconnect loop) —
+  or the browser's native error page without SW. The success branch
+  now renders an in-place success-semantics card (green check, "Web
+  UI closed / you can close this tab", SSE + Lottie + countdown
+  affordances all stopped and hidden, i18n in all three locales);
+  the failure branch keeps the reload fallback. Guarded by
+  `test_close_terminal_state_r713.py`.
 - LaTeX-style math delimiters (`\(...\)` / `\[...\]`) finally render:
   `\(` is a legal markdown backslash-escape, so marked swallowed the
   delimiters before MathJax could see them (while `$...$` passed

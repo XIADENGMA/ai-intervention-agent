@@ -1999,21 +1999,98 @@ async function closeInterface() {
       10000,
     );
 
-    const result = await response.json();
+    await response.json();
     if (response.ok) {
-      showStatus(t("status.closedRefreshing"), "success");
-    } else {
-      showStatus(t("status.closeFailed"), "error");
+      // R713：关闭成功后**不再刷新**。服务端 0.5s 后 shutdown，此时
+      // reload 只能落到 SW 的 offline.html（「无法连接 + 重试」故障
+      // 语义页，重试按钮永远无效、后台还在空转 ping），无 SW 时更是
+      // 浏览器原生错误页——用户明明是主动关闭，却像出了故障。改为
+      // 前端原地渲染「已关闭」终态卡片，语义正确且零网络依赖。
+      renderClosedTerminalState();
+      return;
     }
+    showStatus(t("status.closeFailed"), "error");
   } catch (error) {
     console.error("Close UI failed:", error);
     showStatus(t("status.closeUIFailed"), "error");
   }
 
-  // 无论成功还是失败，都在2秒后刷新页面
+  // 失败路径保留刷新兜底：服务可能仍在运行，reload 可恢复任务视图
   setTimeout(() => {
     refreshPageSafely();
   }, 2000);
+}
+
+/**
+ * R713：渲染「Web UI 已关闭」终态卡片
+ *
+ * 复用空态页骨架，但把「等待中」语义整体换成「已关闭」成功语义：
+ * - 停掉 SSE（含全部重连定时器）与 Lottie 生命周期——终态页不该
+ *   有断线红徽章报警或继续消耗资源；
+ * - 图标换成静态对勾（成功绿，内联 SVG 零依赖）；
+ * - 文案换 closedTitle / closedHint（摘 data-i18n，防 translateDOM
+ *   迟到覆盖——R709 同款教训）；
+ * - 隐藏等待进度条、关闭按钮、SSE 徽章与残留状态提示。
+ */
+function renderClosedTerminalState() {
+  try {
+    if (typeof _disconnectSSE === "function") _disconnectSSE();
+  } catch (_e) {
+    // 忽略：SSE 清理失败不阻塞终态渲染
+  }
+  try {
+    disposeHourglassAnimationLifecycle();
+  } catch (_e) {
+    // 忽略
+  }
+
+  showNoContentPage();
+
+  const icon = document.getElementById("hourglass-lottie");
+  if (icon) {
+    icon.style.filter = "none"; // 清除深色模式 invert，对勾用语义色自绘
+    icon.innerHTML = `
+      <svg width="72" height="72" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <circle cx="24" cy="24" r="21" stroke="var(--success-500, #22c55e)" stroke-width="3" opacity="0.35"/>
+        <path d="M15 24.5L21 30.5L33 18.5" stroke="var(--success-500, #22c55e)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `;
+  }
+
+  const title = document.querySelector("#no-content-container .no-content-title");
+  if (title) {
+    try {
+      title.removeAttribute("data-i18n");
+    } catch (_e) {
+      // 测试桩元素可能没有 removeAttribute
+    }
+    title.textContent = t("status.closedTitle");
+  }
+  const desc = document.querySelector(
+    "#no-content-container .no-content-description",
+  );
+  if (desc) {
+    try {
+      desc.removeAttribute("data-i18n");
+    } catch (_e) {
+      // 忽略
+    }
+    desc.textContent = t("status.closedHint");
+  }
+
+  const progress = document.querySelector(
+    "#no-content-container .no-content-progress",
+  );
+  if (progress) progress.style.display = "none";
+  setElementDisplayById("no-content-buttons", "none");
+  const sseBadge = document.getElementById("sse-status-indicator");
+  if (sseBadge) sseBadge.style.display = "none";
+  // 空态页的状态提示（「正在关闭…」info 不会自动消失）与内容页
+  // 状态条一并隐藏，终态卡片上不残留过程性文案
+  for (const id of ["no-content-status-message", "status-message"]) {
+    const statusElement = document.getElementById(id);
+    if (statusElement) statusElement.style.display = "none";
+  }
 }
 
 // 安全刷新页面函数
