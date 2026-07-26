@@ -9,6 +9,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.8] - 2026-07-26
+
 ### Fixed
 
 - Closing the Web UI now lands on a proper "closed" terminal card
