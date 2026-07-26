@@ -143,7 +143,7 @@ pip install ai-intervention-agent
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
-    <img alt="移动端 - 反馈页" src=".github/assets/mobile_light_content.png" width="180" height="644" />
+    <img alt="移动端 - 反馈页" src=".github/assets/mobile_light_content.png" width="180" height="590" />
   </picture>
 </p>
 

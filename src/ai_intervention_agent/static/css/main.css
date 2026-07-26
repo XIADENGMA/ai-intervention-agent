@@ -1931,54 +1931,52 @@ h1 {
  * 设置关闭按钮（.settings-close-btn）：
  *
  * 功能说明：
- *   设置面板右上角的圆形关闭按钮，包含"×"图标。
+ *   设置面板右上角的关闭按钮，包含"×"图标。
+ *
+ * 设计语言（与 .theme-toggle-btn / .settings-btn 同一套 icon-button 语法）：
+ *   曾经是常驻 iOS 红的 32px 圆形按钮——整页是"中性毛玻璃 + 陶土橙点缀"
+ *   的低饱和语言，常驻警示红是页面上唯一的高饱和异类。现改为默认中性、
+ *   hover 才透出警示红（macOS / VS Code 标签关闭钮的标准模式）：既归队
+ *   设计系统（CSS 变量自动适配深浅主题），又保留"关闭"语义的危险暗示。
  *
  * 布局说明：
- *   - 固定尺寸：32x32px（圆形）
+ *   - 固定尺寸：40x40px（与 header 其他 icon button 一致，触控友好）
  *   - 使用flex布局居中内容
  *   - 相对定位（position: relative），用于伪元素
- *   - 隐藏溢出（overflow: hidden），防止伪元素超出边界
  *
  * 视觉设计：
- *   - 背景：线性渐变（rgba(255, 69, 58, 0.12) → rgba(255, 69, 58, 0.08)）
- *   - 边框：1.5px solid rgba(255, 69, 58, 0.25)（红色半透明）
- *   - 圆角：50%（圆形）
- *   - 颜色：#ff453a（iOS红色）
- *   - 毛玻璃效果：backdrop-filter: blur(12px)
- *   - 双重阴影：0 2px 12px + 0 1px 3px
+ *   - 背景：var(--bg-hover)（主题化中性底）
+ *   - 边框：1px solid var(--border-primary)
+ *   - 圆角：10px（与 .theme-toggle-btn 一致，不再是圆形）
+ *   - 颜色：var(--text-secondary)（中性图标色）
+ *   - 毛玻璃效果：backdrop-filter: blur(8px)
+ *   - 阴影：var(--shadow-sm)
  *
  * 交互效果：
- *   - 过渡动画：all 0.25s cubic-bezier(0.4, 0, 0.2, 1)（流畅缓动）
- *   - :hover：放大1.08倍，背景变亮，阴影增强，颜色变深
- *   - :active：缩小0.92倍，添加内阴影，模拟按下效果
+ *   - :hover：透出警示红 + 向上位移1px（与其他 icon button 同步）
+ *   - :active：回落原位
+ *   - :focus：陶土橙焦点环（var(--border-focus)，无障碍）
  *
  * "×"图标实现：
  *   使用::before和::after伪元素绘制两条交叉的线条。
  */
 .settings-close-btn {
-  background: linear-gradient(
-    135deg,
-    rgba(255, 69, 58, 0.12),
-    rgba(255, 69, 58, 0.08)
-  ); /* 渐变背景 */
-  border: 1.5px solid rgba(255, 69, 58, 0.25); /* 红色半透明边框 */
-  border-radius: 50%; /* 圆形 */
-  color: #ff453a; /* iOS红色 */
+  background: var(--bg-hover); /* 主题化中性底 */
+  border: 1px solid var(--border-primary); /* 主题化边框 */
+  border-radius: 10px; /* 圆角（与其他 icon button 一致） */
+  color: var(--text-secondary); /* 中性图标色 */
   padding: 0; /* 无内边距 */
-  width: 32px; /* 固定宽度 */
-  height: 32px; /* 固定高度 */
+  width: 40px; /* 固定宽度 */
+  height: 40px; /* 固定高度 */
   display: flex; /* 使用flex布局 */
   align-items: center; /* 垂直居中 */
   justify-content: center; /* 水平居中 */
   cursor: pointer; /* 鼠标指针 */
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); /* 流畅过渡动画 */
-  backdrop-filter: blur(12px); /* 毛玻璃效果（标准语法） */
-  -webkit-backdrop-filter: blur(12px); /* 毛玻璃效果（WebKit前缀） */
-  box-shadow:
-    0 2px 12px rgba(255, 69, 58, 0.15),
-    0 1px 3px rgba(0, 0, 0, 0.1); /* 双重阴影 */
+  transition: all 0.2s ease; /* 过渡动画（与其他 icon button 一致） */
+  backdrop-filter: blur(8px); /* 毛玻璃效果（标准语法） */
+  -webkit-backdrop-filter: blur(8px); /* 毛玻璃效果（WebKit前缀） */
+  box-shadow: var(--shadow-sm); /* 主题化阴影 */
   position: relative; /* 相对定位（用于伪元素） */
-  overflow: hidden; /* 隐藏溢出 */
 }
 
 /**
@@ -2041,58 +2039,41 @@ h1 {
  * 设置关闭按钮悬停效果（.settings-close-btn:hover）：
  *
  * 交互效果：
- *   - 背景变亮（rgba(255, 69, 58, 0.2) → rgba(255, 69, 58, 0.15)）
- *   - 边框变深（rgba(255, 69, 58, 0.4)）
- *   - 放大1.08倍（transform: scale(1.08)）
- *   - 阴影增强（0 4px 20px + 0 2px 8px）
- *   - 颜色变深（#ff2d20）
+ *   - 透出警示红：半透明红底 + 红边框 + 红图标（"关闭"语义暗示）
+ *   - 向上位移1px（与 .theme-toggle-btn / .settings-btn 悬停语法一致）
+ *   - 阴影增强（var(--shadow-md)）
+ *   - rgba 半透明红叠加在主题底色上，深浅主题下均和谐
  */
 .settings-close-btn:hover {
-  background: linear-gradient(
-    135deg,
-    rgba(255, 69, 58, 0.2),
-    rgba(255, 69, 58, 0.15)
-  ); /* 背景变亮 */
-  border-color: rgba(255, 69, 58, 0.4); /* 边框变深 */
-  transform: scale(1.08); /* 放大1.08倍 */
-  box-shadow:
-    0 4px 20px rgba(255, 69, 58, 0.25),
-    0 2px 8px rgba(0, 0, 0, 0.15); /* 阴影增强 */
-  color: #ff2d20; /* 颜色变深 */
-}
-
-/**
- * 设置关闭按钮悬停时"×"图标效果（.settings-close-btn:hover::before/after）：
- *
- * 交互效果：
- *   - 线条变长（14px → 16px）
- *   - 线条变粗（2px → 2.5px）
- */
-.settings-close-btn:hover::before,
-.settings-close-btn:hover::after {
-  width: 16px; /* 宽度增加 */
-  height: 2.5px; /* 高度增加 */
+  background: rgba(255, 69, 58, 0.12); /* 半透明警示红底 */
+  border-color: rgba(255, 69, 58, 0.4); /* 红色边框 */
+  transform: translateY(-1px); /* 向上位移（与其他 icon button 一致） */
+  box-shadow: var(--shadow-md); /* 阴影增强 */
+  color: #ff453a; /* 图标转警示红 */
 }
 
 /**
  * 设置关闭按钮按下效果（.settings-close-btn:active）：
  *
  * 交互效果：
- *   - 缩小0.92倍（transform: scale(0.92)）
- *   - 阴影减弱（0 1px 6px）
- *   - 添加内阴影（inset 0 1px 2px），模拟按下效果
- *   - 背景变深（rgba(255, 69, 58, 0.25) → rgba(255, 69, 58, 0.2)）
+ *   - 回落原位（transform: translateY(0)）
+ *   - 背景红加深（rgba(255, 69, 58, 0.18)），模拟按下反馈
  */
 .settings-close-btn:active {
-  transform: scale(0.92); /* 缩小0.92倍 */
-  box-shadow:
-    0 1px 6px rgba(255, 69, 58, 0.3),
-    inset 0 1px 2px rgba(0, 0, 0, 0.1); /* 阴影减弱 + 内阴影 */
-  background: linear-gradient(
-    135deg,
-    rgba(255, 69, 58, 0.25),
-    rgba(255, 69, 58, 0.2)
-  ); /* 背景变深 */
+  transform: translateY(0); /* 回落原位 */
+  background: rgba(255, 69, 58, 0.18); /* 背景红加深 */
+}
+
+/**
+ * 设置关闭按钮聚焦效果（.settings-close-btn:focus）：
+ *
+ * 无障碍支持：
+ *   - 移除浏览器默认outline
+ *   - 陶土橙焦点环（与 .theme-toggle-btn:focus 一致）
+ */
+.settings-close-btn:focus {
+  outline: none; /* 移除默认outline */
+  box-shadow: 0 0 0 2px var(--border-focus); /* 主题化焦点环 */
 }
 
 /* ========================================================================

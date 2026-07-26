@@ -143,7 +143,7 @@ Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
-    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" width="180" height="644" />
+    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" width="180" height="590" />
   </picture>
 </p>
 

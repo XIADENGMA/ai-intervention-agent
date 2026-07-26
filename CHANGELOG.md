@@ -11,6 +11,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Settings-panel close button redesigned into the shared icon-button
+  language (`.theme-toggle-btn` / `.settings-btn`): the permanent
+  iOS-red 32px circle — the only high-saturation outlier on an
+  otherwise neutral glassmorphism page — becomes a neutral 40px
+  rounded-square driven by theme CSS variables (auto-adapting to
+  light/dark), with the warning red now appearing only on hover
+  (the macOS / VS Code tab-close pattern) plus a proper `:focus`
+  ring for accessibility.
+- README screenshots re-captured against the current UI (all 12:
+  desktop/mobile × light/dark × feedback/empty/settings): the old set
+  still showed the Quick Phrases panel removed in R708 and the
+  pre-redesign red close button. New demo content walks through an
+  "SSE reconnect-storm fix" review — three multi-task tabs with
+  `header_label` chips, JavaScript syntax highlighting, and
+  pre-checked predefined options.
 - README restructure (both languages), modelled on top-tier OSS
   landing pages: dropped all decorative emoji, merged the folded
   bottom badge block into a single flat-square badge row up top,
