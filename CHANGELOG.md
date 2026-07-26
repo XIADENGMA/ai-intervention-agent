@@ -11,6 +11,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Dark-theme form controls unified into the brand-orange family
+  (style-audit follow-up): every settings/option checkbox, the volume
+  slider (track, WebKit/Firefox thumbs and hover glows) and the volume
+  percentage readout dropped the legacy cold-blue `#517fae` accent —
+  the page's last cold-color outlier — for `--primary-*` tokens
+  (white checkmark on `#d97757` measures 3.13:1, satisfying WCAG
+  1.4.11 non-text contrast). The light theme already had its own warm
+  adaptation (cream checkboxes, Kraft slider) and is untouched; one
+  never-effective light-theme override was removed as dead code. The
+  image-preview remove badge also moved from an always-red dot to the
+  close-button pattern (neutral scrim at rest, red on hover). Affected
+  README screenshots re-captured.
 - Settings-panel close button redesigned into the shared icon-button
   language (`.theme-toggle-btn` / `.settings-btn`): the permanent
   iOS-red 32px circle — the only high-saturation outlier on an

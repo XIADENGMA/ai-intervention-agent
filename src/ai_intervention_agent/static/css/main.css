@@ -2435,7 +2435,11 @@ h1 {
 .setting-label input[type="checkbox"] {
   width: 20px; /* 固定宽度 */
   height: 20px; /* 固定高度 */
-  accent-color: #517fae; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
+  /* 表单控件品牌化收尾：深色主题曾用 --accent-600 深蓝 #517fae（历史
+     上为保证白勾对比度），是全页唯一残留的冷色 accent。--primary-500
+     (#d97757) 上白勾对比 3.13:1 ≥ 3:1（WCAG 1.4.11 非文本对比达标），
+     与浅色主题的暖色适配（奶油米 #e3dacc，见 light 覆盖块）呼应。 */
+  accent-color: var(--primary-500); /* 复选框主题色（品牌橙） */
   cursor: pointer; /* 可点击 */
   border-radius: 4px; /* 圆角 */
   transition: all 0.2s ease; /* 过渡动画 */
@@ -2660,7 +2664,7 @@ h1 {
   margin: 0 1rem; /* 左右外边距 */
   height: 6px; /* 高度（窄轨道） */
   /* 使用浏览器原生样式实现左右颜色区分 */
-  accent-color: #517fae; /* 深色模式：深蓝色（与复选框一致） */
+  accent-color: var(--primary-500); /* 品牌橙（与复选框一致） */
   border-radius: 3px; /* 圆角 */
   outline: none; /* 移除焦点outline */
   cursor: pointer;
@@ -2710,15 +2714,15 @@ h1 {
   margin-top: -5px; /* 垂直居中：(轨道高度6px - 球高度16px) / 2 = -5px */
   background: linear-gradient(
     135deg,
-    #517fae,
-    #4a7daf
-  ); /* 渐变背景（深蓝色） */
+    var(--primary-500),
+    var(--primary-600)
+  ); /* 渐变背景（品牌橙） */
   border-radius: 50%; /* 圆形 */
   cursor: pointer; /* 可点击 */
   border: none; /* 移除边框 */
   box-shadow:
-    0 2px 8px rgba(81, 127, 174, 0.4),
-    0 0 0 2px rgba(255, 255, 255, 0.1); /* 双重阴影（深蓝色） */
+    0 2px 8px rgba(217, 119, 87, 0.4),
+    0 0 0 2px rgba(255, 255, 255, 0.1); /* 双重阴影（品牌橙） */
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* 流畅过渡动画 */
 }
 
@@ -2732,9 +2736,9 @@ h1 {
 .volume-slider::-webkit-slider-thumb:hover {
   transform: scale(1.2); /* 放大1.2倍 */
   box-shadow:
-    0 4px 15px rgba(81, 127, 174, 0.5),
+    0 4px 15px rgba(217, 119, 87, 0.5),
     0 0 0 3px rgba(255, 255, 255, 0.2),
-    0 0 20px rgba(81, 127, 174, 0.3); /* 三重增强阴影（深蓝色） */
+    0 0 20px rgba(217, 119, 87, 0.3); /* 三重增强阴影（品牌橙） */
 }
 
 /**
@@ -2764,13 +2768,13 @@ h1 {
   height: 16px; /* 固定高度 */
   background: linear-gradient(
     135deg,
-    #517fae,
-    #4a7daf
-  ); /* 渐变背景（深蓝色） */
+    var(--primary-500),
+    var(--primary-600)
+  ); /* 渐变背景（品牌橙） */
   border-radius: 50%; /* 圆形 */
   cursor: pointer; /* 可点击 */
   border: none; /* 移除边框 */
-  box-shadow: 0 2px 8px rgba(81, 127, 174, 0.4); /* 深蓝色阴影 */
+  box-shadow: 0 2px 8px rgba(217, 119, 87, 0.4); /* 品牌橙阴影 */
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* 流畅过渡动画 */
 }
 
@@ -2795,20 +2799,20 @@ h1 {
  *   - 文字阴影：0 0 10px rgba(217, 119, 87, 0.3)（发光效果）
  */
 .volume-value {
-  color: #517fae; /* 深蓝色（深色模式，与复选框和滑块一致） */
+  color: var(--primary-400); /* 品牌橙亮阶（深色模式，与复选框和滑块一致） */
   font-size: 1rem; /* 字号（16px） */
   font-weight: 700; /* 粗体 */
   min-width: 50px; /* 最小宽度 */
   text-align: right; /* 文字右对齐 */
   background: linear-gradient(
     135deg,
-    #517fae,
-    rgba(81, 127, 174, 0.8)
-  ); /* 渐变背景（深蓝色） */
+    var(--primary-400),
+    rgba(217, 119, 87, 0.8)
+  ); /* 渐变背景（品牌橙） */
   -webkit-background-clip: text; /* WebKit前缀：背景裁剪到文字 */
   -webkit-text-fill-color: transparent; /* WebKit前缀：文字颜色透明 */
   background-clip: text; /* 标准语法：背景裁剪到文字 */
-  text-shadow: 0 0 10px rgba(81, 127, 174, 0.3); /* 深蓝色发光效果 */
+  text-shadow: 0 0 10px rgba(217, 119, 87, 0.3); /* 品牌橙发光效果 */
 }
 
 /* ========================================================================
@@ -4149,9 +4153,9 @@ h1 {
   box-shadow: 0 4px 8px rgba(20, 20, 19, 0.1); /* 增强阴影 */
 }
 
-[data-theme="light"] .option-item input[type="checkbox"] {
-  accent-color: #d97757; /* Orange - 与品牌色一致 */
-}
+/* R711 清理：此处曾有一条 light .option-item checkbox 的 #d97757 覆盖，
+   但同选择器在后方浅色主题块中被奶油米 #e3dacc 再覆盖，从未生效（死规则），
+   随表单控件品牌化收尾一并移除。 */
 
 /**
  * 选项项复选框（.option-item input[type='checkbox']）：
@@ -4173,7 +4177,10 @@ h1 {
   margin-right: 1rem; /* 右外边距（与标签分离） */
   width: 18px; /* 固定宽度 */
   height: 18px; /* 固定高度 */
-  accent-color: #517fae; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
+  /* 表单控件品牌化收尾：同 .setting-label checkbox，深蓝 → 品牌橙，
+     白勾对比 3.13:1 ≥ 3:1（WCAG 1.4.11）。浅色主题由 light 覆盖块
+     统一为奶油米 #e3dacc。 */
+  accent-color: var(--primary-500); /* 复选框主题色（品牌橙） */
   cursor: pointer; /* 可点击 */
 }
 
@@ -5253,7 +5260,10 @@ h1 {
   position: absolute; /* 绝对定位 */
   top: 4px; /* 距离顶部4px */
   right: 4px; /* 距离右边4px */
-  background: rgba(255, 69, 58, 0.9); /* 半透明红色背景 */
+  /* R711 风格统一：与设置面板关闭按钮同模式——默认中性、hover 才转
+     警示红。中性深 scrim 叠在任意缩略图上都可见，且不再是页面上
+     常驻的高饱和红点。 */
+  background: rgba(0, 0, 0, 0.55); /* 中性深色scrim背景 */
   color: white; /* 白色文字 */
   border: none; /* 无边框 */
   border-radius: 50%; /* 圆形 */
