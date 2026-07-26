@@ -101,4 +101,7 @@ jobs:
         with:
           name: coverage-report
           path: coverage.xml
-          if-no-files-found: error
+          # warn 而非 error：上游门禁（audit/gate）失败时 coverage.xml
+          # 不存在，error 会在同一 job 里叠加第二个 failure 噪音
+          if-no-files-found: warn
+          retention-days: 14

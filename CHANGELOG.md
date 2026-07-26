@@ -9,6 +9,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- The GitHub Releases page now keeps only the three most recent
+  stable releases: `release.yml` gained a post-publish cleanup step
+  that deletes older release entries automatically (drafts and
+  prereleases exempt; git tags, CHANGELOG history and the PyPI /
+  VS Code Marketplace / Open VSX listings are untouched). The 52
+  entries older than v1.8.3 were pruned once by hand under the same
+  policy.
+- CI slimming: `vscode.yml` no longer triggers on tag pushes —
+  `release.yml`'s Build job already runs the full `vscode:check`,
+  so the tag-push matrix was pure duplicate work. The Tests coverage
+  upload switches to `if-no-files-found: warn` (a failed upstream
+  gate no longer stacks a second failure onto the same job) and caps
+  the artifact at `retention-days: 14` instead of the 90-day default.
+
 ## [1.8.7] - 2026-07-26
 
 ### Changed

@@ -182,6 +182,24 @@ jobs:
             gh release create "$tag" dist/* vsix/*.vsix --title "$tag" --generate-notes $prerelease_flag
           fi
 
+      # 保持 Release 页只保留最近 3 个正式版本：更早的自动删除。
+      # 仅删除 GitHub Release 条目（不带 --cleanup-tag），git tag /
+      # CHANGELOG / PyPI / VS Code Marketplace / Open VSX 的历史版本
+      # 全部保留；draft 与 prerelease 不参与统计也不会被删。
+      - name: 清理旧 Release（保留最近 3 个正式版本，tag 全保留）
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release list --limit 200 --json tagName,isDraft,isPrerelease,publishedAt \
+            --jq '[.[] | select((.isDraft or .isPrerelease) | not)] | sort_by(.publishedAt) | reverse | .[3:] | .[].tagName' \
+            > /tmp/stale_releases.txt
+          while IFS= read -r old_tag; do
+            [ -n "$old_tag" ] || continue
+            echo "::notice::删除旧 Release：$old_tag（tag 保留）"
+            gh release delete "$old_tag" --yes
+          done < /tmp/stale_releases.txt
+
   vscode-marketplace:
     name: Publish VSCode Extension to VS Code Marketplace
     runs-on: ubuntu-latest

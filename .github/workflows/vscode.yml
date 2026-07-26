@@ -5,8 +5,9 @@ on:
     branches:
       - main
       - develop
-    tags:
-      - "v*.*.*"
+    # 不再由 tag push 触发：发版时 release.yml 的 Build job 已完整跑
+    # vscode:check（compile+lint+test+package），tag 再触发本 workflow
+    # 的 ubuntu+macos 两矩阵属于纯重复构建。
     paths:
       - "packages/vscode/**"
       - "scripts/package_vscode_vsix.mjs"
