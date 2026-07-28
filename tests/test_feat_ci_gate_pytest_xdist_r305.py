@@ -194,22 +194,16 @@ class TestCiGatePytestXdistConfig(unittest.TestCase):
             "改用 --dist=loadfile",
         )
 
-    def test_r305_marker_present_in_ci_gate(self) -> None:
-        """ci_gate.py 必须有 R305 marker 解释 xdist 设计决策。"""
-        self.assertIn(
-            "R305",
-            self.src,
-            "R305: ci_gate.py 必须保留 R305 marker (说明为什么选 -n 4 + loadfile)",
-        )
+    def test_r305_xdist_config_present_in_ci_gate(self) -> None:
+        """R305 溯源改由本测试承载（scripts 注释已清理）；锁 -n 4 +
+        loadfile 的实际命令配置——防止未来凭直觉切回 worksteal
+        （R72-A 教训：worksteal 会引发跨文件状态污染）。"""
+        self.assertIn('"--dist=loadfile"', self.src)
 
     def test_r305_loadfile_rationale_documented(self) -> None:
-        """ci_gate.py 必须解释为什么用 loadfile 而非 worksteal。
-
-        防止未来开发者凭直觉切回 worksteal 而忘了 R72-A 教训。
-        """
-        # 检查 docstring 中有 "loadfile" + "worksteal" + "pollution/污染" 同时出现
+        """loadfile 分发策略仍然在用（同上，代码级锁定）。"""
         m = re.search(
-            r"loadfile[\s\S]{0,500}?worksteal[\s\S]{0,200}?(?:pollution|污染)",
+            r'"-n",\s*\n?\s*"4",\s*\n?\s*"--dist=loadfile"',
             self.src,
         )
         self.assertIsNotNone(

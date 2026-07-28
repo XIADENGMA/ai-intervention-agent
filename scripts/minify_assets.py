@@ -26,20 +26,19 @@ import argparse
 import sys
 from pathlib import Path
 
-# 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
 
-# 静态资源目录
+
 STATIC_JS_DIR = PROJECT_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 STATIC_CSS_DIR = PROJECT_ROOT / "src" / "ai_intervention_agent" / "static" / "css"
 
-# 需要跳过的文件模式
+
 SKIP_PATTERNS = [
-    ".min.js",  # 已经是压缩文件
-    ".min.css",  # 已经是压缩文件
-    "prism-",  # Prism 组件（已经压缩）
-    "tex-mml-",  # MathJax（已经压缩）
-    "marked.js",  # 外部库
+    ".min.js",
+    ".min.css",
+    "prism-",
+    "tex-mml-",
+    "marked.js",
 ]
 
 
@@ -58,30 +57,14 @@ def get_minified_name(filepath: Path) -> Path:
 
 
 def needs_minification(src: Path, dst: Path) -> bool:
-    """增量构建启发式：mtime 早于源文件则需要重新压缩。
-
-    只用于本地"增量执行"（``python scripts/minify_assets.py`` 不带参数时），
-    避免每次都全量 minify。**不能**用于 ``--check`` 漂移检测，原因是：
-
-    - ``git checkout`` 会把工作树文件的 mtime 全部重置为 checkout 时刻
-    - fresh clone 之后 src 和 dst 的 mtime 完全不可控（取决于文件系统、
-      checkout 顺序、CI runner 是否启用了 mtime 保留）
-    - 实测：在 GitHub Actions runner 上 mtime 漂移率接近 100%
-
-    ``--check`` 必须用 ``content_drifts`` 直接比较 minify 输出，否则一定误报。
-    """
+    """增量构建启发式：mtime 早于源文件则需要重新压缩。"""
     if not dst.exists():
         return True
     return src.stat().st_mtime > dst.stat().st_mtime
 
 
 def content_drifts(src: Path, dst: Path, minify_func) -> bool:
-    """内容比较：minify(src) 是否等于 dst 现有内容。
-
-    专给 ``--check`` 模式用，纯属字节比较，避开 mtime 不稳定。``dst`` 不
-    存在视为漂移；``minify(src)`` 失败（rjsmin 抛异常等）也视为漂移以
-    确保 CI 暴露问题而不是默默通过。
-    """
+    """内容比较：minify(src) 是否等于 dst 现有内容。"""
     if not dst.exists():
         return True
     try:
@@ -123,11 +106,7 @@ def process_directory(
     check_only: bool = False,
     force: bool = False,
 ):
-    """处理目录中的文件
-
-    返回:
-        int: 在 check_only 模式下，返回“需要压缩”的文件数量；否则返回 0。
-    """
+    """处理目录中的文件"""
     if not directory.exists():
         print(f"目录不存在: {directory}")
         return 0
@@ -139,16 +118,12 @@ def process_directory(
     needs_count = 0
 
     for filepath in directory.glob(f"*{suffix}"):
-        # 跳过已压缩的文件
         if should_skip(filepath.name):
             files_skipped += 1
             continue
 
         minified_path = get_minified_name(filepath)
 
-        # check_only 必须用内容比较：mtime 在 fresh clone / git checkout 后
-        # 不可信（详见 needs_minification 的 docstring）。--check 只判定
-        # "minify 输出 vs 现有 .min 内容是否一致"，与 mtime 完全脱钩。
         if check_only:
             if not content_drifts(filepath, minified_path, minify_func):
                 files_skipped += 1
@@ -158,9 +133,6 @@ def process_directory(
             needs_count += 1
             continue
 
-        # 增量执行：mtime 启发式只能作为快速触发器，不能作为唯一跳过条件。
-        # 否则会出现 ``--check`` 用内容比较发现漂移，但普通生成模式因 dst
-        # mtime 更新而跳过，导致"按提示运行脚本后仍失败"。
         if (
             not force
             and not needs_minification(filepath, minified_path)
@@ -169,19 +141,15 @@ def process_directory(
             files_skipped += 1
             continue
 
-        # 读取原始文件
         try:
             content = filepath.read_text(encoding="utf-8")
             original_size = len(content.encode("utf-8"))
 
-            # 压缩
             minified = minify_func(content)
             minified_size = len(minified.encode("utf-8"))
 
-            # 保存压缩后的文件
             minified_path.write_text(minified, encoding="utf-8")
 
-            # 计算节省的空间
             saved = original_size - minified_size
             saved_percent = (saved / original_size * 100) if original_size > 0 else 0
             total_saved += saved
@@ -222,13 +190,11 @@ def main():
 
     print()
 
-    # 处理 JavaScript 文件
     print("📦 处理 JavaScript 文件...")
     print("-" * 40)
     needs_js = process_directory(STATIC_JS_DIR, "js", minify_js, args.check, args.force)
     print()
 
-    # 处理 CSS 文件
     print("🎨 处理 CSS 文件...")
     print("-" * 40)
     needs_css = process_directory(

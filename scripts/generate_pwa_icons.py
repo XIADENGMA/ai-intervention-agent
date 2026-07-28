@@ -79,51 +79,29 @@ SOURCE_SVG_MASKABLE = ICONS_DIR / "icon-maskable.svg"
 
 @dataclass(frozen=True)
 class PngSpec:
-    """单个 PNG 输出规格。
-
-    Attributes
-    ----------
-    filename:
-        输出文件名（相对 ``icons/``）。
-    size:
-        PNG 边长（正方形）。
-    source:
-        SVG 源："any" 或 "maskable"。
-    fill_corners:
-        是否将透明角强制填充为不透明实色（用于 iOS apple-touch-icon）。
-        实色取自 source SVG 渲染结果在 (1, 1) 像素的颜色——这是
-        ``masterBg`` 渐变最浅端，与 manifest ``background_color`` 视觉一致。
-    """
+    """单个 PNG 输出规格。"""
 
     filename: str
     size: int
-    source: str  # "any" | "maskable"
+    source: str
     fill_corners: bool = False
 
 
-# 输出图标族。顺序按尺寸升序，便于 review。
 PNG_OUTPUTS: tuple[PngSpec, ...] = (
-    # 浏览器 tab favicon —— 用 SVG 直接渲染最小尺寸保证清晰
     PngSpec("favicon-16.png", 16, "any"),
     PngSpec("favicon-32.png", 32, "any"),
-    # iOS apple-touch-icon 必须填透明角（iOS 14+ 自动加圆角，不支持 alpha）
     PngSpec("apple-touch-icon.png", 180, "any", fill_corners=True),
-    # PWA manifest "any" purpose 图标族
     PngSpec("icon-72.png", 72, "any"),
     PngSpec("icon-96.png", 96, "any"),
     PngSpec("icon-128.png", 128, "any"),
     PngSpec("icon-144.png", 144, "any"),
     PngSpec("icon-192.png", 192, "any"),
     PngSpec("icon-512.png", 512, "any"),
-    # PWA manifest "maskable" purpose —— 整张实色 + 80% safe zone
-    # 同时输出 192 + 512：Lighthouse PWA audit 推荐两档都覆盖。Android Chrome
-    # 把 192 作为启动器图标第一选择，缺失时会拿 512 maskable 下采样导致毛刺。
     PngSpec("icon-maskable-192.png", 192, "maskable"),
     PngSpec("icon-maskable-512.png", 512, "maskable"),
 )
 
-# multi-size ICO 标准 favicon.ico 应至少包含的尺寸；256 让 Windows 资源管理器
-# 大图标位置不模糊。
+
 ICO_SIZES: tuple[int, ...] = (16, 32, 48, 256)
 
 
@@ -142,11 +120,7 @@ def _check_dependencies() -> bool:
 
 
 def _render_svg_to_rgba(svg_path: Path, size: int) -> tuple[int, int, bytearray]:
-    """用 rsvg-convert 把 SVG 渲染成 RGBA 像素 buffer。
-
-    返回 ``(width, height, pixels)``，``pixels`` 是 ``len = w*h*4`` 的
-    bytearray，每像素 4 字节 RGBA（已经过 PNG filter 反算解码）。
-    """
+    """用 rsvg-convert 把 SVG 渲染成 RGBA 像素 buffer。"""
 
     proc = subprocess.run(
         ["rsvg-convert", "-w", str(size), "-h", str(size), str(svg_path)],
@@ -162,12 +136,7 @@ def _render_svg_to_rgba(svg_path: Path, size: int) -> tuple[int, int, bytearray]
 
 
 def _decode_png_to_rgba(data: bytes) -> tuple[int, int, bytearray]:
-    """解码 PNG 字节流到 RGBA 像素 buffer（最小化实现）。
-
-    支持 ``color_type=2``（RGB）/ ``color_type=6``（RGBA） + ``bit_depth=8`` +
-    ``interlace=0``（非交错）。其它情况 raise ValueError。rsvg-convert 输出
-    总是这两种之一，所以足够用。
-    """
+    """解码 PNG 字节流到 RGBA 像素 buffer（最小化实现）。"""
 
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError("不是 PNG 流")
@@ -180,8 +149,8 @@ def _decode_png_to_rgba(data: bytes) -> tuple[int, int, bytearray]:
             f"PNG 格式不支持: ct={color_type} bd={bit_depth} interlace={interlace}"
         )
 
-    bpp = 4 if color_type == 6 else 3  # bytes per pixel before alpha pad
-    bpr = bpp * width + 1  # plus 1 filter byte per row
+    bpp = 4 if color_type == 6 else 3
+    bpr = bpp * width + 1
 
     idat = b""
     pos = 8
@@ -202,18 +171,18 @@ def _decode_png_to_rgba(data: bytes) -> tuple[int, int, bytearray]:
         row = bytearray(raw[row_start + 1 : row_start + bpr])
         if filter_byte == 0:
             pass
-        elif filter_byte == 1:  # Sub
+        elif filter_byte == 1:
             for i in range(bpp, len(row)):
                 row[i] = (row[i] + row[i - bpp]) & 0xFF
-        elif filter_byte == 2:  # Up
+        elif filter_byte == 2:
             for i in range(len(row)):
                 row[i] = (row[i] + prev_row[i]) & 0xFF
-        elif filter_byte == 3:  # Average
+        elif filter_byte == 3:
             for i in range(len(row)):
                 left = row[i - bpp] if i >= bpp else 0
                 up = prev_row[i]
                 row[i] = (row[i] + ((left + up) // 2)) & 0xFF
-        elif filter_byte == 4:  # Paeth
+        elif filter_byte == 4:
             for i in range(len(row)):
                 left = row[i - bpp] if i >= bpp else 0
                 up = prev_row[i]
@@ -232,7 +201,7 @@ def _decode_png_to_rgba(data: bytes) -> tuple[int, int, bytearray]:
 
         if color_type == 6:
             rgba.extend(row)
-        else:  # color_type == 2 (RGB → 补 alpha=255)
+        else:
             for px in range(width):
                 r = row[px * 3]
                 g = row[px * 3 + 1]
@@ -244,12 +213,7 @@ def _decode_png_to_rgba(data: bytes) -> tuple[int, int, bytearray]:
 
 
 def _encode_png_rgba(width: int, height: int, rgba: bytes | bytearray) -> bytes:
-    """把 RGBA 像素 buffer 编码成 PNG 字节流（最小化实现）。
-
-    输出固定为 ``color_type=6 bit_depth=8 interlace=0`` 的 IHDR/IDAT/IEND
-    三块结构，filter 全用 0（None）。zlib level=9，体积比 Pillow 默认稍大但
-    仍是同量级（多 5-15%），可接受。
-    """
+    """把 RGBA 像素 buffer 编码成 PNG 字节流（最小化实现）。"""
 
     if len(rgba) != width * height * 4:
         raise ValueError(f"rgba 长度 {len(rgba)} 与 {width}×{height}×4 不匹配")
@@ -276,23 +240,14 @@ def _encode_png_rgba(width: int, height: int, rgba: bytes | bytearray) -> bytes:
 def _solid_background_color(
     rgba: bytes | bytearray, width: int
 ) -> tuple[int, int, int]:
-    """从 RGBA buffer (1, 1) 像素取实色背景色。
-
-    选 (1, 1) 而不是 (0, 0)：rsvg-convert 在边缘 1px 偶尔有抗锯齿余量，
-    (1, 1) 已经稳定落在 ``masterBg`` 渐变最浅端。
-    """
+    """从 RGBA buffer (1, 1) 像素取实色背景色。"""
 
     idx = (1 * width + 1) * 4
     return (rgba[idx], rgba[idx + 1], rgba[idx + 2])
 
 
 def _fill_transparent_corners(width: int, height: int, rgba: bytearray) -> bytearray:
-    """把透明像素合成到实色背景上（in-place 修改 rgba）。
-
-    Alpha-over 公式：``out = src + bg * (1 - src_alpha / 255)``。前景 alpha
-    为 0 时输出完全是 bg；alpha 为 255 时不变。每像素 ~3 次浮点 → 整数运算，
-    512×512 用纯 Python 跑约 200 ms，对一次性脚本可接受。
-    """
+    """把透明像素合成到实色背景上（in-place 修改 rgba）。"""
 
     bg_r, bg_g, bg_b = _solid_background_color(rgba, width)
     for y in range(height):
@@ -310,13 +265,7 @@ def _fill_transparent_corners(width: int, height: int, rgba: bytearray) -> bytea
 
 
 def _build_ico(svg_path: Path, sizes: tuple[int, ...]) -> bytes:
-    """把多个尺寸的 RGBA 渲染结果合成 multi-size ICO。
-
-    ICO 格式：6 字节 header（reserved=0, type=1, count=N） + N×16 字节目录
-    项 + N 个内嵌 PNG 数据流。每个目录项：
-      ``<BBBBHHII> width height palette reserved planes bpp size offset``
-    Width / height 字节为 0 表示 256（1 字节存不下）。
-    """
+    """把多个尺寸的 RGBA 渲染结果合成 multi-size ICO。"""
 
     sizes_sorted = sorted(set(sizes))
     n = len(sizes_sorted)
@@ -332,13 +281,13 @@ def _build_ico(svg_path: Path, sizes: tuple[int, ...]) -> bytes:
         entries.extend(
             struct.pack(
                 "<BBBBHHII",
-                size_in_dir,  # width
-                size_in_dir,  # height
-                0,  # palette colors (0 for true-color)
-                0,  # reserved
-                1,  # color planes
-                32,  # bits per pixel
-                len(png_bytes),  # size in bytes
+                size_in_dir,
+                size_in_dir,
+                0,
+                0,
+                1,
+                32,
+                len(png_bytes),
                 offset,
             )
         )

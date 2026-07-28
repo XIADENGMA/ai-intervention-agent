@@ -58,7 +58,6 @@
             window.location.replace(url.toString());
           }
         } catch (e) {
-          // 忽略：不影响主流程
         }
       })();
     </script>
@@ -78,8 +77,6 @@
             document.documentElement.setAttribute("data-theme", resolved);
           }
         } catch (_) {
-          // localStorage 不可用（隐私模式 / iframe sandbox）→ 让 main.css
-          // 的 `prefers-color-scheme: light` 媒体查询自然兜底，仍能正确显示
         }
       })();
     </script>
@@ -2039,7 +2036,6 @@
       document.addEventListener('DOMContentLoaded', function() {
         if (window.AIIA_I18N) {
           var cfgLang = window.AIIA_CONFIG_LANG;
-          // R20.12-B: 若后端已注入 inline locale，优先吃下它，让 i18n.init 走零网络的 happy path。
           if (window._AIIA_INLINE_LOCALE && window._AIIA_INLINE_LOCALE_LANG && window.AIIA_I18N.registerLocale) {
             try {
               window.AIIA_I18N.registerLocale(

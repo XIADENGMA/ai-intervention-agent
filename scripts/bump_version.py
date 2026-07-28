@@ -151,13 +151,11 @@ def _update_uv_lock_version(text: str, new_version: str) -> str:
                 ver_m = re.match(r'^(version\s*=\s*)"([^"]+)"(\s*)$', line.strip())
                 if ver_m:
                     prefix, _old, suffix = ver_m.groups()
-                    # 保持与原文件类似的格式（缩进/换行）
+
                     indent_match = re.match(r"^(\s*)", line)
                     indent = indent_match.group(1) if indent_match else ""
                     lines[i] = f'{indent}{prefix}"{new_version}"{suffix}\n'
                     return "".join(lines)
-
-            # uv.lock 的 [[package]] 区块不一定以空行结尾；遇到下一个 [[package]] 会重置
 
     raise ValueError('uv.lock: missing package entry for name="ai-intervention-agent"')
 
@@ -211,9 +209,6 @@ def _update_package_lock_text(text: str, new_version: str) -> str:
 
 
 def _update_bug_template(text: str, new_version: str) -> str:
-    # Issue Form YAML（v2）：目标行形如 `      placeholder: e.g. 1.5.19`
-    # 全文仅 version 字段的 placeholder 以 `e.g.` 起头，不会误匹配到 textarea 的
-    # 多行 `placeholder: |` 块。
     pat = re.compile(r"(placeholder:\s*e\.g\.\s*)(\S+)")
     return _replace_first(pat, rf"\g<1>{new_version}", text, label="bug_report.yml")
 
@@ -225,10 +220,6 @@ def _extract_bug_template_example_version(text: str) -> str | None:
 
 
 def _update_citation_version(text: str, new_version: str) -> str:
-    # CITATION.cff（CITATION File Format 1.2.0）：目标行形如 `version: "1.5.22"`。
-    # 文件顶层只有一个 `version:` 字段（区别于 `cff-version:`），因此 ^version:
-    # 行首锚定足以避免误匹配。引号样式保持原样（项目当前用双引号；裸值
-    # `version: 1.5.22` 也合法但本仓未使用）。
     pat = re.compile(r'^(version:\s*)"[^"]*"', re.MULTILINE)
     return _replace_first(pat, rf'\g<1>"{new_version}"', text, label="CITATION.cff")
 
@@ -240,13 +231,7 @@ def _extract_citation_version(text: str) -> str | None:
 
 
 def _changelog_unreleased_section(text: str) -> tuple[int, int] | None:
-    """返回 ``[Unreleased]`` 区段在 ``text`` 中的 ``(start, end)`` 字节索引。
-
-    - ``start``：``## [Unreleased]`` 标题行之后的第一个字符
-    - ``end``：下一个 ``## [`` 行的起始（或文末）
-
-    没有 ``## [Unreleased]`` 标题时返回 ``None``。
-    """
+    """返回 ``[Unreleased]`` 区段在 ``text`` 中的 ``(start, end)`` 字节索引。"""
     head = re.search(r"^## \[Unreleased\]\s*$", text, re.MULTILINE)
     if head is None:
         return None
@@ -257,16 +242,7 @@ def _changelog_unreleased_section(text: str) -> tuple[int, int] | None:
 
 
 def _unreleased_section_is_empty(text: str) -> bool:
-    """``CHANGELOG.md [Unreleased]`` 是否为空（无任何 bullet 条目）。
-
-    "为空" 的定义 = 在 ``## [Unreleased]`` 标题与下一个 ``## [`` 发布标题
-    之间，找不到任何 ``- xxx`` / ``* xxx`` 形式的列表项。这里**不计**
-    ``### Added`` / ``### Changed`` / ``### Fixed`` 这样的脚手架子标题
-    ——它们是格式占位，光留下空标题不算"已 backfill 入口"。
-
-    用途：R183 在 ``bump_version.py`` bump 流程里检查这一条件，
-    给出 WARNING（不报错）提示用户可能忘了补 changelog。
-    """
+    """``CHANGELOG.md [Unreleased]`` 是否为空（无任何 bullet 条目）。"""
     span = _changelog_unreleased_section(text)
     if span is None:
         return True
@@ -280,7 +256,6 @@ def _run(cmd: list[str]) -> None:
 
 
 def _maybe_run_ci_gate(*, include_vscode: bool) -> None:
-    # 与 docs/workflow* 对齐：尽量保持“命令即文档”（单一入口，减少漂移）
     cmd = ["uv", "run", "python", "scripts/ci_gate.py"]
     if include_vscode:
         cmd.append("--with-vscode")
@@ -342,9 +317,6 @@ def main(argv: list[str]) -> int:
         print("- CITATION.cff  (version 字段；date-released 仍需手动维护)")
         return 0
 
-    # 版本号来源：
-    # - 正常 bump：必须显式传入 version
-    # - --check：允许不传，默认取 pyproject.toml 的版本作为“单一真值”
     raw_version = (args.version or "").strip()
     if not raw_version:
         if args.from_pyproject and not args.check:
@@ -409,7 +381,6 @@ def main(argv: list[str]) -> int:
     ]
 
     if args.check:
-        # 语义检查：只关注版本值是否一致，避免因 JSON 格式化差异导致误报
         bad = False
 
         pyproject_text = _read_text_or_none(
@@ -620,10 +591,6 @@ def main(argv: list[str]) -> int:
         print("OK：所有目标文件版本号一致。")
         return 0
 
-    # R183：bump 前轻量检查 CHANGELOG.md [Unreleased] 是否被遗忘。
-    # 不报错（不阻断 bump），只打 WARNING——这是 "soft guard"，
-    # 因为偶尔可能有正当理由发空 changelog 的版本（如纯 chore release）。
-    # 用户可显式传 `--no-warn-empty-unreleased` 抑制。
     if args.warn_empty_unreleased:
         changelog_path = root / "CHANGELOG.md"
         if changelog_path.exists():
@@ -639,7 +606,6 @@ def main(argv: list[str]) -> int:
                     file=sys.stderr,
                 )
 
-    # 读取并（可选）检查
     pending_writes: list[tuple[Path, str]] = []
     for path, transformer in targets:
         if not path.exists():

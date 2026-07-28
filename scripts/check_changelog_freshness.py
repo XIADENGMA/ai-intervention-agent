@@ -92,20 +92,17 @@ def main() -> int:
 
     tag = latest_git_tag()
     if tag is None:
-        # repo 没 tag — 跳过；新 repo 的合理状态
         print("[changelog-freshness] OK — no git tag found; skipping")
         return 0
 
     version = tag.lstrip("v")
 
-    # check #1: 最新 tag 必须在 CHANGELOG 出现为 ``## [<version>]``
     if find_section(text, version) is None:
         issues.append(
             f"CHANGELOG.md 缺少 ``## [{version}]`` 段 — "
             f"latest git tag={tag} 已发布但 CHANGELOG 没记。"
         )
 
-    # check #2: 如果 HEAD 在 tag 之后还有 commits，[Unreleased] 不能空
     new_commits = commits_since_tag(tag)
     if new_commits > 0:
         unreleased = find_section(text, "Unreleased")

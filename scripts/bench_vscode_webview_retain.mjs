@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * Summarize VS Code Webview retainContextWhenHidden restore probes.
- *
- * How to capture:
- *
- *   AIIA_WEBVIEW_BENCH_OUTPUT=/tmp/aiia-webview-retain.ndjson code .
- *
- * Then open the AI Intervention Agent view, hide/show the sidebar a few times,
- * and summarize:
- *
- *   node scripts/bench_vscode_webview_retain.mjs \
- *     --input /tmp/aiia-webview-retain.ndjson
- *
- * The extension writes one NDJSON row per visible restore probe. Rows include
- * host round-trip time, webview two-rAF paint latency, and Chromium heap fields
- * when `performance.memory` is available.
- */
 
 import fs from "node:fs";
 

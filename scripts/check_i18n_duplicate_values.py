@@ -44,20 +44,13 @@ LOCALE_DIRS: tuple[tuple[Path, str], ...] = (
     (ROOT / "packages" / "vscode" / "locales", "VSCode"),
 )
 
-# 短于此长度的 value 不纳入判定（见模块 docstring）。
+
 MIN_LEN = 6
 
-# 已达成共识的合理重复值。请在提交前确认：
-# - 值在 ≥ 2 个不同 feature 命名空间下出现（不是同一命名空间内的抄袭）
-# - 合并这些 key 会破坏 intlpull.com 命名规约（feature.component.modifier）
+
 ALLOWLIST_VALUES: frozenset[str] = frozenset(
     {
-        # Web UI: 多个 feature 命名空间下的通用「取消」按钮文案。
-        # 各 feature 演进路径独立，合并到单一 ``common.cancel`` 会让某个
-        # feature 改 button 文案时被迫改全 app——违反 intlpull.com 2026
-        # "feature-namespaced over ui-element-namespaced" 命名规约。
         "Cancel",
-        # Web UI: status 与 page 两个命名空间下的通用动作反馈
         "Copied",
         "Copy failed",
         "Insert code",
@@ -69,11 +62,9 @@ ALLOWLIST_VALUES: frozenset[str] = frozenset(
         "Toggle theme",
         "测试通知失败",
         "测试通知已发送",
-        # VSCode: statusBar/ui/settings 下的同义展示文案，保留各自 key 便于功能内演进
         "Connected",
         "Disconnected",
         "Notification Settings",
-        # VSCode notify.hint + ui.task 也可能共用这个短词
         "Retry",
     }
 )

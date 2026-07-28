@@ -80,60 +80,25 @@ import sys
 from pathlib import Path
 
 DEFAULT_ROOT = "src/ai_intervention_agent/static/css"
-# R66 baseline 锁定的是「strip 注释后」的实际 CSS 属性值里的硬编码数。
-# R66 commit 时手测 64 处含注释引用，剥离注释后剩 34 处实际样式漂移。
-# R697（Claude 暖炭主题迁移）把全部 34 处 rgba decimal 形式替换为品牌
-# 色令牌/字面量，baseline 归零——此后任何新增 iOS 蓝直接 fail。
+
+
 DEFAULT_BASELINE = 0
 
-# R99 / R109 baseline：iOS 系统蓝家族的 hex 形式。R66 设计时只考虑了
-# ``rgba(0, 122, 255, X)`` decimal 形式作为漂移源，R99 补了 ``#007aff``
-# light-mode hex 形式，R109 再补 ``#0a84ff`` (dark-mode systemBlue) 与
-# ``#0056cc`` (iOS 蓝 darker hover variant)，三者合一条 baseline——
-# 与 R65 把所有 alpha 通道（``0.05/0.1/0.5/0.8``）合并到同一条 rgba
-# baseline 的设计同构。实测 ``main.css`` 剥注释后命中：
-#   * ``#007aff`` × 7（边框/背景/文字色/linear-gradient stop）
-#   * ``#0a84ff`` × 1（``.btn-primary-enabled`` 背景）
-#   * ``#0056cc`` × 1（``.btn-primary:hover`` 背景）
-# = 9 处真硬编码，全部为真实样式漂移源，light mode 显示成 iOS 蓝。
-# R697（Claude 暖炭主题迁移）把 hex 家族全部替换为品牌色，baseline 归零。
+
 DEFAULT_HEX_BASELINE = 0
 
-# iOS 系统蓝 RGB 字面量。tolerant 于：
-#   - 任意空白（rgba( 0 , 122 , 255 ...）
-#   - rgba / rgb 都匹配
-#   - alpha 通道无所谓（0.05 / 0.1 / 0.5 / 0.8 等）
+
 _IOS_BLUE_RE = re.compile(r"rgba?\s*\(\s*0\s*,\s*122\s*,\s*255\b")
 
-# R99 / R109：iOS 系统蓝家族的 hex 形式 union 正则（大小写均可）。
-# 三个变体属于同一品牌漂移家族——light mode 都显示成 iOS 蓝。
-#   * ``#007aff`` —— iOS-system-blue (light mode)
-#   * ``#0a84ff`` —— iOS-system-blue (dark mode) / macOS systemBlue dark
-#   * ``#0056cc`` —— iOS-system-blue darker variant (hover/active)
-# ``\b`` 防止误匹 ``#007affab`` 之类扩展（CSS 不允许，但 robustness）。
-# R66 docstring 里的 hex 形式 RCA 引用（``#a855f7`` / ``#d97757``）不
-# 会误命中——它们都不是 iOS 蓝家族。
-# a11y-audit-cycle-5 Track D (R259h): 加 ``#0045a0`` —— WCAG 1.4.3 修复
-# 把 ``.btn-primary:hover`` 从 ``#0056cc`` (6.56:1) 升级到 ``#0045a0``
-# (8.90:1 AAA-ish)，同时把 ``.btn-primary`` 默认从 ``#007aff`` (4.02:1 FAIL)
-# 升到 ``#0056cc`` (AA pass)。``#0045a0`` 纳入 iOS 蓝家族 baseline，
-# 总 hex 计数 = 9 不变（``#007aff`` 7→6, ``#0056cc`` 1→1（位置切换）,
-# ``#0045a0`` 0→1）。
+
 _IOS_BLUE_HEX_RE = re.compile(r"#(?:007aff|0a84ff|0056cc|0045a0)\b", re.IGNORECASE)
 
-# CSS 块注释 ``/* ... */`` —— 跨行非贪婪。
+
 _CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 
 
 def strip_css_comments(source: str) -> str:
-    """删除 CSS 块注释。
-
-    R65 commit 在注释里引用了 ``rgba(0, 122, 255, X)`` 作为 RCA 说明，
-    这种文档引用不应计入实际样式硬编码计数；本函数把所有 ``/* ... */``
-    去掉再做计数。
-
-    单行行尾 ``//`` 注释 CSS 标准里不存在，故不处理。
-    """
+    """删除 CSS 块注释。"""
     return _CSS_COMMENT_RE.sub("", source)
 
 
@@ -143,21 +108,12 @@ def count_ios_blue(text: str) -> int:
 
 
 def count_ios_blue_hex(text: str) -> int:
-    """统计 ``text`` 内 iOS 蓝家族 hex 形式出现次数（已假设注释已剔除）。
-
-    R109 起包含三个 variant：``#007aff`` (light) / ``#0a84ff`` (dark)
-    / ``#0056cc`` (darker hover)——全部属同一品牌漂移家族，合用一条
-    baseline，与 R65 把所有 rgba alpha 通道合并到同一条 baseline 同构。
-    """
+    """统计 ``text`` 内 iOS 蓝家族 hex 形式出现次数（已假设注释已剔除）。"""
     return len(_IOS_BLUE_HEX_RE.findall(text))
 
 
 def find_ios_blue_locations(text: str) -> list[tuple[int, str]]:
-    """返回 ``[(line_number, line_content), ...]``。
-
-    line_number 1-based，line_content 是命中所在的整行（去掉首尾空白）。
-    用于在 fail 时给开发者完整上下文。
-    """
+    """返回 ``[(line_number, line_content), ...]``。"""
     locations: list[tuple[int, str]] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         if _IOS_BLUE_RE.search(line):
@@ -166,12 +122,7 @@ def find_ios_blue_locations(text: str) -> list[tuple[int, str]]:
 
 
 def find_ios_blue_hex_locations(text: str) -> list[tuple[int, str]]:
-    """R99 / R109：返回 iOS 蓝家族 hex 形式 ``[(line_number, line_content), ...]``。
-
-    R109 起返回所有三个 variant（``#007aff`` / ``#0a84ff`` / ``#0056cc``）的
-    命中位置——一行可能命中多个 variant，函数仍按 ``\\b`` word boundary
-    单点匹配返回行号，避免重复行号。
-    """
+    """R99 / R109：返回 iOS 蓝家族 hex 形式 ``[(line_number, line_content), ...]``。"""
     locations: list[tuple[int, str]] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         if _IOS_BLUE_HEX_RE.search(line):
@@ -187,15 +138,7 @@ def scan_css_files(
     int,
     dict[Path, list[tuple[int, str]]],
 ]:
-    """递归扫描 ``root`` 下所有 ``*.css``（排除 ``*.min.css``）。
-
-    返回 ``(rgba_total, rgba_per_file, hex_total, hex_per_file)``。R99 把
-    rgba decimal 形式（``rgba(0, 122, 255, X)``）和 hex 形式（``#007aff``）
-    的扫描结果分别 yield，让 baseline 各自独立——这是因为它们的 baseline
-    数字反映了不同时间段的代码现状（rgba baseline 是 R66 commit 时锁的，
-    hex baseline 是 R99 commit 时锁的），混用会让"重构降低 baseline"的
-    warning 信号失真。
-    """
+    """递归扫描 ``root`` 下所有 ``*.css``（排除 ``*.min.css``）。"""
     rgba_total = 0
     rgba_per_file: dict[Path, list[tuple[int, str]]] = {}
     hex_total = 0
@@ -321,9 +264,6 @@ def main(argv: list[str] | None = None) -> int:
     if failed:
         return 1
 
-    # 两条 baseline 任一减少都给 warn 提示同步更新。各自独立，不混用。
-    # ``--quiet`` 同时抑制 ℹ️ 与 ✅ 输出（通过时静默，与 R66 原始 quiet
-    # 语义保持一致——R99 不该让新加的双 baseline 把 quiet mode 撕破）。
     if not args.quiet:
         if rgba_total < args.baseline:
             print(

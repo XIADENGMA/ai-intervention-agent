@@ -34,7 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# 顺序敏感：必须在 sys.path 注入 REPO_ROOT 之后才能 import 项目模块。
+
 import httpx  # noqa: E402
 from werkzeug.serving import make_server  # noqa: E402
 
@@ -50,14 +50,14 @@ def _abort(reason: str) -> None:
 def _start_web_ui_in_thread() -> tuple[Any, str, int]:
     """起一个最小可用的 Flask app（不阻塞真正交互流程），返回 (server, host, port)。"""
     ui = WebFeedbackUI(prompt="(smoke r50)", auto_resubmit_timeout=0)
-    # WebFeedbackUI.__init__ 已经构造好了 self.app（Flask），我们直接用 werkzeug 起。
+
     server = make_server("127.0.0.1", 0, ui.app, threaded=True)
     actual_port = server.server_address[1]
     thread = threading.Thread(
         target=server.serve_forever, name="r50-smoke-werkzeug", daemon=True
     )
     thread.start()
-    # 给 server 0.5 s 启动
+
     time.sleep(0.5)
     return server, "127.0.0.1", int(actual_port)
 
@@ -73,14 +73,7 @@ def _check_stats_endpoint(host: str, port: int) -> dict[str, Any]:
     body = resp.json()
     if not body.get("success"):
         _abort(f"sse-stats 返回 success=False：{body!r}")
-    # R215 / Cycle 10 · F-205-4: needed 列表必须与 _SSEBus.stats_snapshot()
-    # 暴露的字段集合保持 forward-compat parity——历史教训：本列表为 R47/R50
-    # cycle 写定后, R205 (cycle 9) 加 `schema_validate_mode` /
-    # `schema_violation_total` 时 smoke test 没同步, 导致一旦运维跑 smoke
-    # 验证生产部署「R205 schema validation feature 还活着吗」时, smoke 显
-    # 示「全绿」但实际上 schema_validate_mode 字段被 route 误 strip 也不
-    # 会报。`tests/test_smoke_test_r50_field_drift_invariant_r215.py` 守
-    # 该列表必须涵盖 stats_snapshot keys 的核心子集 (含 R205 新字段)。
+
     needed = (
         "emit_total",
         "latest_event_id",
@@ -88,13 +81,10 @@ def _check_stats_endpoint(host: str, port: int) -> dict[str, Any]:
         "backpressure_discards",
         "subscriber_count",
         "history_size",
-        # R51-B: SSE keepalive 心跳累计 (debug long-lived connection 用)
         "heartbeat_total",
-        # R61: emit() 单条事件超 size 上限被 drop 的累计计数
         "oversize_drops",
         # R205 (cycle 9) · AIIA_SSE_SCHEMA_VALIDATE: 暴露当前 sticky mode
         "schema_validate_mode",
-        # R205 (cycle 9) · 违规累计 counter (R207 mirror 到 Prometheus)
         "schema_violation_total",
     )
     for key in needed:
@@ -114,7 +104,7 @@ def _consume_events_in_thread(
                 if resp.status_code != 200:
                     found_events.append(f"!STATUS={resp.status_code}")
                     return
-                # SSE 协议：行为 "event: foo\ndata: bar\n\n"
+
                 current_event = None
                 for raw_line in resp.iter_lines():
                     if stop_event.is_set():
@@ -138,19 +128,16 @@ def main() -> None:
     server, host, port = _start_web_ui_in_thread()
     print(f"  ✓ http://{host}:{port}", flush=True)
 
-    # ---- 场景 1：sse-stats 端点 ----
     print("[2/5] 探测 /api/system/sse-stats 端点 ...", flush=True)
     snap0 = _check_stats_endpoint(host, port)
     print(f"  ✓ 初始 emit_total={snap0['emit_total']}", flush=True)
 
-    # ---- 场景 2 & 3：debounce + SSE 端到端 ----
     print("[3/5] 启动 /api/events 流式消费者 ...", flush=True)
     found_events: list[str] = []
     stop_event = threading.Event()
     consumer = _consume_events_in_thread(host, port, found_events, stop_event)
-    time.sleep(0.5)  # 给 consumer 时间订阅
+    time.sleep(0.5)
 
-    # 重置 debounce state，确保第一次 emit 一定能过
     web_ui_config_sync._last_emit_monotonic = 0.0
 
     print("[4/5] 在 100 ms 内连续 emit 5 次（应被 debounce 压成 1 次）...", flush=True)
@@ -161,10 +148,8 @@ def main() -> None:
     burst_elapsed = (time.monotonic() - burst_start) * 1000
     print(f"  ✓ 5 次调用耗时 {burst_elapsed:.0f} ms", flush=True)
 
-    # 等 1 秒让 consumer 收到事件（远远超过 debounce window）
     time.sleep(1.0)
 
-    # 现在再 emit 一次（已经过了 debounce window）—— 应该收到第二帧
     web_ui_config_sync._emit_config_changed_to_sse_bus()
     time.sleep(0.5)
 
@@ -176,14 +161,12 @@ def main() -> None:
     print(f"  收到的 config_changed 帧数：{config_changed_count}", flush=True)
     print(f"  收到的所有事件帧：{found_events}", flush=True)
 
-    # 期望：5 次 burst → 1 帧；window 后的单独 emit → 1 帧；总共 2
     if config_changed_count != 2:
         _abort(
             f"debounce 行为不对：期望 2 帧 config_changed（5 burst 压成 1 + 1 隔离），"
             f"实际 {config_changed_count}（事件流：{found_events}）"
         )
 
-    # 再调一次 sse-stats，emit_total 应该是初始 + 2
     snap1 = _check_stats_endpoint(host, port)
     delta = int(snap1["emit_total"]) - int(snap0["emit_total"])
     print(f"  emit_total delta = {delta}（期望 2）", flush=True)

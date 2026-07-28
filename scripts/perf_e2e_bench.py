@@ -137,41 +137,8 @@ def _environment_metadata() -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# 1. import_web_ui — subprocess-isolated cold import
-# ---------------------------------------------------------------------------
-
-
 def bench_import_web_ui(iterations: int) -> list[float]:
-    """每次起一个全新 Python 解释器，``import ai_intervention_agent.web_ui`` 计时。
-
-    **R116** 修：本函数曾用 ``import web_ui``，那是 R76 之前 ``web_ui.py``
-    还在 REPO_ROOT 时的写法。R76 (`11abdad`) 把模块迁到
-    ``src/ai_intervention_agent/web_ui.py`` 后，``import web_ui`` 永远
-    抛 ``ModuleNotFoundError``——但失败被 ``run_all`` 的 try/except 吞成
-    一个 ``error`` 字段静默写进 results，``perf_gate`` 的回归判定
-    ``current_median - baseline_median`` 拿到 ``None`` 就跳过，于是 perf
-    gate 自 R76 起对这条 benchmark 的回归 **完全失明**。
-
-    并且 ``perf_gate.py`` 当时根本没在任何 CI workflow 里跑（grep 整个
-    ``.github/workflows`` 零命中），所以 R76 之后的所有 import 时长退化
-    都没人知道。
-
-    R116 修复策略（针对的是「silent-break 根因」而不是「数字回归」）：
-
-    1. 改字符串 ``import web_ui`` → ``from ai_intervention_agent import
-       web_ui`` —— benchmark 真的能跑了；
-    2. ``tests/test_perf_e2e_bench_invocability_r116.py`` 接进 pytest
-       （pytest 在 ``ci_gate.py`` 里跑、``ci_gate.py`` 在 ``test.yml``
-       里跑），CI 会硬卡 5 道 benchmark 必须全部 produce real samples，
-       任何一道再退化成 ``error`` 字段都会立刻 fail PR。
-
-    为什么不直接把 ``perf_gate.py`` 接进 CI（数字回归门）：跨硬件比较
-    没意义——baseline 在 maintainer 本地 Mac 测得，CI 是 Linux
-    ubuntu-latest 不同 CPU，30% 阈值在不同代号 runner 上会产生大量假
-    阳。``perf_gate.py`` 留作本地 / 发版前 maintainer 手动 review 用，
-    CI 只防最致命的 silent-break。
-    """
+    """每次起一个全新 Python 解释器，``import ai_intervention_agent.web_ui`` 计时。"""
     samples: list[float] = []
     for _ in range(iterations):
         proc = subprocess.run(
@@ -204,24 +171,9 @@ def bench_import_web_ui(iterations: int) -> list[float]:
     return samples
 
 
-# ---------------------------------------------------------------------------
-# 2. spawn_to_listen — full Web UI subprocess cold start
-# ---------------------------------------------------------------------------
-
-
 def bench_spawn_to_listen(iterations: int) -> list[float]:
     """``subprocess.Popen([python, -m ai_intervention_agent.web_ui, ...])``
-    到 socket 可连接的 wall time。
-
-    **R116** 修：旧实现走 ``["web_ui.py", ...]`` + ``cwd=REPO_ROOT``，
-    R76 之后 ``web_ui.py`` 不在 REPO_ROOT 了，子进程立即 ``rc=2`` 退出
-    （``can't open file 'web_ui.py'``），原 wrapper 把这条错误转成
-    ``"Web UI subprocess exited before listening; rc=2"`` ——长得像"web
-    服务器自己崩了"，看不出来真因，于是 silent 滑过。换成
-    ``-m ai_intervention_agent.web_ui`` 才能复用 ``web_ui.py`` 顶层的
-    ``if __name__ == "__main__":`` 入口（已支持 ``--prompt`` /
-    ``--port`` 等参数）。
-    """
+    到 socket 可连接的 wall time。"""
     samples: list[float] = []
     for _ in range(iterations):
         port = _free_port()
@@ -248,7 +200,7 @@ def bench_spawn_to_listen(iterations: int) -> list[float]:
         )
         try:
             elapsed_ms: float | None = None
-            deadline = t0 + 30.0  # 30s 超时上限
+            deadline = t0 + 30.0
             while time.monotonic() < deadline:
                 try:
                     with socket.create_connection(("127.0.0.1", port), timeout=0.05):
@@ -275,11 +227,6 @@ def bench_spawn_to_listen(iterations: int) -> list[float]:
                 except subprocess.TimeoutExpired:
                     pass
     return samples
-
-
-# ---------------------------------------------------------------------------
-# 2a-c. segmented WebFeedbackUI cold path — import / construct / route setup
-# ---------------------------------------------------------------------------
 
 
 def bench_web_ui_construct(iterations: int) -> list[float]:
@@ -420,11 +367,6 @@ raise SystemExit("socket did not listen within 30s")
     return samples
 
 
-# ---------------------------------------------------------------------------
-# 3. html_render — in-process template render wall time
-# ---------------------------------------------------------------------------
-
-
 def bench_html_render(iterations: int) -> list[float]:
     """In-process 调用 ``_get_template_context`` + ``render_template`` 一次。"""
     sys.path.insert(0, str(REPO_ROOT))
@@ -436,9 +378,6 @@ def bench_html_render(iterations: int) -> list[float]:
         with ui.app.test_request_context("/"):
             from flask import render_template
 
-            # 预热一次，让 R20.12-B 的 ``_read_inline_locale_json`` lru_cache /
-            # Jinja 模板编译缓存都进入稳态；不预热的话 max 会比 median 高 80×
-            # （第一次 ~6 ms vs 稳态 0.07 ms），p90 也会被这条 outlier 拉偏。
             warmup_ctx = ui._get_template_context()
             _warmup_html = render_template("web_ui.html", **warmup_ctx)
             if not _warmup_html or "<!doctype html>" not in _warmup_html.lower():
@@ -465,20 +404,8 @@ def bench_html_render(iterations: int) -> list[float]:
             pass
 
 
-# ---------------------------------------------------------------------------
-# 4 & 5. api_*_round_trip — full HTTP round-trip via Web UI subprocess
-# ---------------------------------------------------------------------------
-
-
 def _start_web_ui_subprocess(port: int) -> subprocess.Popen[bytes]:
-    """启动 Web UI 子进程，等到 socket 可连接才返回。
-
-    **R116** 修：见 ``bench_spawn_to_listen`` 的 docstring；本函数与
-    ``bench_spawn_to_listen`` 的 subprocess 启动方式完全镜像（``-m
-    ai_intervention_agent.web_ui``），不能各写各的——``api_round_trip``
-    跟 ``spawn_to_listen`` 失败方式完全一致：``rc=2`` "Web UI subprocess
-    exited before listening"，原因都是找不到 ``web_ui.py``。
-    """
+    """启动 Web UI 子进程，等到 socket 可连接才返回。"""
     env = {
         **os.environ,
         "AI_INTERVENTION_AGENT_NO_BROWSER": "1",
@@ -560,11 +487,7 @@ def _http_get_keepalive(
 
 
 def bench_api_round_trip(endpoint: str, iterations: int) -> list[float]:
-    """启动一次 Web UI 子进程，对同一端点跑 ``iterations`` 次 round-trip。
-
-    一次启动多次打 — round-trip 测的是「Flask 路由分发 + 响应序列化 +
-    HTTP/1.1 keep-alive」，而不是「Web UI 子进程冷启动」（那是 #2）。
-    """
+    """启动一次 Web UI 子进程，对同一端点跑 ``iterations`` 次 round-trip。"""
     port = _free_port()
     proc = _start_web_ui_subprocess(port)
     try:
@@ -580,7 +503,6 @@ def bench_api_round_trip(endpoint: str, iterations: int) -> list[float]:
             path += f"?{parsed.query}"
         conn = http.client.HTTPConnection(host, http_port, timeout=3.0)
         try:
-            # 预热一次：第一个 request 会触发 lazy-load（R20.10 设计），不计时
             try:
                 _http_get_keepalive(conn, path)
             except Exception:
@@ -590,12 +512,6 @@ def bench_api_round_trip(endpoint: str, iterations: int) -> list[float]:
             samples: list[float] = []
             needs_rate_limit_spacing = iterations > QUICK_API_RATE_LIMIT_SAFE_ITERATIONS
             for i in range(iterations):
-                # web_ui.py 配置 ``default_limits=['60 per minute', '10 per second']``，
-                # 默认 10-iteration run 加 warmup 会超过 10 req/s，因此每次请求
-                # 间 sleep 110 ms 留 1 ms 余量保证稳定 < 10 req/s。quick run 每
-                # 个 API benchmark 只有 5 个采样 + 1 次 warmup，低于每秒限额；
-                # 跳过 sleep 能让 release-review quick bench 少等 ~0.88s，且不
-                # 改变被测 round-trip latency。
                 if i > 0 and needs_rate_limit_spacing:
                     time.sleep(0.11)
                 t = time.perf_counter()
@@ -611,11 +527,6 @@ def bench_api_round_trip(endpoint: str, iterations: int) -> list[float]:
             conn.close()
     finally:
         _cleanup_subprocess(proc)
-
-
-# ---------------------------------------------------------------------------
-# CLI entry
-# ---------------------------------------------------------------------------
 
 
 BENCHMARKS: dict[str, Callable[[int], list[float]]] = {

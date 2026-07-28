@@ -144,19 +144,11 @@ class TestRunner:
         predefined_options: list[str] | None = None,
         expected_prompt: str = "请立即调用 interactive_feedback 工具",
     ) -> bool:
-        """
-        运行单个测试
-
-        验证：
-        1. 任务创建成功
-        2. 等待自动提交完成
-        3. 反馈内容包含预期的 resubmit_prompt
-        """
+        """运行单个测试"""
         self.log(f"\n{'=' * 60}")
         self.log(f"测试: {name}")
         self.log(f"{'=' * 60}")
 
-        # 1. 创建任务
         task_id = self.client.create_task(message, predefined_options)
         if not task_id:
             self.log("FAIL: 创建任务失败")
@@ -166,7 +158,6 @@ class TestRunner:
         self.log(f"任务已创建: {task_id}")
         self.log(f"等待自动提交 (超时: {self.client.timeout}秒)...")
 
-        # 2. 等待完成
         result = self.client.wait_for_completion(task_id)
         self.client.cleanup(task_id)
 
@@ -175,7 +166,6 @@ class TestRunner:
             self.failed += 1
             return False
 
-        # 3. 验证反馈内容
         user_input = result.get("user_input", "")
         self.log(f"收到反馈: {user_input}")
 
@@ -198,36 +188,30 @@ class TestRunner:
         self.log(f"服务器: {self.client.base_url}")
         self.log(f"超时: {self.client.timeout}秒")
 
-        # 检查服务器
         if not self.client.check_server():
             self.log("\nFAIL: 服务器不可用")
             return 1
 
-        # 获取配置
         config = self.client.get_config()
         auto_timeout = config.get("auto_resubmit_timeout", "未知")
         self.log(f"auto_resubmit_timeout: {auto_timeout}秒")
 
-        # 测试 1: 基础反馈
         self.run_test(
             name="基础反馈测试",
             message="# 测试任务 1\n\n等待自动提交...",
         )
 
-        # 测试 2: 带选项
         self.run_test(
             name="预定义选项测试",
             message="# 测试任务 2\n\n选项测试...",
             predefined_options=["选项 A", "选项 B", "选项 C"],
         )
 
-        # 测试 3: 长文本
         self.run_test(
             name="Markdown 渲染测试",
             message="# 测试任务 3\n\n## 代码块\n```python\nprint('hello')\n```\n\n## 表格\n| A | B |\n|---|---|\n| 1 | 2 |",
         )
 
-        # 总结
         self.log(f"\n{'=' * 60}")
         self.log("测试总结")
         self.log(f"{'=' * 60}")
@@ -258,7 +242,6 @@ def self_check_image_return_format() -> bool:
 
         from ai_intervention_agent.server import parse_structured_response
 
-        # 构造一个最小图片样例：base64("f") == "Zg=="
         response = {
             "user_input": "带图片的反馈",
             "selected_options": [],

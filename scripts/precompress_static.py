@@ -77,9 +77,6 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-# R21.4：brotli 是 optional 依赖（通过 flask-compress 间接安装）；import 失败
-# 时降级为 gzip-only。这样老环境 / 没装 brotli 的 fork 不会因为 R21.4 直接
-# 失败，只是少一个 .br 副本，运行时回退 .gz 仍然 work。
 try:
     import brotli as _brotli_mod
 
@@ -97,19 +94,13 @@ DEFAULT_TARGET_DIRS = (
     REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "lottie",
 )
 
-# R20.14-D：阈值改 500 字节，对齐 flask-compress 的 ``COMPRESS_MIN_SIZE``
-# 默认值。原本设 4 KB 的初衷是「太小时 gzip 头 18 字节 overhead 不划算」，
-# 但 web_ui.py 里 ``_get_minified_file`` 会把 ``foo.js`` 重定向到 ``foo.min.js``，
-# 而 minified 文件经常落在 1-3 KB 区间。如果这层不预压缩，serve_js 拿到
-# minified path 时找不到 .gz 副本，就只能 fallback 到 flask-compress 的
-# 运行时压缩 —— 失去 R20.14-D 的所有 CPU 节省收益。500 字节是 flask-compress
-# 自身的 sweet spot，保持一致避免「flask-compress 想压但我们没预压」的盲区。
+
 MIN_SIZE_BYTES = 500
 
-GZIP_LEVEL = 9  # 离线一次性运行，对压缩速度不敏感，纯求最小体积
-BROTLI_QUALITY = 11  # brotli 的最高质量（0-11）
+GZIP_LEVEL = 9
+BROTLI_QUALITY = 11
 
-# 不应被 gzip 的扩展名 —— 这些已经是压缩格式，再压一次只会变大且浪费 CPU。
+
 SKIP_EXTENSIONS = frozenset(
     {
         ".gz",
@@ -121,7 +112,7 @@ SKIP_EXTENSIONS = frozenset(
         ".webp",
         ".woff",
         ".woff2",
-        ".ttf",  # ttf 实际有些可压缩，但 woff2 已经是 OTF/TTF + Brotli，重复压收益小
+        ".ttf",
         ".ico",
     }
 )
@@ -129,15 +120,11 @@ SKIP_EXTENSIONS = frozenset(
 
 @dataclass
 class Result:
-    """单个文件的处理结果。
-
-    ``encoding`` 字段区分 gzip / br；同一源文件可能产出两条 Result
-    （gzip + br 各一条），方便 ``_format_summary`` 分别统计。
-    """
+    """单个文件的处理结果。"""
 
     source: Path
-    action: str  # 'compressed' / 'skipped_small' / 'skipped_ext' / 'skipped_fresh' / 'skipped_no_gain' / 'cleaned' / 'needs_compress' / 'skipped_no_brotli'
-    encoding: str = "gzip"  # 'gzip' / 'br'
+    action: str
+    encoding: str = "gzip"
     original_size: int = 0
     compressed_size: int = 0
 
@@ -159,10 +146,7 @@ def _walk_targets(directories: list[Path]) -> Iterator[Path]:
 
 
 def _should_compress(path: Path) -> tuple[bool, str]:
-    """判断单个文件是否值得压缩。
-
-    返回 (should_compress, reason)；reason 用于 ``--verbose`` 输出。
-    """
+    """判断单个文件是否值得压缩。"""
     if path.suffix.lower() in SKIP_EXTENSIONS:
         return False, "skipped_ext"
     try:
@@ -203,11 +187,7 @@ def _is_fresh(source: Path, compressed_path: Path) -> bool:
 
 
 def _atomic_write(target: Path, content: bytes, *, suffix: str) -> None:
-    """用 ``tempfile + os.replace`` 原子写入压缩文件。
-
-    ``suffix`` 是临时文件的扩展名，用于让运维一眼看出是 R21.4 中间态
-    （``.tmp.precompress.<suffix>``）；和 ``send_from_directory`` 半成品撞名。
-    """
+    """用 ``tempfile + os.replace`` 原子写入压缩文件。"""
     tmp_fd, tmp_path = tempfile.mkstemp(
         prefix=".tmp.precompress.", suffix=suffix, dir=str(target.parent)
     )
@@ -224,12 +204,7 @@ def _atomic_write(target: Path, content: bytes, *, suffix: str) -> None:
 
 
 def compress_file(source: Path, *, level: int = GZIP_LEVEL) -> Result:
-    """压缩单个文件为 gzip，返回 ``Result``。
-
-    保留 R20.14-D 时代的对外签名（``compress_file(source)``）—— 现有
-    测试 / 任何下游脚本依赖此名字；R21.4 新增的 brotli 压缩走
-    :func:`compress_file_br`。
-    """
+    """压缩单个文件为 gzip，返回 ``Result``。"""
     should, reason = _should_compress(source)
     if not should:
         return Result(source=source, action=reason, encoding="gzip")
@@ -246,11 +221,7 @@ def compress_file(source: Path, *, level: int = GZIP_LEVEL) -> Result:
 
     raw = source.read_bytes()
     compressed = gzip.compress(raw, compresslevel=level, mtime=0)
-    # ``mtime=0`` 让输出稳定可复现（reproducible build），同源文件多次跑得到
-    # byte-identical 输出，方便 CI 校验「是否需要重新压缩」。
 
-    # 反检：如果 gzip 后比原文件还大（极小文件 + entropy 已高），跳过写入，
-    # 让 Flask 回退到 uncompressed。这种情况下保留 ``.gz`` 反而误导。
     if len(compressed) >= len(raw):
         return Result(
             source=source,
@@ -272,11 +243,7 @@ def compress_file(source: Path, *, level: int = GZIP_LEVEL) -> Result:
 
 
 def compress_file_br(source: Path, *, quality: int = BROTLI_QUALITY) -> Result:
-    """压缩单个文件为 Brotli，返回 ``Result``。
-
-    R21.4 引入的兄弟函数：和 :func:`compress_file` 几乎对偶，差异仅在
-    `.br` 后缀 + brotli 算法 + ``BROTLI_AVAILABLE`` 守护。
-    """
+    """压缩单个文件为 Brotli，返回 ``Result``。"""
     if not BROTLI_AVAILABLE:
         return Result(source=source, action="skipped_no_brotli", encoding="br")
 
@@ -295,9 +262,8 @@ def compress_file_br(source: Path, *, quality: int = BROTLI_QUALITY) -> Result:
         )
 
     raw = source.read_bytes()
-    # ``brotli.compress(data, quality=11)`` —— 11 是最高质量；离线一次性
-    # 运行的成本可接受（1 MB 文件 ~60 ms）。
-    assert _brotli_mod is not None  # narrowing for ty
+
+    assert _brotli_mod is not None
     compressed = _brotli_mod.compress(raw, quality=quality)
 
     if len(compressed) >= len(raw):
@@ -346,11 +312,7 @@ def run(
     verbose: bool = False,
     enable_brotli: bool = True,
 ) -> dict[str, list[Result]]:
-    """主入口。返回 ``{"results": [...]}``。
-
-    R21.4 起每个源文件最多产出两条 Result（gzip + br）。``enable_brotli``
-    设为 ``False`` 时回退到 R20.14-D 行为（仅 gzip）。
-    """
+    """主入口。返回 ``{"results": [...]}``。"""
     targets = list(directories) if directories else list(DEFAULT_TARGET_DIRS)
     if clean:
         all_results: list[Result] = []

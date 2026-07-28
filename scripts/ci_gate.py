@@ -32,14 +32,7 @@ def _run(
     label: str | None = None,
     env: dict[str, str] | None = None,
 ) -> None:
-    """跑命令；非 0 退出码 fail-fast 抛出 ``CalledProcessError``。
-
-    可选 ``label``：在 ``subprocess.run(check=True)`` 抛错前先打印
-    ``[ci_gate] FAIL: <label>...`` 到 stderr，方便快速定位是哪一道
-    门禁失败（避免 traceback 里只看到 ``Command '[...]' returned
-    non-zero exit status N`` 这种通用消息）。``_run_warn`` 已经在
-    warn 级用了同名参数；这里复用以保持上下层调用接口一致。
-    """
+    """跑命令；非 0 退出码 fail-fast 抛出 ``CalledProcessError``。"""
     completed = subprocess.run(cmd, cwd=_repo_root(), check=False, env=env)
     if completed.returncode != 0:
         if label:
@@ -49,19 +42,12 @@ def _run(
                 "门禁已 fail-closed；请按上方提示修复后再次提交。",
                 file=sys.stderr,
             )
-        # 与之前 ``check=True`` 的语义对齐：抛 ``CalledProcessError`` 由
-        # 上层 ``_main_impl`` 捕获并以非 0 退出，保留与既有调用方的兼容
+
         raise subprocess.CalledProcessError(completed.returncode, cmd)
 
 
 def _run_warn(cmd: list[str], *, label: str) -> None:
-    """跑命令；非 0 退出码不阻断，只打印 [ci_gate] WARN 提示到 stderr。
-
-    用于"漂移检测但不阻塞主名项"的 warn 级门禁——在维护者尚未把
-    drift 修复纳入提交流程时，给一条人类可读的提醒，而不是直接 fail
-    一个绿色 CI。当本地约定开始严格执行后，把对应调用从 `_run_warn`
-    切到 `_run` 即可升级为硬门禁。
-    """
+    """跑命令；非 0 退出码不阻断，只打印 [ci_gate] WARN 提示到 stderr。"""
     completed = subprocess.run(cmd, cwd=_repo_root(), check=False)
     if completed.returncode != 0:
         print(
@@ -72,14 +58,7 @@ def _run_warn(cmd: list[str], *, label: str) -> None:
 
 
 def _resolve_node_redteam_cmd(node_version: str) -> list[str]:
-    """根据 ``node`` / ``fnm`` 是否可用，返回 i18n red-team 应当执行的命令。
-
-    返回空列表表示"两者都不可用"——上层 caller 必须按 ``AIIA_SKIP_NODE_REDTEAM``
-    环境变量决定 fail-closed 还是 graceful skip（见 ``_main_impl``）。
-
-    单独抽出函数是为了让 ``tests/test_ci_gate_node_redteam.py`` 直接调用真实
-    决策代码，而不是复刻一份测试用的二份逻辑（容易漂移）。
-    """
+    """根据 ``node`` / ``fnm`` 是否可用，返回 i18n red-team 应当执行的命令。"""
     if _has_cmd("node"):
         return ["node", "scripts/red_team_i18n_runtime.mjs", "--quiet"]
     if _has_cmd("fnm"):
@@ -145,7 +124,6 @@ def _main_impl(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    # 依赖同步
     sync_cmd = ["uv", "sync", "--all-groups"]
     if args.ci:
         sync_cmd.append("--frozen")
@@ -160,78 +138,29 @@ def _main_impl(argv: list[str]) -> int:
     _run(["uv", "run", "ruff", "check", "."])
     _run(["uv", "run", "ty", "check", "."])
 
-    # i18n 静态门禁（Web UI + VSCode webview + VSCode extension host）：
-    #   1. locale JSON key/type/占位符跨 locale 一致
-    #   2. HTML 模板零硬编码 CJK
-    #   3. JS 源文件零硬编码 CJK 字符串字面量（--scope all 覆盖 static/js 和
-    #      packages/vscode，P8 之后两侧都必须干净）
-    #   4. TS 源文件零硬编码 CJK 字符串字面量（packages/vscode/*.ts；
-    #      L2·G6 之后 extension host 全部走 vscode.l10n.t）
-    #   5. locale 重复值检测（warn 级；I18n 维护性信号，不阻断 CI）
-    #   6. pseudo locale 与 en.json 同步（P9·L2·G4：QA 可切到 pseudo 看
-    #      硬编码泄漏 / 布局溢出 / Unicode 断裂）
     _run(["uv", "run", "python", "scripts/check_i18n_locale_parity.py"])
-    # check_locales.py 与 check_i18n_locale_parity.py 互补，独占两块覆盖：
-    #   - VS Code manifest 翻译：``package.nls.json`` / ``package.nls.zh-CN.json``
-    #     （parity 脚本只看 ``locales/*.json``，不看 manifest 翻译；遗漏会让
-    #     扩展上架时某种语言下 commands/views 标题缺失）
+
     #   - 跨端 ``aiia.*`` namespace 一致：Web UI ↔ VSCode 两侧的 ``aiia.*``
-    #     keys 必须一字不差（为未来抽取共享 locale 模块铺路）
+
     # 缺这一道时，单端补 ``aiia.*`` key、忘了同步另一端，CI 会沉默放过，
-    # 直到运行时 i18n 回退到原始 key 才暴露。
+
     _run(["uv", "run", "python", "scripts/check_locales.py"])
     _run(["uv", "run", "python", "scripts/check_i18n_html_coverage.py"])
     _run(["uv", "run", "python", "scripts/check_i18n_js_no_cjk.py", "--scope", "all"])
     _run(["uv", "run", "python", "scripts/check_i18n_ts_no_cjk.py"])
     _run(["uv", "run", "python", "scripts/check_i18n_duplicate_values.py"])
     _run(["uv", "run", "python", "scripts/gen_pseudo_locale.py", "--check"])
-    # Warn-level：orphan key 扫描 — 默认不 block 流水线（见脚本 docstring）。
+
     _run(["uv", "run", "python", "scripts/check_i18n_orphan_keys.py"])
-    # P9·L8：i18n-keys.d.ts 与 packages/vscode/locales/en.json 同步
-    #   （TypeScript `hostT(key: I18nKey)` 依赖该 .d.ts 捕获拼写错误）。
+
     _run(["uv", "run", "python", "scripts/gen_i18n_types.py", "--check"])
-    # P9·L9·G1：t(key, { params }) 与 locale 值占位符签名一致。strict
-    #   模式直接阻断 —— pytest 侧已经对 scan() 做硬断言，这里再打一道
-    #   人类可读报告方便 PR 作者本地预览。
+
     _run(["uv", "run", "python", "scripts/check_i18n_param_signatures.py", "--strict"])
-    # P10·B3·H13：locale JSON 形状校验（tree-of-objects + string leaves）。
-    #   比 Batch-2 H11 的 runtime warn-once 更早，lint 时就挡回 PR。
+
     _run(["uv", "run", "python", "scripts/check_i18n_locale_shape.py"])
 
-    # R103：CSS 品牌色硬编码漂移检测（R66/R88/R99 系列防线兜底接入 CI）。
-    #
-    # 历史漂移：脚本最初只挂在 ``.pre-commit-config.yaml`` 的 local hook
-    # 上（``check_brand_color_consistency.py`` docstring 第 49–56 行明文说
-    # "通过 .pre-commit-config.yaml 的 local repo hook 接入"）。但是：
-    #   1. ``test.yml`` / ``release.yml`` CI workflow 都只跑 ``ci_gate.py
-    #      --ci``，没有 ``pre-commit run --all-files`` 步骤；
-    #   2. 仓库不强制开发者执行 ``pre-commit install``（hook 是开发者机器
-    #      配置，不在版本控制范围内）；
-    #   3. pre-commit hook 是 staged-only + ``files: ^src/.../static/css/.*
-    #      \.css$``，不动 CSS 的 PR 永远不触发，但 CI 也不兜底。
-    # 三个失败模式合起来：开发者本地不装 pre-commit 时，新增
-    # ``rgba(0, 122, 255, X)`` 或 ``#007aff`` 全部能 silently merge——R66
-    # baseline 34 / R99 hex baseline 7 的锁定**完全失效**。R88 修复了 hook
-    # files glob 与脚本 ``DEFAULT_ROOT`` 的同步漂移，但没修「hook 没接入 CI
-    # 执行路径」这一层。R103 收尾：把脚本接入 ci_gate，确保任何 PR（无论
-    # 开发者本地是否装 pre-commit）push 后都会经过这道防线。
-    #
-    # ``--quiet`` 让脚本通过 baseline 时不输出（与 pre-commit hook 一致）；
-    # 失败时仍会打印超 baseline 的具体行号 / 文件位置 / 修复指引。
     _run(["uv", "run", "python", "scripts/check_brand_color_consistency.py", "--quiet"])
 
-    # docs/api(.zh-CN)/* 漂移检测 — fail-closed 硬门禁（自 v1.5.23 起）。
-    # `generate_docs.py --check` 已经支持双语言、幂等、报告漂移文件路径。
-    # 一旦改动 Python 源码的 docstring / 签名而忘了重生 docs，CI 会
-    # 直接 fail，且错误消息里给出可立即复制的修复命令。修复方法：
-    #   `uv run python scripts/generate_docs.py --lang en`
-    #   `uv run python scripts/generate_docs.py --lang zh-CN`
-    # 升级历史：v1.5.x 早期是 ``_run_warn`` warn 级（不阻断）；事实证明
-    # warn 容易被忽视——v1.5.23 圈子审计发现 docs/api/task_queue.md
-    # 与中文镜像的 ``add_task`` 签名 drift 了一个 round（DRY refactor 之后
-    # 只 regen 了中文，英文被悄悄落下，warn-level CI 跑了几十次也没人
-    # 改）。升级为 ``_run``（fail-closed）后，这种 silent drift 不可能
-    # 再合入 main。
     _run(
         ["uv", "run", "python", "scripts/generate_docs.py", "--lang", "en", "--check"],
         label="docs/api/ (English)",
@@ -249,23 +178,9 @@ def _main_impl(argv: list[str]) -> int:
         label="docs/api.zh-CN/ (Chinese)",
     )
 
-    # 版本一致性 fail-closed 门禁：``bump_version.py --check`` 验证
-    # ``pyproject.toml``、``uv.lock``、根/插件 ``package.json`` /
-    # ``package-lock.json``、``.github/ISSUE_TEMPLATE/bug_report.yml``、
-    # ``CITATION.cff`` 全部对齐。历史上 ``test.yml`` 独占这一步，本地
-    # ``make ci`` / ``make pre-commit`` 跑不到，只有 push 之后 CI 才报
-    # 红——一次往返浪费 5–10 分钟。挪进 ci_gate 后本地预检和远端 CI 的
-    # 信号面完全一致（local-CI parity）。GitHub workflow 可以保留前置
-    # fast-fail step，然后给 ci_gate 传 ``--skip-version-check`` 避免同一
-    # job 里重复执行；本地默认仍保留该 gate。
     if not args.skip_version_check:
         _run(["uv", "run", "python", "scripts/bump_version.py", "--check"])
 
-    # 先验证/生成 .min 与预压缩副本，再跑 pytest。
-    # CI 模式必须保持 check-only，不写 .min/.gz/.br；本地模式仍自动生成，
-    # 给开发者一键修复体验。pytest 后续会校验预压缩 .gz/.br 解压后与原文
-    # byte-identical；如果只更新 .min 而不重生预压缩副本，CI 会在 static
-    # compression 集成测试中选到 stale .gz 并失败。
     minify_cmd = ["uv", "run", "python", "scripts/minify_assets.py"]
     precompress_cmd = ["uv", "run", "python", "scripts/precompress_static.py"]
     if args.ci:
@@ -274,28 +189,6 @@ def _main_impl(argv: list[str]) -> int:
     _run(minify_cmd)
     _run(precompress_cmd)
 
-    # 测试集中包含大量“故意喂坏配置”的用例；这些用例会产生日志级
-    # WARNING/ERROR，但断言本身期望通过。门禁输出保持干净，只让真实失败
-    # 通过 pytest 退出码和失败摘要体现。
-    #
-    # R305: 默认开 pytest-xdist 4 worker + ``--dist=loadfile`` 让本地
-    # ``make ci`` / 远端 CI 测试时长从 ~191s 压到 ~50s (3.8x 加速, 实测
-    # 6464 测试 + 1 skip + 878 subtests 全过)。``loadfile`` (同一文件保持
-    # 同一 worker) 而不是 ``worksteal`` 的原因是后者把同文件的测试拆到不
-    # 同 worker, 触发 R72-A 这类共享 root logger 状态的测试副作用污染 —
-    # loadfile 既能并行又能保留 file-local 测试隔离。
-    #
-    # 选 4 worker 而非 ``-n auto`` 的原因: CI runner 通常 2-4 核, ``auto``
-    # 会读 ``CPU_count()``, 在 GitHub Actions free tier (2-core) 上变成
-    # ``-n 2`` 反而比 ``-n 4`` 还要慢 (xdist 调度 overhead > CPU 上限)。
-    # 实测开发者笔记本 ``-n 4`` 是 sweet spot, 上限 ~4x 加速; ``-n 8`` 在
-    # 14 寸 M-series 上反而因 SSE bus 测试 GIL 竞争退化到 ~52s。
-    #
-    # ``-p no:cacheprovider`` 在测试中默认不开 (pytest cache 在本地是有
-    # 用的); CI 在 ``test.yml`` 显式追加才禁缓存以确保 PR 比对干净。
-    #
-    # 锁: ``tests/test_feat_ci_gate_pytest_xdist_r305.py`` 守护这两个参数
-    # 一字不差出现在 ``pytest_cmd`` 中, 防 cycle-31+ 误删 / 改成低效配置。
     pytest_cmd = [
         "uv",
         "run",
@@ -308,8 +201,6 @@ def _main_impl(argv: list[str]) -> int:
         "--dist=loadfile",
     ]
     if args.with_coverage:
-        # R76 src/ layout：覆盖率只统计源码包 ``src/ai_intervention_agent``；
-        # ``scripts/`` 与 ``tests/`` 已在 ``[tool.coverage.run].omit`` 屏蔽。
         pytest_cmd += [
             "--cov=src/ai_intervention_agent",
             "--cov-report=xml",
@@ -321,17 +212,10 @@ def _main_impl(argv: list[str]) -> int:
         pytest_env["AIIA_CI_GATE_WITH_COVERAGE"] = "1"
     _run(pytest_cmd, env=pytest_env)
 
-    # P10·B1.5·H7：两份 i18n.js 的跨特性 red-team smoke。pytest 已覆盖
-    # 单特性断言，这里补一遍完整集成面（ICU/apostrophe/嵌套 # / LRU /
-    # miss-key / prototype-pollution / byte-parity），catch 两半漂移。
-    # Node 运行环境沿用 --with-vscode 的解析规则。
     node_cmd = _resolve_node_redteam_cmd(str(args.node_version))
     if node_cmd:
         _run(node_cmd)
     elif os.environ.get("AIIA_SKIP_NODE_REDTEAM") == "1":
-        # 显式 opt-out 路径：本地开发者没装 Node 时仍想跑 ci_gate，可以
-        # 设环境变量绕过。CI 不会设置此变量（GitHub Actions 镜像自带
-        # Node），所以 CI 上的覆盖率不会被弱化。
         print(
             "[ci_gate] skip: AIIA_SKIP_NODE_REDTEAM=1; "
             "red_team_i18n_runtime.mjs smoke check intentionally bypassed. "
@@ -339,12 +223,6 @@ def _main_impl(argv: list[str]) -> int:
             file=sys.stderr,
         )
     else:
-        # fail-closed：与 round-6 docs/api drift 升级同 spirit。silent skip
-        # 一个 smoke check 让 CI 看起来绿但实际没跑过，比直接 fail 更糟糕。
-        # 历史教训：v1.5.x 早期 docs-check 用 warn 级，warn 输出谁都不看，
-        # 跑了几十次才发现 task_queue.md 漂移了一整轮。i18n red-team 的失败
-        # 模式更严重（ICU 解析、apostrophe 转义、LRU 等多个 batch 的回归
-        # smoke），所以这里直接 fail-closed；本地开发者真没 Node 时
         # ``AIIA_SKIP_NODE_REDTEAM=1 make ci`` 显式 opt-out。
         raise RuntimeError(
             "未找到 node 或 fnm；i18n red-team smoke (scripts/red_team_i18n_runtime.mjs) "
@@ -354,10 +232,8 @@ def _main_impl(argv: list[str]) -> int:
         )
 
     if args.with_vscode:
-        # 运行前先清理一次，避免误用上次残留产物
         _cleanup_vscode_vsix()
 
-        # 优先使用系统 npm；若不可用且存在 fnm，则尝试 fnm exec
         cmd: list[str]
         if _has_cmd("npm"):
             cmd = ["npm", "run", "vscode:check"]
@@ -377,7 +253,6 @@ def _main_impl(argv: list[str]) -> int:
                 "未找到 npm（也未找到 fnm）。请先安装 Node.js/npm，或使用 fnm 管理 Node。"
             )
 
-        # Linux/headless 下若无 DISPLAY，尽量自动使用 xvfb-run
         if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
             if _has_cmd("xvfb-run"):
                 cmd = ["xvfb-run", "-a", *cmd]
@@ -389,7 +264,6 @@ def _main_impl(argv: list[str]) -> int:
         try:
             _run(cmd)
         finally:
-            # 无论成功失败都尽量清理，避免污染后续步骤/缓存
             _cleanup_vscode_vsix()
 
     return 0

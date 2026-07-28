@@ -46,14 +46,7 @@ def _flatten(obj: dict, prefix: str = "") -> list[str]:
 
 
 def render_dts(keys: list[str]) -> str:
-    """Produce the final ``.d.ts`` body.
-
-    - Keys are sorted deterministically so git diffs stay minimal.
-    - Each key is on its own line so merges stay readable.
-    - We export BOTH the union type (``I18nKey``) and the full runtime
-      array (``I18N_KEYS``) so callers that need the raw list for a
-      dropdown UI don't have to write their own.
-    """
+    """Produce the final ``.d.ts`` body."""
     keys_sorted = sorted(set(keys))
     union_lines = "\n".join(f"  | {json.dumps(k)}" for k in keys_sorted)
     array_lines = ",\n".join(f"  {json.dumps(k)}" for k in keys_sorted)

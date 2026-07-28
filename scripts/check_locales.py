@@ -95,17 +95,7 @@ def check_nls_pair(dir_path: Path) -> list[str]:
 
 
 def check_cross_platform_aiia_parity(web_dir: Path, vscode_dir: Path) -> list[str]:
-    """跨端 ``aiia.*`` namespace 必须在 Web UI 和 VSCode 插件之间完全对齐。
-
-    命名规则（内联契约）：
-      - ``aiia.*`` 是「跨端共享」命名空间，所有 key 必须在 Web UI
-        (``static/locales/*.json``) 与 VSCode 插件 (``packages/vscode/locales/*.json``)
-        的 4 个 locale 文件里一字不差，便于未来抽取共享 locale 模块时零改引用。
-      - 其他顶层 namespace（``page``/``settings``/``ui``/``status``/``statusBar`` 等）
-        两端各自独立，不受本检查约束——两端 UI 结构不同，没有对齐价值。
-      - ``aiia`` 完全缺席时（两端都还没引入共享 key），本检查默认通过；
-        它只在至少一端开始引入 ``aiia.*`` key 后才起作用（默认安全 + 渐进约束）。
-    """
+    """跨端 ``aiia.*`` namespace 必须在 Web UI 和 VSCode 插件之间完全对齐。"""
     errors: list[str] = []
     for locale in ("en.json", "zh-CN.json"):
         web_file = web_dir / locale
@@ -143,18 +133,8 @@ def main() -> int:
     vscode_locales_dir = root / "packages" / "vscode" / "locales"
     vscode_dir = root / "packages" / "vscode"
 
-    # R102：layer-0 path-drift sanity check —— 4 个核心 locale 资源必须
-    # 真实存在，缺失即 fail-loud (exit 2) 而非 silent skip 返回 0。
-    # ``check_locales.py`` 之前用嵌套 ``if X.exists():`` 守护每个分支：
-    #   - locale_dirs / vscode_dir / cross-platform 任一漂移 → 对应分支
-    #     silent 0 coverage；
-    #   - ``check_nls_pair`` 内部 ``if not en or not zh: return []`` 也是
-    #     silent skip（vscode_dir 存在但 ``package.nls.json`` 缺失时）；
     #   - ``check_cross_platform_aiia_parity`` 内部同款 silent ``continue``。
-    # R76 重布局把 ``static/`` 挪进 ``src/`` 包内时让 R66 brand-color
-    # guard silently broken（R88 修），R100/R101 把同款修复 port 到 HTML
-    # coverage 和 ts/js no-cjk 扫描器，R102 收尾把它从最后一个 i18n 一致
-    # 性扫描器里也清出去。
+
     required_paths = [
         (web_locales_dir / "en.json", "Web UI 源 locale"),
         (web_locales_dir / "zh-CN.json", "Web UI zh-CN locale"),

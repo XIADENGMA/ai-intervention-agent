@@ -26,16 +26,12 @@ import ast
 from pathlib import Path
 from typing import Any
 
-# 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
 
-# R76 src/ layout 改造后，源码顶层模块由 ``./*.py`` 迁移到
-# ``src/ai_intervention_agent/*.py``。所有"模块发现 / docstring 解析 /
-# 不变量校验"路径都以 ``PKG_ROOT`` 为根。文档输出目录依旧是
-# ``docs/api`` / ``docs/api.zh-CN``，向后兼容旧链接。
+
 PKG_ROOT = PROJECT_ROOT / "src" / "ai_intervention_agent"
 
-# 需要文档化的模块
+
 MODULES_TO_DOCUMENT = [
     "config_manager.py",
     "config_utils.py",
@@ -72,17 +68,7 @@ MODULES_TO_DOCUMENT = [
     "enhanced_logging.py",
 ]
 
-# 显式标记"项目根有 *.py 但故意不出现在 docs/api 里"的模块。
-# 没有正当理由的话，模块应该挪去 ``MODULES_TO_DOCUMENT``——本集合
-# 配合 ``_assert_top_level_modules_classified`` 让未来新增模块时
-# 必须做明确决策，而不是悄悄遗漏一个核心模块。
-#
-# 当前 9 个条目是 v1.5.x 的"历史欠账"——技术上**应该**全部文档化
-# （它们都有完整的 module-level docstring + ``__all__``），但批量
-# 补 9 份英文 / 中文 docs 是单独的工程工作（每模块都要审 docstring
-# 质量、生成签名、刷 docs/README 的 Quick navigation 分组、维护
-# 18 份 .md）。先用 IGNORED_MODULES 把现状锁定，未来一个一个
-# graduate 到 MODULES_TO_DOCUMENT。
+
 IGNORED_MODULES: frozenset[str] = frozenset()
 """项目根 ``*.py`` 中"故意不渲染 docs"的清单。
 
@@ -99,36 +85,14 @@ v1.5.x round-8 完成 7 个 docs-debt 模块的 graduation 之后，集合
 
 
 def _enumerate_top_level_python_modules() -> set[str]:
-    """``src/ai_intervention_agent/*.py`` 下所有顶层模块文件名（不含子包、不含 ``__init__.py``）。
-
-    分类不变量的 LHS。集合语义；顺序不重要。
-    R76 src/ layout 改造之前的 LHS 是 ``PROJECT_ROOT.glob('*.py')``——
-    迁移之后所有源码移入 ``PKG_ROOT``，扫描入口同步切换。
-    """
+    """``src/ai_intervention_agent/*.py`` 下所有顶层模块文件名（不含子包、不含 ``__init__.py``）。"""
     return {
         p.name for p in PKG_ROOT.glob("*.py") if p.is_file() and p.name != "__init__.py"
     }
 
 
 def _assert_top_level_modules_classified() -> None:
-    """守住「项目根 ``*.py`` ⊆ ``MODULES_TO_DOCUMENT`` ∪ ``IGNORED_MODULES``」不变量。
-
-    场景
-    ----
-    *  新增模块 ``foo.py`` 但忘了在 ``MODULES_TO_DOCUMENT`` 登记 → 该模块没
-       有 docs，下游用户 grep 不到，CI 沉默。本不变量 fail-closed 提示。
-    *  ``MODULES_TO_DOCUMENT`` / ``IGNORED_MODULES`` 列了一个已删除的模块
-       → "stale entry"。一段时间后会让 reviewer 困惑"为什么这条留着"。
-
-    设计
-    ----
-    *  与 ``_assert_quick_nav_covers_all_modules`` 同形（都是分类完整性
-       不变量），错误消息模板也保持一致：缺谁、误列谁、修复在哪改。
-    *  通过 ``generate_index`` 入口触发——任何一次 ``generate_docs.py``
-       /``--check`` /``minify_assets.py`` 联动都会走这条路径。
-    *  ``IGNORED_MODULES`` 故意做成 ``frozenset``（不可变），避免运行
-       时被某个 import 副作用追加，让 CI 错过签收。
-    """
+    """守住「项目根 ``*.py`` ⊆ ``MODULES_TO_DOCUMENT`` ∪ ``IGNORED_MODULES``」不变量。"""
     declared = set(MODULES_TO_DOCUMENT)
     ignored = set(IGNORED_MODULES)
     classified = declared | ignored
@@ -182,7 +146,6 @@ def get_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
         if arg.annotation:
             arg_str += f": {ast.unparse(arg.annotation)}"
 
-        # 添加默认值
         default_idx = i - defaults_offset
         if default_idx >= 0:
             default = node.args.defaults[default_idx]
@@ -190,7 +153,6 @@ def get_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
 
         args.append(arg_str)
 
-    # 返回类型
     return_type = ""
     if node.returns:
         return_type = f" -> {ast.unparse(node.returns)}"
@@ -251,32 +213,26 @@ def generate_markdown(
     """生成 Markdown 格式文档"""
     lines = []
 
-    # 模块标题
     lines.append(f"# {module_info['name']}")
     lines.append("")
 
     if lang == "en":
-        # 英文文档聚焦签名；完整说明请看中文版本。
         lines.append(
             f"> For the Chinese version with full docstrings, see: "
             f"[`docs/api.zh-CN/{module_info['name']}.md`](../api.zh-CN/{module_info['name']}.md)"
         )
         lines.append("")
     else:
-        # 中文文档保留完整 docstring；签名速查请看英文 signature-only 版本，
-        # 与英文页顶部的 cross-link 保持双语对称（双方都给读者一键跳到对侧）。
         lines.append(
             f"> 英文 signature-only 版本（仅函数 / 类签名速查）："
             f"[`docs/api/{module_info['name']}.md`](../api/{module_info['name']}.md)"
         )
         lines.append("")
 
-    # 模块文档
     if include_docstrings and module_info["docstring"]:
         lines.append(module_info["docstring"])
         lines.append("")
 
-    # 函数
     if module_info["functions"]:
         lines.append("## Functions" if lang == "en" else "## 函数")
         lines.append("")
@@ -288,7 +244,6 @@ def generate_markdown(
                 lines.append(func["docstring"])
                 lines.append("")
 
-    # 类
     if module_info["classes"]:
         lines.append("## Classes" if lang == "en" else "## 类")
         lines.append("")
@@ -304,7 +259,7 @@ def generate_markdown(
                 lines.append("")
                 for method in cls["methods"]:
                     if method["name"].startswith("_") and method["name"] != "__init__":
-                        continue  # 跳过私有方法
+                        continue
                     prefix = "async " if method["is_async"] else ""
                     lines.append(
                         f"##### `{prefix}{method['name']}{method['signature']}`"
@@ -314,17 +269,9 @@ def generate_markdown(
                         lines.append(method["docstring"])
                         lines.append("")
 
-    # 每个 class/function 区块末尾会留一个 ""（视觉空行），最后一个区块的
-    # 那个空行 + final-newline 会叠成 "\n\n"，被 pre-commit
-    # `end-of-file-fixer` 还原为 "\n"。先 rstrip 掉所有结尾空白，再补
-    # 唯一一个 "\n"，确保 generator 的输出与 fixer 整理后的盘上字节一致，
-    # 这也是 `--check` 模式的幂等前提。
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-# Quick navigation 分组：必须覆盖 MODULES_TO_DOCUMENT 中**全部**模块。
-# 修改 MODULES_TO_DOCUMENT 时同步更新此处即可（``_assert_quick_nav_covers_all_modules``
-# 会在 generate_index 入口 fail-fast 提示遗漏）。
 QUICK_NAV_CORE = (
     "config_manager",
     "exceptions",
@@ -365,19 +312,7 @@ QUICK_NAV_UTILITY = (
 
 
 def _assert_quick_nav_covers_all_modules(modules: list[str]) -> None:
-    """守住「``MODULES_TO_DOCUMENT`` ⊆ Quick nav 分组」不变量。
-
-    历史教训
-    ---------
-    v1.5.x 早期 ``notification_providers`` 漏在 Quick navigation 之外，
-    虽然 ``## Modules`` 列表完整 14 项，``### Core/Utility`` 分组仅
-    13 项。今天看是「文案漂移」，未来加 ``audio.py`` / ``ssml.py``
-    时如果只动 ``MODULES_TO_DOCUMENT`` 不动这两个分组，会再次复发。
-
-    在 ``generate_index`` 入口断言「分组并集 ⊇ 渲染清单」，
-    fail-fast + 一次性给出全部缺漏，而不是让 reviewer 翻 200 行 markdown
-    数 bullet。
-    """
+    """守住「``MODULES_TO_DOCUMENT`` ⊆ Quick nav 分组」不变量。"""
     declared = {Path(m).stem for m in modules}
     in_nav = set(QUICK_NAV_CORE) | set(QUICK_NAV_UTILITY)
     missing = declared - in_nav
@@ -406,60 +341,7 @@ def generate_index(
     output_dir_display: str,
     existing_path: Path | None = None,
 ) -> str:
-    """生成文档索引。
-
-    Custom prefix preservation (R178 follow-up)
-    -------------------------------------------
-
-    R169 把 README 的"How it works / Architecture / Production-grade
-    middleware / Server self-info / MCP-spec compliance"5 个 section
-    手工插入到 ``docs/api/index.md`` 与 ``docs/api.zh-CN/index.md``
-    的 ``## Modules`` / ``## 模块列表`` 标题**之前**。这是 R169 提交
-    时的设计决策：README 面向使用者（保持简洁），技术细节下沉到 docs
-    并优先展示在 API index 顶部，让点进来的读者第一眼就能看懂工具
-    的工作原理与中间件链。
-
-    然而 ``generate_docs.py`` 在 R76 之后会按"signatures-only"模板
-    完全重写 index.md，运行 ``--check`` 会把 R169 手工块当成 drift —
-    这是个真实存在的 CI footgun，已经在 ``scripts/ci_gate.py:222-235``
-    挂着两条 ``generate_docs.py --check`` gate。
-
-    本函数现在支持 ``existing_path``：如果指向的 index.md 已存在且包含
-    ``## Modules`` / ``## 模块列表`` 标题，则**保留该标题之前的所有
-    内容**（前置手工块），只重写从 modules-heading 开始到文件末尾的
-    自动生成部分（modules list + quick navigation + footer）。这样：
-
-    * 首次生成时：和老行为完全一致（不存在文件 → 全文写入）。
-    * 后续重生时：手工块永久保留，generator 仅维护其声称负责的"模块
-      列表 + 分类导航"部分。
-    * ``--check`` 模式下：手工块改动不再触发 drift，仅当 modules 列表
-      或 quick-navigation 与代码不同步时才报告 drift（这正是 ci_gate
-      最初想守的 invariant）。
-
-    Force-regenerate the manual prefix (CR#12 §F-2 escape hatch)
-    ------------------------------------------------------------
-
-    如果某个 R-cycle 因为架构改动 / 模块改名 / 中间件链改动需要**主动
-    重写**前置手工块（例如 R200 把 ``Production-grade middleware``
-    section 完全废弃），preservation 逻辑会"贴心"地保留旧文案 ——
-    这是 silent staleness footgun。escape hatch：
-
-    1. ``git rm docs/api/index.md docs/api.zh-CN/index.md``（或手工
-       删除两个文件，下一段 ``generate_docs.py`` 看不到旧文件 →
-       走 first-time fresh 路径）；
-    2. ``uv run python scripts/generate_docs.py --lang en`` 然后
-       ``--lang zh-CN``——产生干净的 signatures-only 模板；
-    3. **手工**把新的"How it works / Architecture / 你想要的新
-       section"重新插入到 ``## Modules`` / ``## 模块列表`` 标题之
-       前；
-    4. 提交（一次性，本周期之后又回到 preservation 模式）。
-
-    或者更小步：直接编辑 index.md 顶部、删 / 改 / 加 section，下次
-    ``--check`` 仍然 pass（preservation 只看 modules-heading 之
-    后的字节），新内容就成了下一周期的 "permanent prefix"。这是
-    日常迭代的推荐路径——只在大重写时才走 "rm + regen + manual"
-    escape hatch。
-    """
+    """生成文档索引。"""
     _assert_quick_nav_covers_all_modules(modules)
     _assert_top_level_modules_classified()
     if lang == "en":
@@ -592,11 +474,6 @@ def generate_index(
 
     fresh = "\n".join(lines) + "\n"
 
-    # Custom prefix preservation (R178 follow-up).
-    #
-    # 如果目标文件已存在且包含 modules-heading，保留 heading 之前的所有
-    # 内容（前置手工块），仅替换 heading 起始的自动生成部分。详细动机
-    # 见本函数 docstring。
     if existing_path is not None and existing_path.exists():
         modules_heading = "## Modules" if lang == "en" else "## 模块列表"
         existing_text = existing_path.read_text(encoding="utf-8")
@@ -609,14 +486,7 @@ def generate_index(
 
 
 def _write_or_check(path: Path, content: str, *, check: bool, drift: list[Path]) -> str:
-    """写入或仅校验是否漂移。
-
-    返回单字符状态指示符（用于打印）：
-      - ``"="`` 文件已存在且字节级一致（check 与 write 都不改）
-      - ``"+"`` 文件不存在或字节级不一致；
-        - check 模式：仅记录到 ``drift`` 列表，不写盘
-        - write 模式：写入盘并视作成功生成
-    """
+    """写入或仅校验是否漂移。"""
     expected = content.encode("utf-8")
     actual = path.read_bytes() if path.exists() else b""
     if actual == expected:
@@ -675,7 +545,6 @@ def main() -> int:
     drift: list[Path] = []
 
     for module_file in MODULES_TO_DOCUMENT:
-        # R76：模块源文件迁到 ``src/ai_intervention_agent/``，PKG_ROOT 已指向那里
         filepath = PKG_ROOT / module_file
         if not filepath.exists():
             print(f"⚠️  跳过不存在的文件: {module_file}")

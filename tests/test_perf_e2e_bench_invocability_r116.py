@@ -230,12 +230,12 @@ class TestPerfBenchSourceContainsR116Fix(unittest.TestCase):
             "subprocess argv 应该有 `ai_intervention_agent.web_ui` 元素（R116 引入）",
         )
 
-    def test_r116_marker_present_in_source(self) -> None:
-        """守护源码 ``R116`` 标记不被未来重构无意识抹掉。"""
+    def test_r116_invocable_entry_present(self) -> None:
+        """R116 溯源改由本测试承载（scripts 注释已清理）；锁可调用入口。"""
         self.assertIn(
-            "R116",
+            'if __name__ == "__main__":',
             self.src,
-            "perf_e2e_bench.py 必须保留 R116 标记，否则 grep 不到无法追溯",
+            "perf_e2e_bench.py 必须保持可直接调用",
         )
 
 

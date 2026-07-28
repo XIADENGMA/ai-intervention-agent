@@ -58,11 +58,7 @@ BASELINE_PATH = REPO_ROOT / "tests" / "data" / "silent_failure_baseline_r120.jso
 
 
 def _qualified_name(node: ast.AST, parents: list[ast.AST]) -> str:
-    """根据 AST 父链拼出 ``ClassName.method_name`` / ``module_level`` 名字。
-
-    用 qualified_name 而不是 lineno 做指纹，避免无关注释导致 baseline
-    噪音 diff。同名嵌套函数会有 outer.inner.<innermost> 形式。
-    """
+    """根据 AST 父链拼出 ``ClassName.method_name`` / ``module_level`` 名字。"""
     chain: list[str] = []
     for parent in parents:
         if isinstance(
@@ -77,16 +73,7 @@ def _qualified_name(node: ast.AST, parents: list[ast.AST]) -> str:
 
 
 class _BareExceptPassScanner(ast.NodeVisitor):
-    """收集 ``try/except Exception: pass`` 站点。
-
-    匹配规则（必须全部满足才算 silent failure 站点）：
-    - except 处理 ``Exception``（不是 ``Exception as e`` 配 logging，
-      也不是其它具体类型如 ``except KeyError``）；
-    - 处理体**仅**包含 ``pass`` 一条语句（不含 logging.debug / 别的
-      副作用）；
-    - 没有给 exception 起 alias（``except Exception as e:`` 通常会用
-      e 做点什么，不在本扫描范围）。
-    """
+    """收集 ``try/except Exception: pass`` 站点。"""
 
     def __init__(self) -> None:
         self.sites: list[dict[str, Any]] = []
@@ -100,13 +87,12 @@ class _BareExceptPassScanner(ast.NodeVisitor):
             self._parent_stack.pop()
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
-        # 必须捕 Exception 本类（不是子类如 KeyError，不是裸 except）
         is_bare_exception = (
             isinstance(node.type, ast.Name)
             and node.type.id == "Exception"
-            and node.name is None  # 不允许 ``as e`` —— 那种通常会 logger.error
+            and node.name is None
         )
-        # 处理体**仅**包含 ``pass``
+
         body_is_only_pass = len(node.body) == 1 and isinstance(node.body[0], ast.Pass)
 
         if is_bare_exception and body_is_only_pass:
@@ -116,10 +102,7 @@ class _BareExceptPassScanner(ast.NodeVisitor):
                     "qualified_name": _qualified_name(node, self._parent_stack),
                 }
             )
-        # **必须** call generic_visit：except 块体内部可以嵌套 try/except
-        # （比如 server_feedback.py:543 的 ``except ValueError:`` 内嵌
-        # ``try: ... except Exception: pass``），不调 generic_visit 就
-        # 漏扫嵌套层。pre-fix 把 24 site 漏报成 22 site。
+
         self.generic_visit(node)
 
 
@@ -137,11 +120,7 @@ def scan_file(filepath: Path) -> list[dict[str, Any]]:
 
     scanner = _BareExceptPassScanner()
     scanner.visit(tree)
-    # ``relative_to`` 在 filepath 不在 REPO_ROOT 子树时会抛
-    # ValueError——R120 测试故意用 ``tempfile`` 在 ``/tmp/`` 调
-    # ``scan_file`` 验证 scanner 的边缘行为，所以这里 graceful
-    # fallback 到绝对路径字符串。生产路径下所有 src/ 文件都在 REPO_ROOT
-    # 下，相对路径 always 命中 try 分支。
+
     try:
         rel_path = filepath.relative_to(REPO_ROOT).as_posix()
     except ValueError:
@@ -157,11 +136,7 @@ def scan_file(filepath: Path) -> list[dict[str, Any]]:
 
 
 def scan_repo(root: Path = SRC_ROOT) -> list[dict[str, Any]]:
-    """扫描 src/ 全部 .py，返回排序后的 site 列表。
-
-    排序键：(file, qualified_name, lineno)——相同函数内多个 site 用
-    lineno 区分；不同函数用 qualified_name；不同文件用 file。
-    """
+    """扫描 src/ 全部 .py，返回排序后的 site 列表。"""
     all_sites: list[dict[str, Any]] = []
     for py_file in sorted(root.rglob("*.py")):
         all_sites.extend(scan_file(py_file))
@@ -209,12 +184,7 @@ def write_baseline(sites: list[dict[str, Any]]) -> None:
 def diff_sites(
     current: list[dict[str, Any]], baseline: list[dict[str, Any]]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """返回 ``(新增, 已移除)`` 两个列表。
-
-    指纹用 (file, qualified_name) 二元组——不带 lineno，所以同函数内
-    加注释不会触发 false positive。同函数有多个 site 时通过 multiset
-    计数比较。
-    """
+    """返回 ``(新增, 已移除)`` 两个列表。"""
     from collections import Counter
 
     def _fingerprint(s: dict[str, Any]) -> tuple[str, str]:

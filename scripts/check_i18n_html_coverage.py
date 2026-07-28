@@ -46,10 +46,10 @@ TEMPLATE_PATH = ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.h
 
 CJK_RE = re.compile(
     r"["
-    r"\u4e00-\u9fff"  # CJK Unified Ideographs
-    r"\u3040-\u309f"  # Hiragana
-    r"\u30a0-\u30ff"  # Katakana
-    r"\uac00-\ud7af"  # Hangul Syllables
+    r"\u4e00-\u9fff"
+    r"\u3040-\u309f"
+    r"\u30a0-\u30ff"
+    r"\uac00-\ud7af"
     r"]"
 )
 ALLOW_MARKER = "aiia:i18n-allow-cjk"
@@ -115,13 +115,6 @@ def scan_template(path: Path) -> list[tuple[int, str, str]]:
 
 
 def main() -> int:
-    # R100：TEMPLATE_PATH 不存在 → fail-loud（exit 2），不再 silent skip
-    # 返回 0。R76 重布局把 ``static/`` 挪进 ``src/ai_intervention_agent/``
-    # 包内时让 R66 的 brand-color guard silently broken（R88 修），同款风
-    # 险这里也存在：如果以后有人重命名 / 移动 ``web_ui.html`` 但忘了同
-    # 步 ``TEMPLATE_PATH``，旧的 silent-skip 实现会让 CI gate 一直 pass，
-    # 模板里悄悄回流的硬编码 CJK 没人察觉到。loud failure 模式下 reviewer
-    # 会立刻看到 stderr 的报错，被迫显式决定（重命名常量或恢复路径）。
     if not TEMPLATE_PATH.exists():
         rel = TEMPLATE_PATH.relative_to(ROOT).as_posix()
         print(

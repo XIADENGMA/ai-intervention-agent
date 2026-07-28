@@ -71,13 +71,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _extract_benchmarks(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """从 results / baseline JSON 里抽出 ``{bench_name: {median_ms, ...}}``。
-
-    ``perf_e2e_bench.py`` 的输出结构是
-    ``{"benchmarks": {name: {median_ms, ...}}, "metadata": {...}}``；
-    历史 / 手写 baseline 也可能直接是 ``{name: {median_ms, ...}}``。
-    两种都接，取第一个看起来像 benchmark 字典的位置。
-    """
+    """从 results / baseline JSON 里抽出 ``{bench_name: {median_ms, ...}}``。"""
     if "benchmarks" in payload and isinstance(payload["benchmarks"], dict):
         out = payload["benchmarks"]
     else:
@@ -134,34 +128,7 @@ def evaluate(
     abs_floor_ms: float = DEFAULT_ABS_FLOOR_MS,
     per_bench_threshold: dict[str, float] | None = None,
 ) -> dict[str, Any]:
-    """对比 current vs baseline，对每条 benchmark 给出 verdict。
-
-    返回结构：
-
-        {
-          "ok": bool,
-          "results": [
-            {
-              "name": "import_web_ui",
-              "current_ms": 148.25, "baseline_ms": 156.27,
-              "delta_ms": -8.02, "tolerance_ms": 46.88,
-              "pct_threshold": 0.30, "abs_floor_ms": 5.0,
-              "verdict": "pass",   # pass | regression | new | dropped | error
-              "message": "..."
-            }, …
-          ],
-          "regressions": [<verdicts where verdict != 'pass'>],
-        }
-
-    ``verdict`` 取值含义：
-
-    - ``pass``        — current ≤ baseline + tolerance
-    - ``regression``  — current 越过阈值（FAIL 主因）
-    - ``new``         — current 里有但 baseline 没有（不计为 FAIL，只是提示）
-    - ``dropped``     — baseline 里有但 current 没有（计为 FAIL —— 测试覆盖
-                        意外掉了，更值得告警）
-    - ``error``       — current 或 baseline 缺 ``median_ms`` / 不是数字
-    """
+    """对比 current vs baseline，对每条 benchmark 给出 verdict。"""
     per_bench_threshold = per_bench_threshold or {}
     results: list[dict[str, Any]] = []
 
@@ -208,8 +175,6 @@ def evaluate(
             )
             continue
 
-        # 这里 cur/base 都不是 None；但 ``median_ms`` 可能是 None
-        # （bench 跑 0 iters 或 raise 了）。任一为 None / 非数字就算 error。
         cur_ms = cur.get("median_ms") if cur else None
         base_ms = base.get("median_ms") if base else None
 
@@ -236,9 +201,6 @@ def evaluate(
             )
             continue
 
-        # ty 看不穿 ``_is_num`` 这种自定义 helper 的 narrowing；显式
-        # ``isinstance`` 既是 runtime 二次防护，也帮 type checker 把
-        # ``cur_ms / base_ms`` 收窄成 ``int | float``，避免 invalid-argument-type。
         assert isinstance(cur_ms, (int, float)) and not isinstance(cur_ms, bool)
         assert isinstance(base_ms, (int, float)) and not isinstance(base_ms, bool)
         cur_ms_f = float(cur_ms)
@@ -324,9 +286,6 @@ def run(
     current = _extract_benchmarks(results_payload)
 
     if update_baseline:
-        # ``--update-baseline``：把 current 当成新基线写回 baseline_path。
-        # 保留 baseline 现有的 ``thresholds`` 字段（若有）—— 阈值是手工管理
-        # 的策略，不应该被 results 自动覆写。
         existing_thresholds: dict[str, float] = {}
         if baseline_path.exists():
             try:

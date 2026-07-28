@@ -39,15 +39,9 @@ import json
 import sys
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# 配置
-# ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# 默认 target：web UI 的 locales 目录。
-# cr32 §3.2 fix 之后引入第二个 target（VSCode 插件 locales 目录），
-# 通过 ``--variant`` 在 web / vscode 之间切换；保持 zero-config 默认行为
-# = 跑 ``python scripts/gen_zhtw_from_zhcn.py`` 生成 web 端 zh-TW.json。
+
 _WEB_LOCALES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
 _VSCODE_LOCALES_DIR = REPO_ROOT / "packages" / "vscode" / "locales"
 
@@ -62,18 +56,12 @@ _VARIANTS: dict[str, tuple[Path, Path]] = {
     ),
 }
 
-# 默认（无 --variant 参数）走 web；下面模块级别名保留旧 import 路径
-# 兼容（外部脚本 / 测试有可能 ``from gen_zhtw_from_zhcn import ZH_CN_PATH``）。
+
 LOCALES_DIR = _WEB_LOCALES_DIR
 ZH_CN_PATH = _VARIANTS["web"][0]
 ZH_TW_PATH = _VARIANTS["web"][1]
 
-# 词组替换表（按 length desc 应用，避免短词组先 hit 把长词组拆开）。
-# Key 是简体 phrase，Value 是繁体 phrase。
-#
-# 重点覆盖：台湾 GUI 用户能立即感知差异的术语。覆盖参考来自
-# OpenCC 的 ``s2twp`` 转换表 + Microsoft Taiwan 术语库 + 苹果繁体台湾
-# 本地化术语；命中率优先：偏 GUI 高频。
+
 PHRASE_MAP: dict[str, str] = {
     "简体中文": "繁體中文",
     "界面语言": "介面語言",
@@ -100,7 +88,6 @@ PHRASE_MAP: dict[str, str] = {
     "下载": "下載",
     "加载": "載入",
     "复制": "複製",
-    # R693：多义字"复"的词组级消歧（復/複/覆 三向对应，禁止字符级映射）
     "常用回复": "常用回覆",
     "回复": "回覆",
     "恢复": "恢復",
@@ -350,15 +337,8 @@ PHRASE_MAP: dict[str, str] = {
     "请求体": "要求主體",
 }
 
-# 字符级映射（在词组替换之后应用，作为兜底）。
-# 收录原则：聚焦 GUI 高频简-繁差异，避免重复/冷僻字。
-# 维护策略：发现 zh-TW.json 出现简体残留字符时，把对应字补到这里再重跑。
+
 CHAR_MAP_v2: dict[str, str] = {
-    # R693（TODO#15/#21 zh-TW 简体残留清理）：补齐此前缺失的高频简繁差异字。
-    # 这批字缺失导致生成的 zh-TW.json 长期混入简体（"冻結"/"仅"/"打开"等），
-    # 已对存量文件做一次性规范化；此处补表保证未来重跑脚本不再倒退。
-    # 注意多义字（复→復/複/覆、发→發/髮 等）只能走 PHRASE_MAP，不进本表；
-    # "发" 在本项目 UI 语料中仅出现"发送/触发/发生"语义（→發），可安全字符级映射。
     "冻": "凍",
     "仅": "僅",
     "开": "開",
@@ -462,8 +442,6 @@ CHAR_MAP_v2: dict[str, str] = {
     "诗": "詩",
     "测": "測",
     "缀": "綴",
-    # "内"/"內" 在 Unicode 是不同 codepoint（U+5185 大陆字形 vs U+5167 台湾字形）。
-    # GUI 上字体能补差但 codepoint 严谨度上仍应统一到台湾标准字形。
     "内": "內",
     "认": "認",
     "诚": "誠",
@@ -881,14 +859,7 @@ def _convert_value(value):
 
 
 def _inject_meta(d: dict) -> dict:
-    """在顶层注入 ``_meta.translationNote`` 注明派生来源。
-
-    把 ``_meta`` 放在顶层而不是 ``page._meta`` 是因为：
-    1. ``_meta`` 不在已知 namespace 内（page / settings / status / ...），
-       不会被 i18n.js 的 ``data-i18n`` 解析到。
-    2. 后续 ``test_i18n_orphan_keys.py`` 的 namespace 校验会把它当作
-       元数据（如果它产生 orphan 警告，再调整放置位置）。
-    """
+    """在顶层注入 ``_meta.translationNote`` 注明派生来源。"""
     meta = {
         "translationNote": (
             "Auto-derived from zh-CN.json by scripts/gen_zhtw_from_zhcn.py "

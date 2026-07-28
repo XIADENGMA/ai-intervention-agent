@@ -82,11 +82,7 @@ _SEMVER_TAG_RE = re.compile(
     r"^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
 )
 
-# R185：CVE gate 把 "≥ 1 个 open 的 high/critical 级 CVE" 视作
-# release blocker。这条阈值是"实际可执行 + 业界主流"两条线的
-# 交集——OWASP / NIST / GitHub 都把 high+ 列为 "patch immediately"
-# 等级；medium/low 在 R184 cycle 里被证明常有"upstream 尚无 patch"
-# 的合法长尾，硬卡 medium 会让正常发布也卡住。
+
 _DEFAULT_BLOCKING_SEVERITIES: frozenset[str] = frozenset({"critical", "high"})
 
 
@@ -121,20 +117,14 @@ def _list_local_v_tags() -> set[str]:
 
 
 def _list_remote_v_tags(remote: str = "origin") -> set[str]:
-    """返回 ``origin`` 远端所有 ``v*.*.*`` tag（严格 SemVer 形态）的集合。
-
-    使用 ``git ls-remote --tags`` 而不是 ``git for-each-ref refs/remotes/...``，
-    后者依赖本地缓存（最后一次 ``git fetch`` 的快照）；前者强制走网络拉取
-    实时数据，避免开发者忘了 fetch 时 silent 漏警/虚警。
-    """
+    """返回 ``origin`` 远端所有 ``v*.*.*`` tag（严格 SemVer 形态）的集合。"""
     out = _run_git(["ls-remote", "--tags", remote])
     tags: set[str] = set()
     for line in out.splitlines():
         line = line.strip()
         if not line:
             continue
-        # 行格式：``<sha>\trefs/tags/<tag>`` 或 ``<sha>\trefs/tags/<tag>^{}``
-        # 后者是 annotated tag 的 dereferenced object，只关心 tag 名（去 ``^{}``）。
+
         parts = line.split("\t", maxsplit=1)
         if len(parts) != 2:
             continue
@@ -150,12 +140,7 @@ def _list_remote_v_tags(remote: str = "origin") -> set[str]:
 
 
 def _semver_key(tag: str) -> tuple[int, int, int, str]:
-    """把 ``vMAJOR.MINOR.PATCH[-PRE]`` 拆成可排序的 key。
-
-    pre-release 段（``-rc.1`` / ``-alpha`` 等）按字符串比较——SemVer 规范的
-    pre-release 排序更复杂（数字段按数值、文本段按 ASCII），但在本工具的
-    用法里（只是为了"按发布顺序逐个推送"），按字符串排已经足够稳定。
-    """
+    """把 ``vMAJOR.MINOR.PATCH[-PRE]`` 拆成可排序的 key。"""
     body = tag[1:]
     pre = ""
     if "-" in body:
@@ -170,27 +155,16 @@ def _semver_key(tag: str) -> tuple[int, int, int, str]:
 
 
 def _parse_origin_owner_repo(remote: str = "origin") -> tuple[str, str] | None:
-    """从 ``git remote get-url origin`` 反解出 ``(owner, repo)``。
-
-    支持两种主流形态：
-      * SSH: ``git@github.com:OWNER/REPO.git``
-      * HTTPS: ``https://github.com/OWNER/REPO[.git]``
-
-    不识别的（其他 host / 非 GitHub）返回 ``None``——R185 的 CVE
-    gate 当前只对 GitHub 仓库有意义（GitLab / Codeberg 有不同的
-    advisory API）。
-    """
+    """从 ``git remote get-url origin`` 反解出 ``(owner, repo)``。"""
     try:
         out = _run_git(["remote", "get-url", remote]).strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
-    # SSH: git@github.com:owner/repo[.git]
     ssh_m = re.match(r"^git@github\.com:([^/]+)/(.+?)(?:\.git)?$", out)
     if ssh_m:
         return (ssh_m.group(1), ssh_m.group(2))
 
-    # HTTPS: https://github.com/owner/repo[.git]
     https_m = re.match(r"^https?://github\.com/([^/]+)/(.+?)(?:\.git)?/?$", out)
     if https_m:
         return (https_m.group(1), https_m.group(2))
@@ -206,17 +180,7 @@ def _gh_available() -> bool:
 def _query_open_alerts(
     owner: str, repo: str, blocking_severities: frozenset[str]
 ) -> list[dict[str, Any]] | None:
-    """通过 ``gh api`` 拉 open Dependabot alerts。
-
-    返回值：
-      * ``list[dict]``：阻断级别 CVE 列表（可能为空）；
-      * ``None``：拉取失败（``gh`` 未认证、API 报错、API 不可用等）——
-        调用方应根据"是否要 fail-closed"决定怎么处理。
-
-    设计取舍：用 ``gh api`` 而不是 ``requests`` 直接打 REST，因为
-    ``gh`` 自带 token 认证 + 分页 + 重试，无需在脚本里维护 GITHUB_TOKEN
-    + retry-with-backoff 这套基础设施。
-    """
+    """通过 ``gh api`` 拉 open Dependabot alerts。"""
     cmd = [
         "gh",
         "api",
@@ -265,16 +229,7 @@ def _check_cve_gate(
     remote: str = "origin",
     blocking_severities: frozenset[str] = _DEFAULT_BLOCKING_SEVERITIES,
 ) -> tuple[int, list[dict[str, Any]] | None]:
-    """运行 CVE gate 检查。
-
-    返回 ``(exit_code, alerts)``：
-      * ``(0, [])`` ——0 个 blocker，可以发布；
-      * ``(1, [...])`` ——发现 blocker，阻止发布；
-      * ``(2, None)`` ——无法判定（``gh`` 不可用 / 解析远端失败 /
-        API 拉取失败），按 fail-open 策略放行但给出告警。该
-        exit code 用于让 ``--strict-cve`` 模式区分"未知"和
-        "已知 OK"——默认 strict 关，但用户可以显式开启。
-    """
+    """运行 CVE gate 检查。"""
     if not _gh_available():
         print(
             "WARNING (R185): ``gh`` CLI 未安装，跳过 CVE gate。"
@@ -355,8 +310,6 @@ def _check(threshold: int = 3, remote: str = "origin") -> int:
         return 0
 
     if len(unpushed) <= threshold:
-        # 1–3 个未推送 tag：``git push --follow-tags origin main`` 不会触发
-        # GitHub 3-tag 限流，可以正常推。
         joined = ", ".join(unpushed)
         print(
             f"OK：本地有 {len(unpushed)} 个未推送 tag（{joined}），"
@@ -364,7 +317,6 @@ def _check(threshold: int = 3, remote: str = "origin") -> int:
         )
         return 0
 
-    # ≥ 4 个未推送 tag：触发 GitHub 3-tag 硬限制，Release workflow 不会触发。
     print(
         f"FAIL：本地有 {len(unpushed)} 个未推送 v*.*.* tag（> {threshold} 上限）：",
         file=sys.stderr,

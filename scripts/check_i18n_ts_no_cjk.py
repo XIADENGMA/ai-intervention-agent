@@ -46,58 +46,21 @@ _VSCODE_ROOT = ROOT / "packages" / "vscode"
 
 CJK_RE = re.compile(
     r"["
-    r"\u4e00-\u9fff"  # CJK Unified Ideographs
-    r"\u3040-\u309f"  # Hiragana
-    r"\u30a0-\u30ff"  # Katakana
-    r"\uac00-\ud7af"  # Hangul Syllables
+    r"\u4e00-\u9fff"
+    r"\u3040-\u309f"
+    r"\u30a0-\u30ff"
+    r"\uac00-\ud7af"
     r"]"
 )
 
 STRING_RE = re.compile(
-    # Negative lookbehind for backslash prevents a `\`` appearing inside a
-    # regex literal or already-escaped context from being mistaken for a
-    # fresh template-literal opener. Concretely: `html.match(/`/g)` contains
-    # a raw backtick inside a regex literal, which without the lookbehind
-    # would pair up with later backticks and cause the scanner to report
-    # ghost CJK hits inside surrounding HTML template literals.
     r"(?<!\\)'([^'\\\n]*(?:\\.[^'\\\n]*)*)'"
     r"|(?<!\\)\"([^\"\\\n]*(?:\\.[^\"\\\n]*)*)\""
     r"|(?<!\\)`([^`\\]*(?:\\.[^`\\]*)*)`",
     re.DOTALL,
 )
 
-# R97：剥序由「先 block 后 line」改为「先 line 后 block」——与
-# ``check_i18n_orphan_keys.py::_strip_source_comments``（R92 修复）保持完全
-# 对齐，同一双层 bug。
-#
-# 旧实现 bug
-# ----------
-# ``BLOCK_COMMENT_RE.sub`` 在前的话，``packages/vscode/extension.ts:59`` 里裸
-# 写的 ``// 命中...packages/* 多走一`` 中那个 ``/*`` 会被 block-comment 正则
-# 当成开头，吞噬到下一处真实 ``*/`` 为止——实测吃掉 ~50 行真代码（变成等长
-# 空白）。这 50 行恰好都是真注释所以表面零误报，但属于「lurking silent
-# breakage」：一旦未来有人在 ``// foo /* bar`` 类型注释附近塞入硬编码 CJK
-# 字符串，扫描器就会漏报。
-#
-# 为什么不用 token-level lex 自动避边界？
-# --------
-# 试过——5-token 交替正则识别 ``//`` / ``/* */`` / 三种 string 字面量本身
-# 没问题，但 JS 还有第 6 种顶层 token：**RegExp 字面量**（``/.../flags``）。
-# ``packages/vscode/webview.ts:575`` 的 ``html.match(/`/g)`` 里裸 backtick
-# 会被 token-lex 误识为 template literal 起点，吞掉后续大量代码，导致 30+
-# 新的 false positive。完整识别 JS RegExp 字面量需要解决著名的 slash-
-# ambiguity（``a/b/c`` 是除法还是 regex？取决于上下文），工程量与回报严重
-# 失衡。R92 折中的边界覆盖率虽不完美，但已被 ``check_i18n_orphan_keys.py``
-# 在生产稳定运行多月，对当前代码库**实测零误报**（见下文 trade-off 注释）。
-#
-# 已知 trade-off（与 R92 一致）
-# --------
-# ``//`` 出现在 string 字面量内（如 ``const url = "https://..."``）时，本扫
-# 描器会把 ``//`` 之后整行替成空格——若该字符串恰好同时含有 CJK 字面量，
-# 则会被本扫描器漏报。但实测（``packages/vscode/*.ts``）8 处含 ``//`` 的
-# string 字面量都是 ASCII URL（github.com / localhost 等），0 处含 CJK；
-# 未来若出现「URL 含 CJK 域名」+「该字符串需要 i18n 化」的双重场景，再升级
-# 到 stage-aware lex 或交给 ``vscode.l10n.t()`` 包裹路径上的 fail-fast。
+
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 ALLOW_MARKER = "aiia:i18n-allow-cjk"
 
@@ -114,17 +77,7 @@ _SKIP_PREFIXES: tuple[str, ...] = (
 
 def _strip_comments(src: str) -> str:
     """Zero out ``//`` line comments and ``/* ... */`` block comments while
-    preserving line offsets.
-
-    Pass order matters (R97/R92): line comments are blanked **before** block
-    comments. Otherwise patterns like ``// see locales/*.json`` get mis-parsed
-    because the bare ``/*`` inside the *line* comment is read as a block-
-    comment opener that swallows hundreds of subsequent lines.
-
-    Replacement uses spaces for non-newline chars so that byte offsets (and
-    therefore ``stripped[:start].count("\\n")`` line-number mapping in the
-    caller) stay exact.
-    """
+    preserving line offsets."""
 
     def _blank_block(match: re.Match[str]) -> str:
         span = match.group(0)
@@ -160,15 +113,7 @@ def _line_has_allow_marker(original_src: str, line_number: int) -> bool:
 
 
 def scan_file(path: Path) -> list[tuple[int, str]]:
-    """Return a list of (line_number, literal) violations for a given file.
-
-    Race-safe: 如果 ``rglob`` 列出文件后, 文件被并行 pytest worker / VS Code
-    监视器 / 临时文件 cleanup 删除 (典型 race window <50ms), 直接返回空列表
-    而非 raise FileNotFoundError。这种 race 在 CI (pre-commit hook + lint
-    并行执行) 与本地 xdist (-n 4) 都可能复现。本 invariant 关心的是 *真
-    实存在的 source file 是否含 CJK*, 临时文件本来就不该被 scanner 捕获。
-    与 check_i18n_js_no_cjk.py 同款修复 (R432 spillover 发现)。
-    """
+    """Return a list of (line_number, literal) violations for a given file."""
     try:
         src = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -196,13 +141,6 @@ def collect_violations() -> list[tuple[Path, int, str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # R101：path-drift sanity check —— ``packages/vscode`` 是项目核心组件
-    # （VS Code extension），不应缺失。R76 把 ``static/`` 挪进 ``src/``
-    # 包内时让 R66 brand-color guard silently broken（R88/R100 修过同款）。
-    # 这里 fail-loud 阻止 ``packages/vscode`` 路径未来漂移时让本扫描器
-    # silent no-op（``_iter_ts_source_files`` 之前在 root 不存在时 ``return
-    # []`` ——main() 看到 0 violations 然后 print "OK" 通过——这是
-    # 把"环境错"当"OK"的反模式）。
     if not _VSCODE_ROOT.exists():
         rel = _VSCODE_ROOT.relative_to(ROOT).as_posix()
         print(

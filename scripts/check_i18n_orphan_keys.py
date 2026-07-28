@@ -36,64 +36,26 @@ WEB_TEMPLATES_DIR = ROOT / "src" / "ai_intervention_agent" / "templates"
 WEB_JS_DIR = ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 VSCODE_PKG_DIR = ROOT / "packages" / "vscode"
 
-# Extraction regexes. Must stay in lockstep with
-# ``tests/test_runtime_behavior.py`` — if that file expands the set of
-# wrapper function names (e.g. a new ``__fooT``), add it here too.
+
 DATA_I18N_RE = re.compile(
     r"""data-i18n(?:-(?:html|title|placeholder|alt|aria-label|value))?\s*=\s*"([^"]+)\"""",
 )
-# Match ``t('key')``, ``_t('key')``, ``tl('key')``, ``hostT('key')``,
-# ``__vuT('key')``, ``__domSecT('key')``, ``__ncT('key')``. The negative
-# lookbehind ``(?<![.\w])`` suppresses property-access false positives
-# like ``obj.t('x')``. The ``\(\s*`` (rather than the historically tighter
-# ``\(``) tolerates Prettier multi-line formatting of the form ::
-#
-#     _tl(
-#       "settings.openConfigInIdeOpened",
-#       "Opened with {editor}.",
-#     )
-#
-# Without the ``\s*`` the scanner would silently miss those call sites
-# whenever Prettier (or any future formatter) decides to break the
-# argument list across lines, making truly-used keys look like dead
-# orphans and producing false positives in the strict gate. Must stay
-# in sync with ``tests/test_runtime_behavior.py::_JS_T_CALL_RE``.
+
+
 JS_T_CALL_RE = re.compile(
     # cr40 cycle health-fix #3：加 ``AIIA_I18N.t(...)`` 命名空间识别
-    # ——同 ``tests/test_runtime_behavior.py::_JS_T_CALL_RE`` 同步更新。
     # multi_task.js 用 ``window.AIIA_I18N.t("page.taskTabCopyHint")``
-    # 调用 i18n，原正则因 ``(?<![.\w])`` 排除 dot-access 而漏识别。
-    #
-    # a11y-audit-cycle-4 R259c：加 ``_resolveLabel('key', fallback)``
-    # 识别 — ios_a2hs_hint.js 的本地 i18n helper（i18n 未就绪 SSR/早期
-    # 渲染兜底）。原正则漏识别该 wrapper 导致 4 个 page.iosA2hs.* key
-    # 误判 dead。同步 tests/test_runtime_behavior.py::_JS_T_CALL_RE。
     r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
 )
 
-# 源码注释剥离：与 ``check_i18n_param_signatures.py::_strip_source_comments``
-# 保持语义一致（同一 i18n key 扫描族），避免一个脚本剥注释、另一个不剥
-# 造成同一份代码上 ``used_keys`` 数值漂移。历史教训：v1.5 时期
-# ``packages/vscode/extension.ts`` 的 banner 注释里写了示例 ``hostT('statusBar.unkown')``
-# （故意拼错让 tsc 挂掉），结果本扫描器把注释字符串当成真实引用，导致
-# ``used > total`` 的假信号——而 param_signatures 因为已经剥注释看到的是
-# 干净结果。两边修法 must stay in lockstep。
+
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 
 
 def _strip_source_comments(text: str) -> str:
     """Zero out ``//`` line comments and ``/* ... */`` block comments while
     preserving line offsets so ``find()``-based offsets in callers stay
-    accurate. Keep semantics aligned with ``check_i18n_param_signatures.py``.
-
-    Pass order matters: line comments are blanked **before** block
-    comments. Otherwise patterns like ``// see locales/*.json`` get
-    mis-parsed because the bare ``/*`` inside the *line* comment is read
-    as a block-comment opener that swallows hundreds of subsequent lines.
-    Stripping line comments first turns the whole ``//`` tail into spaces
-    and the orphan ``/*`` disappears with it.
-
-    We replace with space so byte offsets are preserved exactly."""
+    accurate. Keep semantics aligned with ``check_i18n_param_signatures.py``."""
 
     def _blank_block(m: re.Match[str]) -> str:
         s = m.group(0)
@@ -101,21 +63,13 @@ def _strip_source_comments(text: str) -> str:
 
     out_lines: list[str] = []
     for line in text.split("\n"):
-        # 第一步：line comment（``//`` 之后）整段替成空格。
-        # Naive ``//`` line-comment strip. Imperfect when ``//`` appears
-        # inside string literals (e.g. URL literals), but those never
-        # also contain a ``t('key')`` shape so the regex misses them
-        # naturally — same trade-off ``check_i18n_param_signatures`` makes.
         idx = line.find("//")
         out_lines.append(line if idx == -1 else line[:idx] + " " * (len(line) - idx))
     intermediate = "\n".join(out_lines)
-    # 第二步：剥 block comments。已经在前面剥了 line comments，所以
-    # ``// ... locales/*.json`` 这类伪 ``/*`` 起点被一并清空，不会再出现
-    # "block comment 跨吞数百行真代码" 的灾难。
+
     return _BLOCK_COMMENT_RE.sub(_blank_block, intermediate)
 
 
-# Vendor / min'd JS that we don't own and don't want to treat as call sites.
 VENDOR_JS = {
     "mathjax-loader.js",
     "tex-mml-chtml.js",
@@ -140,12 +94,7 @@ def _flatten_keys(data: Any, prefix: str = "") -> set[str]:
 
 
 def _collect_web_used() -> set[str]:
-    """Scan HTML templates + static JS for every referenced i18n key.
-
-    HTML 不剥注释（``data-i18n="..."`` 不会出现在 ``<!-- ... -->`` 注释里
-    的 attribute slot；浏览器解析约束保证）；JS 先剥源码注释再扫，避免把
-    docstring/banner 里的示例当真实引用。
-    """
+    """Scan HTML templates + static JS for every referenced i18n key."""
     used: set[str] = set()
     template = WEB_TEMPLATES_DIR / "web_ui.html"
     if template.is_file():
@@ -163,15 +112,7 @@ def _collect_web_used() -> set[str]:
 
 
 def _collect_vscode_used() -> set[str]:
-    """Scan packages/vscode/{ui,core,ts} for every referenced i18n key.
-
-    Only the specific surface files are scanned — avoid walking the
-    whole directory, because it would false-positive on e.g. locale
-    JSON or build output and make the gate noisy.
-
-    源码注释先被剥成空格再扫描，使 banner / docstring 里的示例（含故意
-    拼错的反例）不被当作真实引用——这与 ``check_i18n_param_signatures``
-    的语义保持一致。"""
+    """Scan packages/vscode/{ui,core,ts} for every referenced i18n key."""
     used: set[str] = set()
     targets = (
         "webview-ui.js",
@@ -193,19 +134,8 @@ def _collect_vscode_used() -> set[str]:
 
 
 def scan() -> dict[str, dict]:
-    """Return a structured report for both surfaces.
+    """Return a structured report for both surfaces."""
 
-    Shape::
-
-        {
-          'web':    { 'orphans': [...], 'total_keys': N, 'used_keys': M },
-          'vscode': { 'orphans': [...], 'total_keys': N, 'used_keys': M },
-        }
-    """
-    # cr40 cycle health-fix #3 — dynamic-key 豁免集合。同步 tests/
-    # test_runtime_behavior.py::TestI18nDeadKeys._PRE_RESERVED_KEYS。
-    # 这些 keys 在代码里以 ``let msgKey = "..."``变量赋值方式构造，
-    # 后面 ``t(msgKey)`` 才用 — 正则无法 trace dynamic key。
     _WEB_RESERVED_DYNAMIC: set[str] = {
         "settings.customSound.errors.invalidMime",
         "settings.customSound.errors.tooLarge",
@@ -214,17 +144,11 @@ def scan() -> dict[str, dict]:
         "settings.customSound.errors.decodeFailed",
         "settings.customSound.errors.durationTooLong",
         "settings.customSound.uploaded",
-        # R289 / cycle-27 t27-3：``_classifyFetchError`` helper 返回 i18n key
-        # 字符串，调用点写成 ``t(_classifyFetchError(error))``，正则无法
-        # trace dynamic 引用。5 个 status.* fetch-error key 全部走 dynamic 模式。
-        # 同步 tests/test_runtime_behavior.py::TestI18nDeadKeys._PRE_RESERVED_KEYS。
         "status.networkError",
         "status.networkOffline",
         "status.requestTimeout",
         "status.serverResponseInvalid",
         "status.uiRenderingError",
-        # R294 / cycle-28 t28-5：``_classifyHttpResponse`` 同 dynamic 模式
-        # (按 response.status 分类返回 i18n key)，2 个新 key 走豁免清单。
         "status.unauthorized",
         "status.serviceUnavailable",
         "status.badGateway",
@@ -301,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     total_orphans = sum(len(d["orphans"]) for d in report.values())
     if total_orphans > 0 and args.strict:
         return 1
-    # Warn-level default: always 0 so ci_gate keeps flowing.
+
     return 0
 
 

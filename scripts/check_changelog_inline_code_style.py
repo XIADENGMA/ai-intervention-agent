@@ -63,25 +63,18 @@ import re
 import sys
 from pathlib import Path
 
-# 匹配 ``X`` 形式: 起始 / 结束都是恰好 2 个反引号, X 内不含反引号
-# 用 lookahead/lookbehind 防止匹配 ``` 围栏 (开头/结尾)
 INLINE_DOUBLE_BACKTICK_RE = re.compile(r"(?<!`)``([^`]+)``(?!`)")
 
-# 围栏标记: 以 3+ 反引号开头的行
+
 FENCE_RE = re.compile(r"^\s*```")
 
 
 def find_violations(text: str) -> list[tuple[int, str, str]]:
-    """扫 CHANGELOG 文本, 返回违规列表。
-
-    Returns:
-        list of (line_number, matched_text, suggested_replacement)
-    """
+    """扫 CHANGELOG 文本, 返回违规列表。"""
     violations: list[tuple[int, str, str]] = []
     in_fence = False
 
     for idx, line in enumerate(text.splitlines(), start=1):
-        # toggle fence state
         if FENCE_RE.match(line):
             in_fence = not in_fence
             continue

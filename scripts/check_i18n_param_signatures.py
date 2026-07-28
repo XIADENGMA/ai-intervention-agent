@@ -40,18 +40,14 @@ WEB_JS_DIR = ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 VSCODE_PKG_DIR = ROOT / "packages" / "vscode"
 TEMPLATES_DIR = ROOT / "src" / "ai_intervention_agent" / "templates"
 
-# 第三方/压缩 bundle，不扫
+
 VENDOR_JS = {
     "mathjax-loader.js",
     "tex-mml-chtml.js",
     "lottie.min.js",
 }
 
-# 匹配 ``t('key', { ... })`` 或 ``t('key')``
-# Captures (1: quote, 2: key, 3: optional object body).
-# The object body allows simple nesting of braces (e.g. `{ id: {foo} }`
-# shouldn't occur in our code, but pattern handles one level to avoid
-# chopping off the true close brace).
+
 _T_CALL_RE = re.compile(
     r"""
     (?<![.\w])
@@ -66,23 +62,13 @@ _T_CALL_RE = re.compile(
     re.VERBOSE,
 )
 
-# Extract top-level keys from an inline object literal. Handles:
-#   { a, b }              → ['a', 'b']
-#   { a: x, b: 1 }        → ['a', 'b']
-#   { 'a': 1, "b": 2 }    → ['a', 'b']
-#   { a: fn(x, y), b: z } → ['a', 'b']
-# We walk character-by-character tracking bracket depth so that nested
-# commas inside function calls / nested object values don't fool us.
+
 _SHORTHAND_KEY_RE = re.compile(r"^['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?$")
 
 
 def _extract_param_names(obj_body: str) -> set[str]:
     """Parse the object literal body between ``{`` and ``}`` and
-    return the set of top-level key names.
-
-    Returns ``set()`` if we hit a spread (``...x``) or any syntax we
-    can't confidently parse — callers then treat it as "unknown,
-    skip check" rather than falsely flagging it."""
+    return the set of top-level key names."""
     inner = obj_body.strip()
     if inner.startswith("{"):
         inner = inner[1:]
@@ -92,16 +78,13 @@ def _extract_param_names(obj_body: str) -> set[str]:
     if not inner:
         return set()
     if "..." in inner:
-        # Spread syntax — we can't statically resolve what names it
-        # brings in, so refuse to check this call (returning sentinel
-        # None-like behaviour via empty set + caller flag below).
         return {"__aiia_param_spread__"}
 
     out: set[str] = set()
     depth = 0
     paren_depth = 0
     buf: list[str] = []
-    # We split on top-level commas then take the part before ':' as the key.
+
     parts: list[str] = []
     for ch in inner:
         if ch in "{[":
@@ -124,8 +107,7 @@ def _extract_param_names(obj_body: str) -> set[str]:
         part = part.strip()
         if not part:
             continue
-        # Split on first top-level ':' to get the key. If no ':',
-        # treat whole part as the shorthand key.
+
         colon_idx = -1
         d = 0
         pd = 0
@@ -146,31 +128,12 @@ def _extract_param_names(obj_body: str) -> set[str]:
         if m:
             out.add(m.group(1))
         else:
-            # Something we can't parse (e.g. computed key `[x]:...`).
-            # Mark as indeterminate so the caller skips the key.
             return {"__aiia_param_dynamic__"}
     return out
 
 
-# Extract placeholder names from a locale value. The runtime
-# (``packages/vscode/i18n.js`` / ``static/js/i18n.js``) runs a
-# two-stage pipeline:
-#
-#   1. ICU: `{arg, plural|select|selectordinal, ...}`
-#   2. Mustache: `{{name}}`
-#
-# So a locale value like ``{count, plural, one {1 {{item}}} other {# {{item}}s}}``
-# has two params: ``count`` (ICU plural arg) and ``item`` (Mustache).
-# The scanner therefore extracts both.
-#
-# Deliberately NOT extracted:
-#   - ``{#}`` — ICU hash is substituted by the plural count, not a named param.
-#   - bare ``{name}`` single-braces — the runtime does NOT interpolate these;
-#     only ``{{name}}`` and the ICU head forms are recognized, so any bare
-#     ``{x}`` would render literally. Our linter flags those separately in
-#     ``test_runtime_behavior.py::_check_quality`` (brace balance).
 _MUSTACHE_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
-# ICU head: first word inside `{name, plural|select|selectordinal|number|date|time`.
+
 _ICU_HEAD_RE = re.compile(
     r"(?<!\{)\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*"
     r"(?:plural|select|selectordinal|number|date|time|ordinal)\b",
@@ -205,20 +168,7 @@ def _strip_source_comments(text: str) -> str:
     """Zero out ``//`` line comments and ``/* ... */`` block comments
     while preserving line offsets, so regex line-number math stays
     accurate and we don't false-positive on example snippets inside
-    docstrings / contributor comments.
-
-    Pass order matters: line comments are blanked **before** block
-    comments. Otherwise patterns like ``// see locales/*.json`` get
-    mis-parsed because the bare ``/*`` inside the *line* comment is read
-    as a block-comment opener that swallows hundreds of subsequent lines
-    of real code (observed live in ``static/js/app.js`` line 538: a comment
-    referring to ``locales/*.json`` ate 688 lines until the next ``*/``,
-    which silently hid 6 ``status.*`` keys from this scanner). Stripping
-    line comments first turns the whole ``//`` tail into spaces so the
-    orphan ``/*`` disappears with it.
-
-    Keep semantics aligned with ``check_i18n_orphan_keys.py``. We replace
-    with space so byte offsets are preserved exactly."""
+    docstrings / contributor comments."""
 
     def _blank_block(m: re.Match[str]) -> str:
         s = m.group(0)
@@ -226,25 +176,15 @@ def _strip_source_comments(text: str) -> str:
 
     out_lines: list[str] = []
     for line in text.split("\n"):
-        # 第一步：line comment（``//`` 之后）整段替成空格。
-        # Naive `//` line-comment strip. It's imperfect for `//` that
-        # appears inside strings, but none of our source files have
-        # that in a `t(...)` call site — and the few that do (e.g.
-        # URL literals in config) never hit the t() regex anyway.
         idx = line.find("//")
         out_lines.append(line if idx == -1 else line[:idx] + " " * (len(line) - idx))
     intermediate = "\n".join(out_lines)
-    # 第二步：剥 block comments。``//`` 已经被先剥光，所以
-    # ``// ... locales/*.json`` 这种伪 ``/*`` 不会再被当成 block 起点。
+
     return _BLOCK_COMMENT_RE.sub(_blank_block, intermediate)
 
 
 def _iter_call_sites(path: Path) -> list[tuple[int, str, str | None]]:
-    """Yield ``(lineno, key, obj_body_or_None)`` for every t() call.
-
-    Comments are blanked beforehand so docstring examples with
-    intentional typos (see ``extension.ts`` banner referring to
-    ``statusBar.unkown``) don't trip the scanner."""
+    """Yield ``(lineno, key, obj_body_or_None)`` for every t() call."""
     raw = path.read_text(encoding="utf-8", errors="ignore")
     text = _strip_source_comments(raw)
     results: list[tuple[int, str, str | None]] = []
@@ -270,8 +210,6 @@ def _collect_surface(
         rel = path.relative_to(ROOT)
         for lineno, key, obj_body in _iter_call_sites(path):
             if key not in locale_known_keys:
-                # Unknown key — report once; no point diffing params
-                # against a value we don't have.
                 issues.append(
                     {
                         "file": str(rel),
@@ -293,8 +231,6 @@ def _collect_surface(
                 "__aiia_param_spread__" in provided
                 or "__aiia_param_dynamic__" in provided
             ):
-                # Call site has spread or computed keys — the static
-                # scanner can't tell; skip.
                 continue
 
             missing = sorted(expected - provided)
@@ -397,16 +333,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    # R110：layer-0 path-drift sanity check —— Web 与 VS Code 的源 locale
-    # 必须真实存在，缺失即 fail-loud (exit 2) 而非 silent ``return []``。
-    # ``_scan_web`` / ``_scan_vscode`` 之前在 ``en.json`` 缺失时静默返回
-    # 空列表，``total = sum(len([])) = 0`` 让 ``--strict`` 也走 exit 0
-    # 路径——整个 param-signature 校验 zero-coverage 但 CI 仍然绿。
-    # 这与 R88/R100/R101/R102 已经在 brand-color guard / HTML coverage /
-    # ts/js no-cjk / locale shape 几个扫描器修过的 silent-skip-on-missing-
-    # source 反模式同款。Layer-0 hoist 把这条 R102 family 的最后一个
-    # i18n 扫描器收尾。Exit code 约定与 R102 一致（0=clean, 1=violations,
-    # 2=configuration error）。
     required_paths = [
         (WEB_LOCALES_DIR / "en.json", "Web UI 源 locale"),
         (VSCODE_LOCALES_DIR / "en.json", "VS Code 源 locale"),

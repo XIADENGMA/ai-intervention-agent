@@ -86,13 +86,7 @@ def _is_changelog_staged() -> bool:
 
 
 def _staged_changelog_diff_lines() -> list[tuple[int, str, str]]:
-    """返回 ``CHANGELOG.md`` 在 ``git diff --cached`` 里的所有 ``+``/``-`` 行。
-
-    每个 tuple 是 ``(old_lineno, new_lineno, kind, payload)``——简化版只关心
-    *new file* 视角下"这行属于哪个 release 区段"。所以这里直接走"按 new
-    file 的最终内容 + diff 行号"思路：拿 staged 版本的完整文件，扫一遍
-    定位 release 区段范围；然后扫 diff 提取 +/- 行号映射回区段。
-    """
+    """返回 ``CHANGELOG.md`` 在 ``git diff --cached`` 里的所有 ``+``/``-`` 行。"""
     try:
         diff = _run_git(["diff", "--cached", "--unified=0", "--", "CHANGELOG.md"])
     except subprocess.CalledProcessError:
@@ -103,7 +97,6 @@ def _staged_changelog_diff_lines() -> list[tuple[int, str, str]]:
     in_hunk_header = False
     for line in diff.splitlines():
         if line.startswith("@@"):
-            # @@ -OLD_START,OLD_COUNT +NEW_START,NEW_COUNT @@
             m = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
             if m:
                 new_lineno = int(m.group(1))
@@ -116,21 +109,16 @@ def _staged_changelog_diff_lines() -> list[tuple[int, str, str]]:
             new_lineno += 1
         elif line.startswith("-") and not line.startswith("--"):
             result.append((new_lineno, "-", line[1:]))
-            # 删除行不推进 new_lineno
+
         else:
             new_lineno += 1
-        in_hunk_header = False  # silence "unused" lint
+        in_hunk_header = False
     _ = in_hunk_header
     return result
 
 
 def _release_sections_in_staged_file() -> list[tuple[int, int, str]]:
-    """读取 staged 版本 CHANGELOG.md，返回 release 区段范围列表。
-
-    每个 tuple = ``(start_lineno, end_lineno, label)``。``label`` 为
-    ``"unreleased"`` / ``"v1.6.4"`` 等；``end_lineno`` 是下一个 section
-    的前一行（最后一个区段用文件总行数兜底）。
-    """
+    """读取 staged 版本 CHANGELOG.md，返回 release 区段范围列表。"""
     try:
         text = _run_git(["show", ":CHANGELOG.md"])
     except subprocess.CalledProcessError:
@@ -213,7 +201,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if not _is_changelog_staged():
-        # 没改 CHANGELOG.md，直接通过——快速 short-circuit 让 hook 几乎零开销
         return 0
 
     diff_lines = _staged_changelog_diff_lines()
@@ -222,7 +209,6 @@ def main(argv: list[str] | None = None) -> int:
 
     ranges = _release_sections_in_staged_file()
     if not ranges:
-        # 解析失败（极端情况），保守通过 + 警告，不阻断 commit
         print(
             "WARNING (check_changelog_diff_scope): 无法解析 CHANGELOG.md 区段结构，"
             "本次不做检测。",

@@ -29,7 +29,7 @@ DEFAULT_LOCALE_DIRS: tuple[Path, ...] = (
     ROOT / "packages" / "vscode" / "locales",
 )
 
-# 违规记录：(bundle 相对路径, 点号 key 路径/``<root>``, 原因, 实际类型)
+
 Violation = tuple[Path, str, str, str]
 
 
@@ -191,7 +191,6 @@ def main(argv: list[str] | None = None) -> int:
 
     files = _discover_locale_files(roots)
     if not files:
-        # scan 根目录下无 JSON，视为配置回归——直接失败让 reviewer 看见
         print(
             "check_i18n_locale_shape: no *.json files found under "
             f"{', '.join(str(r) for r in roots)}",

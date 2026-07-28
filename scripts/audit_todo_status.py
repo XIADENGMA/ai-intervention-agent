@@ -63,13 +63,7 @@ CHANGELOG_MD = REPO_ROOT / "CHANGELOG.md"
 
 
 def parse_todos(todo_src: str) -> list[tuple[str, str, str]]:
-    """从 TODO.md 提取所有 ``- [ ]`` / ``- [x]`` 项。
-
-    Returns: list of (status, raw_line, summary) tuples.
-        - status: "open" | "done"
-        - raw_line: original TODO.md line (for output)
-        - summary: 提取出来用于关键词匹配的简短描述
-    """
+    """从 TODO.md 提取所有 ``- [ ]`` / ``- [x]`` 项。"""
     out: list[tuple[str, str, str]] = []
     for line in todo_src.splitlines():
         m = re.match(r"^\s*-\s*\[([x ])\]\s*(.+)$", line)
@@ -77,7 +71,7 @@ def parse_todos(todo_src: str) -> list[tuple[str, str, str]]:
             continue
         status = "done" if m.group(1).strip() == "x" else "open"
         text = m.group(2).strip()
-        # 提取简短 summary (去掉 trailing ``(已...修复)`` 等元数据)
+
         summary = re.sub(r"_?\(.*?已.*?\)_?$", "", text).strip()
         summary = re.sub(r"\s+", " ", summary)[:80]
         out.append((status, text, summary))
@@ -85,16 +79,13 @@ def parse_todos(todo_src: str) -> list[tuple[str, str, str]]:
 
 
 def extract_changelog_anchors(changelog_src: str) -> list[tuple[str, str]]:
-    """从 CHANGELOG.md 提取所有 ``- \\`\\`xxx\\`\\``` commit anchor。
-
-    Returns: list of (anchor_name, description_snippet) tuples.
-    """
+    r"""从 CHANGELOG.md 提取所有 ``- \`\`xxx\`\``` commit anchor。"""
     out: list[tuple[str, str]] = []
-    # 匹配 ``- **`anchor-name`**`` 风格 或 ``- **`anchor`**`` 后跟描述
+
     pattern = re.compile(r"^-\s+\*\*`([^`]+)`\*\*(.*?)$", re.MULTILINE)
     for m in pattern.finditer(changelog_src):
         anchor = m.group(1)
-        # 取 anchor 后 500 字符作为 description sample
+
         end = min(m.start() + 800, len(changelog_src))
         desc = changelog_src[m.start() : end]
         out.append((anchor, desc))
@@ -104,17 +95,13 @@ def extract_changelog_anchors(changelog_src: str) -> list[tuple[str, str]]:
 def find_addressing_anchors(
     todo_summary: str, anchors: list[tuple[str, str]]
 ) -> list[str]:
-    """对一个 TODO summary，找出可能 address 它的 CHANGELOG anchors。
+    """对一个 TODO summary，找出可能 address 它的 CHANGELOG anchors。"""
 
-    简化的关键词匹配: 提取 TODO 中的关键词 (BUG\\d+ / 功能 / R\\d+ / etc.),
-    在 CHANGELOG anchor 描述里搜索。
-    """
-    # 关键词候选
     keywords = []
-    # BUG1, BUG2, etc.
+
     for m in re.finditer(r"\bBUG\d+\b", todo_summary):
         keywords.append(m.group(0))
-    # 功能关键词
+
     func_keywords = [
         ("下载按钮", "export-tasks"),
         ("发送系统自检通知", "remove-test"),
@@ -167,7 +154,6 @@ def render_table_md(rows: list[dict[str, str]]) -> str:
     out = ["| # | Status | TODO snippet | Addressing commits |"]
     out.append("|---|--------|--------------|--------------------|")
     for i, r in enumerate(rows, 1):
-        # escape pipes in content
         td = r["todo"].replace("|", r"\|")[:80]
         addr = r["addressed_by"].replace("|", r"\|")
         out.append(f"| {i} | {r['status']} | {td} | {addr} |")

@@ -96,11 +96,11 @@ DEFAULT_TARGETS: tuple[str, ...] = (
 DEFAULT_BASELINE = 0
 """``main.css`` 在 R169 prettier-reflow 之后达到的稳态基线。"""
 
-# 单引号字符串字面量。``([^']*?)`` 非贪心匹配，避免吃跨行。
+
 SINGLE_QUOTE_LITERAL_RE = re.compile(r"'[^']*?'")
-# url(...) 包含的字符串需要排除（SVG ``xmlns='http://...'`` 必须用单引号交错）
+
 URL_BLOCK_RE = re.compile(r"url\([^)]*\)", flags=re.DOTALL)
-# /* ... */ 注释块（CSS 唯一注释语法）。``[\s\S]*?`` 非贪心跨行。
+
 COMMENT_BLOCK_RE = re.compile(r"/\*[\s\S]*?\*/")
 
 
@@ -112,11 +112,7 @@ def _strip_comments_and_url_blocks(src: str) -> str:
 
 
 def count_naked_single_quotes(src: str) -> int:
-    """返回 src 里"裸露"的 single-quote 字符串字面量个数。
-
-    "裸露" = 既不在 ``url(...)`` 内（合法的 SVG xmlns 嵌套），也不在
-    ``/* ... */`` 注释里。
-    """
+    """返回 src 里"裸露"的 single-quote 字符串字面量个数。"""
     stripped = _strip_comments_and_url_blocks(src)
     return len(SINGLE_QUOTE_LITERAL_RE.findall(stripped))
 
@@ -126,8 +122,6 @@ def find_naked_single_quotes_with_lines(src: str) -> list[tuple[int, str]]:
     stripped = _strip_comments_and_url_blocks(src)
     out: list[tuple[int, str]] = []
     for m in SINGLE_QUOTE_LITERAL_RE.finditer(stripped):
-        # 用 m.start() 算行号 —— stripped 与原 src 的行号偏移会因 sub 缩短
-        # 而失真。这里取 stripped 的行号即可，diagnostic 仍能定位大致位置。
         line_no = stripped[: m.start()].count("\n") + 1
         out.append((line_no, m.group(0)))
     return out
@@ -136,11 +130,7 @@ def find_naked_single_quotes_with_lines(src: str) -> list[tuple[int, str]]:
 def scan_files(
     targets: list[Path],
 ) -> tuple[int, list[tuple[Path, list[tuple[int, str]]]]]:
-    """扫给定的文件列表，返回 (total_violations, per_file_details)。
-
-    不存在的文件 silently skip 并 stderr 记录 —— 让多目标列表里部分缺失
-    时仍能完成其他检查（避免一个文件挪位置后整套 hook 全 fail）。
-    """
+    """扫给定的文件列表，返回 (total_violations, per_file_details)。"""
     total = 0
     per_file: list[tuple[Path, list[tuple[int, str]]]] = []
     for path in targets:
@@ -198,7 +188,6 @@ def main() -> int:
         for css_file, details in per_file:
             rel = css_file.relative_to(REPO_ROOT)
             for line_no, literal in details[:5]:
-                # 截断超长 literal（如内嵌 base64 图片）避免日志爆炸
                 preview = literal if len(literal) <= 80 else literal[:77] + "..."
                 print(f"  {rel}:{line_no}: {preview}", file=sys.stderr)
             if len(details) > 5:

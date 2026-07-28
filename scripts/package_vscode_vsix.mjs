@@ -39,8 +39,6 @@ if (!extName || !extVersion) {
 
 const outVsix = path.join(vscodeDir, `${extName}-${extVersion}.vsix`);
 
-// 只复制打包所需的最小文件集合，避免 monorepo 下 vsce 误打包整个仓库。
-// TS 迁移后：Node.js 模块由 tsc 编译到 dist/，Webview 端 JS + 静态资源从源目录复制。
 const includeList = [
   "package.json",
   "dist",
@@ -52,10 +50,7 @@ const includeList = [
   "i18n.js",
   "prism-bootstrap.js",
   "webview.css",
-  // T1 · C10c · @aiia/tri-state-panel 共享组件四件套（与 static/ 字节级一致）。
-  // 真源在 static/js|css/，packages/vscode/ 是打包期镜像，由
-  // tests/test_tri_state_panel_parity.py::sha256 守护；本脚本上方的
-  // syncSharedTriStatePanel() 会在每次打包前自动从真源同步过来，避免漂移。
+
   "tri-state-panel.js",
   "tri-state-panel-loader.js",
   "tri-state-panel-bootstrap.js",
@@ -63,11 +58,7 @@ const includeList = [
   "vendor",
   "README.md",
   "README.zh-CN.md",
-  // Marketplace + Open VSX render this file on the extension's "Changelog"
-  // tab. Source-of-truth lives at the repo root (`CHANGELOG.md`); this
-  // file is the per-release extension-only excerpt with a link back to the
-  // project-wide changelog. Maintained alongside the package.json `version`
-  // bump so users see what changed in the wheel they just installed.
+
   "CHANGELOG.md",
   "LICENSE",
   "activity-icon.svg",
@@ -80,23 +71,12 @@ const includeList = [
   "prism.min.css",
   "prism.min.js",
   "locales",
-  // VSCode extension host l10n bundle (vscode.l10n.t backing store).
-  // Declared via "l10n": "./l10n" in package.json so the marketplace +
-  // VSCode runtime both pick it up; must be copied into the vsix root.
+
   "l10n",
   "package.nls.json",
   "package.nls.zh-CN.json",
 ];
 
-// T1 · C10c · @aiia/tri-state-panel：单一真源 → 镜像同步。
-// Web UI 与 VSCode webview 共享四个文件，真源放在
-// src/ai_intervention_agent/static/{js,css}/（R76 PyPA src/ 布局后位置；
-// 在此之前真源路径是 ``static/{js,css}/``），packages/vscode/ 持有的副本
-// 仅作为 vsix 打包入口（webview 不能直接跨 extension 根目录读取
-// ../src/ai_intervention_agent/static/ 资源）。每次打包先 hard-overwrite
-// packages/vscode/<basename>，再让 includeList 把它们打入 vsix。
-// CI 端的 tests/test_tri_state_panel_parity.py 用 sha256 强制两端一致，
-// 任何手工编辑 packages/vscode/tri-state-panel*.{js,css} 都会被发现并被回退。
 const SHARED_TRI_STATE_PANEL_FILES = [
   [
     "src/ai_intervention_agent/static/js/tri-state-panel.js",
@@ -145,14 +125,13 @@ const tmpDir = fs.mkdtempSync(
   path.join(os.tmpdir(), "ai-intervention-agent-vscode-"),
 );
 try {
-  // 若已有同名产物，先清理，避免误用旧文件或因文件锁导致打包失败
+
   try {
     if (fs.existsSync(outVsix)) fs.rmSync(outVsix, { force: true });
   } catch {
-    // 忽略：清理失败不应阻断后续尝试（vsce 可能会覆盖）
+
   }
 
-  // dist/ 不存在时自动编译（Release CI 中可能跳过了显式 compile 步骤）
   const distDir = path.join(vscodeDir, "dist");
   if (!fs.existsSync(distDir)) {
     console.log("dist/ 不存在，自动运行 tsc 编译...");
@@ -176,7 +155,6 @@ try {
     copyRecursive(src, path.join(tmpDir, rel));
   }
 
-  // 注入 git short SHA 作为 BUILD_ID（替换 extension.js 中的 __BUILD_SHA__ 占位符）
   try {
     const sha = spawnSync("git", ["rev-parse", "--short", "HEAD"], {
       cwd: repoRoot,
@@ -214,32 +192,6 @@ try {
 
   console.log(`已生成 VSIX：${outVsix}`);
 
-  // ──────────────────────────────────────────────────────────────────
-  // R12·A4 · VSIX 尺寸预算守卫
-  //
-  // 历史教训：VS Code extension 一旦把 mathjax/lottie/字体等大资源整
-  // 个 bundle 进去，VSIX 体积会从 KB 级跳到 50+ MB，导致：
-  //   1. Marketplace 安装/更新慢，用户卷曲；
-  //   2. ``code --install-extension`` 在窄带 CI 上 timeout；
-  //   3. Air-gapped 运维下载/分发成本高。
-  // 本守卫在打包末尾对 .vsix 做"压缩后"尺寸 check：
-  //   - 超 ``WARN_PACKED_BYTES`` → console.warn 提示 review；
-  //   - 超 ``FAIL_PACKED_BYTES`` → 直接 ``process.exit(1)`` fail-closed。
-  //
-  // 阈值演变：
-  //   - 1.5.22：实测约 2.7 MB；当时定 WARN=4 / FAIL=6 留 ~50% headroom。
-  //   - 1.5.37（R49）：实测稳定在 2.60 MB；前两年没新增大资源，把
-  //     WARN 收紧到 3 MB（仍有 ~15% headroom，覆盖一次 ~400 KB 的正常增
-  //     量），FAIL 收紧到 5 MB（覆盖到一次 ~2.4 MB 的飞涨意外，相当
-  //     于 mathjax 大资源被重复打包级别的事故）。
-  //
-  // 收紧后语义：当 review threshold (WARN) 命中时，PR 必须解释新增了
-  // 什么；hard limit (FAIL) 才会真正 break release。两个阈值都可通过
-  // env var 覆盖，方便临时大幅增量上线前调高，但默认必须保守。
-  //
-  // 数值合理性由 ``tests/test_vscode_vsix_size_budget.py`` 静态守护，
-  // 防止"为通过 CI 把阈值改到 100 MB"这种自残式 escape hatch。
-  // ──────────────────────────────────────────────────────────────────
   const WARN_PACKED_MB_DEFAULT = 3;
   const FAIL_PACKED_MB_DEFAULT = 5;
   const _parseMbEnv = (envName, fallback) => {
