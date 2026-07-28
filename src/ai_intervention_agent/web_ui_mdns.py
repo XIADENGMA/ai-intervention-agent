@@ -1,28 +1,4 @@
-"""mDNS 生命周期 Mixin — 从 WebFeedbackUI 提取。
-
-封装 mDNS/DNS-SD 服务的发现、注册、注销逻辑，
-由 WebFeedbackUI 通过 MRO 继承。
-
-异步注册（R20.11）
-~~~~~~~~~~~~~~~~~~
-``_start_mdns_if_needed`` 内部的 ``zeroconf.register_service`` 因 RFC 6762 §8
-要求的 conflict-probe announcement 而**同步阻塞 ~1.7 s**（多次 250 ms multicast
-probe + 最终 announcement）。在 ``WebFeedbackUI.run()`` 中直接同步调用会让
-Flask ``app.run()`` 进入 listen 状态延迟 ~1.7 s——浏览器/插件第一次访问 Web UI
-会被推迟相同时间。
-
-R20.11 把对 ``_start_mdns_if_needed`` 的调用搬到后台 daemon 线程：``run()`` 启动
-线程后立刻进入 ``app.run()``，``app.run`` 在 ~30 ms 内开始 listen，浏览器可立即
-访问；mDNS announcement 在后台并行完成，对 ``http://127.0.0.1:port`` /
-``http://<lan-ip>:port`` 路径完全透明（这两条访问路径不依赖 mDNS 名字解析），仅
-LAN 上其他设备用 ``ai.local`` 路径访问时才会等 announcement 完成（典型在 1-2 秒
-内自然达成）。
-
-``_stop_mdns`` 在 ``run()`` finally 块中 ``join`` 线程，防止 daemon 线程在主进程
-结束时 race 写入 ``_mdns_zeroconf``。``_start_mdns_if_needed`` 自身保持同步语义
-不变——既兼容现有 26+ 个直接调用该方法的单元测试，也允许 daemon thread 中按
-原契约执行。
-"""
+"""mDNS 生命周期 Mixin — 从 WebFeedbackUI 提取。"""
 
 from __future__ import annotations
 
@@ -141,11 +117,6 @@ class MdnsMixin:
                 server=server_fqdn,
             )
         except (OSError, ValueError) as e:
-            # 历史教训：``socket.inet_aton`` 在 publish_ip 不是合法 IPv4 字面量时
-            # 抛 ``OSError``（``illegal IP address string passed``）；这条分支会
-            # 让 ``run()`` 内的 ``_start_mdns_if_needed()`` 抛出，进而让整个 Web
-            # UI 起不来 —— 违反 docstring 承诺「失败则降级，不影响 Web UI 启动」。
-            # 包成软失败 + 日志告警 + 返回。
             logger.warning(
                 f"mDNS ServiceInfo 构造失败（publish_ip={publish_ip!r}），"
                 f"已降级，不影响 Web UI 启动: {e}",
@@ -153,13 +124,6 @@ class MdnsMixin:
             )
             return
 
-        # 历史教训：``Zeroconf()`` 在以下真实环境会抛 ``OSError``：
-        #   - Linux + Avahi 共存且未开 ``disallow-other-stacks=no``: errno 98
-        #     (EADDRINUSE)
-        #   - Windows 上有 169.254.x.x link-local 接口: WinError 10049
-        #   - IPv6 loopback 无 multicast 能力: errno 101 (Network unreachable)
-        # 不包 try 会让 ``WebFeedbackUI.run()`` 直接挂掉，整个 Web UI
-        # 起不来 —— 这违反 docstring 承诺的「mDNS 失败 → 降级」原则。
         try:
             zc = Zeroconf()
         except OSError as e:
@@ -205,12 +169,6 @@ class MdnsMixin:
             try:
                 zc.close()
             except Exception as zc_err:
-                # **R119**：``zeroconf.Zeroconf.close()`` 失败会泄漏 UDP socket
-                # + mDNS responder 后台线程。这条 cleanup 紧跟在 hostname 冲突
-                # 错误路径上——pre-R119 完全静默，进程 exit 后还有 zeroconf
-                # 守护线程在跑、UDP 套接字未释放但用户完全看不到。R119 加
-                # debug 痕迹，开 debug 后就能区分 "mDNS 失败 + cleanup OK"
-                # vs "mDNS 失败 + cleanup 也失败导致资源泄漏"。
                 logger.debug(
                     "[R119] hostname 冲突路径下 zc.close() 失败 "
                     f"(zeroconf UDP socket 可能泄漏): "
@@ -225,9 +183,6 @@ class MdnsMixin:
             try:
                 zc.close()
             except Exception as zc_err:
-                # **R119**：与上面 hostname 冲突路径同 spirit。这条 cleanup
-                # 紧跟在通用 mDNS 发布失败路径上，主异常已通过 logger.warning
-                # 记录；这里 debug 级补一条 cleanup 失败信号即可。
                 logger.debug(
                     "[R119] mDNS 发布失败路径下 zc.close() 失败 "
                     f"(zeroconf UDP socket 可能泄漏): "
@@ -244,30 +199,14 @@ class MdnsMixin:
         print(f"mDNS 已发布: http://{hostname}:{self.port} (IP: {publish_ip})")
 
     def _stop_mdns(self) -> None:
-        """停止 mDNS 发布（尽力而为）
-
-        R20.11：mDNS register 在后台 daemon thread 异步执行，本方法在 ``run()``
-        finally 块中调用；如果 register thread 仍在跑（典型场景：Web UI 子进程
-        在 mDNS conflict-probe 完成前被 SIGTERM 终止），先 ``join`` 等待线程
-        完成，避免：
-
-        * **泄漏**：thread 后续 set ``_mdns_zeroconf = zc`` 但本方法已经返回，
-          导致 zc 实例在 daemon thread 死亡时连带 close 失败而留下 multicast
-          socket 半关闭。
-        * **TOCTOU**：``if self._mdns_zeroconf is None: return`` 早退后，thread
-          竞争写 ``_mdns_zeroconf``——下一次 ``run()`` 看到旧实例仍在但已不可用。
-
-        ``join(timeout=2.0)`` 平衡 *进程退出延迟* 与 *register 完成正确性*：
-        2.0s 通常足够 zeroconf 完成 announcement（实测 ~1.7s），同时不会让
-        Web UI shutdown 看起来 hang。超时后线程仍是 daemon，会随主进程结束。
-        """
+        """停止 mDNS 发布（尽力而为）"""
         thread = getattr(self, "_mdns_thread", None)
         if thread is not None and thread.is_alive():
             try:
                 thread.join(timeout=2.0)
             except Exception as e:
                 logger.debug(f"等待 mDNS 注册线程完成失败（忽略）：{e}")
-        # 显式置 None，让 run() 多次调用之间隔离
+
         self._mdns_thread = None
 
         if self._mdns_zeroconf is None:

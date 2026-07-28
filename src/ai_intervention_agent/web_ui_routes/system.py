@@ -87,7 +87,7 @@ _SSE_LATENCY_QUANTILE_SPECS: tuple[tuple[str, str], ...] = (
     ("p95_ms", "0.95"),
 )
 
-# Field tuple shape: (metric_suffix, source_key, help_text, metric_type).
+
 _NOTIFICATION_PROVIDER_FIELD_SPECS: tuple[tuple[str, str, str, str], ...] = (
     (
         "attempts_total",
@@ -155,22 +155,20 @@ def _get_mcp_tool_call_metrics_module() -> Any | None:
     return mcp_tool_call_metrics
 
 
-# 自动探测时按优先级尝试的编辑器命令名（保留与 mcp.json 中常见 IDE 的呼应）
 _AUTO_DETECT_EDITORS: tuple[tuple[str, list[str]], ...] = (
-    # (命令名, 该命令打开文件时使用的额外参数)
     ("cursor", ["--reuse-window"]),
     ("code", ["--reuse-window"]),
     ("code-insiders", ["--reuse-window"]),
     ("windsurf", ["--reuse-window"]),
     ("zed", []),
-    ("subl", []),  # Sublime Text
-    ("mate", []),  # TextMate
+    ("subl", []),
+    ("mate", []),
     ("webstorm", []),
     ("pycharm", []),
     ("idea", []),
 )
 
-# 客户端可以通过 editor 参数显式指定，受白名单约束
+
 _ALLOWED_EDITOR_NAMES = frozenset(name for name, _ in _AUTO_DETECT_EDITORS) | frozenset(
     {"system", "default"}
 )
@@ -179,23 +177,6 @@ _ALLOWED_EDITOR_NAMES = frozenset(name for name, _ in _AUTO_DETECT_EDITORS) | fr
 def _resolve_loopback_ips() -> set[str]:
     """所有视为本机环回的客户端 IP（IPv4 / IPv6 兼容）。"""
     return {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
-
-
-# ---------------------------------------------------------------------------
-# R121-A: /api/system/health 增强辅助函数
-#
-# 设计原则：
-# 1. **不在 ``system_health()`` 函数体内 import / 调 ``get_config()``** —— R53-F
-#    的 ``test_no_config_value_passthrough`` 把 "handler 不应直接读 config"
-#    编码成机器化测试，所以读 config 的逻辑必须搬出 handler，由 helper 间接
-#    完成。这是契约不是约定。
-# 2. **每个 helper 都 swallow exception 并返回 ``None`` / 安全默认值** —— health
-#    端点必须高可用，任何子项探测异常都不能让整端点 5xx；handler 那一层只
-#    汇总 ``ok`` 标记并把整体 status 降到 ``unhealthy``。
-# 3. **payload 只放数值 / enum / 路径** —— 绝不回传 config 字段值（password /
-#    token / bark url ...），路径本身已经通过 ``/api/system/open-config-file/info``
-#    暴露过，不构成新的泄漏面。
-# ---------------------------------------------------------------------------
 
 
 def _safe_uptime_seconds() -> float | None:
@@ -272,7 +253,7 @@ def _safe_web_ui_env_overrides() -> dict[str, str] | None:
         from ai_intervention_agent import service_manager as _sm
 
         active: dict[str, str] = {}
-        # 白名单：仅 web_ui 三个 env override，避免悄悄扩面到敏感 env
+
         for env_name in (
             _sm._ENV_WEB_UI_HOST,
             _sm._ENV_WEB_UI_PORT,
@@ -325,26 +306,16 @@ def _safe_build_info() -> dict[str, str] | None:
         return None
 
 
-# R142：health 端点暴露 4 家 provider 的 per-provider 统计快照。
-# 顺序固定，与 ``NotificationType`` 同源；缺失的 provider（既未注册也没失败计数）
-# 用 ``None`` 占位，方便监控用 stable 的 key 集合做 dashboard 模板。
 _HEALTH_PER_PROVIDER_KEYS: tuple[str, ...] = ("bark", "web", "sound", "system")
 
-# R143：last_error class normalization —— per_provider.last_error_class 的取值
-# 是 5 个稳定字符串之一，与 ``last_error_present`` boolean 互补：boolean 答
-# "上次最近一次失败有没有 error 信息"，class 答"是哪一类"。监控 dashboard
-# 可以做 stack-bar："这个 provider 最近 N 次失败，4xx 占多少 / 5xx 占多少
-# / network 占多少"，比单个 boolean 信号丰富 5 倍。
-#
-# 关键：所有取值都是 **泛化的错误类**，不含具体 URL / device_key / token /
-# error message —— PII 边界与 R142 一致。
+
 _HEALTH_ERROR_CLASS_VALUES: tuple[str, ...] = (
-    "client_error",  # 4xx HTTP / 设备密钥错 / 鉴权失败
-    "server_error",  # 5xx HTTP / Bark / 推送平台自身故障
-    "network_error",  # connection refused / DNS 失败 / 网络中断
-    "timeout",  # 请求超时
-    "not_registered",  # provider 没在 NotificationManager 注册
-    "unknown",  # 无法归类的字符串（兜底）
+    "client_error",
+    "server_error",
+    "network_error",
+    "timeout",
+    "not_registered",
+    "unknown",
 )
 _LAST_ERROR_STATUS_RE = re.compile(
     r"(?:status[_\s]*code['\":\s]+|http\s+|http/[\d.]+\s+)(\d{3})"
@@ -390,18 +361,8 @@ def _classify_last_error(last_error: str | None) -> str | None:
     if "provider_not_registered" in s_lower:
         return "not_registered"
 
-    # 提取 HTTP status code —— 限定在明确的 HTTP 上下文里，不做裸数字
-    # 兜底（避免 "Connection refused on port 443" 中的 ``443`` 被误判为
-    # 4xx → client_error）。两条路径：
-    # 1. ``'status_code': NNN`` —— NotificationManager 写入 Bark dict
-    #    的固定 repr 模式
-    # 2. ``HTTP NNN`` / ``http nnn`` —— 自由文本中的 HTTP layer 标识
     sc_match = _LAST_ERROR_STATUS_RE.search(s_lower)
     if not sc_match:
-        # 第三条：以 ``NNN <文字>`` 开头的常见 HTTP 错误格式，如
-        # ``500 Internal Server Error from upstream``。只匹配 4xx/5xx
-        # 数字 + 空格 + 字母 + 字母/空格 这种结构，避免 ``443 port`` /
-        # ``80 abc`` 这种 port 编号被误判。
         sc_match = _LAST_ERROR_PREFIX_STATUS_RE.match(s_lower)
 
     if sc_match:
@@ -414,7 +375,6 @@ def _classify_last_error(last_error: str | None) -> str | None:
         if 400 <= sc < 500:
             return "client_error"
 
-    # 没拿到 status code —— 按关键字匹配
     if "timeout" in s_lower or "timed out" in s_lower:
         return "timeout"
 
@@ -486,14 +446,8 @@ def _safe_per_provider_snapshot(
         elif last_error_raw is None:
             last_error_str = None
         else:
-            # NotificationManager line 1117-1126 写入的 last_error 是 dict，
-            # 读 status 时已做 ``str(...)`` truncate；这里 defensive 兜底
             last_error_str = str(last_error_raw)
 
-        # R145: success_streak / failure_streak —— 连续成功 / 连续失败计数。
-        # 监控可以在 dashboard 上对 ``failure_streak >= N`` 直接 alert，
-        # 比"成功率< X%"更早发现「这家 provider 突然全挂」。
-        # 非法类型（字符串 / 列表 / None）→ 兜底 0，永不抛 exception。
         try:
             success_streak = int(pstats_raw.get("success_streak", 0) or 0)
         except (TypeError, ValueError):
@@ -512,11 +466,7 @@ def _safe_per_provider_snapshot(
             "last_success_age_seconds": last_success_age_seconds,
             "last_failure_age_seconds": last_failure_age_seconds,
             "last_error_present": bool(last_error_str),
-            # R143：把 last_error 字符串归一成 5 类之一；详见
-            # ``_classify_last_error``。``None`` 当且仅当
-            # ``last_error_present=False``。
             "last_error_class": _classify_last_error(last_error_str),
-            # R145: 连续成功 / 连续失败计数（互斥 —— 同时只一个 > 0）。
             "success_streak": success_streak,
             "failure_streak": failure_streak,
         }
@@ -693,30 +643,10 @@ def _safe_token_age_seconds() -> int | None:
     return _compute_age_seconds_from_iso(ns.get("api_token_rotated_at", ""))
 
 
-# ---------------------------------------------------------------------------
-# T1 (cycle 4): Prometheus exposition format helpers for /api/system/metrics
-#
-# 设计要点（与 /api/system/health JSON 端点互补）：
-# 1. **零新依赖**：手写 prom 0.0.4 exposition format，不引入 prometheus_client
-#    库（避免增加 4 MB+ 的额外 wheel 体积 + multiprocess registry 这种本项目
-#    用不上的复杂度）。
-# 2. **复用现有 _safe_* helper**：所有数据源都走已经存在的安全收集函数
-#    （_safe_uptime_seconds / _safe_build_info / _safe_notification_summary
-#    / _sse_bus.stats_snapshot），保证与 /api/system/health 同步 + 一旦
-#    R53-F 契约更新两个端点一起改。
 # 3. **命名规约**：``aiia_<subsystem>_<name>[_unit][_total]`` 前缀。监控
 #    系统看到 ``aiia_*`` 就知道是本项目暴露的指标，避免命名冲突；
-#    ``_total`` 后缀仅 counter 用，遵循 OpenMetrics / Prometheus 官方指南。
-# 4. **PII 边界**：与 /api/system/health 一致——只暴露数值 / enum / 路径，
-#    绝不透出 config 字段值（password / token / device_key）；
-#    last_error 原文本不出现。
-# 5. **失败优雅降级**：任何子项探测失败都跳过对应 metric 行，不让整个
-#    端点 5xx；最坏情况返回空 payload（监控仪表板会自动忽略 stale）。
-# ---------------------------------------------------------------------------
 
 
-# Prometheus exposition format spec：label value 内字符需 escape 反斜杠、
-# 双引号、换行。详见 https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md
 _PROM_LABEL_ESCAPES = (("\\", "\\\\"), ('"', '\\"'), ("\n", "\\n"))
 _PromSample = tuple[dict[str, str] | None, int | float]
 _PromHistogramObservation = tuple[dict[str, str] | None, dict[float, int], int, float]
@@ -978,8 +908,7 @@ def _format_prom_histogram_family(
                     f"# TYPE {name} histogram\n",
                 )
             )
-        # Fast path: in-repo histogram producers build cumulative buckets in
-        # ascending insertion order, so only sort when caller input is disorderly.
+
         sorted_keys, has_inf_bucket = _prom_histogram_bucket_keys(buckets)
         base_label_str = _format_prom_labels(base_labels)
         preescaped_base_label_suffix = (
@@ -1119,7 +1048,6 @@ def _render_prometheus_metrics() -> str:
     """
     lines: list[str] = []
 
-    # --- 进程级 ---
     uptime = _safe_uptime_seconds()
     if uptime is not None:
         lines.append(
@@ -1151,7 +1079,6 @@ def _render_prometheus_metrics() -> str:
             )
         )
 
-    # --- SSE bus ---
     try:
         from ai_intervention_agent.web_ui_routes.task import _sse_bus
 
@@ -1174,21 +1101,11 @@ def _render_prometheus_metrics() -> str:
 
         emit_by_type_raw = snap.get("emit_by_type")
         if isinstance(emit_by_type_raw, dict) and emit_by_type_raw:
-            # R202 / Cycle 8 · 方案 B：新增「按 event_type 维度」counter
             # ``aiia_sse_emit_by_type_total{event_type="..."}``，与现有未
             # 标签化的 ``aiia_sse_emit_total`` 并存（**不**用 label 覆盖原
-            # metric——Prometheus 不允许同一 name 在不同 series 间切换
-            # label set，会破坏 Grafana 历史曲线 + 触发 strict parser 的
-            # ``inconsistent labels for metric family`` 错误）。
-            #
+
             # 不变量：``sum(aiia_sse_emit_by_type_total) == aiia_sse_emit_total``，
-            # 由 ``_SSEBus.emit()`` 同一锁内 ``_emit_total += 1`` 与
-            # ``_emit_by_type[event_type] += 1`` 紧贴保证，AST guard 在
-            # ``tests/test_sse_emit_by_type_counter_r202.py`` 锁结构。
-            #
-            # event_type 按字符串字典序排序，让 exposition 输出 deterministic
-            # ——Prometheus parser 不要求顺序，但 deterministic 输出方便
-            # smoke test 直接 string-equality assertion + diff-friendly。
+
             emit_by_type_metrics = _format_prom_metric_family(
                 "aiia_sse_emit_by_type_total",
                 help_text=(
@@ -1213,9 +1130,6 @@ def _render_prometheus_metrics() -> str:
                     )
                 )
 
-        # R134 latency snapshot → prom summary-style 用 quantile 标签的 gauge
-        # （不是 prom 的 summary type，因为没有 _sum/_count 配套；用 gauge
-        # 加 quantile label 是 prom 社区广泛接受的"approximation"模式）。
         latency = snap.get("latency_ms")
         if isinstance(latency, dict):
             for quantile_key, quantile_label in _SSE_LATENCY_QUANTILE_SPECS:
@@ -1231,24 +1145,15 @@ def _render_prometheus_metrics() -> str:
                         )
                     )
 
-        # R207 / Cycle 10 · F-205-2: SSE schema validation violation counter.
-        # Mirrors stats_snapshot()['schema_violation_total'] (set by R205
         # _SSEBus.emit() when AIIA_SSE_SCHEMA_VALIDATE=warn|strict).
-        #
+
         # Omit-when-off contract（与 R204 `aiia_token_age_seconds` 同款
-        # omit-vs-NaN philosophy）：
-        # - mode == "off"：metric **不出现** → alertmanager 用 `absent(
+
         #   aiia_sse_schema_violation_total)` 即可分清 "validation off"
-        #   vs "validation on with 0 violations"，两类 ops 状态用不同
-        #   alert 路由处理；
-        # - mode in {warn, strict}：metric 出现 (value ≥ 0)，alertmanager
+
         #   用 `rate(aiia_sse_schema_violation_total[5m]) > 0` 检测新
         #   violation 出现，或 `aiia_sse_schema_violation_total{...} > 100`
-        #   检测违规累积超阈值。
-        #
-        # Sum invariant 与 R205 一致：一条 emit 多字段错也只算 1 次
-        # violation（matches _schema_violation_total += 1 once per emit，
-        # 无论 violations list 长度）——避免噪声膨胀。
+
         mode_raw = snap.get("schema_validate_mode")
         violation_raw = snap.get("schema_violation_total")
         if (
@@ -1273,7 +1178,6 @@ def _render_prometheus_metrics() -> str:
                 )
             )
 
-    # --- Security / API token age (R204 / Cycle 9 · F-203-1) ---
     token_age = _safe_token_age_seconds()
     if token_age is not None:
         lines.append(
@@ -1294,7 +1198,6 @@ def _render_prometheus_metrics() -> str:
             )
         )
 
-    # --- TaskQueue ---
     try:
         from ai_intervention_agent.task_queue_singleton import get_task_queue
 
@@ -1321,12 +1224,8 @@ def _render_prometheus_metrics() -> str:
                 )
             )
     except Exception:
-        # [R-186] /metrics 是 monitoring scrape 路径，TaskQueue 子系统任何
-        # 内部异常（singleton 还未初始化、attr 缺失、import 死循环）都不
-        # 应该让整端点 5xx——监控会通过 staleness 自动 alert。
         pass
 
-    # --- 最近 5 分钟 ERROR 日志计数 ---
     try:
         from ai_intervention_agent.enhanced_logging import get_recent_error_stats
 
@@ -1341,17 +1240,10 @@ def _render_prometheus_metrics() -> str:
             )
         )
     except Exception:
-        # [R-186] enhanced_logging.get_recent_error_stats() 任何内部异常（环形
-        # 缓冲读取冲突、字段缺失、Timestamp 解析失败）都不应让 /metrics
         # 整端点 5xx；丢失一行 ``aiia_recent_errors_5min`` gauge 比让
-        # Prometheus scrape 失败把整个 ai-intervention-agent target 标
-        # red 更可接受。
+
         pass
 
-    # --- Notification 子系统（含 per-provider 标签） ---
-    # R186 fix：与其他子系统保持一致，整体包 try/except，
-    # 防止 notification_manager 内部任何异常（包括 _safe_notification_summary
-    # 自身、provider 字典 iteration、未预期的字段类型）让 /metrics 5xx。
     try:
         notif = _safe_notification_summary()
     except Exception:
@@ -1406,14 +1298,8 @@ def _render_prometheus_metrics() -> str:
                 )
             )
 
-        # per_provider metrics（每个 provider 一行，用 provider 标签区分）
-        #
-        # R187 follow-up bug fix：旧实现对每个 (provider, metric_suffix)
         # 单独调 ``_format_prom_metric``，让同一 ``aiia_notification_<suffix>``
-        # name 的 HELP / TYPE 行重复出现 N 次（N = provider 数），strict
-        # Prometheus parser（VictoriaMetrics / Cortex / 最新 prom）会报
-        # ``second TYPE for metric`` 错误。改用 ``_format_prom_metric_family``
-        # 一次性发完整 family：HELP/TYPE 各一行 + N 个 value 行。
+
         per_provider = notif.get("per_provider")
         if isinstance(per_provider, dict):
             for (
@@ -1436,16 +1322,11 @@ def _render_prometheus_metrics() -> str:
                 if provider_metrics:
                     lines.append(provider_metrics)
 
-    # --- R191 / Cycle 5: Notification send duration histogram (per-provider) ---
     # ``aiia_notification_send_duration_seconds{provider}`` 让运维仪表板能
-    # 画「provider P95 send 耗时」「按 provider 拆分的耗时分布」。R142
-    # 的 ``last_latency_ms`` + ``latency_ms_total`` / ``count`` 只能算最近
-    # 一次 + 平均；histogram 才能算 percentile。
+
     try:
         provider_latencies = _safe_notification_latency_histograms()
     except Exception:
-        # [R-191] 与上面的 stats 路径同档容错——provider histogram 故障
-        # 不应让 /metrics 5xx。
         provider_latencies = {}
     if isinstance(provider_latencies, dict) and provider_latencies:
         notification_histogram_metrics = _format_prom_histogram_family(
@@ -1463,12 +1344,8 @@ def _render_prometheus_metrics() -> str:
         if notification_histogram_metrics:
             lines.append(notification_histogram_metrics)
 
-    # --- R187 / T2: MCP tool call counter ---
     # ``aiia_mcp_tool_calls_total{tool,status}`` 给监控仪表板做
-    # request_rate / error_rate / SLO success_ratio = success / (success +
-    # failure) 的分子分母——配合 R37 ``get_mcp_error_stats()`` 的
-    # ``{error_type}:{method}`` 计数可以做"哪类 tool 错最多 + 错的是
-    # 什么类型"的二维下钻。
+
     mcp_tool_call_metrics_module = _get_mcp_tool_call_metrics_module()
     if mcp_tool_call_metrics_module is None:
         tool_stats = {}
@@ -1476,10 +1353,6 @@ def _render_prometheus_metrics() -> str:
         try:
             tool_stats = mcp_tool_call_metrics_module.get_mcp_tool_call_stats()
         except Exception:
-            # [R-187] mcp_tool_call_metrics 任何 import / 调用异常都不应让
-            # /metrics 5xx——丢失一行 tool counter 比让 Prometheus 把整个
-            # ai-intervention-agent target 标 red 更可接受（与其他子系统
-            # block 的优雅降级模式一致）。
             tool_stats = {}
 
     if isinstance(tool_stats, dict) and tool_stats:
@@ -1496,13 +1369,8 @@ def _render_prometheus_metrics() -> str:
         if mcp_tool_call_metrics:
             lines.append(mcp_tool_call_metrics)
 
-    # R190 / Cycle 5 · MCP tool 调用耗时 histogram
-    # ----------------------------------------------------------------
     # ``aiia_mcp_tool_call_duration_seconds{tool,status}`` 让监控能画
-    # 「P95 工具耗时」、「按 tool 拆分的耗时分布」、「success vs failure
-    # 耗时对比」等仪表板（CR#18 §4.1 → §7 item 2 deliverable）。R187
-    # 的 counter 是分子分母，R190 的 histogram 是 SLO 延迟侧——两者
-    # 合在一起才是完整的 RED（Rate / Errors / Duration）三件套。
+
     if mcp_tool_call_metrics_module is None:
         tool_latency = {}
     else:
@@ -1511,9 +1379,6 @@ def _render_prometheus_metrics() -> str:
                 mcp_tool_call_metrics_module.get_mcp_tool_call_latency_snapshot()
             )
         except Exception:
-            # [R-187] 与上面的 stats 路径同档容错——histogram 故障不应让
-            # /metrics 5xx；丢失一行 latency 比 Prometheus 把整个 target
-            # 标 red 更可接受。
             tool_latency = {}
 
     if isinstance(tool_latency, dict) and tool_latency:
@@ -1541,11 +1406,6 @@ def _get_client_ip() -> str:
 def _is_loopback_request() -> bool:
     """仅本机来源（127.0.0.1 / ::1）的请求允许执行打开命令。"""
     return _get_client_ip() in _resolve_loopback_ips()
-
-
-# ---------------------------------------------------------------------------
-# R189 / T4: 可选 API token 认证（配合 non-loopback hardening）
-# ---------------------------------------------------------------------------
 
 
 _API_TOKEN_HEADER = "X-API-Token"
@@ -1616,8 +1476,7 @@ def _is_api_token_authorized() -> bool:
     presented = _extract_request_api_token()
     if not presented:
         return False
-    # constant-time compare；compare_digest 对长度不同的输入会 fast-fail，
-    # 不会泄漏长度差异
+
     return secrets.compare_digest(configured, presented)
 
 
@@ -1652,13 +1511,6 @@ def _resolve_allowed_paths() -> list[Path]:
     except Exception as exc:
         logger.warning(f"获取当前配置文件路径失败: {exc}")
 
-    # 同时允许默认模板，方便用户从 UI 跳过去对照。
-    # R76：本模块在 ``src/ai_intervention_agent/web_ui_routes/system.py``，所以仓库根
-    # 是 ``parent.parent.parent.parent``（system.py → web_ui_routes → ai_intervention_agent
-    # → src → repo_root）。模板既可能在仓库根（开发环境），也可能在包内
-    # （wheel 安装到 site-packages 的旧布局），两种都加进候选避免 UI 找不到。
-    # R76 同时移除了 ``config.jsonc.default`` 模板（v1.4 之前的 JSONC 配置仍由
-    # ``config_manager`` auto-migrate 兼容，但不再随包发布独立样例）。
     here = Path(__file__).resolve()
     repo_root = here.parent.parent.parent.parent
     pkg_root = here.parent.parent
@@ -1668,7 +1520,6 @@ def _resolve_allowed_paths() -> list[Path]:
             candidates.append(p)
             break
 
-    # 去重
     deduped: list[Path] = []
     seen: set[str] = set()
     for path in candidates:
@@ -1681,7 +1532,7 @@ def _resolve_allowed_paths() -> list[Path]:
 
 def _detect_default_editor() -> tuple[str | None, list[str]]:
     """自动探测可用的编辑器，返回 (绝对路径, 额外参数)。"""
-    # 环境变量优先
+
     env_choice = os.environ.get("AI_INTERVENTION_AGENT_OPEN_WITH", "").strip()
     if env_choice:
         env_path = shutil.which(env_choice)
@@ -1706,7 +1557,6 @@ def _system_open_command(target: Path) -> list[str] | None:
         if opener:
             return [opener, target_str]
     elif sys.platform.startswith("win"):
-        # Windows 用 cmd /c start "" "<path>"，第一个 "" 是 start 的窗口标题占位
         comspec = os.environ.get("COMSPEC") or shutil.which("cmd")
         if comspec:
             return [comspec, "/c", "start", "", target_str]
@@ -1915,7 +1765,6 @@ class SystemRoutesMixin:
                     400,
                 )
 
-            # 选择编辑器：显式 editor 字段（白名单约束） → 环境变量 → 自动探测 → 系统默认
             editor_choice = str(payload.get("editor") or "").strip().lower()
             editor_path: str | None = None
             extra_args: list[str] = []
@@ -1928,7 +1777,7 @@ class SystemRoutesMixin:
                 editor_choice = ""
 
             if editor_choice in {"system", "default"}:
-                editor_path = None  # 走 system fallback
+                editor_path = None
             elif editor_choice:
                 editor_path = shutil.which(editor_choice)
                 if editor_path:
@@ -1966,8 +1815,6 @@ class SystemRoutesMixin:
                 editor_basename = "system"
 
             try:
-                # close_fds=True / start_new_session=True 让子进程独立于本服务，
-                # 避免在 Web UI 重启时把 IDE 也带走。
                 subprocess.Popen(
                     cmd,
                     stdin=subprocess.DEVNULL,
@@ -1990,9 +1837,7 @@ class SystemRoutesMixin:
                 )
             except OSError as exc:
                 logger.error(f"启动编辑器失败: {exc}", exc_info=True)
-                # R72-B (CodeQL py/stack-trace-exposure #46)：不把 OSError
-                # 的 errno / filename 等系统细节回传给客户端。运维需要这些
-                # 时去看服务器日志（已经 exc_info=True 完整记录）。
+
                 return (
                     jsonify(
                         {
@@ -2407,7 +2252,7 @@ class SystemRoutesMixin:
                 from ai_intervention_agent.task_queue_singleton import get_task_queue
 
                 tq = get_task_queue()
-                # ``get_task_count`` 返回 ``{"total": int, ...}``
+
                 count_dict = tq.get_task_count()
                 checks["task_queue"] = {
                     "ok": True,
@@ -2422,9 +2267,6 @@ class SystemRoutesMixin:
                     get_recent_error_stats,
                 )
 
-                # 数最近 5 分钟内的 ERROR 数量。5 分钟是个权衡：太短(1m)
-                # 容易因为 cron job 的瞬时 spike 误判，太长(30m)无法反映
-                # 当下健康度。监控可结合多次采样判趋势。
                 cutoff = ts - 300
                 error_count, buffer_total = get_recent_error_stats(cutoff)
                 checks["recent_errors"] = {
@@ -2435,25 +2277,14 @@ class SystemRoutesMixin:
             except Exception as exc:
                 checks["recent_errors"] = {"ok": False, "error": str(exc)}
 
-            # R121-A: notification subsystem 健康摘要
-            #
-            # 不是所有部署都启用通知（默认 enabled=False），所以"未启用"不算
-            # degraded。只有"启用 + 有足够样本 + 成功率明显偏低"才升级到
-            # degraded。门槛 30 条 finalized 是经验值：太低（5 条）会被冷启
-            # 动早期的瞬时 0% 误判，太高（100 条）对刚上线的部署一直探测
-            # 不到任何降级。30 大约是一个工作日的通知量级。
             notification_summary = _safe_notification_summary(now)
             if notification_summary is None:
                 checks["notification"] = {"ok": False, "error": "summary unavailable"}
             else:
                 checks["notification"] = {"ok": True, **notification_summary}
 
-            # 整体 status 决策
             all_ok = all(check.get("ok") for check in checks.values())
-            # ``checks[*]`` 的 value 是 ``dict[str, object]``，子 .get(...) 因此返回
-            # ``object``，``int()`` 拒绝直接转。改用本地变量 + ``isinstance`` 守
-            # 卫：拿到 int / 数值就用，否则降级为 0（说明该子检查挂了，直接当
-            # 没观测到来抑制误判）。
+
             sse_check = checks.get("sse_bus")
             re_check = checks.get("recent_errors")
             bp_raw = (
@@ -2467,14 +2298,6 @@ class SystemRoutesMixin:
             backpressure = bp_raw if isinstance(bp_raw, int) else 0
             recent_err_count = err_raw if isinstance(err_raw, int) else 0
 
-            # R121-A: notification 子健康度也参与 degraded 判定
-            #
-            # 触发条件（同时满足）：
-            #   1. notification check 内部 ok=True（即 summary 拿到了）
-            #   2. enabled=True（关闭通知的部署不该被这个降级）
-            #   3. events_finalized >= 30（足够样本，避免冷启动早期误判）
-            #   4. delivery_success_rate < 0.8（80% 是个权衡：太高过敏，
-            #      太低不敏感）
             notif_check = checks.get("notification")
             notif_degraded = False
             if isinstance(notif_check, dict) and notif_check.get("ok"):
@@ -2499,22 +2322,6 @@ class SystemRoutesMixin:
             else:
                 status = "healthy"
 
-            # R121-A: 顶层 metadata —— version / uptime_seconds / config_file_path
-            #
-            # 三个字段都对 K8s probe / 监控仪表板有价值：
-            # - version：滚动升级时区分实例
-            # - uptime_seconds：检测异常重启 / 进程"卡 init"
-            # - config_file_path：检测"加载错配置"（典型场景：env var 漂移）
-            #
-            # CR#15 续：再加一个 web_ui_env_overrides 字段——配合本周期新增
-            # 的 ``AI_INTERVENTION_AGENT_WEB_UI_HOST/PORT/LANGUAGE`` env
-            # override，让 K8s probe / 仪表板能立刻看出"port 字段是 8080
-            # 因为 env=8080，还是 config.toml 写的"。空 dict {} 表示无
-            # override（正常状态）；非空 dict 是 env var 名 → 字符串值。
-            #
-            # 配置访问全部通过模块级 helper 间接完成（避免 handler body 直接
-            # 触碰配置 API），保留 R53-F 的 test_no_config_value_passthrough
-            # 契约。
             payload: dict[str, object] = {
                 "status": status,
                 "ts_unix": ts,
@@ -2523,10 +2330,6 @@ class SystemRoutesMixin:
                 "uptime_seconds": _safe_uptime_seconds(),
                 "config_file_path": _safe_config_file_path(),
                 "web_ui_env_overrides": _safe_web_ui_env_overrides(),
-                # R132：build info（git commit / branch / dirty）。
-                # ``_safe_build_info`` 复用 R63 的 lazy cache，10 s K8s probe
-                # 周期性拉取 health 时不会炸 fork 风暴。pip 部署没 .git 时
-                # 字段全是 "unknown"，handler 不当作错误——保留 R63 契约。
                 "build": _safe_build_info(),
             }
             http_code = 503 if status == "unhealthy" else 200
@@ -2829,13 +2632,6 @@ class SystemRoutesMixin:
                     500,
                 )
 
-            # R192 / Cycle 5：把变更广播到 SSE bus，让 activity dashboard /
-            # PWA 状态栏 / 监控仪表板能实时看到「root logger 从 INFO 切到
-            # DEBUG by 127.0.0.1 at 14:35:22」。多操作员部署场景下尤其
-            # 重要——操作员 A 切到 DEBUG 排查问题忘了切回，操作员 B
-            # 看到 stderr 爆量但不知道是「正常排查」还是「有 bug」。
-            # 失败兜底：SSE 推送故障**不影响** 200 响应——日志级别已经
-            # 改成功，配套通知失败只是降级到「无横幅展示」，没有数据丢失。
             try:
                 from ai_intervention_agent.web_ui_routes.task import _sse_bus
 
@@ -2848,9 +2644,7 @@ class SystemRoutesMixin:
                         "changed_by": _get_client_ip() or "unknown",
                     },
                 )
-            except Exception as exc:  # [R-192]
-                # SSE bus 不可用 / emit raise → 安静降级，
-                # log 一行 debug 方便定位但**不**让端点失败。
+            except Exception as exc:
                 logger.debug(
                     f"log_level_changed SSE emit failed: {type(exc).__name__}: {exc}"
                 )
@@ -2973,9 +2767,7 @@ class SystemRoutesMixin:
                       type: integer
                       description: 建议客户端等待秒数后重试
             """
-            # 注意：本端点**不**用 ``_is_authorized()``——后者允许 token
-            # 通过鉴权，但 rotation 必须强制 loopback only（见 docstring
-            # 「token rotation hijacking」段落）。
+
             if not _is_loopback_request():
                 return (
                     jsonify(
@@ -2993,11 +2785,7 @@ class SystemRoutesMixin:
                 )
 
             new_token = secrets.token_urlsafe(32)
-            # R199 / Cycle 7：rotation 时间戳，写入 config + 响应同步
-            # 返回。在调用 update_network_security_config **之前**生成
-            # （而不是之后），让磁盘里的 rotated_at 跟响应里的字符串
-            # 完全一致——后续 GET /api/system/api-token-info 读取 config
-            # 时就能算出准确的 age。
+
             rotated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
             try:
                 cfg = get_config()
@@ -3098,8 +2886,7 @@ class SystemRoutesMixin:
               403:
                 description: 非 loopback 来源
             """
-            # 跟 rotate-api-token 同款 loopback gate（token age 是元数据
-            # 不是 secret 但仍敏感, 保持与 rotation 一致的访问门槛）
+
             if not _is_loopback_request():
                 return (
                     jsonify(
@@ -3139,11 +2926,8 @@ class SystemRoutesMixin:
                 ns.get("api_token_rotated_at", "") if isinstance(ns, dict) else ""
             )
 
-            # R208 / Cycle 10 · F-204-2: 共享 helper 算 age, 与 R204
             # `_safe_token_age_seconds` / `aiia_token_age_seconds` Prom
-            # gauge 同一份实现. helper silent, 无脏数据 debug log——R199
-            # 测试不依赖该 log; pure function 风格与 _safe_uptime_seconds
-            # 等保持一致.
+
             age_seconds = _compute_age_seconds_from_iso(rotated_at)
 
             return (
@@ -3225,7 +3009,6 @@ class SystemRoutesMixin:
                     get_recent_logs,
                 )
 
-                # 解析 limit query：默认 50，上限即 buffer 容量。
                 raw_limit = request.args.get("limit", "")
                 limit = 50
                 if raw_limit:
@@ -3234,7 +3017,6 @@ class SystemRoutesMixin:
                         if 1 <= candidate <= _LOG_RING_MAXLEN:
                             limit = candidate
                     except (ValueError, TypeError):
-                        # 非法 limit 用默认 50；不直接 400，避免轻易因输入错被拒
                         pass
 
                 entries = get_recent_logs(limit=limit)

@@ -1,9 +1,4 @@
-"""配置管理模块：TOML 配置文件的跨平台加载、读写、热重载。
-
-核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理、文件变更监听。
-旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
-通过 get_config() 获取全局 ConfigManager 实例。
-"""
+"""配置管理模块：TOML 配置文件的跨平台加载、读写、热重载。"""
 
 import json
 import logging
@@ -42,14 +37,10 @@ from ai_intervention_agent.config_modules import (
 
 logger = logging.getLogger(__name__)
 
-# =========================
-# 日志脱敏（避免泄露密钥/Token）
-# =========================
-
 
 def _is_sensitive_config_key(key: str) -> bool:
     lowered = (key or "").lower()
-    # 只做最小必要的脱敏：Bark device_key 等敏感标识一律不应出现在日志
+
     return any(
         token in lowered
         for token in (
@@ -73,17 +64,12 @@ def _sanitize_config_value_for_log(key: str, value: Any) -> str:
         text = str(value)
     except Exception:
         return "<unprintable>"
-    # 避免日志过长
+
     return text if len(text) <= 200 else (text[:200] + "...")
 
 
 def parse_jsonc(content: str) -> dict[str, Any]:
-    """
-    解析 JSONC（带注释的 JSON）为字典，支持 // 单行注释和 /* */ 多行注释。
-
-    异常:
-        json.JSONDecodeError: JSON 语法错误时抛出
-    """
+    """解析 JSONC（带注释的 JSON）为字典，支持 // 单行注释和 /* */ 多行注释。"""
     cleaned_chars = []
     in_string = False
     escape_next = False
@@ -142,19 +128,13 @@ def parse_jsonc(content: str) -> dict[str, Any]:
 
     cleaned_content = "".join(cleaned_chars)
 
-    # JSONC 允许尾部逗号，但 json.loads 不接受，需预处理移除
     cleaned_content = re.sub(r",\s*([}\]])", r"\1", cleaned_content)
 
     return cast(dict[str, Any], json.loads(cleaned_content))
 
 
 def _path_contains_segment(candidate: Path | str, segment: str) -> bool:
-    """检测路径中是否包含某个完整的目录段（不会被前缀/后缀误匹配）。
-
-    例如 ``/Users/foo/uv-bar`` 不应该被 ``segment="uv"`` 命中——只命中真正
-    出现 ``.../uv/...`` 这种完整目录节。同时兼容 Windows 反斜杠与 POSIX
-    斜杠。
-    """
+    """检测路径中是否包含某个完整的目录段（不会被前缀/后缀误匹配）。"""
     try:
         text = str(candidate)
     except Exception:
@@ -168,25 +148,12 @@ def _path_contains_segment(candidate: Path | str, segment: str) -> bool:
     return any(n in posix for n in needles)
 
 
-# R76 src/ layout 改造之后，模块本体落在 ``src/ai_intervention_agent/``：
-# - 模块同级（即 ``module_dir``）应当含 ``server.py`` —— 包内入口模块；
-# - 仓库根（``module_dir.parent.parent``）应当含 ``pyproject.toml`` —— 真正的工程标识。
-# 把两者拆开判断，既能正确识别 src layout 的开发树，又不会把 site-packages
-# 下"碰巧有一个 server.py"的安装目录误判为开发模式。
 _REPO_PKG_LOCAL_MARKERS = ("server.py",)
 _REPO_ROOT_MARKERS = ("pyproject.toml",)
 
 
 def _looks_like_repo_checkout(module_dir: Path) -> bool:
-    """模块目录是否是本仓库源码树（``src/ai_intervention_agent/`` 形态）。
-
-    判定条件（必须同时成立）：
-    1. ``module_dir`` 内有 ``server.py`` —— 防止 site-packages 误命中；
-    2. ``module_dir.parent.parent`` 有 ``pyproject.toml`` —— 表征真正
-       的 src layout 仓库根。
-
-    抽出来方便单测 + 增强可读性。
-    """
+    """模块目录是否是本仓库源码树（``src/ai_intervention_agent/`` 形态）。"""
     pkg_ok = all((module_dir / n).exists() for n in _REPO_PKG_LOCAL_MARKERS)
     if not pkg_ok:
         return False
@@ -216,22 +183,7 @@ def _path_under(child: Path, parents: tuple[Path, ...]) -> bool:
 
 
 def _is_isolated_install_runtime() -> bool:
-    """启发式检测当前 Python 是否运行在 uv / uvx / uv tool / pipx / pip 隔离环境。
-
-    覆盖 2026 年常见的 4 类隔离运行时：
-
-    * **uvx**（``uv tool run``）—— sys.executable 在 uv cache 临时 venv 里，
-      路径常见形态 ``~/.cache/uv/builds-v0/<hash>/.venv/bin/python``。
-    * **uv tool install**—— sys.executable 在 ``~/.local/share/uv/tools/<name>/.venv/bin/python``
-      （或 ``$XDG_DATA_HOME/uv/tools/...``、``%LOCALAPPDATA%\\uv\\tools\\...``）。
-    * **pipx install**—— sys.executable 在 ``~/.local/share/pipx/venvs/<name>/bin/python``。
-    * **pip install + 全局 / 项目 venv**—— 模块文件本身在 ``site-packages`` 下，
-      运行时不需要看 sys.executable。
-
-    任一命中就视为 "已安装到用户环境"，必须走用户配置目录。环境变量
-    ``UV_TOOL_DIR`` / ``UV_CACHE_DIR`` / ``PIPX_HOME`` 也会作为路径前缀
-    参与匹配，覆盖用户自定义安装目录的情况。
-    """
+    """启发式检测当前 Python 是否运行在 uv / uvx / uv tool / pipx / pip 隔离环境。"""
     try:
         executable_path = Path(sys.executable).resolve()
     except (OSError, RuntimeError):
@@ -242,15 +194,11 @@ def _is_isolated_install_runtime() -> bool:
     except Exception:
         module_path = Path(__file__)
 
-    # 1) 模块本身已被 pip / uv pip / setuptools 安装到 site-packages。
     if _path_contains_segment(module_path, "site-packages") or _path_contains_segment(
         module_path, "dist-packages"
     ):
         return True
 
-    # 2) 启发式：uvx / uv tool / pipx 路径段命中。优先用环境变量配置的目录前缀
-    #    （UV_TOOL_DIR / UV_CACHE_DIR / PIPX_HOME / UV_PYTHON_INSTALL_DIR），
-    #    没配再用 ``/uv/`` ``/pipx/`` 等通用 segment 兜底。
     env_dirs: list[Path] = []
     for env_name in (
         "UV_TOOL_DIR",
@@ -265,9 +213,6 @@ def _is_isolated_install_runtime() -> bool:
     if env_dirs and _path_under(executable_path, tuple(env_dirs)):
         return True
 
-    # 只命中"已安装到用户环境"的具体子目录——不要匹配 ``~/.local/share/uv/python/``
-    # 之类的 uv-managed Python interpreter，那不代表项目是已安装；仓库内 ``uv run``
-    # 解析出的 sys.executable 经常落在 managed Python 那里，不能误判。
     posix_exec = str(executable_path).replace("\\", "/")
     install_segments = (
         "/uvx/",
@@ -281,62 +226,27 @@ def _is_isolated_install_runtime() -> bool:
 
 
 def _is_uvx_mode() -> bool:
-    """检测是否应使用"用户配置目录"（uvx / 已安装模式）而非"开发模式"。
-
-    说明
-    ----
-    * **用户模式（True）**：使用用户配置目录（跨平台标准路径）。
-      - uvx 运行（推荐给普通用户）
-      - 通过 pip / uv tool / pipx 等任意方式安装后运行
-    * **开发模式（False）**：优先使用当前目录配置（从仓库克隆运行时更方便调试）。
-
-    判定优先级（高 → 低，命中即返回）
-    ----
-    1. ``AI_INTERVENTION_AGENT_DEV_MODE`` 显式启用 → 开发模式（``False``）。
-    2. ``AI_INTERVENTION_AGENT_USER_MODE`` 显式启用 → 用户模式（``True``）。
-    3. 兼容旧 ``UVX_PROJECT`` → 用户模式。
-    4. 启发式检测 :func:`_is_isolated_install_runtime`（uvx / uv tool / pipx
-       / site-packages）→ 用户模式。
-    5. 仓库检出 + cwd 在仓库内（兼顾仓库内 ``.venv`` 的 isolated runtime
-       case）→ 开发模式。
-    6. 默认（保守）→ 用户模式。
-
-    任何判定阶段抛异常都降级为用户模式，避免误把"任意 git 仓库 cwd"判为
-    开发模式而在那里写 ``config.toml``。
-
-    注：步骤 5 对仓库内 ``.venv``（``./venv`` / ``./.venv`` / ``./uv-venv``
-    等开发者本地 venv）做 carve-out——虽然 ``Path(sys.executable)`` 可能
-    在 ``./.venv/bin/python``，但只要模块自己仍在仓库源码树（不在
-    site-packages）且 cwd 在源码树，就视为 dev。
-    """
+    """检测是否应使用"用户配置目录"（uvx / 已安装模式）而非"开发模式"。"""
 
     def _bool_env(name: str) -> bool:
         raw = os.environ.get(name, "")
         return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
-    # 1) 显式 dev override：开发者主动指定，最高优先级。
     if _bool_env("AI_INTERVENTION_AGENT_DEV_MODE"):
         return False
 
-    # 2) 显式 user override：仓库内调试 "假装是已安装"。
     if _bool_env("AI_INTERVENTION_AGENT_USER_MODE"):
         return True
 
-    # 3) 兼容旧 UVX_PROJECT。
     if os.environ.get("UVX_PROJECT"):
         return True
 
-    # 4) 启发式：模块装在 site-packages 或运行在 uv tool / pipx 隔离 venv 中。
     try:
         if _is_isolated_install_runtime():
             return True
     except Exception:
         pass
 
-    # 5) 仓库源码树 + cwd 在源码树（dev carve-out）。
-    # R76 之后包本体在 ``src/ai_intervention_agent/``，仓库根上移两层；
-    # cwd 判定要以仓库根为锚（既兼容 ``uv run`` 在 repo root 调用，
-    # 也兼容直接在 ``src/`` 子目录下调试）。
     try:
         module_dir = Path(__file__).resolve().parent
         if _looks_like_repo_checkout(module_dir):
@@ -347,45 +257,14 @@ def _is_uvx_mode() -> bool:
             if cwd == module_dir or module_dir in cwd.parents:
                 return False
     except Exception:
-        # 任何判定异常都降级为用户模式（更安全/更符合文档预期）
         pass
 
-    # 6) 默认保守地走用户模式。
     return True
 
 
 def _macos_legacy_xdg_config_dir() -> Path | None:
-    """**R113** — 返回 macOS 上 ``~/.config/ai-intervention-agent/`` 残留目录。
-
-    macOS 用户配置的标准位置是 ``~/Library/Application Support/ai-intervention-agent/``
-    （Apple File System Programming Guide / platformdirs ``user_config_dir`` 的
-    macOS 实现都返回此路径）。但实际现场会出现 **macOS 上 `~/.config/ai-intervention-agent/`
-    被创建** 的情况，可能来源：
-
-    * **历史早期版本**：早期 ai-intervention-agent 或 platformdirs 早期版本可能
-      在 macOS 上误用 XDG 路径。
-    * **第三方安装脚本 / 跨平台 dotfiles**：用户从 Linux 迁移过来的 dotfiles
-      或者批量配置脚本可能假设 ``.config/`` 是跨平台的。
-    * **手动 mkdir + cp**：用户测试 / 调试时手动复制了 config。
-    * **进程在错误的 cwd 下启动**：某个调用方把 ``find_config_file`` 在
-      ``~/.config/ai-intervention-agent/`` 当 cwd 启动时，dev 模式分支会在该 cwd
-      创建 ``config.toml``。
-
-    R113 在 macOS 上探测此目录是否存在；**R686（TODO#4）** 在此基础上把
-    "被动 warn + 临时采用 legacy" 升级为 "标准路径始终优先 + 自动迁移"：
-
-    1. 仅 legacy 有 config → **自动迁移**到标准路径后使用标准路径
-       （旧文件重命名为 ``*.migrated-<时间戳>`` 备份，不删除数据）。
-    2. 标准 + legacy 同时存在且内容一致 → 自动把 legacy 重命名为备份，
-       消除歧义（幂等，之后不再告警）。
-    3. 标准 + legacy 同时存在且内容**不一致** → 使用标准路径 + warn
-       （数据取舍必须由用户决定，程序不擅自合并/覆盖）。
-
-    返回：
-        macOS 上目录存在 → ``Path``；其他情况（非 macOS / 目录不存在）→ ``None``。
-    """
+    """**R113** — 返回 macOS 上 ``~/.config/ai-intervention-agent/`` 残留目录。"""
     if platform.system().lower() != "darwin":
-        # 仅 macOS 触发；Linux 上 `.config/` 是标准（XDG），Windows 上根本不会有
         return None
     legacy_dir = Path.home() / ".config" / "ai-intervention-agent"
     if not legacy_dir.is_dir():
@@ -394,14 +273,7 @@ def _macos_legacy_xdg_config_dir() -> Path | None:
 
 
 def _retire_legacy_config_file(legacy_file: Path) -> bool:
-    """R686：把 legacy 配置文件重命名为 ``<name>.migrated-<时间戳>`` 备份。
-
-    重命名（而非删除）保证零数据丢失；重命名后的文件不再匹配
-    ``config.toml`` / ``config.jsonc`` / ``config.json`` 候选名，后续启动
-    不会再进入 legacy 分支——迁移天然幂等。
-
-    返回是否成功；失败（权限 / 只读卷等）由调用方决定降级策略。
-    """
+    """R686：把 legacy 配置文件重命名为 ``<name>.migrated-<时间戳>`` 备份。"""
     try:
         ts = time.strftime("%Y%m%dT%H%M%S")
         backup = legacy_file.with_name(f"{legacy_file.name}.migrated-{ts}")
@@ -416,21 +288,11 @@ def _retire_legacy_config_file(legacy_file: Path) -> bool:
 def _migrate_legacy_config_to_standard(
     legacy_file: Path, standard_dir: Path
 ) -> Path | None:
-    """R686（TODO#4）：把 macOS legacy ``~/.config/...`` 配置迁移到标准目录。
-
-    步骤：
-    1. ``mkdir -p`` 标准目录；
-    2. ``shutil.copy2`` 保留元数据地复制 legacy 文件到标准目录（同名）；
-    3. 复制成功后把 legacy 文件重命名为 ``*.migrated-<时间戳>`` 备份。
-
-    任何一步失败都返回 ``None``，调用方降级回 "临时采用 legacy" 的旧行为，
-    保证迁移永远不会让用户丢配置。
-    """
+    """R686（TODO#4）：把 macOS legacy ``~/.config/...`` 配置迁移到标准目录。"""
     try:
         standard_dir.mkdir(parents=True, exist_ok=True)
         target = standard_dir / legacy_file.name
         if target.exists():
-            # 并发 / 二次进入窗口：标准路径已出现同名文件，不覆盖，直接用它
             logger.info(f"[R686] 标准路径已存在 {target.name}，跳过复制")
         else:
             shutil.copy2(legacy_file, target)
@@ -454,25 +316,10 @@ def _files_have_same_content(a: Path, b: Path) -> bool:
 
 
 def _is_same_physical_file(a: Path, b: Path) -> bool:
-    """R703：判断两个路径是否解析到同一物理文件（samefile 优先，降级 resolve）。
-
-    R686 的"双路径内容一致性检查 → 退休 legacy"隐含假设：标准路径与 legacy
-    路径是**两个不同的文件**。该假设在以下场景被打破：
-
-    * ``XDG_CONFIG_HOME=~/.config`` 且 platformdirs >= 4.5.0（macOS 加入
-      ``XDGMixin``，环境变量优先于 Apple 标准路径）→ "标准路径"与 legacy
-      解析到同一文件；
-    * 用户把 ``~/.config/ai-intervention-agent`` 软链接到标准目录（跨平台
-      dotfiles 常见做法）→ 两个路径名指向同一真身。
-
-    此时"内容一致性检查"变成同文件自比恒真，随即触发退休分支把**唯一的**
-    配置文件改名 ``*.migrated-<时间戳>``，再因"配置不存在"重建纯默认——
-    每次启动配置清零。调用方必须先用本函数排除"同一文件"再进入 R686 分支。
-    """
+    """R703：判断两个路径是否解析到同一物理文件（samefile 优先，降级 resolve）。"""
     try:
         return a.samefile(b)
     except OSError:
-        # 极小概率的 race（探测后文件被移走）或权限问题，降级为路径解析比较
         try:
             return a.resolve() == b.resolve()
         except OSError:
@@ -480,32 +327,7 @@ def _is_same_physical_file(a: Path, b: Path) -> bool:
 
 
 def _resolve_standard_user_config_dir() -> Path:
-    """解析"标准用户配置目录"（R703：macOS 上免疫 ``XDG_CONFIG_HOME`` 改写）。
-
-    背景
-    ----
-    platformdirs 4.5.0（2025-10）起在 macOS 上引入 ``XDGMixin``：只要用户
-    shell 导出了 ``XDG_CONFIG_HOME``，``user_config_dir()`` 就返回
-    ``$XDG_CONFIG_HOME/ai-intervention-agent`` 而不是 Apple 标准的
-    ``~/Library/Application Support/ai-intervention-agent``。
-
-    这对本项目是灾难性的：R113/R686 把 macOS 上的
-    ``~/.config/ai-intervention-agent/`` 定义为**待迁移的 legacy 路径**，
-    而最常见的导出值恰是 ``XDG_CONFIG_HOME=~/.config``——"标准路径"与
-    legacy 路径解析到同一个文件，R686 的同文件自比恒判"一致"，每次启动
-    都把唯一配置改名迁移掉再重建默认（见 :func:`_is_same_physical_file`）。
-
-    决策
-    ----
-    本项目在 macOS 上的标准配置路径**始终**是 Apple 惯例路径
-    ``~/Library/Application Support/ai-intervention-agent/``（文档、R113、
-    R686 的语义都建立在此之上），优先级恒高于 ``~/.config/...``。因此
-    macOS 上检测到 platformdirs 结果被 ``XDG_CONFIG_HOME`` 改写时，强制
-    改回 Apple 标准路径。希望在 macOS 上使用自定义位置的用户请配置最高
-    优先级的 ``AI_INTERVENTION_AGENT_CONFIG_FILE`` 环境变量。
-
-    Linux 不受影响：``$XDG_CONFIG_HOME`` 本来就是 Linux 的标准语义。
-    """
+    """解析"标准用户配置目录"（R703：macOS 上免疫 ``XDG_CONFIG_HOME`` 改写）。"""
     try:
         if not PLATFORMDIRS_AVAILABLE:
             raise ImportError("platformdirs not available")
@@ -528,7 +350,6 @@ def _resolve_standard_user_config_dir() -> Path:
     if not hijacked:
         return resolved
 
-    # _get_user_config_dir_fallback 的 darwin 分支即 Apple 标准路径
     apple_dir = _get_user_config_dir_fallback()
     logger.info(
         "[R703] macOS 上 platformdirs 受 XDG_CONFIG_HOME 影响返回了 "
@@ -539,63 +360,7 @@ def _resolve_standard_user_config_dir() -> Path:
 
 
 def find_config_file(config_filename: str = "config.toml") -> Path:
-    """查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。
-
-    检测路径以单个 ``logger.info`` 行可追溯地表达——每次冷启动都能从日志反查
-    出"为什么用了这个路径"。
-
-    优先级（高 → 低）
-    ----
-    1. ``config_filename`` 自身是绝对路径或带子目录 → 原样返回，跳过所有探测。
-    2. ``AI_INTERVENTION_AGENT_CONFIG_FILE`` 环境变量 → 显式 override；目录形态
-       会自动追加 ``config_filename``。
-    3. :func:`_is_uvx_mode` 命中 → 仅在用户配置目录搜索 + 创建。
-    4. 否则：当前目录 > 用户配置目录。
-
-    格式探测
-    ----
-    每个候选目录都按 TOML > JSONC > JSON 的次序尝试，用于向后兼容历史
-    JSONC/JSON 用户。**同目录里同时存在多种格式时只采用排序首位**——
-    这一行为会显式 warn，避免静默忽略 user-edited JSONC。
-
-    跨平台配置目录
-    ----
-    * Linux：``$XDG_CONFIG_HOME/ai-intervention-agent`` 或 ``~/.config/ai-intervention-agent``
-    * macOS：``~/Library/Application Support/ai-intervention-agent``
-      （**恒定**——即使导出了 ``XDG_CONFIG_HOME`` 也不改变，见 R703）
-    * Windows：``%APPDATA%\\ai-intervention-agent``
-
-    macOS 兼容性（R113 + R686 + R703）
-    ----
-    在 macOS 上**额外**检查 ``~/.config/ai-intervention-agent/`` 是否有残留 config
-    （历史版本 / 第三方脚本 / 手动 mkdir 都可能创建）。规则（R686 起标准路径
-    ``~/Library/Application Support/...`` **始终优先**）：
-
-    * 标准路径 + ``.config/`` 都有、内容一致 → 用标准路径，legacy 自动重命名
-      为 ``*.migrated-<时间戳>`` 备份（幂等，一次性消除歧义）
-    * 标准路径 + ``.config/`` 都有、内容不一致 → 用标准路径，warn 提示用户
-      人工取舍（程序不擅自合并/覆盖）
-    * 仅 ``.config/`` 有 → **自动迁移**到标准路径（copy2 + 重命名备份，零数据
-      丢失）后使用标准路径；迁移失败才降级为临时采用 legacy
-    * 仅标准路径或都没有 → 行为不变
-
-    R703 两条守卫（修复 v1.8.2 "每次启动配置被迁移清零"事故）：
-
-    * 标准路径解析对 ``XDG_CONFIG_HOME`` 免疫——platformdirs >= 4.5.0 在
-      macOS 上会让 ``XDG_CONFIG_HOME`` 覆盖 Apple 标准路径，导致"标准路径"
-      与 legacy 路径同一化；:func:`_resolve_standard_user_config_dir` 检测到
-      改写后强制改回 Apple 标准路径。
-    * 标准路径与 legacy 命中**同一物理文件**（symlink / XDG 改写残留）时跳过
-      退休/迁移——同文件自比恒"一致"，若不守卫会把唯一配置真身改名掉。
-
-    Linux 上 ``.config/`` 是 XDG 标准，本逻辑不触发。
-
-    错误处理
-    ----
-    用户配置目录探测失败（``platformdirs`` 都不可用 + 自家 fallback 也 raise）
-    最终降级为 ``Path(config_filename)``——但会把 ``warning`` 日志带上完整堆栈
-    便于排查权限 / 只读 home 等问题。
-    """
+    """查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。"""
     requested_path = Path(config_filename).expanduser()
     if requested_path.is_absolute() or requested_path.parent != Path("."):
         logger.info(f"使用调用方显式给定的绝对/子目录配置路径: {requested_path}")
@@ -628,20 +393,10 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
             "配置路径检测：开发模式（仓库源码树 + cwd 在树内），优先使用当前目录配置"
         )
 
-    # 向后兼容的候选文件名列表（TOML 优先）
     _COMPAT_NAMES = ("config.toml", "config.jsonc", "config.json")
 
     def _pick_existing(directory: Path | None) -> Path | None:
-        """在 ``directory`` 中按 TOML > JSONC > JSON 优先返回首个存在的候选。
-
-        ``directory=None`` 表示使用进程级当前目录（``Path(name)`` 隐式相对
-        cwd 解析），保留与历史 ``Path(name).exists()`` 行为兼容的 mock 表面：
-        老测试通过 ``patch('config_manager.Path')`` 替换全局 Path 类来注入
-        虚拟候选，``Path(name).exists()`` 仍然能命中。
-
-        当目录里**同时**存在多种格式时把后面被忽略的格式 warn 出来，便于用户
-        反查"我的 config.jsonc 怎么没生效"。
-        """
+        """在 ``directory`` 中按 TOML > JSONC > JSON 优先返回首个存在的候选。"""
         candidates: list[tuple[str, Path]] = []
         for name in _COMPAT_NAMES:
             target = (directory / name) if directory is not None else Path(name)
@@ -661,23 +416,16 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
         return first_path
 
     if not is_uvx_mode:
-        # 开发模式：检查当前工作目录（``directory=None`` 让 Path(name) 走进程
-        # 级 cwd 解析；保留对老式 ``patch('config_manager.Path')`` 测试的兼容性）。
         cwd_hit = _pick_existing(None)
         if cwd_hit is not None:
             logger.info(f"使用当前目录的配置文件: {cwd_hit.absolute()}")
             return cwd_hit
 
     try:
-        # R703：macOS 上免疫 XDG_CONFIG_HOME 对 platformdirs 的改写，
-        # 保证标准路径恒为 ~/Library/Application Support/ai-intervention-agent
         user_config_dir_path = _resolve_standard_user_config_dir()
 
         user_hit = _pick_existing(user_config_dir_path)
 
-        # R113: macOS 上额外探测 `~/.config/ai-intervention-agent/` 残留 config。
-        # 仅 macOS 触发；Linux 上 .config/ 已经是 XDG 标准（user_config_dir_path
-        # 本身就指向那里），不会进入此分支。
         legacy_macos_dir = _macos_legacy_xdg_config_dir()
         legacy_macos_hit = (
             _pick_existing(legacy_macos_dir) if legacy_macos_dir is not None else None
@@ -685,19 +433,13 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
 
         if user_hit is not None:
             if legacy_macos_hit is not None:
-                # R703 守卫：标准路径与 legacy 解析到同一物理文件时（XDG
-                # 改写残留 / 用户 symlink），不存在"双路径歧义"，绝不能进入
-                # 退休/迁移分支——那会把唯一的配置真身改名掉，导致每次启动
-                # 配置被重置为默认值。
                 if _is_same_physical_file(user_hit, legacy_macos_hit):
                     logger.info(
                         "[R703] 标准路径与 legacy 路径解析到同一物理文件"
                         f"（symlink 或 XDG 改写）: {user_hit}；跳过 R686 "
                         "退休/迁移逻辑，直接使用该文件"
                     )
-                # R686：标准路径始终优先。legacy 与标准内容一致 → 自动把
-                # legacy 重命名为备份，一次性消除歧义（幂等）；内容不一致 →
-                # 不擅自动用户数据，warn 让用户自行取舍。
+
                 elif _files_have_same_content(user_hit, legacy_macos_hit):
                     if _retire_legacy_config_file(legacy_macos_hit):
                         logger.info(
@@ -715,9 +457,6 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
             return user_hit
 
         if legacy_macos_hit is not None:
-            # R686（TODO#4）：标准路径无 config 但 legacy 有 → 自动迁移到
-            # 标准路径（copy2 + 重命名备份，零数据丢失），返回标准路径。
-            # 迁移失败（权限 / 只读卷）才降级回 "临时采用 legacy" 旧行为。
             assert legacy_macos_dir is not None
             migrated = _migrate_legacy_config_to_standard(
                 legacy_macos_hit, user_config_dir_path
@@ -735,7 +474,6 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
             )
             return legacy_macos_hit
 
-        # 都不存在，返回 TOML 路径（用于创建默认配置）
         user_config_file = user_config_dir_path / config_filename
         logger.info(f"配置文件不存在，将在用户配置目录创建: {user_config_file}")
         return user_config_file
@@ -750,11 +488,7 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
 
 
 def _get_user_config_dir_fallback() -> Path:
-    """
-    platformdirs 不可用时的回退实现，返回跨平台标准配置目录。
-
-    Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_HOME 或 ~/.config。
-    """
+    """platformdirs 不可用时的回退实现，返回跨平台标准配置目录。"""
     system = platform.system().lower()
     home = Path.home()
 
@@ -780,29 +514,15 @@ class ConfigManager(
     FileWatcherMixin,
     IOOperationsMixin,
 ):
-    """
-    配置管理器：TOML 配置文件的加载、读写、持久化、热重载。
-
-    核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理（带缓存）、
-    文件变更监听、配置导入导出。通过模块级 config_manager 全局实例访问。
-
-    支持格式：TOML（主格式）。旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
-
-    路由通过 Mixin 拆分（各 Mixin 定义在 config_modules/ 下）：
-    - TomlEngineMixin: TOML 格式解析/保存（保留注释）
-    - NetworkSecurityMixin: network_security 段校验/读写
-    - FileWatcherMixin: 文件监听/回调/shutdown
-    - IOOperationsMixin: 配置导出/导入/备份/恢复
-    """
+    """配置管理器：TOML 配置文件的加载、读写、持久化、热重载。"""
 
     def __init__(self, config_file: str = "config.toml"):
         """初始化配置管理器：查找配置文件、初始化锁和缓存、加载配置、启动文件监听"""
-        # 判断是否为显式路径（绝对/含目录层级）——仅自动发现的旧文件才做 JSONC→TOML 迁移
+
         req = Path(config_file).expanduser()
         self._explicit_path = req.is_absolute() or req.parent != Path(".")
         self.config_file = find_config_file(config_file)
 
-        # 初始化配置字典
         self._config: dict[str, Any] = {}
 
         # 初始化锁机制
@@ -814,47 +534,37 @@ class ConfigManager(
         # mutate API 都走相同 set→_save_config→_schedule_save chain。
         self._lock = threading.RLock()
 
-        # 初始化文件内容和访问时间
-        self._original_content: str | None = None  # 保存原始文件内容（用于保留注释）
-        self._last_access_time = time.monotonic()  # 跟踪最后访问时间
+        self._original_content: str | None = None
+        self._last_access_time = time.monotonic()
 
-        # 性能优化：配置写入缓冲机制
-        self._pending_changes: dict[str, Any] = {}  # 待写入的配置变更
-        self._save_timer: threading.Timer | None = None  # 延迟保存定时器
-        self._save_delay = 3.0  # 延迟保存时间（秒）
-        self._last_save_time: float = 0  # 上次保存时间（monotonic）
+        self._pending_changes: dict[str, Any] = {}
+        self._save_timer: threading.Timer | None = None
+        self._save_delay = 3.0
+        self._last_save_time: float = 0
 
-        # 【性能优化】network_security 配置缓存
         self._network_security_cache: dict[str, Any] | None = None
-        self._network_security_cache_time: float = 0  # monotonic
-        self._network_security_cache_ttl: float = 30.0  # 30 秒缓存有效期
+        self._network_security_cache_time: float = 0
+        self._network_security_cache_ttl: float = 30.0
 
-        # 【性能优化】通用 section 缓存层
         self._section_cache: dict[str, dict[str, Any]] = {}
         self._section_cache_time: dict[str, float] = {}
-        self._section_cache_ttl: float = 10.0  # section 缓存有效期（秒）
+        self._section_cache_ttl: float = 10.0
 
-        # 【性能优化】缓存统计
         self._cache_stats = {
-            "hits": 0,  # 缓存命中次数
-            "misses": 0,  # 缓存未命中次数
-            "invalidations": 0,  # 缓存失效次数
+            "hits": 0,
+            "misses": 0,
+            "invalidations": 0,
         }
 
-        # 【新增】文件监听相关属性
         self._file_watcher_thread: threading.Thread | None = None
         self._file_watcher_running = False
-        self._file_watcher_stop_event = threading.Event()  # 用于优雅停止
-        self._file_watcher_interval = 2.0  # 检查间隔（秒）
-        self._last_file_mtime: float = 0  # 上次文件修改时间
-        self._config_change_callbacks: list[
-            Callable[[], None]
-        ] = []  # 配置变更回调函数列表
+        self._file_watcher_stop_event = threading.Event()
+        self._file_watcher_interval = 2.0
+        self._last_file_mtime: float = 0
+        self._config_change_callbacks: list[Callable[[], None]] = []
 
-        # 加载配置文件
         self._load_config()
 
-        # 初始化文件修改时间
         self._update_file_mtime()
 
     def _get_default_config(self) -> dict[str, Any]:
@@ -922,30 +632,7 @@ class ConfigManager(
             return False
 
     def _load_config(self):
-        """从磁盘加载配置文件，排除 network_security，合并默认配置。
-
-        【External-edit-wins 策略】
-        当 ``reload()`` / file_watcher 触发本方法时，若内存中还有
-        ``_pending_changes``（进程内 ``set()`` 调用产生、3s 延迟保存窗口内
-        未落盘），必须**清空**这些 pending 并取消 ``_save_timer``，否则会
-        发生悄悄的 last-write-wins race：
-
-            T=0    ProcessThread  cfg.set("notification.bark_url", "A")
-                                  → _pending_changes["notification.bark_url"] = "A"
-                                  → schedule timer at +3s
-            T=1.5  ExternalEditor user saves config.toml with bark_url = "B"
-            T=2    FileWatcher    detects mtime change → calls reload()
-                                  → _load_config() reads "B" into self._config
-            T=3    SaveTimer      fires → _delayed_save() applies
-                                  _pending_changes["A"] over self._config
-                                  → writes "A" back to disk
-
-        净效果：用户的外部编辑（"B"）被进程内 stale-set 默默覆盖，no warning。
-        修复：reload 阶段清空 ``_pending_changes`` 并取消 ``_save_timer``，
-        日志 WARNING 提示丢弃的变更（让外部编辑赢，符合"我改了配置文件就该
-        生效"的用户直觉）。``__init__`` 调用本方法时 ``_pending_changes`` 必为
-        空字典，分支 no-op，所以这个清理对初次加载零影响。
-        """
+        """从磁盘加载配置文件，排除 network_security，合并默认配置。"""
         with self._lock:
             if self._pending_changes:
                 logger.warning(
@@ -958,12 +645,10 @@ class ConfigManager(
                     self._save_timer.cancel()
                     self._save_timer = None
 
-            # 【可靠性】加载失败时回滚到上一次成功配置，避免“编辑中间态/损坏文件”导致回退到默认值
             had_previous_config = bool(self._config)
             previous_config = self._config.copy()
             previous_original_content = self._original_content
             try:
-                # 自动迁移旧 JSONC/JSON 格式（仅自动发现的文件，显式路径不迁移）
                 if (
                     self.config_file.exists()
                     and not self._is_toml_file()
@@ -979,13 +664,10 @@ class ConfigManager(
                     fmt = self.config_file.suffix.lstrip(".")
                     logger.info(f"{fmt.upper()} 配置文件已加载: {self.config_file}")
 
-                    # 【健壮性】加载时也做结构校验（重复数组定义/类型错误），避免静默吞掉损坏配置
                     self._validate_config_structure(full_config, content)
 
-                    # 保存原始内容（用于保留注释）——仅在解析与结构校验成功后更新
                     self._original_content = content
 
-                    # 完全排除 network_security，不加载到内存中
                     self._config = {}
                     for key, value in full_config.items():
                         if key != "network_security":
@@ -994,7 +676,6 @@ class ConfigManager(
                     if "network_security" in full_config:
                         logger.debug("network_security 配置已排除，不加载到内存中")
                 else:
-                    # 创建默认配置文件
                     self._config = self._exclude_network_security(
                         self._get_default_config()
                     )
@@ -1002,7 +683,6 @@ class ConfigManager(
                     self._create_default_config_file()
                     logger.info(f"创建默认配置文件: {self.config_file}")
 
-                # 合并默认配置（确保新增的配置项存在）
                 default_config = self._exclude_network_security(
                     self._get_default_config()
                 )
@@ -1026,23 +706,18 @@ class ConfigManager(
         self, default: dict[str, Any], current: dict[str, Any]
     ) -> dict[str, Any]:
         """递归合并配置：补充缺失的默认键，保持用户值优先，排除 network_security"""
-        result = current.copy()  # 以当前配置为基础
+        result = current.copy()
 
-        # 只添加缺失的默认键，不修改现有值
         for key, default_value in default.items():
-            # 额外安全措施：确保不合并 network_security
             if key == "network_security":
                 logger.debug("_merge_config: 跳过 network_security 配置")
                 continue
 
             if key not in result:
-                # 缺失的键，使用默认值
                 result[key] = default_value
             elif isinstance(result[key], dict) and isinstance(default_value, dict):
-                # 递归合并嵌套字典，但保持现有值优先
                 result[key] = self._merge_config(default_value, result[key])
 
-        # 确保结果中不包含 network_security
         self._exclude_network_security(result)
         return result
 
@@ -1090,13 +765,11 @@ class ConfigManager(
     def _schedule_save(self):
         """调度延迟保存（默认3秒后执行，多次调用合并为一次保存）"""
         with self._lock:
-            # 取消之前的保存定时器
             if self._save_timer is not None:
                 self._save_timer.cancel()
 
-            # 设置新的延迟保存定时器
             self._save_timer = threading.Timer(self._save_delay, self._delayed_save)
-            # 【可靠性】Timer 默认非守护线程，可能导致测试/进程退出被阻塞
+
             self._save_timer.daemon = True
             self._save_timer.start()
             logger.debug(f"已调度配置保存，将在 {self._save_delay} 秒后执行")
@@ -1106,7 +779,7 @@ class ConfigManager(
         try:
             with self._lock:
                 self._save_timer = None
-                # 应用待写入的变更
+
                 if self._pending_changes:
                     logger.debug(
                         f"应用 {len(self._pending_changes)} 个待写入的配置变更"
@@ -1115,7 +788,6 @@ class ConfigManager(
                         self._set_config_value(key, value)
                     self._pending_changes.clear()
 
-                # 执行实际保存
                 self._save_config_immediate()
                 self._last_save_time = time.monotonic()
                 logger.debug("延迟配置保存完成")
@@ -1127,13 +799,11 @@ class ConfigManager(
         keys = key.split(".")
         config = self._config
 
-        # 导航到目标位置
         for k in keys[:-1]:
             if k not in config:
                 config[k] = {}
             config = config[k]
 
-        # 设置值
         config[keys[-1]] = value
 
     def _save_config(self):
@@ -1152,7 +822,6 @@ class ConfigManager(
             else:
                 content = json.dumps(self._config, indent=2, ensure_ascii=False)
 
-            # 保留原文件权限（mkstemp 默认 0o600，可能不同于原文件）
             orig_mode = None
             if hasattr(os, "fchmod"):
                 try:
@@ -1183,7 +852,7 @@ class ConfigManager(
             logger.debug(f"配置文件已原子写入: {self.config_file}")
 
             self._validate_saved_config()
-            # 更新 mtime 缓存，避免文件监听器将本次写入误判为外部变更
+
             self._update_file_mtime()
 
         except Exception as e:
@@ -1198,7 +867,6 @@ class ConfigManager(
 
             parsed_config = self._parse_config_content(content)
 
-            # 额外验证：检查是否存在重复的数组元素（格式损坏的标志）
             self._validate_config_structure(parsed_config, content)
 
             logger.debug("配置文件验证通过")
@@ -1207,10 +875,7 @@ class ConfigManager(
             raise
 
     def _validate_config_structure(self, parsed_config: dict[str, Any], content: str):
-        """验证配置结构完整性（network_security 格式等）
-
-        TOML 解析器会自动拒绝重复键，此处仅对 JSON 降级格式做额外校验。
-        """
+        """验证配置结构完整性（network_security 格式等）"""
         if not self._is_toml_file():
             lines_list = content.splitlines()
             array_definitions: dict[str, int] = {}
@@ -1231,7 +896,6 @@ class ConfigManager(
                         )
                     array_definitions["blocked_ips"] = i + 1
 
-        # 验证network_security配置（如果存在）应该格式正确
         if "network_security" in parsed_config:
             ns_config = parsed_config["network_security"]
             if not isinstance(ns_config, dict):
@@ -1243,7 +907,6 @@ class ConfigManager(
                         "network_security.allowed_networks 应该是数组类型"
                     )
 
-                # 检查数组元素是否有效
                 for network in allowed_networks:
                     if not isinstance(network, str):
                         raise ConfigValidationError(
@@ -1254,7 +917,7 @@ class ConfigManager(
 
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值（支持点号分隔的嵌套键如 'notification.sound_volume'，线程安全）"""
-        # 说明：为避免多锁交错导致的竞态/死锁，这里统一使用 _lock 保护共享状态
+
         with self._lock:
             self._last_access_time = time.monotonic()
             keys = key.split(".")
@@ -1268,7 +931,7 @@ class ConfigManager(
 
     def set(self, key: str, value: Any, save: bool = True) -> None:
         """设置配置值（支持嵌套键，自动创建中间路径，值变化检测，可选延迟保存）"""
-        # network_security 特殊处理：必须走专用更新/落盘路径，避免写入内存但无法持久化
+
         if key == "network_security":
             if not isinstance(value, dict):
                 raise ConfigValidationError("network_security 必须是 object（dict）")
@@ -1287,7 +950,6 @@ class ConfigManager(
         with self._lock:
             self._last_access_time = time.monotonic()
 
-            # 性能优化：检查当前值是否与新值相同
             current_value = self.get(key)
             if current_value == value:
                 logger.debug(
@@ -1295,24 +957,19 @@ class ConfigManager(
                 )
                 return
 
-            # 性能优化：使用缓冲机制
             if save:
-                # 将变更添加到待写入队列
                 self._pending_changes[key] = value
-                # 立即更新内存中的配置
+
                 self._set_config_value(key, value)
-                # 调度延迟保存
+
                 self._save_config()
             else:
-                # 直接更新内存中的配置，不保存到文件
                 self._set_config_value(key, value)
-                # 清除 pending 中的同 key 旧值，防止 _delayed_save 回写覆盖
+
                 self._pending_changes.pop(key, None)
 
-            # 【缓存优化】失效相关 section 缓存，避免 get_section() 返回旧值
             section = key.split(".")[0] if key else ""
             if section == "network_security":
-                # network_security 有独立缓存层，直接清空所有缓存更稳妥
                 self.invalidate_all_caches()
             elif section:
                 self.invalidate_section_cache(section)
@@ -1324,7 +981,6 @@ class ConfigManager(
                 f"配置已更新: {key} = {_sanitize_config_value_for_log(key, value)}"
             )
 
-        # 【热更新】配置在内存中更新后，触发回调通知其他模块（在锁外执行，避免死锁）
         if changed:
             try:
                 self._trigger_config_change_callbacks()
@@ -1333,12 +989,11 @@ class ConfigManager(
 
     def update(self, updates: dict[str, Any], save: bool = True) -> None:
         """批量更新配置（仅处理变化项，合并为一次延迟保存，原子操作）"""
-        # network_security 特殊处理：先剥离并走专用更新/落盘路径，避免进入 _config/_pending_changes
+
         network_security_updates: dict[str, Any] = {}
         non_ns_updates: dict[str, Any] = {}
         for k, v in (updates or {}).items():
             if k == "network_security" and isinstance(v, dict):
-                # 视为整段覆盖（仍会被验证与归一化）
                 network_security_updates.update(cast(dict[str, Any], v))
             elif isinstance(k, str) and k.startswith("network_security."):
                 field = k[len("network_security.") :]
@@ -1353,7 +1008,7 @@ class ConfigManager(
 
         if network_security_updates:
             self.update_network_security_config(network_security_updates, save=save)
-            # 若仅更新 network_security，则无需走通用 update 流程
+
             if not non_ns_updates:
                 return
 
@@ -1362,7 +1017,6 @@ class ConfigManager(
         with self._lock:
             self._last_access_time = time.monotonic()
 
-            # 性能优化：过滤出真正有变化的配置项
             actual_changes = {}
             for key, value in non_ns_updates.items():
                 current_value = self.get(key)
@@ -1373,29 +1027,25 @@ class ConfigManager(
                 logger.debug("批量更新中没有配置变化，跳过保存")
                 return
 
-            # 性能优化：使用批量缓冲机制
             if save:
-                # 将所有变更添加到待写入队列
                 self._pending_changes.update(actual_changes)
-                # 立即更新内存中的配置
+
                 for key, value in actual_changes.items():
                     self._set_config_value(key, value)
                     logger.debug(
                         f"配置已更新: {key} = {_sanitize_config_value_for_log(key, value)}"
                     )
-                # 调度延迟保存（只调度一次）
+
                 self._save_config()
             else:
-                # 直接更新内存中的配置，不保存到文件
                 for key, value in actual_changes.items():
                     self._set_config_value(key, value)
-                    # 清除 pending 中的同 key 旧值，防止 _delayed_save 回写覆盖
+
                     self._pending_changes.pop(key, None)
                     logger.debug(
                         f"配置已更新: {key} = {_sanitize_config_value_for_log(key, value)}"
                     )
 
-            # 【缓存优化】失效涉及到的 section 缓存，避免 get_section() 返回旧值
             for changed_key in actual_changes:
                 section = changed_key.split(".")[0] if changed_key else ""
                 if section:
@@ -1410,7 +1060,6 @@ class ConfigManager(
             changed = True
             logger.debug(f"批量更新完成，共更新 {len(actual_changes)} 个配置项")
 
-        # 【热更新】配置在内存中更新后，触发回调通知其他模块（在锁外执行，避免死锁）
         if changed:
             try:
                 self._trigger_config_change_callbacks()
@@ -1420,12 +1069,10 @@ class ConfigManager(
     def force_save(self) -> None:
         """强制立即保存配置文件（取消延迟保存，应用所有待保存变更）"""
         with self._lock:
-            # 取消延迟保存定时器
             if self._save_timer is not None:
                 self._save_timer.cancel()
                 self._save_timer = None
 
-            # 应用所有待写入的变更
             if self._pending_changes:
                 logger.debug(
                     f"强制保存：应用 {len(self._pending_changes)} 个待写入的配置变更"
@@ -1434,7 +1081,6 @@ class ConfigManager(
                     self._set_config_value(key, value)
                 self._pending_changes.clear()
 
-            # 立即保存
             self._save_config_immediate()
             self._last_save_time = time.monotonic()
             logger.debug("强制配置保存完成")
@@ -1493,7 +1139,6 @@ class ConfigManager(
         with self._lock:
             current_section = self.get_section(section)
 
-            # 检查是否有任何值真的发生了变化
             has_changes = False
             for key, new_value in updates.items():
                 current_value = current_section.get(key)
@@ -1510,10 +1155,8 @@ class ConfigManager(
                 logger.debug(f"配置段 '{section}' 未发生变化，跳过保存")
                 return
 
-            # 应用更新
             current_section.update(updates)
 
-            # 直接更新配置并保存，避免重复的值比较
             keys = section.split(".")
             config = self._config
             for k in keys[:-1]:
@@ -1525,13 +1168,11 @@ class ConfigManager(
             if save:
                 self._save_config()
 
-            # 【缓存优化】失效该 section 的缓存
             self.invalidate_section_cache(section)
 
             changed = True
             logger.debug(f"配置段已更新: {section}")
 
-        # 【热更新】配置段更新后触发回调（在锁外执行，避免死锁）
         if changed:
             try:
                 self._trigger_config_change_callbacks()
@@ -1542,12 +1183,8 @@ class ConfigManager(
         """从磁盘重新加载配置文件（覆盖内存配置，失效缓存）"""
         logger.info("重新加载配置文件")
         self._load_config()
-        # 【缓存优化】重新加载后失效所有缓存
-        self.invalidate_all_caches()
 
-    # ========================================================================
-    # 缓存管理方法
-    # ========================================================================
+        self.invalidate_all_caches()
 
     def invalidate_section_cache(self, section: str) -> None:
         """失效指定配置段的缓存"""
@@ -1561,12 +1198,10 @@ class ConfigManager(
     def invalidate_all_caches(self) -> None:
         """清空所有配置缓存"""
         with self._lock:
-            # 清空 section 缓存
             invalidated_count = len(self._section_cache)
             self._section_cache.clear()
             self._section_cache_time.clear()
 
-            # 清空 network_security 缓存
             self._network_security_cache = None
             self._network_security_cache_time = 0
 
@@ -1604,13 +1239,11 @@ class ConfigManager(
         """设置缓存有效期（TTL）"""
         with self._lock:
             if section_ttl is not None:
-                self._section_cache_ttl = max(0.1, section_ttl)  # 最小 0.1 秒
+                self._section_cache_ttl = max(0.1, section_ttl)
                 logger.debug(f"section 缓存 TTL 已设置为: {self._section_cache_ttl}s")
 
             if network_security_ttl is not None:
-                self._network_security_cache_ttl = max(
-                    1.0, network_security_ttl
-                )  # 最小 1 秒
+                self._network_security_cache_ttl = max(1.0, network_security_ttl)
                 logger.debug(
                     f"network_security 缓存 TTL 已设置为: {self._network_security_cache_ttl}s"
                 )
@@ -1644,12 +1277,6 @@ class ConfigManager(
         except Exception:
             return default
 
-    # network_security 方法通过 NetworkSecurityMixin 提供（config_modules/network_security.py）
-
-    # ========================================================================
-    # 类型安全的配置获取方法
-    # ========================================================================
-
     def get_typed(
         self,
         key: str,
@@ -1664,7 +1291,6 @@ class ConfigManager(
         raw_value = self.get(key, default)
 
         try:
-            # 布尔类型特殊处理
             if value_type is bool:
                 if isinstance(raw_value, bool):
                     return raw_value
@@ -1672,10 +1298,8 @@ class ConfigManager(
                     return raw_value.lower() in ("true", "1", "yes", "on")
                 return bool(raw_value)
 
-            # 其他类型转换
             converted = value_type(raw_value)
 
-            # 边界验证（仅对数值类型）
             if value_type in (int, float) and (
                 min_val is not None or max_val is not None
             ):
@@ -1730,16 +1354,10 @@ class ConfigManager(
             return truncate_string(value, max_length, key, default=default)
         return value
 
-    # 文件监听方法通过 FileWatcherMixin 提供（config_modules/file_watcher.py）
-    # 配置导出/导入方法通过 IOOperationsMixin 提供（config_modules/io_operations.py）
 
-
-# 全局配置管理器实例
 config_manager = ConfigManager()
 
-# 【资源生命周期】进程退出时尽量清理后台资源（文件监听/Timer）
-# - 避免测试环境出现“退出卡住/资源未释放”类问题
-# - shutdown() 本身幂等，重复调用安全
+
 import atexit  # noqa: E402
 
 
@@ -1747,7 +1365,6 @@ def _shutdown_global_config_manager():
     try:
         config_manager.shutdown()
     except Exception:
-        # 退出阶段不再抛异常
         pass
 
 
@@ -1756,13 +1373,11 @@ atexit.register(_shutdown_global_config_manager)
 
 def get_config() -> ConfigManager:
     """获取全局配置管理器实例（自动启动文件监听）"""
-    # 【配置热更新】默认启用文件监听（2 秒轮询，按你的选择 A + C）
-    # 目的：外部编辑 config.toml 后无需重启即可生效
+
     try:
         if not config_manager.is_file_watcher_running:
             config_manager.start_file_watcher(interval=2.0)
     except Exception:
-        # 配置系统属于基础设施：监听启动失败不应影响主流程
         pass
 
     return config_manager

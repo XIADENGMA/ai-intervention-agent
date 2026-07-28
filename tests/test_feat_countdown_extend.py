@@ -570,10 +570,11 @@ class TestDesignAnchors(unittest.TestCase):
         )
 
     def test_html_has_anchor(self) -> None:
+        # 注释锚点已清理，改锁功能的 DOM id 本身
         self.assertIn(
-            "feat-countdown-extend",
+            'id="countdown-extend-btn"',
             WEB_UI_HTML.read_text(encoding="utf-8"),
-            "web_ui.html 必须有 feat-countdown-extend 锚点",
+            "web_ui.html 必须有 countdown-extend-btn 元素",
         )
 
     def test_css_has_anchor(self) -> None:

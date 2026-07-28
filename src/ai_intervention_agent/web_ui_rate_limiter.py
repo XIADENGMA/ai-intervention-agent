@@ -1,9 +1,4 @@
-"""Lightweight in-memory rate limiter for the local Web UI.
-
-This module intentionally covers the small Flask-Limiter surface used by the
-Web UI (``limit`` / ``exempt`` / ``enabled``) without importing
-``flask_limiter`` during ``WebFeedbackUI`` construction.
-"""
+"""Lightweight in-memory rate limiter for the local Web UI."""
 
 from __future__ import annotations
 

@@ -1,10 +1,4 @@
-"""Runtime constants that must be cheap to import.
-
-Keep these values outside ``server_config`` because ``server_config`` defines
-Pydantic models and MCP response helpers. Web UI startup paths need the numeric
-contracts only, and importing Pydantic for constants alone costs measurable cold
-start time.
-"""
+"""Runtime constants that must be cheap to import."""
 
 from __future__ import annotations
 

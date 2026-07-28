@@ -4,32 +4,11 @@
 
 MCP 服务器配置与工具函数 — 配置数据类、常量、输入验证、响应解析。
 
-从 server.py 提取的无状态模块：
-- WebUIConfig / FeedbackConfig 数据类及其 getter
-- 超时计算、输入验证、图片处理、MCP 响应构建
-- 所有函数不依赖 server.py 的全局状态（缓存、进程管理等）
-
-R20.9 性能优化（lazy mcp.types）：
-================================
-``mcp.types`` 单独 import 约 ~184 ms（被 task_queue → server_config 间接拖入
-即可观察到）。MCP 响应构建（``parse_structured_response`` / ``_process_image``
-/ ``_make_resubmit_response``）只在 MCP server 主进程调用，Web UI 子进程
-压根用不到 ``ImageContent`` / ``TextContent`` / ``ContentBlock``。
-
-通过 ``from __future__ import annotations``（PEP 563）+ ``TYPE_CHECKING``
-gate + 一次性缓存的 ``_lazy_mcp_types()`` 访问器，把 ``mcp.types`` 推迟到
-**首次实际调用**响应构建函数时才加载。Web UI 子进程从此完全不会触发
-``mcp.types`` 加载，task_queue 间接 import 时间从 ~218 ms 降至 ~30 ms。
-
 ## 函数
 
 ### `_lazy_mcp_types() -> Any`
 
 懒加载并缓存 ``mcp.types`` 模块对象（线程安全：GIL + 幂等赋值）。
-
-返回的对象有 ``TextContent`` / ``ImageContent`` / ``ContentBlock`` 等
-类属性。调用方应直接通过本函数返回值访问，不要重新 ``import mcp.types``
-（那会让 lazy 化的努力前功尽弃）。
 
 ### `get_feedback_config() -> FeedbackConfig`
 
@@ -59,38 +38,13 @@ gate + 一次性缓存的 ``_lazy_mcp_types()`` 访问器，把 ``mcp.types`` �
 
 把任意输入归一化为 bool（接受 true/false/1/0/"true"/"false"/"yes"/"no"）。
 
-保持宽松：未知值视为未默认选中（False），避免因 LLM 偶发地传入字符串
-类型的 "true"/"false" 而把"默认勾选"功能直接打掉。
-
 ### `validate_input_with_defaults(prompt: str, predefined_options: list | None = None) -> tuple[str, list[str], list[bool]]`
 
 验证清理输入：截断过长内容，过滤非法选项，并解析每项的"默认选中"状态。
 
-`predefined_options` 兼容三种格式（向后兼容 + TODO #3 增强）：
-
-1. 纯字符串：``"选项 A"`` —— default 为 False
-2. 带默认选中的对象：``{"label": "选项 B", "default": True}`` ——
-   支持的别名：``label`` / ``text`` / ``value``，``default`` /
-   ``selected`` / ``checked``。
-3. 紧凑数组：``["选项 C", true]`` —— 第一项为 label，第二项为 default。
-
-Returns
--------
-tuple[str, list[str], list[bool]]
-    归一化后的 ``(prompt, options_labels, options_defaults)``，两个列表长度
-    始终一致，长度为 0 表示用户未提供选项。
-
-See Also
---------
-validate_input : 旧版本，仅返回 ``(prompt, options_labels)``，向后兼容；
-    若仅关心 label 不需要 default 信息时使用即可。
-
 ### `validate_input(prompt: str, predefined_options: list | None = None) -> tuple[str, list[str]]`
 
 验证清理输入：截断过长内容，过滤非法选项（向后兼容签名）。
-
-返回 ``(prompt, options_labels)``。如需同时获取每项的"默认选中"状态，
-请使用 :func:`validate_input_with_defaults`。
 
 ### `_generate_task_id() -> str`
 
@@ -104,50 +58,13 @@ validate_input : 旧版本，仅返回 ``(prompt, options_labels)``，向后兼�
 
 判断 URL 的 host 是否解析到本机回环地址。
 
-覆盖三类常见写法：
-    * 字面量 ``localhost`` / ``127.0.0.1`` / ``::1`` / ``[::1]``
-    * 整个 ``127.0.0.0/8`` IPv4 段（``127.123.45.67`` 也算回环）
-    * ``ipaddress.ip_address(host).is_loopback`` 真值的 IPv6 地址
-
-用于在 Bark / 跨设备通知场景过滤 ``http://localhost:8080`` 这类
-"对外推送但点了打不开" 的 base_url：手机 Bark 解析 loopback 会指向
-手机自己，必然打不开 Web UI。
-
-任何解析失败 / 空串 / 非 string 输入都返回 ``False``，让调用方按
-"未识别即放行" 处理，避免误伤合法的 LAN/公网 URL。
-
 ### `resolve_external_base_url(web_ui_config: WebUIConfig | None = None) -> str`
 
 解析"对外可访问"的 Web UI 基地址，用于通知点击跳转等场景。
 
-优先级：
-    1. ``[web_ui] external_base_url`` 配置（用户显式指定，如 ``http://ai.local:8080``）
-    2. mDNS 地址（``[mdns] hostname``，默认 ``ai.local``），仅在 mDNS 显式启用
-       或 ``auto`` 且监听地址不是 loopback 时使用
-    3. ``http://{target_host}:{port}``（基于 ``[web_ui] host/port`` 推导）
-
-返回值会去掉末尾斜杠，便于直接和 ``/path`` 拼接；解析失败时返回空串。
-
-参数 ``for_external_use``（默认 ``False`` 保持向后兼容）：
-    * ``False``：保留原契约——任何解析成功的 URL 都返回，包括 loopback。
-    * ``True``：调用方明确声明 "我要给跨设备/外部场景用"，函数会在
-      解析结果命中 :func:`is_loopback_url` 时返回 ``""``，迫使调用方
-      走 "无外部可达地址" 的降级路径（例如 Bark 通知不附 ``url`` 字段、
-      UI 显示提示让用户配 ``external_base_url`` 或 ``web_ui.host``）。
-
 ### `suggest_lan_base_url(port: int) -> str | None`
 
 探测一个适合对外推送的 LAN base_url（``http://<lan-ipv4>:<port>``）。
-
-用于 Bark / 跨设备通知场景：当 :func:`resolve_external_base_url` 在
-``for_external_use=True`` 模式返回空串时，UI / 日志可以用本函数给出
-"你应该配成什么样" 的具体推荐。
-
-内部复用 :func:`web_ui_mdns_utils.detect_best_publish_ipv4`（lazy import，
-避免冷启动加载 ``psutil``）。它会跳过 ``docker0`` / VPN tunnel / 回环 /
-link-local 地址，优先返回路由探测到的默认出口 IPv4，再退化到物理网卡
-枚举。任何探测失败都返回 ``None``，调用方应优雅降级（例如 UI 隐藏
-"推荐 LAN IP" 行）。
 
 ### `_format_file_size(size: int) -> str`
 

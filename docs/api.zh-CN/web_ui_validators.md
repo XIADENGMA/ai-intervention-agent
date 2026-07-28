@@ -4,18 +4,11 @@
 
 网络安全配置验证 & 超时校验 — 从 web_ui.py 提取的纯函数。
 
-所有函数均为无状态、无副作用（仅日志）的验证/规范化工具，
-可安全地在测试、CLI、配置热更新等场景复用。
-
 ## 函数
 
 ### `validate_auto_resubmit_timeout(value: int) -> int`
 
 验证并限制 auto_resubmit_timeout 范围。
-
-- 0 / 负值 → 禁用（返回 0）
-- 低于 AUTO_RESUBMIT_TIMEOUT_MIN → 提升至下限
-- 高于 AUTO_RESUBMIT_TIMEOUT_MAX → 截断至上限
 
 ### `validate_bind_interface(value: object) -> str`
 
@@ -40,9 +33,6 @@
 ### `validate_trusted_hosts(hosts: Any) -> list[str]`
 
 Validate explicit Host allowlist entries while preserving hostname form.
-
-Detailed normalization is done by ``web_ui_security.build_trusted_hosts`` so
-URL, host:port, and IPv6 bracket syntax stay supported in one place.
 
 ### `validate_network_security_config(config: Any) -> dict[str, Any]`
 

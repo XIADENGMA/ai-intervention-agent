@@ -1,8 +1,4 @@
-"""配置文件监听 Mixin。
-
-提供 ConfigManager 的后台文件监听、配置变更回调注册/触发、
-以及 shutdown 生命周期管理能力。
-"""
+"""配置文件监听 Mixin。"""
 
 from __future__ import annotations
 
@@ -100,7 +96,7 @@ class FileWatcherMixin:
 
     def shutdown(self) -> None:
         """关闭配置管理器：刷新待保存变更、停止文件监听、取消定时器（幂等）"""
-        # 先强制保存未落盘的配置变更，避免进程退出丢失数据
+
         try:
             if hasattr(self, "force_save") and callable(self.force_save):
                 self.force_save()

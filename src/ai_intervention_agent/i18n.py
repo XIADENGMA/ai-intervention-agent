@@ -1,11 +1,4 @@
-"""后端轻量 i18n 模块：根据请求语言返回本地化字符串。
-
-使用方式：
-    from ai_intervention_agent.i18n import get_locale_message, detect_request_lang
-
-    lang = detect_request_lang()  # 从 Flask request 自动检测
-    msg = get_locale_message("feedback.submitted", lang)
-"""
+"""后端轻量 i18n 模块：根据请求语言返回本地化字符串。"""
 
 from __future__ import annotations
 
@@ -85,9 +78,6 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "notify.updateFailed": "更新失败",
         "notify.getFailed": "获取配置失败",
     },
-    # feat-zhtw-locale (§3.3): 繁體中文（台灣）。term sweep 与
-    # static/locales/zh-TW.json 保持一致：設定 / 軟體 / 介面 / 影片 /
-    # 檔案 / 即時 / 連線 / 回饋 / 程式碼 / 預設 等。
     "zh-TW": {
         "feedback.submitted": "回饋已提交",
         "feedback.bodyMustBeJson": "要求主體必須是 JSON（object）",
@@ -122,12 +112,7 @@ _MESSAGES: dict[str, dict[str, str]] = {
 
 
 def normalize_lang(raw: str) -> str:
-    """将语言标识归一化为支持的语言代码。
-
-    feat-zhtw-locale (§3.3): 与 ``static/js/i18n.js`` 的 ``normalizeLang``
-    保持一致 —— zh-TW / zh-HK / zh-MO / zh-Hant* 折叠为 ``zh-TW``，其他
-    zh-* (zh-CN / zh-Hans / zh-SG / zh-MY) 继续走 ``zh-CN``。
-    """
+    """将语言标识归一化为支持的语言代码。"""
     s = (raw or "").strip().lower()
     if s.startswith("zh"):
         if s in {"zh-tw", "zh-hk", "zh-mo", "zh-hant"} or s.startswith("zh-hant-"):
@@ -169,13 +154,7 @@ def get_locale_message(
     lang: str | None = None,
     **kwargs: str,
 ) -> str:
-    """获取本地化消息字符串。
-
-    Args:
-        key: 消息键（如 "feedback.submitted"）
-        lang: 语言代码（None 则自动检测）
-        **kwargs: 模板参数（如 detail="xxx"）
-    """
+    """获取本地化消息字符串。"""
     if lang is None:
         lang = detect_request_lang()
 
@@ -194,5 +173,4 @@ def get_locale_message(
     return val
 
 
-# 便捷别名
 msg = get_locale_message

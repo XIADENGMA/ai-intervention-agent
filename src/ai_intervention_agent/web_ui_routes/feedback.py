@@ -11,8 +11,6 @@ from flask.typing import ResponseReturnValue
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.feedback_types import FeedbackResult
 from ai_intervention_agent.i18n import msg
-
-# R20.8: 直接 import task_queue_singleton 避免拖入 fastmcp/mcp（详见模块注释）。
 from ai_intervention_agent.task_queue_singleton import get_task_queue
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
 
@@ -451,10 +449,6 @@ class FeedbackRoutesMixin:
                 )
             new_prompt = new_prompt_raw
 
-            # R166：把硬编码的 10000 上限替换为 ``MAX_MESSAGE_LENGTH`` 常量
-            # （当前 1_000_000，约 1MB UTF-8），与服务端 ``validate_input_with_defaults``
-            # 对齐。任何更大的 prompt 应在 ``task_queue.add_task`` 的 10MB 字节
-            # 硬上限处被拒绝（DoS 防御），而不是被静默截断为 "...".
             from ai_intervention_agent.server_config import MAX_MESSAGE_LENGTH
 
             if len(new_prompt) > MAX_MESSAGE_LENGTH:

@@ -1,8 +1,4 @@
-"""网络安全配置验证 & 超时校验 — 从 web_ui.py 提取的纯函数。
-
-所有函数均为无状态、无副作用（仅日志）的验证/规范化工具，
-可安全地在测试、CLI、配置热更新等场景复用。
-"""
+"""网络安全配置验证 & 超时校验 — 从 web_ui.py 提取的纯函数。"""
 
 from __future__ import annotations
 
@@ -18,9 +14,6 @@ from ai_intervention_agent.runtime_constants import (
 
 logger = EnhancedLogger(__name__)
 
-# ============================================================================
-# 常量
-# ============================================================================
 
 VALID_BIND_INTERFACES = {"0.0.0.0", "127.0.0.1", "localhost", "::1", "::"}
 
@@ -33,18 +26,8 @@ DEFAULT_ALLOWED_NETWORKS = [
 ]
 
 
-# ============================================================================
-# 超时验证
-# ============================================================================
-
-
 def validate_auto_resubmit_timeout(value: int) -> int:
-    """验证并限制 auto_resubmit_timeout 范围。
-
-    - 0 / 负值 → 禁用（返回 0）
-    - 低于 AUTO_RESUBMIT_TIMEOUT_MIN → 提升至下限
-    - 高于 AUTO_RESUBMIT_TIMEOUT_MAX → 截断至上限
-    """
+    """验证并限制 auto_resubmit_timeout 范围。"""
     if value <= 0:
         return 0
 
@@ -54,11 +37,6 @@ def validate_auto_resubmit_timeout(value: int) -> int:
         AUTO_RESUBMIT_TIMEOUT_MAX,
         "auto_resubmit_timeout",
     )
-
-
-# ============================================================================
-# 网络验证
-# ============================================================================
 
 
 def validate_bind_interface(value: object) -> str:
@@ -167,11 +145,7 @@ def validate_blocked_ips(ips: Any) -> list[str]:
 
 
 def validate_trusted_hosts(hosts: Any) -> list[str]:
-    """Validate explicit Host allowlist entries while preserving hostname form.
-
-    Detailed normalization is done by ``web_ui_security.build_trusted_hosts`` so
-    URL, host:port, and IPv6 bracket syntax stay supported in one place.
-    """
+    """Validate explicit Host allowlist entries while preserving hostname form."""
     if not isinstance(hosts, list):
         return []
 

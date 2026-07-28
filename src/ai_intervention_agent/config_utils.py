@@ -6,7 +6,7 @@ from typing import Any, TypeVar, cast, overload
 
 logger = logging.getLogger(__name__)
 
-# 数值类型别名：用于边界校验（int/float 均支持比较运算）
+
 Number = int | float
 
 T = TypeVar("T")
@@ -92,11 +92,9 @@ def get_typed_config(
     """获取配置值并进行类型转换和边界验证"""
     raw_value = get_compat_config(config, key, old_key, default)
 
-    # 类型转换
     typed_value: T = default
     try:
         if value_type is bool and isinstance(raw_value, str):
-            # 特殊处理字符串布尔值
             typed_value = cast(T, raw_value.lower() in ("true", "1", "yes", "on"))
         else:
             typed_value = cast(T, cast(Any, value_type)(raw_value))
@@ -106,7 +104,6 @@ def get_typed_config(
         )
         typed_value = default
 
-    # 边界验证（仅对数值类型）
     if (
         min_val is not None
         and max_val is not None
@@ -148,7 +145,7 @@ def truncate_string(
     log_warning: bool = True,
 ) -> str:
     """截断字符串到指定长度，空值时使用默认值"""
-    # 处理空值
+
     if not value or not value.strip():
         if default is not None:
             if log_warning:
@@ -156,7 +153,6 @@ def truncate_string(
             return default
         return value if value is not None else ""
 
-    # 截断过长的字符串
     if len(value) > max_length:
         if log_warning:
             logger.warning(f"{field_name} 过长 ({len(value)}>{max_length})，已截断")

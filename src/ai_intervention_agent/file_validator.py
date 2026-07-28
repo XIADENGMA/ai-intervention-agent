@@ -29,15 +29,12 @@ class FileValidationResult(TypedDict):
     errors: list[str]
 
 
-# 图片格式魔数字典：{魔数字节: {extension, mime_type, description, additional_check?}}
 IMAGE_MAGIC_NUMBERS: dict[bytes, ImageTypeInfo] = {
-    # PNG格式
     b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a": {
         "extension": ".png",
         "mime_type": "image/png",
         "description": "PNG图片",
     },
-    # JPEG格式 (多种变体)
     b"\xff\xd8\xff\xe0": {
         "extension": ".jpg",
         "mime_type": "image/jpeg",
@@ -63,7 +60,6 @@ IMAGE_MAGIC_NUMBERS: dict[bytes, ImageTypeInfo] = {
         "mime_type": "image/jpeg",
         "description": "JPEG图片 (标准)",
     },
-    # GIF格式
     b"\x47\x49\x46\x38\x37\x61": {
         "extension": ".gif",
         "mime_type": "image/gif",
@@ -74,20 +70,17 @@ IMAGE_MAGIC_NUMBERS: dict[bytes, ImageTypeInfo] = {
         "mime_type": "image/gif",
         "description": "GIF图片 (89a)",
     },
-    # WebP格式
     b"\x52\x49\x46\x46": {
         "extension": ".webp",
         "mime_type": "image/webp",
         "description": "WebP图片",
         "additional_check": lambda data: data[8:12] == b"WEBP",
     },
-    # BMP格式
     b"\x42\x4d": {
         "extension": ".bmp",
         "mime_type": "image/bmp",
         "description": "BMP图片",
     },
-    # TIFF格式
     b"\x49\x49\x2a\x00": {
         "extension": ".tiff",
         "mime_type": "image/tiff",
@@ -98,17 +91,14 @@ IMAGE_MAGIC_NUMBERS: dict[bytes, ImageTypeInfo] = {
         "mime_type": "image/tiff",
         "description": "TIFF图片 (Big Endian)",
     },
-    # ICO格式
     b"\x00\x00\x01\x00": {
         "extension": ".ico",
         "mime_type": "image/x-icon",
         "description": "ICO图标",
     },
-    # SVG 已移除：SVG 本质是 XML，可嵌入 JavaScript（onload/foreignObject/animate 等），
-    # 恶意模式检测难以穷举，直接禁止上传以消除 XSS 风险。
 }
 
-# 危险文件扩展名黑名单：可执行文件、脚本、打包文件
+
 DANGEROUS_EXTENSIONS = {
     ".exe",
     ".bat",
@@ -151,25 +141,21 @@ DANGEROUS_EXTENSIONS = {
     ".xhtml",
 }
 
-# 恶意内容正则模式：JavaScript/PHP/Shell/SQL 注入特征
+
 MALICIOUS_PATTERNS = [
-    # JavaScript代码模式
     rb"<script[^>]*>",
     rb"javascript:",
     rb"eval\s*\(",
     rb"document\.write",
     rb"window\.location",
-    # PHP代码模式
     rb"<\?php",
     rb"<\?=",
     rb"system\s*\(",
     rb"exec\s*\(",
-    # Shell命令模式
     rb"#!/bin/",
     rb"rm\s+-rf",
     rb"wget\s+",
     rb"curl\s+",
-    # SQL注入模式
     rb"union\s+select",
     rb"drop\s+table",
     rb"insert\s+into",
@@ -180,25 +166,16 @@ MALICIOUS_PATTERNS = [
 class FileValidator:
     """文件验证器 - 魔数验证、恶意内容扫描、文件名安全检查。"""
 
-    # 【优化】类级别常量：危险字符集合（所有实例共享）。
-    # 注意 ``\0``（NUL byte）刻意**不**列在这里，由 ``_validate_filename`` 单独
-    # 升级为 error 而非 warning ——
-    # NUL 是 C 字符串终结符，``image.png\x00.exe`` 这类构造会让任何把
-    # 文件名再次穿过 C 边界的下游（OS path API、CGI 转发、第三方库）
-    # 把名字截断成 ``image.png``，绕过扩展名白名单。Python 3 的
-    # ``open(...)`` / ``Path(...)`` 已经会主动 ``ValueError``，但本验证器
-    # 是上传链路的第一道闸，不该让 NUL 走到下游再被各自 fail（错误
-    # 行为不可预测、log 难定位）；统一在这里直接拒绝。
     _DANGEROUS_CHARS = frozenset(["<", ">", ":", '"', "|", "?", "*"])
 
-    def __init__(self, max_file_size: int = 10 * 1024 * 1024):  # 10MB
+    def __init__(self, max_file_size: int = 10 * 1024 * 1024):
         """初始化并预编译恶意内容正则"""
-        # 验证max_file_size参数
+
         if max_file_size <= 0:
             raise ValueError(f"max_file_size 必须为正数，当前值: {max_file_size}")
 
         self.max_file_size = max_file_size
-        # 【优化】预编译正则并缓存 decoded pattern 字符串
+
         self.compiled_patterns = []
         for pattern in MALICIOUS_PATTERNS:
             compiled = re.compile(pattern, re.IGNORECASE)
@@ -212,7 +189,7 @@ class FileValidator:
         declared_mime_type: str | None = None,
     ) -> FileValidationResult:
         """验证文件安全性，返回 {valid, file_type, mime_type, extension, size, warnings, errors}"""
-        # 验证输入参数
+
         if not filename or not filename.strip():
             return {
                 "valid": False,
@@ -246,25 +223,19 @@ class FileValidator:
         }
 
         try:
-            # 1. 基础检查
             self._validate_basic_properties(file_data, filename, result)
 
-            # 2. 魔数验证
             detected_type = self._validate_magic_number(file_data, result)
 
-            # 3. 文件名验证
             self._validate_filename(filename, result)
 
-            # 4. MIME类型一致性检查
             if declared_mime_type:
                 self._validate_mime_consistency(
                     declared_mime_type, detected_type, result
                 )
 
-            # 5. 恶意内容扫描
             self._scan_malicious_content(file_data, result)
 
-            # 6. 最终验证结果
             result["valid"] = len(result["errors"]) == 0
 
             if result["valid"]:
@@ -283,27 +254,21 @@ class FileValidator:
         self, file_data: bytes, filename: str, result: FileValidationResult
     ) -> None:
         """检查文件大小、文件名长度、危险扩展名"""
-        # 检查文件大小
+
         if len(file_data) == 0:
             result["errors"].append("文件为空")
-            # 不再提前return，继续检查文件名安全性
 
         if len(file_data) > self.max_file_size:
             result["errors"].append(
                 f"文件大小超过限制: {len(file_data)} > {self.max_file_size}"
             )
 
-        # 检查文件名长度
         if len(filename) > 255:
             result["errors"].append("文件名过长")
 
-        # 【优化】使用 rsplit 代替 Path，避免创建对象
-        # 原逻辑：Path(filename).suffix.lower()
-        # 优化后：提取 '.' 后的扩展名，保留 '.' 前缀
         parts = filename.rsplit(".", 1)
         file_ext = ("." + parts[1]).lower() if len(parts) > 1 else ""
 
-        # 检查危险扩展名
         if file_ext and file_ext in DANGEROUS_EXTENSIONS:
             result["errors"].append(f"危险的文件扩展名: {file_ext}")
 
@@ -313,8 +278,6 @@ class FileValidator:
         """通过魔数识别真实文件类型（PNG/JPEG 快速路径优化）"""
         detected_type: ImageTypeInfo | None = None
 
-        # 【优化】快速路径：优先检查最常见的格式（PNG、JPEG）
-        # PNG 魔数检查（约占 40% 图片上传）
         if file_data.startswith(b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a"):
             detected_type = cast(
                 ImageTypeInfo,
@@ -325,8 +288,6 @@ class FileValidator:
                 },
             )
 
-        # JPEG 魔数检查（约占 50% 图片上传）
-        # 所有 JPEG 变体的前 3 字节都是 \xff\xd8\xff
         elif file_data.startswith(b"\xff\xd8\xff"):
             detected_type = cast(
                 ImageTypeInfo,
@@ -337,34 +298,26 @@ class FileValidator:
                 },
             )
 
-        # 快速路径命中，直接返回
         if detected_type:
             result["file_type"] = detected_type["description"]
             result["mime_type"] = detected_type["mime_type"]
             result["extension"] = detected_type["extension"]
             return detected_type
 
-        # 【优化】慢速路径：跳过已在快速路径检查的 PNG 和 JPEG 格式
-        # PNG 魔数：\x89\x50\x4e\x47\x0d\x0a\x1a\x0a
-        # JPEG 魔数（5个变体）：\xff\xd8\xff\xe0, \xff\xd8\xff\xe1, \xff\xd8\xff\xe2,
-        #                        \xff\xd8\xff\xe3, \xff\xd8\xff\xdb
         _SKIP_MAGIC_BYTES = {
-            b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a",  # PNG
-            b"\xff\xd8\xff\xe0",  # JPEG JFIF
-            b"\xff\xd8\xff\xe1",  # JPEG EXIF
-            b"\xff\xd8\xff\xe2",  # JPEG Canon
-            b"\xff\xd8\xff\xe3",  # JPEG Samsung
-            b"\xff\xd8\xff\xdb",  # JPEG 标准
+            b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a",
+            b"\xff\xd8\xff\xe0",
+            b"\xff\xd8\xff\xe1",
+            b"\xff\xd8\xff\xe2",
+            b"\xff\xd8\xff\xe3",
+            b"\xff\xd8\xff\xdb",
         }
 
-        # 慢速路径：检查其他所有格式（跳过快速路径已检查的）
         for magic_bytes, type_info in IMAGE_MAGIC_NUMBERS.items():
-            # 【优化】跳过快速路径已检查的格式
             if magic_bytes in _SKIP_MAGIC_BYTES:
                 continue
 
             if file_data.startswith(magic_bytes):
-                # 额外检查添加错误处理
                 if "additional_check" in type_info:
                     try:
                         if not type_info["additional_check"](file_data):
@@ -389,28 +342,20 @@ class FileValidator:
 
     def _validate_filename(self, filename: str, result: FileValidationResult) -> None:
         """检查路径遍历、特殊字符、隐藏文件"""
-        # 检查空文件名或只包含空格/点的文件名
+
         stripped_name = filename.strip()
         if not stripped_name or stripped_name == "." or stripped_name == "..":
             result["errors"].append("文件名无效（空或只包含点）")
 
-        # NUL byte 截断攻击（``image.png\x00.exe`` → 下游 C boundary 截断成
-        # ``image.png``）；这是 errors 而非 warnings —— 任何含 NUL 的文件名
-        # 都没有合法用途，应直接拒绝。
         if "\x00" in filename:
             result["errors"].append("文件名包含 NUL 字节（path-truncation 攻击向量）")
 
-        # 检查路径遍历攻击
         if ".." in filename or "/" in filename or "\\" in filename:
             result["errors"].append("文件名包含非法字符")
 
-        # 【优化】使用类级别 frozenset 和反转循环顺序
-        # 原逻辑：any(char in filename for char in dangerous_chars) O(n * m)
-        # 优化后：any(char in _DANGEROUS_CHARS for char in filename) O(n)
         if any(char in self._DANGEROUS_CHARS for char in filename):
             result["warnings"].append("文件名包含特殊字符")
 
-        # 检查隐藏文件
         if filename.startswith("."):
             result["warnings"].append("隐藏文件")
 
@@ -424,8 +369,6 @@ class FileValidator:
         if not detected_type:
             return
 
-        # 提取MIME类型的主类型（忽略参数部分）
-        # 例如："image/png; charset=utf-8" → "image/png"
         declared_main_type = declared_mime.split(";")[0].strip().lower()
         detected_main_type = detected_type["mime_type"].lower()
 
@@ -437,17 +380,10 @@ class FileValidator:
     def _scan_malicious_content(
         self, file_data: bytes, result: FileValidationResult
     ) -> None:
-        """
-        扫描恶意代码特征（头/尾/中间采样窗口）。
-
-        安全性考量：
-        - 仅扫描前 64KB 容易被“后置拼接 payload”绕过
-        - 全量扫描在 10MB 上限下可行，但为了避免最坏情况的正则开销，这里采用多窗口采样
-        """
+        """扫描恶意代码特征（头/尾/中间采样窗口）。"""
         window_size = 64 * 1024
         size = len(file_data)
 
-        # 采样窗口：小文件全量；大文件取头/尾/中间（尽量覆盖拼接/后置）
         scan_windows: list[bytes] = []
         if size <= window_size:
             scan_windows.append(file_data)
@@ -459,17 +395,13 @@ class FileValidator:
                 start = max(0, mid - window_size // 2)
                 scan_windows.append(file_data[start : start + window_size])
 
-        # 遍历所有模式，报告所有匹配（按窗口逐一匹配）
         for compiled, pattern_str in self.compiled_patterns:
             for chunk in scan_windows:
                 if compiled.search(chunk):
-                    # 【优化】使用预先 decoded 的 pattern_str，避免重复 decode
                     result["errors"].append(f"检测到可疑内容模式: {pattern_str}")
                     break
 
 
-# 【优化】模块级单例：预创建默认 FileValidator 实例，避免重复初始化
-# 所有 validate_uploaded_file() 调用共享此实例，避免重复编译正则表达式
 _default_validator = FileValidator()
 
 

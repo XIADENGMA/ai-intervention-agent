@@ -1,4 +1,8 @@
-"""任务队列管理 - 线程安全、状态管理、自动清理、延迟删除、持久化。"""
+"""任务队列管理 - 线程安全、状态管理、自动清理、延迟删除、持久化。
+
+清理契约：后台守护线程每 5秒 检查一次，完成任务延迟 10秒 后删除
+（避免前端轮询遇到 404）。
+"""
 
 import copy
 import json
@@ -38,48 +42,11 @@ from ai_intervention_agent.task_constants import (
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# R51-A：写锁 deadlock detector
-# ----------------------------------------------------------------------------
-# 设计要点：
-#   1. **不改 ``ReadWriteLock``**：保留 contextmanager 语义，watchdog 仅是
-#      orthogonal 的旁路观察。
-#   2. **零 hot-path 开销**：每次 ``_watched_write_lock`` 进出仅做一次
-#      ``dict[int]`` 写、一次 ``threading.Lock`` 进出，约 1 μs 量级；
-#      不创建 ``threading.Timer``（创建/cancel 大约 ~10 μs，且产生 GC 压力）。
-#   3. **共享后台线程**：模块级单例 ``_watchdog_thread`` daemon，每 5 s 扫描
-#      一次 ``_pending_acquisitions``，发现 hold 时长 > ``_LOCK_WATCHDOG_TIMEOUT_S``
-#      就 dump 全部线程栈到 ``logger.error`` 一次（``dumped`` flag 防止 spam）。
-#   4. **覆盖范围**：watch ``acquire + hold + release`` 整个 critical section。
-#      实务上这正是我们想看到的：deadlock 的征兆既包括"拿不到锁"，也包括
-#      "拿到锁但临界区内卡死"。
-#   5. **演进路径**：第一阶段只 instrument ``add_task`` 这条最热写路径；后续
-#      可逐步把 ``complete_task`` / ``cleanup_completed_tasks`` 等 17 处写锁
-#      迁移到 ``_watched_write_lock``，每条带独立 ``label`` 便于诊断。
-# ============================================================================
-
-# ============================================================================
-# R53-A：``add_task`` 输入大小防护
-# ----------------------------------------------------------------------------
-# add_task 直接把 prompt 存进 self._tasks 的 Task 对象，长期占用进程内存；恶意
-# 或 buggy caller 塞 100 MB 字符串就能把内存炸了，且我们的 SSE 推送会把
-# task_changed payload 里的 statistics + 摘要信息广播给所有连接，巨型 payload
-# 还会撑爆 SSE bus 的 history deque。
-#
-# 设计：6 MB warn（让运维察觉异常 caller），10 MB reject（硬上限，单条 add_task
-# 直接返回 False）。阈值参考：
-#   * 单条人类可读 prompt 极少超过 100 KB；
-#   * markdown summary 包含图片 base64 时偶尔触达 1-2 MB；
-#   * 6 MB 已经是任何"合理"业务的 100 倍以上；
-#   * 10 MB 接近 Flask 默认 MAX_CONTENT_LENGTH（16 MB）的实际下限，再大请求
-#     在 ``request.get_json`` 阶段早就被 reject 了。
-# ============================================================================
-
-_PROMPT_WARN_BYTES: int = 6 * 1024 * 1024  # 6 MB
+_PROMPT_WARN_BYTES: int = 6 * 1024 * 1024
 """``add_task`` 收到的 prompt（UTF-8 编码后字节数）超过此值时 ``logger.warning``。
 不会拒绝，但日志里会留下 footprint 让运维看到 caller 的异常输入趋势。"""
 
-_PROMPT_REJECT_BYTES: int = 10 * 1024 * 1024  # 10 MB
+_PROMPT_REJECT_BYTES: int = 10 * 1024 * 1024
 """``add_task`` 收到的 prompt 超过此值时直接 ``return False``，不进队列。
 保护进程内存 + SSE history deque + 跨进程 IPC payload。"""
 
@@ -88,13 +55,7 @@ _COMPACT_JSON_SEPARATORS: tuple[str, str] = (",", ":")
 
 
 def _prompt_utf8_size_for_guard(prompt: str) -> int:
-    """Return a prompt byte size suitable for the R53-A threshold guard.
-
-    For prompts that are provably below the warn threshold, the exact byte count
-    is irrelevant because no log/reject decision can change. Near the threshold
-    return an exact UTF-8 byte count so warning/rejection metadata remains
-    unchanged.
-    """
+    """Return a prompt byte size suitable for the R53-A threshold guard."""
     char_count = len(prompt)
     if char_count * 4 <= _PROMPT_WARN_BYTES:
         return char_count
@@ -111,13 +72,7 @@ HEADER_LABEL_MAX_LENGTH: int = 16
 
 
 def _normalize_optional_text(value: Any, max_length: int) -> str | None:
-    """Loop engineering P1 — 可选自由文本字段的统一 normalize。
-
-    规则与 ``feedback_placeholder`` / ``header_label`` 的既有路径一致：
-    非 str → None；strip 后为空 → None；超长静默截断到 ``max_length``。
-    ``add_task``（入参）与 ``_restore``（快照 round-trip）共用本函数，
-    避免两处 clamp 逻辑漂移。
-    """
+    """Loop engineering P1 — 可选自由文本字段的统一 normalize。"""
     if not isinstance(value, str):
         return None
     stripped = value.strip()
@@ -152,11 +107,7 @@ _watchdog_started_lock = threading.Lock()
 
 
 def _capture_all_thread_stacks() -> str:
-    """采集进程内所有线程的当前调用栈，拼成可读字符串。
-
-    ``sys._current_frames`` 在 CPython 是受支持的公开-但-下划线 API
-    （PEP 8 的"私有但 stdlib 有保证"约定）；在 PyPy 上也实现了。任何不可
-    采集的环境都返回 fallback 串而不是抛异常，避免 watchdog 自身崩溃。"""
+    """采集进程内所有线程的当前调用栈，拼成可读字符串。"""
     try:
         frames = sys._current_frames()
     except Exception as exc:  # pragma: no cover — 防御性
@@ -172,10 +123,7 @@ def _capture_all_thread_stacks() -> str:
 
 
 def _scan_pending_and_dump_slow() -> int:
-    """单次扫描：把超时但尚未 dump 的 record 拣出来，dump 全栈到 logger.error。
-
-    返回这一次新 dump 的 record 数量，方便测试断言。被 daemon 主循环周期调用，
-    也可被测试单独调用，因此和 ``_lock_watchdog_loop`` 解耦。"""
+    """单次扫描：把超时但尚未 dump 的 record 拣出来，dump 全栈到 logger.error。"""
     now = time.monotonic()
     slow_records: list[dict[str, Any]] = []
     with _pending_acquisitions_lock:
@@ -213,15 +161,11 @@ def _lock_watchdog_loop() -> None:
                 _lock_watchdog_wake_event.clear()
             _scan_pending_and_dump_slow()
         except Exception as exc:
-            # watchdog 本身绝不能让 daemon 死掉
             logger.warning(f"Lock watchdog loop 异常（已吞）: {exc}", exc_info=True)
 
 
 def _ensure_lock_watchdog_started() -> None:
-    """懒启动：第一次有人 ``_watched_write_lock`` 才把 daemon 起来。
-
-    幂等：重复调用直接返回。即便 daemon 因不可预期原因退出，下次调用会
-    重新起一个新的 ―― 这是"自愈"语义而非"crash"。"""
+    """懒启动：第一次有人 ``_watched_write_lock`` 才把 daemon 起来。"""
     global _watchdog_thread
     with _watchdog_started_lock:
         if _watchdog_thread is not None and _watchdog_thread.is_alive():
@@ -239,15 +183,7 @@ def _ensure_lock_watchdog_started() -> None:
 def _watched_write_lock(
     rwlock: ReadWriteLock, label: str
 ) -> Generator[None, None, None]:
-    """``rwlock.write_lock()`` 的 deadlock-aware 包装。
-
-    使用方式：
-
-        with _watched_write_lock(self._lock, "add_task"):
-            ... critical section ...
-
-    超过 ``_LOCK_WATCHDOG_TIMEOUT_S`` 没释放，daemon 会 dump 全栈到
-    ``logger.error``。dump 不会打断流程，仅作"现场快照"用，便于事后分析。"""
+    """``rwlock.write_lock()`` 的 deadlock-aware 包装。"""
     _ensure_lock_watchdog_started()
     rec: dict[str, Any] = {
         "label": label,
@@ -283,76 +219,25 @@ class Task(BaseModel):
     task_id: str
     prompt: str
     predefined_options: list[str] | None = None
-    # 每个预定义选项的"默认是否选中"。可省略；省略时等价于全 False。
-    # 长度若与 predefined_options 不一致，前端按位置逐一对应、缺失项视为 False。
-    #
-    # R167 后语义稳定：
-    # - LLM → MCP ``interactive_feedback``：禁止用 parallel-array 形态
-    #   （顶层参数已移除），必须用 ``predefined_options=[{label, default}]``
-    #   的 dict 形态。``server_feedback`` 内部会把 dict 形态拆成
-    #   ``predefined_options`` (list[str]) + ``predefined_options_defaults``
-    #   (list[bool]) 再调本字段；
-    # - 外部 HTTP ``POST /api/tasks``（VS Code 插件 / 自动化脚本路径）：
-    #   仍然支持显式传 parallel-array 形态，``web_ui_routes/task.py``
-    #   会做长度校验和 bool normalization；
-    # - 本字段是上述两条路径的统一内部表示，前端 ``multi_task.js`` 渲染
-    #   单选/多选 chip 默认勾选状态时直接读它。
+
     predefined_options_defaults: list[bool] | None = None
     auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT
-    # R702（幽灵提交根因修复）：调用方（HTTP API / 自动化脚本）**显式**
-    # 传入 auto_resubmit_timeout 时置 True。config 热更新同步
-    # （``update_auto_resubmit_timeout_for_all``）永远跳过显式任务——
-    # per-task 显式值优先于全局 ``frontend_countdown``，否则「重启后第
-    # 一个 API 任务的 3600s 被回调无差别覆盖为 config 的 30s → 30 秒后
-    # 前端如实自动提交」。False = 从 config 默认值继承，热更新照常跟随。
+
     auto_resubmit_timeout_explicit: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_at_monotonic: float = Field(default_factory=time.monotonic)
     status: str = TaskStatus.PENDING
     result: dict[str, Any] | None = None
     completed_at: datetime | None = None
-    # feat-countdown-extend (§3.2)：用户主动扩展过倒计时的次数。
-    # 每次扩展 = ``auto_resubmit_timeout += extend_seconds``。
-    # 上限由 ``Task.extend_deadline`` 的 ``max_extends`` 参数控制（路由层
-    # 从 server_config 读，默认 3 次），防止用户无限拖时间绕开 auto-resubmit。
-    # 0 = 从未扩展，前端按钮可点击；>= max_extends 时按钮 disabled。
+
     extends_used: int = 0
-    # mining-cycle-3 §2.1 borrow #3 (gemini-cli ``ask_user`` placeholder)：
-    # 每个 task 可选的 textarea placeholder，覆盖全局 i18n
-    # ``page.feedbackPlaceholder``。让 agent 在调 MCP 工具时为不同任务
-    # 提示用户具体应该填什么（"Paste the error stack trace" /
-    # "Describe the visual glitch" / etc）。
-    # 设计点：长度软上限 200 chars（textarea placeholder 超过 1 行就
-    # 失去意义）；None = 走 i18n 默认值。
+
     feedback_placeholder: str | None = None
-    # mining-cycle-3 §2.1 borrow #2 (gemini-cli ``ask_user`` yesno type)：
-    # 当 agent 只想要二元决策（approve / reject / proceed / abort）时，
-    # 设置 question_type="yesno"，前端隐藏 textarea + 显示一行 Yes/No
-    # 2-button。一击直接提交，省 textarea-typing + submit 两步。
-    # 默认 None = textarea 主体保留（既有交互不变）；"yesno" = 切换。
-    # 未来 future type 可加: "choice"（radio 单选）/ "rating"（1-5 star）
-    # 等，目前只 ship "yesno"（最高频用例）。
+
     question_type: str | None = None
-    # mining-cycle-3 §2.1 borrow #1 (gemini-cli ``ask_user.header``)：
-    # 短标签 chip（≤16 chars），渲染在 task pane prompt 之上，让用户
-    # 在 multi-task 场景立刻看到当前任务的"领域"——例：``Auth``/``DB``/
-    # ``Layout``/``CSS``/``i18n``等。提升上下文可识别度。
-    # 设计点：clamp 16 chars；为何不放 task tab —— tab 已挤
-    # (id + ring)；task pane 顶部空间充裕且与 prompt 视觉相邻。
+
     header_label: str | None = None
-    # ------------------------------------------------------------------
-    # Loop engineering P1（docs/loop-engineering-design-notes.zh-CN.md）
-    # ------------------------------------------------------------------
-    # 5 个可选字段让 agent 把"同一目标的多轮任务"串成一个 loop：
-    #   - loop_id：同一目标多轮任务共享的稳定 ID（agent 自定义，≤64 chars）；
-    #   - loop_objective：目标一句话描述（首轮传入即可，≤500 chars）；
-    #   - loop_phase：当前阶段（investigate/implement/verify/review 等
-    #     自由文本，≤32 chars）；
-    #   - success_criteria：可验证的完成判据，人审阅时的对照基准（≤500）；
-    #   - iteration_label：轮次标签，如 "iter-3" / "attempt-2"（≤32）。
-    # 全部 None 时行为与历史版本逐字节一致（旧客户端零破坏）；持久化
-    # round-trip 兼容模式与 R702 的 auto_resubmit_timeout_explicit 相同
-    # （旧快照缺 key → item.get 返回 None → 默认值）。
+
     loop_id: str | None = None
     loop_objective: str | None = None
     loop_phase: str | None = None
@@ -360,52 +245,35 @@ class Task(BaseModel):
     iteration_label: str | None = None
 
     def get_remaining_time(self, now_monotonic: float | None = None) -> int:
-        """计算剩余倒计时（使用单调时间）。
-
-        ``now_monotonic`` 允许高频列表接口在一次请求内复用同一个时间快照，
-        避免每个任务各自调用一次 ``time.monotonic()``。
-        """
+        """计算剩余倒计时（使用单调时间）。"""
         if self.status == TaskStatus.COMPLETED:
             return 0
 
-        # 约定：auto_resubmit_timeout <= 0 表示“禁用自动重调/倒计时”
         if self.auto_resubmit_timeout <= 0:
             return 0
 
-        # 【优化】使用单调时间计算，不受系统时间调整影响
         now = time.monotonic() if now_monotonic is None else now_monotonic
         elapsed = now - self.created_at_monotonic
         remaining = self.auto_resubmit_timeout - elapsed
 
-        # 确保返回值在合理范围内
         return max(0, int(remaining))
 
     def get_deadline_monotonic(self) -> float:
         """获取截止时间的单调时间戳"""
-        # 约定：auto_resubmit_timeout <= 0 表示“禁用自动重调/倒计时”，不应过期
+
         if self.auto_resubmit_timeout <= 0:
             return float("inf")
         return self.created_at_monotonic + self.auto_resubmit_timeout
 
     def is_expired(self) -> bool:
-        """检查任务是否已超时
-
-        【新增】使用单调时间判断任务是否已超时。
-
-        返回:
-            bool: True 表示已超时，False 表示未超时
-        """
+        """检查任务是否已超时"""
         if self.status == TaskStatus.COMPLETED:
             return False
-        # 约定：auto_resubmit_timeout <= 0 表示“禁用自动重调/倒计时”，不应过期
+
         if self.auto_resubmit_timeout <= 0:
             return False
         return time.monotonic() > self.get_deadline_monotonic()
 
-    # cr32 §3.3 low fix：删掉硬编码 max_extends=3 默认值，强制 caller 显式
-    # 传入。route 层从 server_config.COUNTDOWN_EXTENDS_MAX 读，避免单元
-    # 测试 / 脚本不慎用 3 但 prod 配置改了之后两边漂移。同时 min/max
-    # seconds 也走必填，逻辑上 caller 总是应该明确语义。
     def extend_deadline(
         self,
         seconds: int,
@@ -415,38 +283,7 @@ class Task(BaseModel):
         max_seconds: int,
     ) -> tuple[bool, str | None]:
         """feat-countdown-extend (§3.2): 用户主动延长 task 的 auto-resubmit
-        倒计时。
-
-        实现方式：直接增加 ``auto_resubmit_timeout`` 而不是修改
-        ``created_at_monotonic``。后者是真实创建时间快照，不应被业务
-        逻辑改动。``get_remaining_time`` = ``auto_resubmit_timeout -
-        elapsed``，所以增加 timeout 等价于把 deadline 往后推。
-
-        典型用户场景：写超长反馈时不想被 240s 倒计时压力 →
-        点击 +60s 按钮 → 后端调用本方法 → SSE 广播 task_updated →
-        前端通过既有 updateTasksList 路径自动刷新 UI（不需要专门 fetch）。
-
-        参数
-        ----
-        seconds:
-            要延长的秒数（必须在 [min_seconds, max_seconds] 内）。
-        max_extends:
-            该 task 允许的总延长次数（来自 server_config，默认 3）。
-            达到上限时本调用失败，前端按钮置 disabled。
-        min_seconds / max_seconds:
-            单次延长的合理范围；默认 [10, 300]，避免用户 +1s spam 或
-            一口气 +3600s 把 auto-resubmit 实际功能架空。
-
-        返回
-        ----
-        (success, error_code)：
-            - (True, None) 成功
-            - (False, "task_completed") task 已完成，不能再延长
-            - (False, "auto_resubmit_disabled") task 没有 auto-resubmit
-              （``auto_resubmit_timeout <= 0``），无延长意义
-            - (False, "extends_limit_reached") 已达 max_extends 上限
-            - (False, "invalid_seconds") seconds 超出 [min, max] 范围
-        """
+        倒计时。"""
         if self.status == TaskStatus.COMPLETED:
             return False, "task_completed"
         if self.auto_resubmit_timeout <= 0:
@@ -455,44 +292,14 @@ class Task(BaseModel):
             return False, "extends_limit_reached"
         if not (min_seconds <= seconds <= max_seconds):
             return False, "invalid_seconds"
-        # 同时改两个字段；validate_assignment=True 让 pydantic 在不合理
-        # 的极端情况下抛错（auto_resubmit_timeout 是 int 不会有 overflow，
-        # 但保留 invariant 给未来的字段约束变更）。
+
         self.auto_resubmit_timeout = self.auto_resubmit_timeout + seconds
         self.extends_used = self.extends_used + 1
         return True, None
 
     def freeze_deadline(self) -> tuple[bool, str | None]:
         """mining-6 Track A (cycle-5 §3.6 derivative): 用户主动把 task 的
-        auto-resubmit 倒计时禁用，把 task 变成无 timeout 的"等用户回答"状态。
-
-        实现方式：直接把 ``auto_resubmit_timeout`` 设为 0（既有"禁用倒计时"
-        语义）。``get_remaining_time`` 在 ``<=0`` 时返回 0；
-        ``is_expired`` 在 ``<=0`` 时返回 False（不过期）。所以 frozen task
-        在前端显示 0 倒计时但不会触发 auto-resubmit。
-
-        典型场景：用户在跑长任务（如 60min build）不想被反复 resubmit
-        干扰 → 点击 freeze 按钮 → 后端将该 task 的 timeout 永久置 0 →
-        前端展示"已冻结"状态。
-
-        与 ``extend_deadline`` 的关键区别：
-        - extend 是 +seconds（受 max_extends 上限制约）
-        - freeze 是 =0（一次性永久操作，无重复语义）
-
-        设计：**不提供** unfreeze 反向操作。理由：
-        1. 防止滥用（反复 freeze/unfreeze 在 max_extends 之外加倒计时）
-        2. 实际用户场景中"我想要倒计时"通过 agent 新建 task 表达更清晰
-        3. 简化协议（少 1 个 endpoint + 少 1 个状态机分支）
-
-        返回
-        ----
-        (success, error_code)：
-            - (True, None) 成功
-            - (False, "task_completed") task 已完成，无需 freeze
-            - (False, "already_frozen") task 已经无 timeout（``<=0``），
-              freeze 无意义（操作 idempotent 反而暴露双击 button 的常见
-              UX 问题）
-        """
+        auto-resubmit 倒计时禁用，把 task 变成无 timeout 的"等用户回答"状态。"""
         if self.status == TaskStatus.COMPLETED:
             return False, "task_completed"
         if self.auto_resubmit_timeout <= 0:
@@ -502,149 +309,27 @@ class Task(BaseModel):
 
 
 class TaskQueue:
-    """任务队列管理器（线程安全）
+    """任务队列管理器（线程安全）。
 
-    提供任务的添加、查询、状态管理和自动清理功能。
-
-    ## 核心特性
-
-    ### 1. 线程安全
-    - 所有公共方法使用 `threading.Lock` 保护
-    - 支持多线程并发访问
-    - 内部数据结构（_tasks, _task_order）始终保持一致
-
-    ### 2. 单活动任务模式
-    - 同一时间只有一个任务处于 `active` 状态
-    - 其他任务处于 `pending` 状态
-    - 活动任务完成后自动激活下一个pending任务
-
-    ### 3. 延迟删除机制
-    - 任务完成后不立即删除
-    - 标记 `completed_at` 时间戳
-    - 后台线程延迟10秒后自动删除
-    - 避免前端轮询时遇到404错误
-
-    ### 4. 后台清理线程
-    - 守护线程（daemon=True）
-    - 每5秒检查一次
-    - 清理完成10秒以上的任务
-    - 应用退出时自动停止
-
-    ## 数据结构
-
-    ### 内部字段
-    - `_tasks`: dict[str, Task] - 任务字典，key为task_id（Python 3.7+ 保持插入顺序）
-    - `_lock`: ReadWriteLock - 读写锁，多读者并发，写者独占（R22.2 起）
-    - `_active_task_id`: str | None - 当前活动任务ID
-    - `_stop_cleanup`: Event - 停止清理线程的事件
-    - `_cleanup_thread`: Thread - 后台清理线程
-
-    ### 性能优化说明
-    - **移除了冗余的 `_task_order` 列表**：Python 3.7+ dict 已保持插入顺序
-    - **删除操作从 O(n) 优化到 O(1)**：不再需要 list.remove() 操作
-    - **内存占用减少**：不再维护额外的任务ID列表
-
-    ## 任务状态管理
-
-    ```
-    add_task()       → status = "pending" 或 "active"（如果是第一个）
-    set_active_task() → status = "active"（旧的变为pending）
-    complete_task()   → status = "completed"（10秒后删除）
-    remove_task()     → 直接删除
-    ```
-
-    ## 线程安全保证（R22.2 重构后）
-
-    所有公共方法均通过 ``self._lock`` 保护，但读路径走 ``read_lock()``、
-    写路径走 ``write_lock()``，读读并发、读写仍互斥、写写仍互斥：
-
-    - **写路径**（互斥）：``add_task`` / ``set_active_task`` /
-      ``complete_task`` / ``remove_task`` / ``clear_completed_tasks`` /
-      ``cleanup_completed_tasks`` / ``clear_all_tasks`` /
-      ``update_auto_resubmit_timeout_for_all``
-    - **读路径**（可并发）：``get_task`` / ``get_all_tasks`` /
-      ``get_active_task`` / ``get_task_count`` / ``_persist`` 内部读快照
-
-    禁忌：禁止在已持锁的线程中再次获取本锁（``ReadWriteLock`` 不支持
-    递归 / 升级 / 降级）。当前所有写后副作用（``_persist`` /
-    ``_trigger_status_change``）均在锁外触发，无嵌套风险。
-
-    ## 性能考虑
-
-    - **Lock 类型**：``ReadWriteLock``（读写分离）
-      - R22.2 起：读读并发，写者独占；多 client 高频读路径不再互相阻塞
-      - 适用场景：读多写少（GET /api/tasks SSE / 倒计时刷新 ≫ add/complete）
-      - 注意：写者饥饿风险存在但实测可接受（写频次 ≪ 读频次）
-
-    - **内存占用**：O(n)，n为任务数量
-      - 每个任务约1KB（取决于prompt和options）
-      - 最多max_tasks个任务同时存在
-      - 完成的任务会在10秒后清理
-
-    - **时间复杂度（优化后）**：
-      - add_task: O(1)
-      - get_task: O(1)
-      - get_all_tasks: O(n)
-      - remove_task: O(1)（原来是 O(n)，优化后使用 dict.pop()）
-      - complete_task: O(n)（需要查找下一个pending任务）
-      - cleanup_completed_tasks: O(n)
-
-    ## 注意事项
-
-    - 必须在应用关闭时调用 `stop_cleanup()` 停止后台线程
-    - 任务ID必须全局唯一
-    - 队列满时 add_task 会返回 False
-    - completed 任务会在10秒后自动删除
-    - 不要在锁内执行耗时操作
-
-    属性:
-        max_tasks (int): 最大并发任务数
+    并发契约（R22.2）：`_lock` 为 ReadWriteLock——读读并发、读写互斥、
+    写写互斥。禁止已持锁线程再次获取本锁（不支持递归/升级/降级）；
+    写后副作用（_persist / _trigger_status_change）必须在锁外触发。
     """
 
     def __init__(self, max_tasks: int = 10, persist_path: str | None = None):
-        """初始化任务队列
-
-        创建任务队列实例并启动后台清理线程。
-
-        参数:
-            max_tasks (int): 最大并发任务数，默认10
-            persist_path (str|None): 持久化文件路径。设置后任务状态变更自动写入磁盘，
-                重启时自动恢复未完成任务。传 None 禁用持久化（纯内存模式）。
-        """
+        """初始化任务队列"""
         self.max_tasks = max_tasks
         self._tasks: dict[str, Task] = {}
-        # R22.2：把粗粒度 ``threading.Lock`` 升级为 ``ReadWriteLock``。
-        # why：``GET /api/tasks`` / SSE / 倒计时刷新都是高频纯读路径
-        # （``get_task`` / ``get_all_tasks`` / ``get_active_task`` /
-        # ``get_task_count`` / ``_persist`` snapshot），互相之间没有冲突，
-        # 但旧 ``Lock`` 一律串行，多 client + 多面板场景下读侧自相阻塞。
-        # ``ReadWriteLock`` 让读读并发、读写仍互斥、写写仍互斥，对单写者频率
-        # 几乎不变，但 N 个并发读者从串行降为并行。约束：禁止在同一线程嵌套
-        # 持锁（``_persist`` 已设计为锁外调用，``_trigger_status_change``
-        # 也在锁外触发，无嵌套风险）。
+
         self._lock = ReadWriteLock()
         self._active_task_id: str | None = None
 
         self._status_change_callbacks: list[Callable[[str, str | None, str], None]] = []
         self._callbacks_lock = Lock()
 
-        # P0：hot-path cleanup 节流时间戳（单调时钟，避免系统时间漂移影响）。
-        # `cleanup_completed_tasks_throttled()` 在距上次执行不足 throttle_seconds
-        # 时直接返回 0；后台线程使用未节流的 cleanup_completed_tasks() 维持
-        # 5s 主节奏，hot-path 仅在后台线程异常停滞时充当兜底（~30s 1 次）。
-        # 设 -inf 让首次调用必然真跑（init 后立即 cleanup 残留任务也是合理的）。
         self._last_hotpath_cleanup_monotonic: float = float("-inf")
         self._hotpath_cleanup_lock = Lock()
 
-        # Loop 工程 P3：完成轮次台账。key = loop_id，value 形如
-        # {"loop_id", "objective", "success_criteria", "updated_at",
-        #  "rounds": [{"task_id", "iteration_label", "loop_phase",
-        #              "header_label", "completed_at", "verdict"}]}。
-        # 「已完成任务 10s 清理」只删任务本体；台账保留压缩 metadata
-        # （verdict 文本截断、图片只记数量），让人回看「这个目标经历了
-        # 哪几轮、每轮人说了什么」。dict 迭代顺序即更新顺序（每次更新
-        # pop 后重插到尾部），驱逐时弹队首 = 最久未更新的 loop。
-        # 与 _tasks 共用 self._lock（写路径都在 complete_task 内）。
         self._loop_history: dict[str, dict[str, Any]] = {}
 
         self._persist_path: Path | None = Path(persist_path) if persist_path else None
@@ -665,13 +350,7 @@ class TaskQueue:
         )
 
     def clear_all_tasks(self) -> int:
-        """清理所有任务（重置队列）
-
-        删除所有任务并重置队列状态，用于服务启动时清理残留任务。
-        Loop 工程 P3：「重置队列」语义下 loop 台账一并清空（历史轮次
-        与任务同源；测试隔离也依赖这里的全量重置）。
-
-        """
+        """清理所有任务（重置队列）"""
         with _watched_write_lock(self._lock, "clear_all_tasks"):
             count = len(self._tasks)
             had_loop_history = bool(self._loop_history)
@@ -703,16 +382,10 @@ class TaskQueue:
         iteration_label: str | None = None,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
-        # R53-A：在拿写锁之前先做 prompt size 校验。锁外校验有两个好处：
-        # (1) reject 路径不消耗写锁，不阻塞其它合法 add_task；
-        # (2) 巨型 prompt 不进锁内的 Task() 构造（pydantic validator 也要走
-        # str → 内部字段拷贝，10+ MB 字符串拷贝会拖慢临界区）。
+
         try:
             prompt_bytes = _prompt_utf8_size_for_guard(prompt)
         except Exception:
-            # 非常规边界：prompt 不是 str（caller 传错类型）。这里不抛 TypeError
-            # —— 后续 Task() 构造会因 pydantic 校验自然失败，返回 False 等价
-            # 于 reject。我们只在能算出 size 时做 size gate。
             prompt_bytes = 0
         if prompt_bytes > _PROMPT_REJECT_BYTES:
             logger.warning(
@@ -728,8 +401,7 @@ class TaskQueue:
             )
 
         new_status: str | None = None
-        # R51-A：用 deadlock-aware 写锁包装。临界区内任何卡死都会被
-        # ``_lock_watchdog_loop`` 检测并把全栈 dump 到 logger.error。
+
         with _watched_write_lock(self._lock, "add_task"):
             if auto_resubmit_timeout <= 0:
                 auto_resubmit_timeout = 0
@@ -749,29 +421,16 @@ class TaskQueue:
                 logger.warning(f"任务ID已存在: {task_id}")
                 return False
 
-            # mining-cycle-3 §2.1 borrow #3: clamp placeholder using
-            # ``PLACEHOLDER_MAX_LENGTH`` module constant (cr37 §8 #1)
-            # 单行 placeholder 超过该长度在 textarea 中会被截断显示；
-            # 多行 placeholder 违反 a11y。同样常量被 web_ui_routes/task.py
-            # 引用以判断是否需要返回 ``placeholder_truncated`` 响应。
             normalized_placeholder: str | None = None
             if isinstance(feedback_placeholder, str):
                 s = feedback_placeholder.strip()
                 if s:
                     normalized_placeholder = s[:PLACEHOLDER_MAX_LENGTH]
 
-            # mining-cycle-3 §2.1 borrow #2: validate question_type
-            # 白名单：目前只 ship "yesno"；其他值（包括无效字符串）
-            # 静默归 None，等价 "走原 textarea 主体"。这是 forward-compat
-            # 策略：未来添加 "choice" / "rating" 等不需要改 schema，前端
-            # 升级后自动 enable；当前前端只识 "yesno"。
             normalized_question_type: str | None = None
             if isinstance(question_type, str) and question_type.strip() == "yesno":
                 normalized_question_type = "yesno"
 
-            # mining-cycle-3 §2.1 borrow #1: clamp header_label
-            # 16-char chip：与 ``feedback_placeholder`` 路径同质处理
-            # — strip → 空归 None → 截断到 ``HEADER_LABEL_MAX_LENGTH``。
             normalized_header_label: str | None = None
             if isinstance(header_label, str):
                 s = header_label.strip()
@@ -788,8 +447,6 @@ class TaskQueue:
                 feedback_placeholder=normalized_placeholder,
                 question_type=normalized_question_type,
                 header_label=normalized_header_label,
-                # Loop engineering P1：5 个可选字段统一 normalize
-                # （strip → 空归 None → 截断），与既有可选文本字段同模式。
                 loop_id=_normalize_optional_text(loop_id, LOOP_ID_MAX_LENGTH),
                 loop_objective=_normalize_optional_text(
                     loop_objective, LOOP_TEXT_MAX_LENGTH
@@ -803,7 +460,6 @@ class TaskQueue:
                 ),
             )
 
-            # 【性能优化】直接添加到字典，Python 3.7+ 保持插入顺序
             self._tasks[task_id] = task
 
             if self._active_task_id is None:
@@ -816,7 +472,6 @@ class TaskQueue:
                 f"添加任务成功: {task_id}, 当前任务数: {len(self._tasks)}/{self.max_tasks}"
             )
 
-            # 回调在锁外触发，避免回调重入导致死锁
             new_status = task.status
 
         if new_status is not None:
@@ -826,46 +481,17 @@ class TaskQueue:
         return True
 
     def get_task(self, task_id: str) -> Task | None:
-        """获取指定任务
-
-        通过任务ID查询任务对象，返回任务的当前状态快照。
-
-        **注意**：返回的是任务对象的直接引用（非深拷贝）。调用方在锁外读取
-        属性时，可能与其他线程对同一 Task 的写操作产生竞态。当前所有调用点
-        均为只读访问（读 task_id/prompt/status），GIL 保证了单属性读取的安全，
-        但如需一致的多字段快照，应自行加锁或在锁内完成读取。
-
-        参数:
-            task_id (str): 任务唯一标识符
-
-        返回:
-            Task | None: 任务对象，不存在则返回 None
-                - Task对象包含所有任务信息
-                - None表示任务不存在或已被删除
-
-        线程安全:
-            查询本身线程安全（使用 Lock 保护），但返回值的后续访问不受锁保护。
-
-        时间复杂度:
-            O(1) - 字典查询
-        """
+        """获取指定任务"""
         with self._lock.read_lock():
             return self._tasks.get(task_id)
 
     def get_all_tasks(self) -> list[Task]:
         """获取所有任务列表"""
         with self._lock.read_lock():
-            # 【性能优化】Python 3.7+ dict 保持插入顺序，直接返回 values
             return list(self._tasks.values())
 
     def get_first_incomplete_task(self) -> Task | None:
-        """Return the first non-completed task in insertion order.
-
-        This is the hot fallback used by ``GET /api/config`` when no active task
-        is set. It preserves the previous ``get_all_tasks()`` insertion-order
-        semantics without materializing a full task list or a filtered
-        incomplete-task list.
-        """
+        """Return the first non-completed task in insertion order."""
         with self._lock.read_lock():
             for task in self._tasks.values():
                 if task.status != TaskStatus.COMPLETED:
@@ -880,39 +506,9 @@ class TaskQueue:
     def get_all_tasks_with_stats(self) -> tuple[list[Task], dict[str, int]]:
         """单次 read_lock 内同时拿 task list + stats，专门给 ``/api/tasks`` 用。
 
-        R23.4: ``web_ui_routes/task.py::get_tasks`` 之前用 ``get_all_tasks()``
-        + ``get_task_count()`` 两次独立调用，每次都进入一次 ``read_lock`` 上下
-        文（R22.2 起的 ``ReadWriteLock``，单次 ~200-500 ns 的 atomic 进出 +
-        readers 计数原子加减）；现在合并成一次。
-
-        why：
-        - ``/api/tasks`` 是 hot path（前端默认 2 s 间隔轮询，扩展状态栏 SSE
-          失败后兜底也是 3 s）：单 web_ui 进程稳态有 2-5 个并发客户端各拉一次，
-          每分钟 ~50-150 次调用。每个调用省 ~400-900 ns（一次 read_lock 进出
-          + 一次 list view 重新构造），按 100 次/min 算每分钟省 40-90 µs；
-          虽然绝对值小，但 stage R22.2 已经把 read 端优化到 RWLock 极限，再
-          细一阶就只能合并相邻的读 —— R23.4 是当前抽象层下能拿到的最后一个
-          read-side 优化。
-        - **原子语义升级**：旧版两次 ``read_lock`` 中间，writer 可以插队改
-          ``_tasks`` —— 比如 ``add_task`` 在 ``get_all_tasks`` 返回后、
-          ``get_task_count`` 进入前修改了字典；调用方就拿到 N 个 task 但
-          stats 显示 N+1 个 total，前端必须容忍这种 1-step skew（之前通过
-          ``server_time`` 字段隐式协调）。新版单次 ``read_lock`` 让 list 和
-          stats 完全一致，对前端 invariant 检查更友好（虽然 R20.14-C 起 SSE
-          payload 已直接带 stats，所以这条 fetch 路径的 skew 风险本就极低）。
-
-        Returns:
-            tuple[list[Task], dict[str, int]]:
-                - tasks: 与 ``get_all_tasks()`` 同语义的 list copy
-                - stats: 与 ``get_task_count()`` 同结构的 dict（含 total /
-                  pending / active / completed / max）
-
-        R521: list copy 和 status 计数在同一次 ``_tasks.values()`` 遍历中完成。
-        调用方仍拿独立 list snapshot，但避免先 ``list(...)`` 再二次扫描该 list。
-
-        R522: 三个合法 status 是固定集合，计数时直接用局部 int counter + if/elif。
-        这保留未知 status 不进入 breakdown 的旧语义，同时避免每个 task 做 dict
-        membership + dict item update。
+        R23.4：合并旧的 get_all_tasks() + get_task_count() 两次 read_lock，
+        原子语义升级（list 与 stats 同一快照）。R521：list 与 counts 在同
+        一次 values 循环内一趟构建。R522：状态计数直接分桶，不再二次遍历。
         """
         with self._lock.read_lock():
             if not self._tasks:
@@ -943,26 +539,7 @@ class TaskQueue:
             return tasks_view, stats
 
     def update_auto_resubmit_timeout_for_all(self, auto_resubmit_timeout: int) -> int:
-        """更新所有未完成任务的 auto_resubmit_timeout
-
-        用于配置热更新场景：当用户在运行中修改 feedback.frontend_countdown
-        （或旧名称 auto_resubmit_timeout）时，希望**已经在倒计时中的任务**也能立即生效。
-
-        更新策略：
-        - 仅更新 status != "completed" 的任务（pending/active/expired）
-        - 直接修改任务对象的 auto_resubmit_timeout 字段
-        - 不修改 created_at/created_at_monotonic（倒计时基准保持任务创建时刻）
-
-        注意：
-        - 如果将超时时间调小到小于已过去时间，任务可能会立刻显示 remaining_time=0
-        - auto_resubmit_timeout=0 在语义上表示“禁用自动重调”，上层需要配合前端逻辑避免误触发
-
-        参数:
-            auto_resubmit_timeout: 新的前端倒计时（秒）
-
-        返回:
-            int: 实际更新的任务数量
-        """
+        """更新所有未完成任务的 auto_resubmit_timeout"""
         if auto_resubmit_timeout <= 0:
             auto_resubmit_timeout = 0
         else:
@@ -976,18 +553,13 @@ class TaskQueue:
             for task in self._tasks.values():
                 if task.status == TaskStatus.COMPLETED:
                     continue
-                # R702：显式 per-task timeout 优先于全局配置——热更新
-                # 同步永远跳过这类任务，避免 API 传入的 3600s 被 config
-                # 的 frontend_countdown=30 无差别覆盖（幽灵提交根因）。
+
                 if task.auto_resubmit_timeout_explicit:
                     continue
                 if task.auto_resubmit_timeout != auto_resubmit_timeout:
                     task.auto_resubmit_timeout = auto_resubmit_timeout
                     updated += 1
 
-        # 【P6R-1 修复】热更新已修改内存中的 auto_resubmit_timeout，
-        # 若启用持久化必须同步写盘，否则进程重启会从快照恢复旧 timeout。
-        # 与 add/complete/remove/set_active/clear 等其他状态变更保持一致。
         if updated > 0:
             self._persist()
         return updated
@@ -999,9 +571,6 @@ class TaskQueue:
                 return self._tasks.get(self._active_task_id)
             return None
 
-    # cr32 §3.3 low fix：与 ``Task.extend_deadline`` 一致，强制 caller 显式
-    # 传 max_extends / min_seconds / max_seconds，避免 server_config 改了之
-    # 后 facade 默认值还停留在旧值。
     def extend_task_deadline(
         self,
         task_id: str,
@@ -1011,48 +580,7 @@ class TaskQueue:
         min_seconds: int,
         max_seconds: int,
     ) -> tuple[bool, str | None, int, int]:
-        """cr32 §3.1 fix：在写锁内执行 ``Task.extend_deadline`` 的读改写原语。
-
-        ## 为什么需要这个 facade？
-
-        ``Task.extend_deadline`` 内部做 ``read extends_used → compare → write
-        extends_used+1`` 的三步操作，Python 的 GIL 只保证单 bytecode 原子，
-        不保证多语句原子。两个 HTTP 请求若同时落到同一 task 上，可能：
-
-            T1: read extends_used=2 → check 2<3=True
-            T2: read extends_used=2 → check 2<3=True
-            T1: write extends_used=3 ← 现在不在锁内，T2 没看到
-            T2: write extends_used=3 ← 实际累计了两次扩展但只计数一次
-
-        最终 ``extends_used=3``（看起来对），但 ``auto_resubmit_timeout`` 已
-        被 ``+= seconds`` 两次。用户得到一次免费扩展。
-
-        ## 修复
-
-        把读改写放在 ``self._lock`` 的 write_lock 内串行化。HTTP 路由调用此
-        facade 而不是直接 ``task.extend_deadline``，并发竞态消失。
-
-        Args:
-            task_id: 任务 ID。
-            seconds: 要扩展的秒数（必须在 ``[min_seconds, max_seconds]`` 内）。
-            max_extends: 该任务最多可扩展次数。默认 3，路由层覆盖为
-                ``COUNTDOWN_EXTENDS_MAX``。
-            min_seconds / max_seconds: ``seconds`` 的硬范围（默认 [10, 300]）。
-
-        Returns:
-            ``(success, error_code, extends_used_after, auto_resubmit_timeout_after)``
-            - success=True 时 error_code=None；新 ``extends_used`` 与
-              ``auto_resubmit_timeout`` 字段对应的值。
-            - success=False 时 error_code ∈
-              {"task_not_found", "task_completed", "auto_resubmit_disabled",
-               "extends_limit_reached", "invalid_seconds"}；后两个字段反映
-              **当前** task 状态（用于让前端立即同步按钮 disabled 状态）。
-
-        Thread-safety:
-            写锁串行化整个读改写过程。对外的 ``task.extend_deadline`` 仍可
-            直接调用（单线程脚本 / 单元测试），但在多线程上下文中**必须**
-            走这个 facade。
-        """
+        """cr32 §3.1 fix：在写锁内执行 ``Task.extend_deadline`` 的读改写原语。"""
         with _watched_write_lock(self._lock, "extend_task_deadline"):
             task = self._tasks.get(task_id)
             if task is None:
@@ -1074,24 +602,7 @@ class TaskQueue:
         self,
         task_id: str,
     ) -> tuple[bool, str | None, int]:
-        """mining-6 Track A: 在写锁内调用 ``Task.freeze_deadline``。
-
-        理由跟 ``extend_task_deadline`` 同源 —— Python GIL 只保证 bytecode
-        原子，多步 read-check-write 必须串行化。两个并发 ``freeze`` 是
-        idempotent（结果都是 timeout=0），但混合 extend + freeze 必须
-        在写锁内才能保证 ``auto_resubmit_timeout`` 的最终值是良定义的。
-
-        Returns:
-            ``(success, error_code, auto_resubmit_timeout_after)``
-            - success=True 时 error_code=None；``auto_resubmit_timeout_after``
-              == 0（freeze 一律将其置 0）
-            - success=False 时 error_code ∈
-              {"task_not_found", "task_completed", "already_frozen"}；
-              第 3 个字段反映**当前** task.auto_resubmit_timeout（让前端能
-              立即同步按钮 disabled 状态）
-
-        Thread-safety: 写锁串行化整个操作。
-        """
+        """mining-6 Track A: 在写锁内调用 ``Task.freeze_deadline``。"""
         with _watched_write_lock(self._lock, "freeze_task_deadline"):
             task = self._tasks.get(task_id)
             if task is None:
@@ -1116,11 +627,6 @@ class TaskQueue:
                 logger.warning(f"任务已完成，无法激活: {task_id}")
                 return False
 
-            # 【P6R-2 修复】幂等：若调用方尝试激活当前已经 active 的任务，
-            # 直接返回 True 且不触发任何状态事件/持久化。
-            # 否则下面的代码会把该任务先降级为 PENDING 再升级回 ACTIVE，
-            # 产生两个虚假事件（ACTIVE→PENDING / PENDING→ACTIVE），导致 SSE 闪烁、
-            # 回调重复、快照多写一次。
             if self._active_task_id == task_id and new_task.status == TaskStatus.ACTIVE:
                 logger.debug(f"任务已经是 active 状态，跳过切换: {task_id}")
                 return True
@@ -1146,7 +652,6 @@ class TaskQueue:
                 )
             status_events.append((task_id, new_task_old_status, TaskStatus.ACTIVE))
 
-        # 回调在锁外触发，避免回调重入导致死锁
         for ev_task_id, ev_old_status, ev_new_status in status_events:
             self._trigger_status_change(ev_task_id, ev_old_status, ev_new_status)
 
@@ -1155,61 +660,7 @@ class TaskQueue:
         return True
 
     def complete_task(self, task_id: str, result: dict[str, Any]) -> bool:
-        """完成任务并标记为延迟删除（核心方法）
-
-        将任务标记为已完成并保存结果，**不立即删除**。
-
-        ## 延迟删除机制
-
-        **为什么不立即删除？**
-        - 前端可能正在轮询任务状态
-        - 立即删除会导致前端收到404错误
-        - 延迟10秒给前端足够时间获取结果
-
-        **删除时机**：
-        - 后台清理线程每5秒检查一次
-        - 删除完成10秒以上的任务
-        - 也可以手动调用 remove_task 立即删除
-
-        ## 自动激活下一个任务
-
-        如果完成的任务是活动任务，会自动激活下一个pending任务：
-        1. 清空 _active_task_id
-        2. 遍历任务字典（按插入顺序）
-        3. 找到第一个 status='pending' 的任务并将其设置为 active
-
-        参数:
-            task_id (str): 要完成的任务ID
-            result (dict[str, Any]): 任务执行结果
-                - 通常包含 'feedback', 'selected_options' 等键
-                - 格式由调用方决定
-                - 示例：{'feedback': '用户输入', 'selected_options': ['选项1']}
-
-        返回:
-            bool: 是否成功完成
-                - True: 成功标记为完成
-                - False: 任务不存在
-
-        线程安全:
-            线程安全（使用 Lock 保护）
-
-        副作用:
-            - 设置 task.status = 'completed'
-            - 设置 task.result
-            - 设置 task.completed_at
-            - 可能清空 _active_task_id
-            - 可能自动激活下一个任务
-            - 记录日志
-
-        时间复杂度:
-            O(n) - 最坏情况下需要遍历任务字典以查找下一个 pending 任务
-
-        说明:
-            - 任务完成后10秒内仍可查询
-            - 前端应在收到完成状态后停止轮询
-            - 自动激活逻辑只查找pending状态的任务
-            - 如果没有pending任务，_active_task_id 保持为 None
-        """
+        """完成任务并标记为延迟删除（核心方法）"""
         status_events: list[tuple[str, str | None, str]] = []
         with _watched_write_lock(self._lock, "complete_task"):
             if task_id not in self._tasks:
@@ -1223,12 +674,6 @@ class TaskQueue:
             task.completed_at = datetime.now(UTC)
             status_events.append((task_id, old_status, TaskStatus.COMPLETED))
 
-            # Loop 工程 P3：loop 成员任务完成时把压缩 metadata 记入台账
-            # （任务本体仍按 10s 清理）。锁内执行：只做有界 dict/list
-            # 操作，代价 O(1)；放锁外会与 cleanup 竞态（任务先被删）。
-            # 仅在 pending/active → completed 的**首次**转换时记录：
-            # double-complete（用户提交与自动重提并发）会二次进入本方法，
-            # 不加 old_status 守卫会写出重复轮次。
             if task.loop_id and old_status != TaskStatus.COMPLETED:
                 self._record_loop_round(task, result)
 
@@ -1250,7 +695,6 @@ class TaskQueue:
 
             logger.info(f"任务 {task_id} 已标记为完成（将在 10 秒后自动清理）")
 
-        # 回调在锁外触发，避免回调重入导致死锁
         for ev_task_id, ev_old_status, ev_new_status in status_events:
             self._trigger_status_change(ev_task_id, ev_old_status, ev_new_status)
 
@@ -1258,25 +702,7 @@ class TaskQueue:
         return True
 
     def _record_loop_round(self, task: Task, result: dict[str, Any]) -> None:
-        """把完成的 loop 成员任务压缩为台账轮次条目（调用方必须已持写锁）。
-
-        Loop 工程 P3 核心：任务本体 10s 后被清理，但 loop 的历史轮次
-        需要可回看。条目只保留**压缩 metadata**：
-
-        - verdict 文本按 ``LOOP_VERDICT_MAX_LENGTH`` 截断（提交内容摘要，
-          不是全文档案——全文导出走 ``GET /api/tasks/export``）；
-        - 图片**只记数量**，绝不存 base64（单图可达 MB 级，台账要常驻内存）；
-        - prompt 大字段完全不进台账。
-
-        目标/完成标准是 loop 级属性（多轮重复传或只在首轮传），采用
-        「最后一个非空值胜出」：后续轮次省略时保留旧值，显式更新时跟进。
-
-        有界性：
-
-        - 每 loop 最多 ``LOOP_HISTORY_MAX_ROUNDS`` 轮（丢最旧）；
-        - 全局最多 ``LOOP_HISTORY_MAX_LOOPS`` 个 loop（驱逐最久未更新，
-          dict 迭代顺序即更新顺序——每次更新 pop 后重插到尾部）。
-        """
+        """把完成的 loop 成员任务压缩为台账轮次条目（调用方必须已持写锁）。"""
         loop_id = task.loop_id
         if not loop_id:
             return
@@ -1331,7 +757,6 @@ class TaskQueue:
             del rounds[: len(rounds) - LOOP_HISTORY_MAX_ROUNDS]
         bucket["updated_at"] = entry["completed_at"]
 
-        # pop + 重插 = 移到尾部（最近更新）；超限弹队首（最久未更新）
         self._loop_history[loop_id] = bucket
         while len(self._loop_history) > LOOP_HISTORY_MAX_LOOPS:
             evicted_id = next(iter(self._loop_history))
@@ -1339,23 +764,7 @@ class TaskQueue:
             logger.info(f"loop 台账超限，驱逐最久未更新的 loop: {evicted_id}")
 
     def get_loops_snapshot(self) -> list[dict[str, Any]]:
-        """获取 loop 台账快照 + 各 loop 当前在队列中的活跃轮次。
-
-        Loop 工程 P3 读路径（``GET /api/loops`` 的数据源）：
-
-        - ``rounds``：已完成轮次的压缩台账（见 ``_record_loop_round``）；
-        - ``live_tasks``：仍在队列中、携带同一 ``loop_id`` 的任务
-          （pending/active/completed-未清理），轻量投影（不含 prompt 全文）；
-        - 一个 loop 允许只有 live_tasks 没有 rounds（首轮尚未完成），
-          也允许只有 rounds 没有 live_tasks（全部轮次已完成清理）。
-
-        返回:
-            list[dict]: 最近更新的 loop 在前。每项含 loop_id / objective /
-            success_criteria / updated_at / rounds / live_tasks。
-
-        线程安全:
-            读锁下深拷贝台账 + 投影活任务，返回值与内部状态零共享。
-        """
+        """获取 loop 台账快照 + 各 loop 当前在队列中的活跃轮次。"""
         with self._lock.read_lock():
             snapshot: list[dict[str, Any]] = []
             live_by_loop: dict[str, list[dict[str, Any]]] = {}
@@ -1374,7 +783,7 @@ class TaskQueue:
                 )
 
             seen: set[str] = set()
-            # dict 迭代顺序 = 更新顺序（旧→新）；reversed 让最近更新在前
+
             for loop_id in reversed(list(self._loop_history)):
                 bucket = self._loop_history[loop_id]
                 seen.add(loop_id)
@@ -1389,12 +798,10 @@ class TaskQueue:
                     }
                 )
 
-            # 只有活任务、还没有任何完成轮次的 loop（首轮进行中）
             for loop_id, live_tasks in live_by_loop.items():
                 if loop_id in seen:
                     continue
-                # 从活任务里提取 loop 级属性（最后一个非空值胜出，
-                # 与台账同一语义）
+
                 objective = None
                 criteria = None
                 for task in self._tasks.values():
@@ -1418,43 +825,7 @@ class TaskQueue:
             return snapshot
 
     def remove_task(self, task_id: str) -> bool:
-        """移除任务（立即删除）
-
-        立即从队列中删除指定任务，不等待延迟删除。
-
-        **与complete_task的区别**：
-        - `complete_task`: 标记为完成，10秒后自动删除
-        - `remove_task`: 立即删除，适用于取消或清理
-
-        **自动激活逻辑**：
-        如果删除的是活动任务，会自动激活下一个pending/active任务
-
-        参数:
-            task_id (str): 要移除的任务ID
-
-        返回:
-            bool: 是否成功移除
-                - True: 成功移除
-                - False: 任务不存在
-
-        线程安全:
-            线程安全（使用 Lock 保护）
-
-        副作用:
-            - 从 _tasks 删除任务（Python 3.7+ dict.pop() 是 O(1)）
-            - 可能更新 _active_task_id
-            - 可能自动激活下一个任务
-            - 记录日志
-
-        时间复杂度:
-            - 若删除的不是活动任务：O(1)（dict.pop()）
-            - 若删除的是活动任务：最坏 O(n)（需要遍历查找下一个任务）
-
-        说明:
-            - 适用于手动取消任务
-            - 不推荐用于正常完成的任务（应使用complete_task）
-            - 删除后任务立即不可查询
-        """
+        """移除任务（立即删除）"""
         status_events: list[tuple[str, str | None, str]] = []
         with _watched_write_lock(self._lock, "remove_task"):
             if task_id not in self._tasks:
@@ -1466,7 +837,7 @@ class TaskQueue:
 
             if self._active_task_id == task_id:
                 self._active_task_id = None
-                # 【性能优化】使用字典迭代代替列表遍历
+
                 for tid, t in self._tasks.items():
                     if tid != task_id and t.status in (
                         TaskStatus.PENDING,
@@ -1490,7 +861,6 @@ class TaskQueue:
                     (next_activated_id, old_next_status, TaskStatus.ACTIVE)
                 )
 
-        # 回调在锁外触发，避免回调重入导致死锁
         for ev_task_id, ev_old_status, ev_new_status in status_events:
             self._trigger_status_change(ev_task_id, ev_old_status, ev_new_status)
 
@@ -1498,37 +868,7 @@ class TaskQueue:
         return True
 
     def clear_completed_tasks(self) -> int:
-        """清理所有已完成的任务（立即删除）
-
-        删除所有 status='completed' 的任务，不管完成时间。
-
-        **使用场景**：
-        - 手动清理所有已完成任务
-        - 测试时清理环境
-        - 队列维护操作
-
-        **与cleanup_completed_tasks的区别**：
-        - `clear_completed_tasks`: 清理所有completed任务（不限时间）
-        - `cleanup_completed_tasks`: 只清理超过指定时间的completed任务
-
-        返回:
-            int: 清理的任务数量（>=0）
-
-        线程安全:
-            线程安全（使用 Lock 保护）
-
-        副作用:
-            - 删除所有completed任务
-            - 记录日志（如果有清理）
-
-        时间复杂度:
-            O(n) - 需要遍历所有任务
-
-        说明:
-            - 不检查completed_at时间
-            - 适用于需要立即清理的场景
-            - 后台清理线程使用的是cleanup_completed_tasks
-        """
+        """清理所有已完成的任务（立即删除）"""
         with _watched_write_lock(self._lock, "clear_completed_tasks"):
             completed_task_ids = [
                 tid
@@ -1536,7 +876,6 @@ class TaskQueue:
                 if task.status == TaskStatus.COMPLETED
             ]
 
-            # 【性能优化】使用 dict.pop() 代替 del + list.remove()，O(1) 操作
             for tid in completed_task_ids:
                 self._tasks.pop(tid, None)
 
@@ -1547,48 +886,9 @@ class TaskQueue:
             return count
 
     def cleanup_completed_tasks(self, age_seconds: int = 10) -> int:
-        """清理超过指定时间的已完成任务（后台清理核心方法）
-
-        删除完成时间超过 age_seconds 的任务。
-
-        **延迟删除机制的关键方法**：
-        - 后台清理线程每5秒调用一次
-        - 默认清理完成10秒以上的任务
-        - 避免前端轮询时遇到404
-
-        **清理逻辑**：
-        1. 检查任务status='completed'
-        2. 检查completed_at是否存在
-        3. 计算任务完成时长
-        4. 如果超过age_seconds则删除
-
-        参数:
-            age_seconds (int): 任务完成后保留的秒数
-                - 默认值：10秒
-                - 建议值：5-30秒
-                - 过小：前端可能遇到404
-                - 过大：内存占用增加
-
-        返回:
-            int: 清理的任务数量（>=0）
-
-        线程安全:
-            线程安全（使用 Lock 保护）
-
-        副作用:
-            - 删除过期的completed任务
-            - 记录日志（如果有清理）
-
-        时间复杂度:
-            O(n) - 需要遍历所有任务并计算时间差
-
-        说明:
-            - completed_at为None的任务不会被清理
-            - 后台线程默认使用 age_seconds=10
-            - 可以手动调用来立即清理
-        """
+        """清理超过指定时间的已完成任务（后台清理核心方法）"""
         with _watched_write_lock(self._lock, "cleanup_completed_tasks"):
-            now = datetime.now(UTC)  # 使用 UTC 时间，与 completed_at 保持一致
+            now = datetime.now(UTC)
             tasks_to_remove = []
 
             for task_id, task in self._tasks.items():
@@ -1597,7 +897,6 @@ class TaskQueue:
                     if age > age_seconds:
                         tasks_to_remove.append(task_id)
 
-            # 【性能优化】使用 dict.pop() 代替 del + list.remove()，O(1) 操作
             for task_id in tasks_to_remove:
                 self._tasks.pop(task_id, None)
 
@@ -1611,116 +910,20 @@ class TaskQueue:
     def cleanup_completed_tasks_throttled(
         self, age_seconds: int = 10, throttle_seconds: float = 30.0
     ) -> int:
-        """节流版 cleanup —— 用于 hot path（如 GET /api/tasks）的兜底调用。
-
-        与未节流的 ``cleanup_completed_tasks`` 行为一致，但**距离上次执行
-        不足 ``throttle_seconds`` 时直接返回 0**（不加 ``self._lock``）。
-
-        why
-        ---
-        历史上 ``GET /api/tasks`` 在每次请求都会调用一次未节流 cleanup，配合
-        前端 2s 轮询 + 后台清理线程的 5s 节奏，导致 cleanup 调用频率被 hot
-        path 放大到后台节奏的 ~5-10x。每次 cleanup 都要：
-
-        1. ``acquire(self._lock)`` — 与 ``add_task`` / ``complete_task`` /
-           ``get_all_tasks`` 共用同一把粗粒度锁，hot-path 命中会增加 lock
-           contention（虽然单次 critical section ~5µs，但乘以高频后非零）；
-        2. ``datetime.now(UTC)`` — Python 层的 syscall + tz 处理；
-        3. 遍历 ``self._tasks`` (O(n))，即使没有任何任务到期。
-
-        本方法把 hot-path 的真实 cleanup 频率封顶到 ``1 / throttle_seconds``，
-        与后台 5s 主节奏正交叠加，cleanup 总频率从 ``polls/s + 1/5`` 降为
-        ``1/30 + 1/5 ≈ 0.23/s``，且 99% 的请求在快路径（非锁的原子读写
-        + 一次时间戳比较）上完成。
-
-        参数
-        ----
-        age_seconds : int, default 10
-            任务完成后保留的秒数，与未节流版本一致。
-        throttle_seconds : float, default 30.0
-            节流窗口长度。设为 0 时退化为未节流行为（不推荐，仅用于测试）。
-
-        返回
-        ----
-        int
-            清理的任务数量；节流命中或队列空时返回 0。
-
-        线程安全
-        --------
-        ``self._hotpath_cleanup_lock`` 仅保护 ``_last_hotpath_cleanup_monotonic``
-        的读写，**不**与 ``self._lock`` 嵌套（cleanup 真正执行时先释放
-        ``_hotpath_cleanup_lock`` 再调用未节流版本）。所以本方法对常规
-        ``add_task`` / ``complete_task`` 路径零阻塞影响。
-
-        副作用
-        ------
-        - 节流未触发时：可能删除过期 completed 任务（同 cleanup_completed_tasks）。
-        - 节流触发时：仅一次 ``time.monotonic()`` 调用。
-
-        时间复杂度
-        ----------
-        - 节流触发（fast path）：O(1)
-        - 节流未触发：O(n)，n = len(self._tasks)
-
-        历史背景
-        --------
-        本节流策略由 R20.5 引入；触发原因是审计 v1.5.25 后的 hot path 时
-        发现 ``GET /api/tasks`` 在多 client 并发场景下的冗余 cleanup 调用。
-        """
+        """节流版 cleanup —— 用于 hot path（如 GET /api/tasks）的兜底调用。"""
         now = time.monotonic()
 
-        # Fast path：仅持 hotpath cleanup lock，做时间戳判断。
-        # 节流触发时（绝大多数请求）直接返回，不接触 self._lock 与 _tasks。
         with self._hotpath_cleanup_lock:
             elapsed = now - self._last_hotpath_cleanup_monotonic
             if elapsed < throttle_seconds:
                 return 0
-            # 立即更新时间戳，避免并发 hot-path 同时通过节流（thundering herd）。
-            # why monotonic：避免系统时间被 NTP / 用户手动调整后，节流窗口
-            # 出现"负 elapsed"导致永远阻塞或"巨大 elapsed"导致频繁穿透。
+
             self._last_hotpath_cleanup_monotonic = now
 
-        # Slow path：真实 cleanup。在 _hotpath_cleanup_lock 释放后调用，
-        # 避免与 self._lock 形成嵌套锁（防死锁）。
         return self.cleanup_completed_tasks(age_seconds=age_seconds)
 
     def _cleanup_loop(self):
-        """后台清理循环（守护线程入口）
-
-        后台线程的主循环，定期清理过期的已完成任务。
-
-        **执行逻辑**：
-        1. 每5秒检查一次
-        2. 调用 cleanup_completed_tasks(age_seconds=10)
-        3. 捕获并记录所有异常
-        4. 收到停止信号时退出
-
-        **线程特性**：
-        - 守护线程（daemon=True）
-        - 应用退出时自动停止
-        - 异常不会导致线程崩溃
-
-        **停止方式**：
-        - 调用 stop_cleanup() 方法
-        - _stop_cleanup.set() 设置停止事件
-        - wait(timeout=5) 返回True时退出
-
-        线程安全:
-            cleanup_completed_tasks 内部使用Lock保护
-
-        副作用:
-            - 定期删除过期任务
-            - 记录启动和停止日志
-            - 记录清理日志（debug级别）
-            - 记录异常日志（error级别）
-
-        说明:
-            - 不应直接调用此方法（由__init__自动启动）
-            - 线程名称：TaskQueueCleanup
-            - 异常不会中断循环
-            - 清理间隔：5秒
-            - 保留时间：10秒
-        """
+        """后台清理循环（守护线程入口）"""
         logger.info("后台清理线程启动")
         while not self._stop_cleanup.wait(timeout=5):
             try:
@@ -1732,35 +935,7 @@ class TaskQueue:
         logger.info("后台清理线程已停止")
 
     def stop_cleanup(self) -> None:
-        """停止后台清理线程
-
-        优雅地停止后台清理线程，应在应用关闭时调用。
-
-        **停止流程**：
-        1. 设置停止事件 (_stop_cleanup.set())
-        2. 等待线程结束（最多2秒）
-        3. 检查线程是否成功停止
-        4. 记录停止状态
-
-        **超时处理**：
-        - 如果2秒内未停止，记录警告日志
-        - 线程可能仍在运行（极少见）
-        - 由于是守护线程，应用退出时会强制停止
-
-        线程安全:
-            线程安全（使用Event同步）
-
-        副作用:
-            - 设置停止事件
-            - 阻塞最多2秒等待线程
-            - 记录日志
-
-        说明:
-            - 必须在应用关闭时调用
-            - 不调用可能导致日志未正确flush
-            - 守护线程会在主线程退出时强制停止
-            - 多次调用是安全的（幂等操作）
-        """
+        """停止后台清理线程"""
         logger.info("正在停止后台清理线程...")
         self._stop_cleanup.set()
         if self._cleanup_thread.is_alive():
@@ -1771,47 +946,7 @@ class TaskQueue:
                 logger.info("后台清理线程已成功停止")
 
     def get_task_count(self) -> dict[str, int]:
-        """获取任务统计信息
-
-        返回各状态任务的数量统计。
-
-        **统计字段**：
-        - `total`: 总任务数（所有状态）
-        - `pending`: 等待处理的任务数
-        - `active`: 活动任务数（应该是0或1）
-        - `completed`: 已完成但未删除的任务数
-        - `max`: 队列最大容量
-
-        **使用场景**：
-        - 监控队列状态
-        - 检查队列是否已满
-        - 统计任务处理进度
-        - 调试和日志
-
-        返回:
-            dict[str, int]: 任务统计字典
-                键值对：
-                - 'total': int - 总任务数
-                - 'pending': int - 等待任务数
-                - 'active': int - 活动任务数（0或1）
-                - 'completed': int - 已完成任务数
-                - 'max': int - 最大容量
-
-        线程安全:
-            线程安全（使用 Lock 保护）
-
-        时间复杂度:
-            O(n) - 需要遍历所有任务计数
-
-        说明:
-            - 返回的是新字典，可以安全修改
-            - active数量应该是0或1（单活动任务模式）
-            - total = pending + active + completed
-            - completed任务会在10秒后被清理
-
-        R522: 与 ``get_all_tasks_with_stats`` 一样，直接用局部 int counter
-        统计固定的三种合法 status，未知 status 继续只进入 total。
-        """
+        """获取任务统计信息（R522：状态计数单趟直接分桶，不二次遍历）。"""
         with self._lock.read_lock():
             if not self._tasks:
                 return {
@@ -1837,38 +972,10 @@ class TaskQueue:
                 "max": self.max_tasks,
             }
 
-    # ========================================================================
-    # 任务状态变更回调机制
-    # ========================================================================
-
     def register_status_change_callback(
         self, callback: Callable[[str, str | None, str], None]
     ) -> None:
-        """
-        注册任务状态变更回调函数
-
-        【功能说明】
-        当任务状态发生变化时（添加、激活、完成、删除），会调用所有注册的回调函数。
-
-        【参数】
-        callback : callable
-            回调函数，接受三个参数：
-            - task_id: str - 任务ID
-            - old_status: str - 旧状态（添加任务时为 None）
-            - new_status: str - 新状态（删除任务时为 "removed"）
-
-            函数签名: def callback(task_id: str, old_status: str, new_status: str) -> None
-
-        【使用场景】
-        - 前端实时更新任务列表
-        - 日志记录任务状态变化
-        - 触发相关业务逻辑
-
-        【示例】
-        >>> def on_status_change(task_id, old_status, new_status):
-        ...     print(f"任务 {task_id}: {old_status} -> {new_status}")
-        >>> queue.register_status_change_callback(on_status_change)
-        """
+        """注册任务状态变更回调函数"""
         with self._callbacks_lock:
             if callback not in self._status_change_callbacks:
                 self._status_change_callbacks.append(callback)
@@ -1878,13 +985,7 @@ class TaskQueue:
     def unregister_status_change_callback(
         self, callback: Callable[[str, str | None, str], None]
     ) -> None:
-        """
-        取消注册任务状态变更回调函数
-
-        【参数】
-        callback : callable
-            要取消的回调函数
-        """
+        """取消注册任务状态变更回调函数"""
         with self._callbacks_lock:
             if callback in self._status_change_callbacks:
                 self._status_change_callbacks.remove(callback)
@@ -1894,24 +995,7 @@ class TaskQueue:
     def _trigger_status_change(
         self, task_id: str, old_status: str | None, new_status: str
     ):
-        """
-        触发任务状态变更回调
-
-        【内部方法】
-        任务状态变化时调用，依次执行所有注册的回调函数。
-
-        【参数】
-        task_id : str
-            任务ID
-        old_status : str | None
-            旧状态（添加任务时为 None）
-        new_status : str
-            新状态（删除任务时为 "removed"）
-
-        【注意】
-        - 回调函数中的异常会被捕获，不会影响其他回调
-        - 回调执行在调用线程中，建议保持回调函数简短
-        """
+        """触发任务状态变更回调"""
         with self._callbacks_lock:
             callbacks = list(self._status_change_callbacks)
 
@@ -1924,37 +1008,8 @@ class TaskQueue:
                     f"任务状态变更回调执行失败 ({cb_name}): {e}", exc_info=True
                 )
 
-    # ========================================================================
-    # 持久化（JSON 原子写入）
-    # ========================================================================
-
     def _persist(self) -> None:
-        """将当前任务快照写入磁盘（原子操作：tmpfile → fsync → os.replace）。
-
-        仅在 persist_path 已设置时执行。已完成的任务不写入持久化文件。
-        调用方应在锁外调用此方法。
-
-        why fsync：
-            ``os.replace(tmp, target)`` 本身是 ``rename(2)`` 系统调用，inode
-            层面是原子的，但**目标 inode 指向的数据**在 ``rename`` 时可能
-            还停留在 OS page cache 没刷盘。如果机器在 ``replace`` 之后
-            ``fsync`` 之前 panic / 断电：
-              1. 重启后磁盘 inode 已经指向新文件名
-              2. 但新文件实际数据从未落盘 → 上面是 0 字节 / NUL fill /
-                 部分写入
-              3. 旧文件已经被 ``rename`` 替换掉，无法回滚
-            ``fsync`` 强制让 page cache 落盘后才允许 ``replace``，
-            消除这个窗口。详见 ``Linux fsync(2) man-page``、
-            ``danluu.com/file-consistency``、``Postgres fsyncgate`` 案例。
-
-            本仓库其他 5 处原子写入路径
-            （``config_manager._save_config_immediate``、
-            ``config_modules/io_operations.py``、
-            ``config_modules/network_security._atomic_write_config``、
-            ``scripts/bump_version.py``）都已经按
-            ``flush() → fsync(fileno()) → os.replace()`` 序列写，本函数
-            因为历史原因漏了——补上以保持仓库内的一致性。
-        """
+        """将当前任务快照写入磁盘（原子操作：tmpfile → fsync → os.replace）。"""
         if not self._persist_path:
             return
         try:
@@ -1970,17 +1025,12 @@ class TaskQueue:
                             "predefined_options": task.predefined_options,
                             "predefined_options_defaults": task.predefined_options_defaults,
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
-                            # R702：显式标记必须随快照落盘——否则重启恢复
-                            # 后标记丢失，热更新回调会再次覆盖显式任务
-                            # （幽灵提交在「重启后第一批任务」场景复活）
                             "auto_resubmit_timeout_explicit": task.auto_resubmit_timeout_explicit,
                             "created_at": task.created_at.isoformat(),
                             "status": task.status,
                             "feedback_placeholder": task.feedback_placeholder,
                             "question_type": task.question_type,
                             "header_label": task.header_label,
-                            # Loop engineering P1：loop 上下文随快照落盘，
-                            # 重启后仍能按 loop_id 关联多轮任务。
                             "loop_id": task.loop_id,
                             "loop_objective": task.loop_objective,
                             "loop_phase": task.loop_phase,
@@ -1989,9 +1039,7 @@ class TaskQueue:
                         }
                     )
                 active_id = self._active_task_id
-                # Loop 工程 P3：台账随快照落盘（锁内深拷贝——dump 在锁外
-                # 执行，浅引用会与下一次 complete_task 的就地 append 竞态）。
-                # 台账有界（20 loop × 50 轮 × 压缩条目），拷贝代价可忽略。
+
                 loop_history_snapshot = copy.deepcopy(self._loop_history)
 
             if not snapshot and not loop_history_snapshot:
@@ -2020,10 +1068,7 @@ class TaskQueue:
                         ensure_ascii=False,
                         separators=_COMPACT_JSON_SEPARATORS,
                     )
-                    # flush() 把 stdio buffer 推到内核；fsync(fileno()) 才
-                    # 把内核 page cache 推到磁盘——两步缺一不可。flush 单独
-                    # 不够（缓存仍在 page cache）；fsync 单独可能漏写当前
-                    # buffer 里没 flush 的部分。
+
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(tmp_path, str(self._persist_path))
@@ -2039,30 +1084,7 @@ class TaskQueue:
             logger.warning(f"任务持久化失败（不影响运行）: {e}", exc_info=True)
 
     def _restore(self) -> None:
-        """从磁盘恢复未完成的任务。仅在初始化时调用一次。
-
-        恢复逻辑：
-        - 跳过已完成的任务
-        - 重建 created_at_monotonic 以保证剩余时间计算正确
-        - 已超时的任务标记为 pending 但保留（让前端处理自动提交）
-
-        损坏文件 quarantine（R17.8）
-        ----------------------------
-        当顶层 ``json.loads`` / ``read_text`` / 顶层结构解析失败时，
-        把损坏文件**重命名**为 ``<persist_path>.corrupt-<ISO 时间戳>``
-        而非默认覆盖。理由：
-
-        1. ``_persist`` 用 ``tempfile.mkstemp + os.replace`` 原子写，
-           会**完全覆盖**原 target —— 用户重启后第一次 ``add_task``
-           触发 ``_persist`` 就会让损坏证据永久消失，运维**完全无法**
-           inspect 当时的文件状态。
-        2. quarantine 后的文件留在原目录，文件名带时间戳避免互相覆盖；
-           运维可以 ``ls *.corrupt-*`` 一眼看到所有历史损坏快照，配合
-           ``hexdump`` / ``json.tool`` 做断电诊断。
-        3. quarantine 失败（磁盘满 / 权限不够）也只是 logger.warning
-           降级，不阻断 ``_restore`` 的"使用空队列"兜底，绝不抛异常给
-           上层 ``__init__``。
-        """
+        """从磁盘恢复未完成的任务。仅在初始化时调用一次。"""
         if not self._persist_path:
             return
         try:
@@ -2106,18 +1128,10 @@ class TaskQueue:
                 if status == TaskStatus.COMPLETED:
                     continue
 
-                # 【P6Y-1 修复】per-task 独立 try-except：
-                # 单个任务的 created_at 解析失败、Pydantic 校验失败、
-                # 或 auto_resubmit_timeout 为非法类型时，仅丢弃该任务并继续恢复其他任务，
-                # 避免整个持久化文件因一条损坏记录而完全失效。
                 try:
                     created_at = datetime.fromisoformat(item["created_at"])
                     age_since_creation = (restore_now - created_at).total_seconds()
 
-                    # mining-cycle-3 §2.1 borrow #3: 持久化恢复时也要回灌
-                    # placeholder。旧版 snapshot 不存在该 key，``item.get``
-                    # 返回 None，等价于 "use i18n default"，符合 backward
-                    # compatibility 预期。
                     restored_placeholder = item.get("feedback_placeholder")
                     if isinstance(restored_placeholder, str):
                         s = restored_placeholder.strip()
@@ -2125,14 +1139,12 @@ class TaskQueue:
                     else:
                         restored_placeholder = None
 
-                    # mining-cycle-3 §2.1 borrow #2: question_type round-trip
                     restored_qt = item.get("question_type")
                     if isinstance(restored_qt, str) and restored_qt.strip() == "yesno":
                         restored_qt = "yesno"
                     else:
                         restored_qt = None
 
-                    # mining-cycle-3 §2.1 borrow #1: header_label round-trip
                     restored_header = item.get("header_label")
                     if isinstance(restored_header, str):
                         s = restored_header.strip()
@@ -2150,8 +1162,6 @@ class TaskQueue:
                         auto_resubmit_timeout=item.get(
                             "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
                         ),
-                        # R702：显式标记 round-trip——旧快照无该 key 时
-                        # bool(None)=False，行为与修复前一致（跟随热更新）
                         auto_resubmit_timeout_explicit=bool(
                             item.get("auto_resubmit_timeout_explicit", False)
                         ),
@@ -2161,9 +1171,6 @@ class TaskQueue:
                         feedback_placeholder=restored_placeholder,
                         question_type=restored_qt,
                         header_label=restored_header,
-                        # Loop engineering P1 round-trip：旧快照缺 key 时
-                        # ``item.get`` 返回 None → normalize 归 None，行为
-                        # 与新增前逐字节一致（向后兼容）。
                         loop_id=_normalize_optional_text(
                             item.get("loop_id"), LOOP_ID_MAX_LENGTH
                         ),
@@ -2199,10 +1206,6 @@ class TaskQueue:
                 self._active_task_id = first_id
                 self._tasks[first_id].status = TaskStatus.ACTIVE
 
-            # Loop 工程 P3：台账 round-trip。旧快照缺 key → 空台账
-            # （向后兼容）；单个 loop 条目损坏只跳过该条（与任务恢复的
-            # per-item 容错同一模式）。恢复时重新 clamp 边界，防手改
-            # 文件绕过上限。
             self._restore_loop_history(data.get("loop_history"))
 
             if restored > 0:
@@ -2219,12 +1222,7 @@ class TaskQueue:
 
     def _restore_loop_history(self, raw: Any) -> None:
         """从快照数据恢复 loop 台账（仅在 ``_restore`` 内调用，无需持锁——
-        ``__init__`` 阶段尚无并发访问者）。
-
-        防御性解析：非 dict 整体忽略；单个 loop 条目形状不对只跳过该条；
-        rounds 裁到 ``LOOP_HISTORY_MAX_ROUNDS``，loop 总数裁到
-        ``LOOP_HISTORY_MAX_LOOPS``（保留迭代顺序的最后 N 个 = 最近更新）。
-        """
+        ``__init__`` 阶段尚无并发访问者）。"""
         if not isinstance(raw, dict):
             return
         restored: dict[str, dict[str, Any]] = {}
@@ -2259,15 +1257,7 @@ class TaskQueue:
 
     def _quarantine_corrupt_persist_file(self, *, reason: str) -> None:
         """把损坏的 persist 文件重命名为 ``<path>.corrupt-<ISO>``，避免被
-        下次 ``_persist`` 的 ``os.replace`` 静默覆盖。
-
-        ``ISO`` 时间戳采用 ``YYYYMMDDTHHMMSSZ`` 紧凑格式（移除冒号 / 微秒，
-        因 Windows 文件名禁止冒号）。这样运维 ``ls *.corrupt-*`` 一眼能看到
-        所有历史损坏快照，按时间排序也是文件名字典序排序。
-
-        本函数本身严格容错：rename 失败（磁盘满 / 权限 / target 已被占用）
-        都吞 OSError 并 logger.warning，绝不向 ``_restore`` 抛异常。
-        """
+        下次 ``_persist`` 的 ``os.replace`` 静默覆盖。"""
         if not self._persist_path:
             return
         try:
@@ -2285,8 +1275,6 @@ class TaskQueue:
         except FileNotFoundError:
             return
         except OSError as quarantine_err:
-            # rename 失败也只是 best-effort，吞掉以保留 _restore 的"用空
-            # 队列继续运行"语义。最坏情况下下次 _persist 会原子覆盖原文件。
             logger.warning(
                 f"quarantine 损坏持久化文件失败（best-effort 已忽略）: {quarantine_err}"
             )

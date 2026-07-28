@@ -4,12 +4,6 @@
 
 Small read/write lock primitive shared by config and task queues.
 
-This module deliberately has no project-local imports. ``task_queue`` is on the
-Web UI cold-start path; importing ``config_manager`` just to get ``ReadWriteLock``
-would also construct the global ConfigManager and load Pydantic config models.
-Keeping the lock here preserves the same synchronization semantics without that
-startup tax.
-
 ## 类
 
 ### `class ReadWriteLock`

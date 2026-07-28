@@ -128,25 +128,6 @@ class SecurityMixin:
         network_security_config: dict[str, Any]
         host: str
 
-    # ------------------------------------------------------------------
-    # CSP 模板预拼接（R23.5）
-    # ------------------------------------------------------------------
-    # CSP 头里只有 ``script-src`` 的 nonce 因请求而变，其余 9 个 directive
-    # 全部是不变常量。R23.5 之前每次 ``after_request`` 都把 10 段字符串
-    # 重新 concat 一次（CPython 会用 ``BUILD_STRING`` 字节码合成，但仍要
-    # 重新 alloc + 10 次 memcpy）；改成把不变部分预拼接到模块加载阶段，
-    # hot path 上每个请求只做 3 段 concat（prefix + nonce + suffix）。
-    #
-    # why
-    # - ``after_request`` 在每个请求（包括静态文件 304）都跑：``/api/tasks``
-    #   2 s 轮询、``/static/js/main.<hash>.js`` 多个并发 GET、SSE 心跳……
-    #   单进程稳态 50-200 req/s，省 10-15 段 PyUnicode 的 alloc/copy
-    #   对应 ~250-400 ns/req，每秒省 12-80 µs CPU。
-    # - 让 ``add_security_headers`` 的字节码长度从 ~10 个 BUILD_STRING
-    #   token 缩短到 1 个普通 ``+`` 表达式，profile 上更容易看清 hot path。
-    # - 维护成本低：CSP directive 加新条目时只需要在对应常量里加一行，
-    #   nonce 占位逻辑被 ``_build_csp_header`` 显式锁住，不会出现「多段
-    #   拼接漏拼 nonce」的回归。
     _CSP_PREFIX: str = "default-src 'self'; script-src 'self' 'nonce-"
     _CSP_SUFFIX: str = (
         "'; "
@@ -169,10 +150,6 @@ class SecurityMixin:
         重写整个 ``setup_security_headers``。
         """
         return cls._CSP_PREFIX + nonce + cls._CSP_SUFFIX
-
-    # ------------------------------------------------------------------
-    # 安全头 & 访问控制 hook
-    # ------------------------------------------------------------------
 
     def setup_security_headers(self) -> None:
         """注册 before_request / after_request 钩子：IP 访问控制 + 安全头注入。
@@ -213,52 +190,16 @@ class SecurityMixin:
             response.headers["Content-Security-Policy"] = self._build_csp_header(nonce)
             response.headers["X-Frame-Options"] = "DENY"
             response.headers["X-Content-Type-Options"] = "nosniff"
-            # ``X-XSS-Protection`` 是 IE / 早期 Chrome 的"反射 XSS auditor"
-            # 开关，已被 [MDN 标记为废弃](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection)：
-            # 该 auditor 自身被发现可被滥用造成 XSS（攻击者诱导 auditor
-            # 误删合法脚本来打开新攻击面）；现代浏览器已经全部移除实现。
-            # OWASP Secure Headers Project / Mozilla Observatory 现在
-            # 推荐 **明确写 ``0``** —— 即"显式关闭"，让 CSP 接管唯一的
-            # XSS 防御路径，避免遗留浏览器（IE11 / 老 Chrome）跑过期
-            # auditor。历史值 ``1; mode=block`` 在现代浏览器是 no-op，
-            # 在某些遗留 browser 上反而**降低**安全性，所以 ``0`` 是
-            # **更安全**的选择，不是降级。
+
             response.headers["X-XSS-Protection"] = "0"
             response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-            # ``Cross-Origin-Opener-Policy: same-origin`` 让窗口和它的
-            # cross-origin opener 互相隔离，关闭 ``window.opener`` 句柄
-            # —— 这是 Spectre 类侧信道攻击和 tabnabbing 的标准防御
-            # （[MDN 指南](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cross-Origin-Opener-Policy)）。
-            # 我们的 Web UI 没有合法的 cross-origin opener 用例（VSCode
-            # webview 走 vscode-webview:// 协议有自己的隔离层），所以
-            # ``same-origin`` 是 zero-cost 的安全提升。**不**加 ``CORP``
-            # 因为 vscode-webview 的资源加载策略目前没法显式标注 origin。
+
             response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
             response.headers["Permissions-Policy"] = (
                 "geolocation=(), microphone=(), camera=(), "
                 "payment=(), usb=(), magnetometer=(), gyroscope=()"
             )
 
-            # ----------------------------------------------------------
-            # 静态资源缓存策略（R56 整理后）
-            # ----------------------------------------------------------
-            # Flask 下 ``after_request`` 在 route handler 之后跑，所以这里
-            # 设置的 ``Cache-Control`` 会**覆盖** route 级 ``serve_css`` /
-            # ``serve_js`` 等手写的同名 header。我们统一以 hook 为唯一权威，
-            # route 级保留同值的 header 仅作 belt-and-suspenders（hook 出
-            # bug 时 route 级仍能托底），实际生效以本表为准：
-            #
-            # | 路径前缀                  | 带 ?v=                | 不带 ?v=         |
-            # |---------------------------|------------------------|------------------|
-            # | /static/js, /static/css   | 1 year immutable       | 1 day            |
-            # | /static/locales (R56 加) | 1 year immutable       | 1 day            |
-            # | /static/lottie, /fonts    | 30 days immutable      | 30 days immutable|
-            # | /sounds, /icons (非 .ico) | 1 week                 | 1 week           |
-            #
-            # 不在表中的资源（``/manifest.webmanifest`` / ``/favicon.ico`` /
-            # ``/notification-service-worker.js``）由 route 级显式设置，hook
-            # 不命中其路径前缀，所以保留 route 级的语义化值（manifest=1h、
-            # favicon=no-cache、SW=no-cache）。
             path = request.path
             if path.startswith(("/static/js/", "/static/css/", "/static/locales/")):
                 if request.args.get("v"):
@@ -276,10 +217,6 @@ class SecurityMixin:
 
             return response
 
-    # ------------------------------------------------------------------
-    # CSP nonce
-    # ------------------------------------------------------------------
-
     def _get_csp_nonce(self) -> str:
         """获取当前请求的 CSP nonce；非请求上下文时生成临时随机值。"""
         try:
@@ -291,10 +228,6 @@ class SecurityMixin:
         except RuntimeError:
             pass
         return secrets.token_urlsafe(16)
-
-    # ------------------------------------------------------------------
-    # 网络安全配置
-    # ------------------------------------------------------------------
 
     def _load_network_security_config(self) -> dict:
         """加载并验证 network_security 配置，失败时返回默认值。"""
@@ -344,10 +277,6 @@ class SecurityMixin:
                 return
             self.network_security_config = self._load_network_security_config()
             self._network_security_config_loaded_from_config = True
-
-    # ------------------------------------------------------------------
-    # IP 访问控制
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _normalize_addr(addr_str: str):
@@ -406,28 +335,8 @@ class SecurityMixin:
             return False
 
         except (AddressValueError, ValueError, TypeError) as e:
-            # R39 修正：``ipaddress.ip_address()`` 对 ``"abc"`` 这种非 IP 字符串
-            # 抛的是 *普通* ``ValueError``，**不是** ``AddressValueError``
-            # （AddressValueError 仅用于 ``IPv4Address`` / ``IPv6Address`` 直接
-            # 构造时的协议判定失败，``ip_address`` 工厂函数只用基类 ValueError
-            # 包装："X does not appear to be an IPv4 or IPv6 address"）。
-            #
-            # 历史代码只 catch ``AddressValueError``，后果是当 ``REMOTE_ADDR``
-            # 异常字段（被反代 / WSGI 层污染成空串、IPv6 格式残缺、或者
-            # ``REMOTE_ADDR=None`` 这种 ``TypeError`` 路径）漏到这里时，
-            # 整个 ``before_request`` hook 直接 raise，Flask 兜成 500 给 client，
-            # 而 *访问控制日志却不会写* —— 运维看到的是 500 风暴而不是
-            # "拒掉 1 个非法 IP"，定位成本极高。
-            #
-            # fail-closed 一致性：黑名单 / 白名单内层循环已经是
-            # ``(AddressValueError, ValueError, TypeError)`` 全覆盖，外层
-            # 拓宽到一致策略，整个安全判定不再有 raise 路径。
             logger.warning(f"无效的IP地址 {client_ip}: {e}")
             return False
-
-    # ------------------------------------------------------------------
-    # X-Forwarded-For / 客户端 IP
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _parse_forwarded_for(forwarded_for: str) -> str:

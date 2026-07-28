@@ -543,11 +543,13 @@ class TestSourceInvariants(unittest.TestCase):
         return self.src[idx:end]
 
     def test_emit_has_pre_serialize_step(self) -> None:
+        # 预序列化实际发生在 _sse_serialized_utf8_exceeds_limit 帮手里
+        # （旧断言靠 emit 体内注释中的 json.dumps 字样碰巧通过）
         body = self._emit_body()
         self.assertIn(
-            "json.dumps",
+            "_sse_serialized_utf8_exceeds_limit",
             body,
-            "emit 必须做一次预序列化（json.dumps）",
+            "emit 必须调用序列化帮手做一次预序列化",
         )
         self.assertIn(
             "_serialized",

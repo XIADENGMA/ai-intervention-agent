@@ -55,15 +55,7 @@ NOTIFICATION_AVAILABLE = (
     and find_spec("ai_intervention_agent.notification_providers") is not None
 )
 
-# ---------------------------------------------------------------------------
-# R20.10 first-touch hoist 占位
-#
-# 这 5 个 module-level 名字在 cold-start 时是 ``None``——直到第一次 ``_ensure_*``
-# 被路由函数体内调用，才会从 source 模块拉过来并写回这里。这样：
-# * cold-start 不付 ~65 ms 启动税；
-# * mock.patch("web_ui_routes.notification.X", mock) 能找到 attribute；
-# * mock 在 short-circuit 中保留——``_ensure_*`` 看到 ``X is not None`` 就不再覆盖。
-# ---------------------------------------------------------------------------
+
 notification_manager: Any = None
 NotificationEvent: Any = None
 NotificationTrigger: Any = None
@@ -269,9 +261,7 @@ class NotificationRoutesMixin:
                     _ensure_bark_provider_loaded()
 
                     # R63a: 给 test-bark 渲染出来的点击 URL 强制加 ``aiia_test=1``
-                    # query，让前端 ``getDeepLinkedTaskIdFromUrl`` 识别后跳过
-                    # deep-link 并 toast 提示，避免 ``pendingDeepLinkedTaskId="test-task-id"``
-                    # 在 PWA 端永久挂起 + 每轮轮询白调 ``.find()``。详见
+
                     # tests/test_test_bark_aiia_test_sentinel_r63a.py。
                     test_url_template = bark_url_template
                     if test_url_template and "aiia_test=" not in test_url_template:
@@ -460,12 +450,6 @@ class NotificationRoutesMixin:
                 try:
                     notification_manager.refresh_config_from_file()
                 except Exception as e:
-                    # **R119**：Bark 测试端点点击 "Test" 时拉一次最新 config，
-                    # 失败则继续走当前 in-memory config——pre-R119 完全静默，
-                    # 用户体验是 "我刚改了 bark_url，点 Test 还是用老 URL"
-                    # 但找不到任何日志。R119 加 debug 痕迹，开 debug 后就能
-                    # 定位 "config 文件锁竞争 / TOML 解析错误 / 文件权限" 等
-                    # 真因。与 R117 / R118 同 spirit。
                     import logging
 
                     logging.getLogger(__name__).debug(
@@ -1143,11 +1127,6 @@ class NotificationRoutesMixin:
                     RESUBMIT_PROMPT_DEFAULT,
                 )
 
-                # 不变量：本 dict 的 key 集合必须 == SECTION_MODELS::feedback 的字段集合，
-                # 否则 partial reset 会让某个字段静默保留上次的用户值（contract 是
-                # "重置整个 feedback section"，不是 "只重置 UI 可见字段"）。
-                # 用 tests/test_reset_feedback_config_parity.py 的 introspection
-                # 测试锁住这个覆盖契约。
                 defaults = {
                     "backend_max_wait": int(FEEDBACK_TIMEOUT_DEFAULT),
                     "frontend_countdown": int(AUTO_RESUBMIT_TIMEOUT_DEFAULT),
@@ -1272,7 +1251,6 @@ class NotificationRoutesMixin:
                     }
                 ), 500
 
-            # 用 silent=True：调用方不带 Content-Type 也允许走默认 provider=all
             data = request.get_json(silent=True) or {}
             provider_raw = str(data.get("provider", "all") or "all").strip().lower()
             valid_providers = {"all", "bark", "web", "sound", "system"}

@@ -32,13 +32,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastmcp.exceptions import ToolError
-
-# ``Context`` 用于 ``interactive_feedback(..., ctx: FastMCPContext | None = None)``
-# 的运行时签名解析：FastMCP 在 ``mcp.tool()`` 装饰器里走 ``typing.get_type_hints()``
-# 解析参数注解（即便启用了 ``from __future__ import annotations``），所以本符号
-# **必须**在运行时也可解析；用 ``TYPE_CHECKING`` 守护会触发 NameError。
-# fastmcp 包已经被 ``server.py`` 顶层 import，此处再多 import 一个子模块零额外
-# 冷启动开销。
 from fastmcp.server.context import Context as FastMCPContext
 from mcp.types import TextContent
 from pydantic import Field
@@ -70,29 +63,6 @@ except ImportError as e:
     NOTIFICATION_AVAILABLE = False
 
 
-# R47：interactive_feedback 运行时计数器
-# ===========================================
-#
-# 让运维 / client UI 在不订阅 SSE 的情况下评估"反馈工具是否在被滥用"。
-# 三类计数互斥，按 task lifecycle 锚点累加：
-#   - ``created_total``：进入 ``interactive_feedback`` 后通过参数 validate
-#     的次数（早期 ``ToolError`` 不计入；那是 schema-level 拒绝）。
-#   - ``completed_total``：``task.completed`` 锚点触发的次数（人类用户已经
-#     回复并 wait_for_task_completion 拿到正常 dict）。
-#   - ``failed_total``：``task.failed`` 锚点触发的次数（涵盖 notify 阶段
-#     httpx 失败、wait 阶段超时 / 错误、以及最外层 except 兜底）。
-#
-# 阈值用法：
-#   - ``created_total`` >> ``completed_total + failed_total``：客户端在
-#     等用户回复（正常或 LLM 调过头）；
-#   - ``failed_total`` 连续走高：Web UI 子进程出问题 / notify HTTP 失败；
-#   - ``completed_total / created_total`` 接近 1：用户参与度高、流程畅通。
-#
-# 实现细节：
-#   - 用 ``threading.Lock`` 而不是 ``asyncio.Lock``：本工具在 sync 测试 /
-#     CLI / 多线程后端里都会被读，threading.Lock 保兼容；
-#   - 不暴露内部 dict 的引用，``get_feedback_counters`` 返回拷贝；
-#   - dict 只往里写已知 key，避免 typo 静默成 0。
 _FEEDBACK_COUNTERS: dict[str, int] = {
     "created_total": 0,
     "completed_total": 0,
@@ -192,49 +162,10 @@ async def _emit_ctx_info(
         logger.debug(f"ctx.info 失败（已忽略）: {type(ctx_exc).__name__}: {ctx_exc}")
 
 
-# R22.1: ``wait_for_task_completion`` 的 HTTP 轮询保底节奏。
-# 设计原则：双通道兜底 = SSE 实时通道（<50 ms 完成检测）+ HTTP 轮询保底。
-# SSE 是主路径；轮询只在 SSE 故障时保命。
-#
-# - SSE 未连接（启动期 / SSE 连接失败 / 连接中断）：紧密 2s 兜底，与前端
-#   ``static/js/multi_task.js::TASKS_POLL_BASE_MS = 2000`` 同节奏，确保
-#   单次故障不会让任务完成检测延迟超过 2 s。
-# - SSE 已连接：拉成 30s safety net，与前端
-#   ``TASKS_POLL_SSE_FALLBACK_MS = 30000`` 同节奏。SSE 通道工作时
-#   每 2 s 一次的 HTTP 轮询纯粹是冗余调用——单次任务（默认 240 s 倒计时）
-#   会触发 ~119 次冗余 ``GET /api/tasks/<id>``，每次 1-3 ms 网络开销 +
-#   web_ui ``task_queue._lock`` 取锁。SSE-健康场景下，这些调用只是兜底，
-#   30s safety net 把冗余频次砍到 ~7 次/任务（-94%）。
-#
-# 边界与权衡：SSE 在 30s 窗口中段断开会让完成检测延迟到当前 30s 窗口结束
-# 后才被发现（最坏 ~30 s）。与前端同语义；考虑到 SSE 在 LAN/loopback 上
-# 几乎不掉线，且 SSE listener 故障会立即让 ``sse_connected`` flag 翻 False
-# （下一个 wait 周期就会复用 2s 紧密节奏），实操影响极小。
 _POLL_INTERVAL_FAST_S = 2.0
 _POLL_INTERVAL_SAFETY_NET_S = 30.0
 
 
-# R165 retry-before-close 退避序列（秒）。
-# ======================================
-#
-# SSE 检测到 ``task_changed(new_status=completed)`` 后，``_fetch_result()``
-# 第一次撞瞬时网络抖动（503 / connect error / DNS jitter）时，``completion``
-# 已 set 但 ``result_box[0]`` 仍是 None。这串退避序列被 ``wait_for_task_completion``
-# 的 finally 块用来重试 fetch，最大化把"反馈数据已存在但本地拿不到"这一边
-# 缘场景拉回到正确路径。
-#
-# 设计取舍：
-#   - 第 0 次 retry 退避 0s（立即试一次，覆盖单次 TCP RST 重连）
-#   - 后续指数退避：100ms / 250ms / 500ms / 1000ms
-#   - 总等待上界 ~1.85s（不含每次 HTTP request 自身的 2s timeout）
-#   - 覆盖典型抖动：TLS 重协商（200-800ms）、k8s mesh evict 重连（<1s）、
-#     cellular handoff（300-1500ms）、DNS TTL 抖动（<100ms）
-#
-# 选这个长度（5 次）的理由：``backend_timeout`` 默认 240s，1.85s retry
-# 占比 < 1%；同时实测大于 2s 的网络抖动通常代表更严重故障（Web UI 进程
-# 死了 / 网络断了），此时数据本身就可能不可达，继续 retry 收益递减。
-# 测试可以通过 monkeypatch 覆盖本常量以缩短测试运行时间（参见
-# ``tests/test_retry_before_close_*.py``）。
 _FETCH_RETRY_BACKOFF_S: tuple[float, ...] = (0.0, 0.1, 0.25, 0.5, 1.0)
 
 
@@ -290,23 +221,16 @@ async def _close_orphan_task_best_effort(
         if client is None:
             cfg = service_manager.get_web_ui_config()[0]
             client = service_manager.get_async_client(cfg)
-        # 2s timeout：足够 LAN/loopback 内一次 close；远超肯定是 web_ui 死了，
-        # best-effort 放手即可。
+
         resp = await client.post(close_url, timeout=2)
         if resp.status_code == 200:
             logger.info(f"timeout/cancel 路径已清理 ghost task: {task_id}")
         else:
-            # 404 通常是 web_ui 已经把它清掉了（用户主动 close 过一次或者
-            # 后台清理 GC 提前命中），这是正常路径不报警；其它非 200 才警。
             level = logger.debug if resp.status_code == 404 else logger.warning
             level(f"清理 ghost task {task_id} 收到非 200: HTTP {resp.status_code}")
     except asyncio.CancelledError:
-        # 父 cancel 优先 —— 不能在 cleanup 路径吞 cancel，会破坏 asyncio
-        # 取消语义并触发 "Task was destroyed but it is pending!" 警告。
         raise
     except Exception as e:
-        # httpx.HTTPError / 连接拒绝 / DNS 错 / 任何其它都进这里：cleanup
-        # 是 best-effort，不该打断主路径返回 resubmit_response。
         logger.debug(f"清理 ghost task {task_id} 失败（已忽略，best-effort）: {e}")
 
 
@@ -342,26 +266,6 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     api_url = f"http://{target_host}:{config.port}/api/tasks/{task_id}"
     sse_url = f"http://{target_host}:{config.port}/api/events"
 
-    # R685 (TODO#3 会话结果丢失修复)：**禁止**在函数开头一次性捕获
-    # ``http_client = service_manager.get_async_client(config)`` 然后闭包复用。
-    #
-    # 事故链（修复前）：
-    #   T0  interactive_feedback 开始等待，闭包捕获 client A
-    #   T1  用户编辑 config.toml → ConfigManager file watcher →
-    #       service_manager._invalidate_runtime_caches_on_config_change()
-    #       → client A 被 close
-    #   T2  _sse_listener 的 stream 抛 RuntimeError("client has been closed")
-    #       → SSE 断；_poll_fallback._fetch_result 每次用 client A →
-    #       RuntimeError 被 except 吞掉 → 永远返回 None
-    #   T3  用户在 Web UI 提交反馈 → web_ui 子进程 task=completed（UI 显示已反馈）
-    #   T4  MCP 侧 backend_timeout 到期 → retry-before-close 仍用 client A
-    #       全失败 → 返回 resubmit prompt → **用户反馈永久丢失**
-    #
-    # 修复：每个请求点即时调用 ``service_manager.get_async_client(config)``。
-    # 该访问器在 client 已关闭时自动重建（``is_closed`` 双检锁路径），
-    # 未关闭时返回同一个 pooled singleton——热路径开销只是一次属性读 +
-    # is_closed 检查（~百 ns 级），语义上与 R23.1 连接池复用完全兼容。
-    # 回归锁：``tests/test_wait_completion_survives_client_close_r685.py``。
     def _pooled_client() -> Any:
         return service_manager.get_async_client(config)
 
@@ -374,10 +278,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     )
 
     completion = asyncio.Event()
-    # R22.1: SSE 通道连接状态，由 ``_sse_listener`` 维护，``_poll_fallback``
-    # 据此在每个 wait 周期选择合适的 interval（连接 → 30s safety net；
-    # 未连接 → 2s 紧密兜底）。set/clear 动作必须在 listener 内部，poll 只读，
-    # 这样语义就是"SSE 当前是否在 stream 主循环"，对完成检测的延迟影响可控。
+
     sse_connected = asyncio.Event()
     result_box: list[Any] = [None]
 
@@ -456,7 +357,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
                 "GET", sse_url, timeout=httpx.Timeout(None, connect=5.0)
             ) as resp:
                 logger.debug(f"SSE 连接已建立: {task_id}")
-                # 通知 _poll_fallback：SSE 主路径已就绪，可以拉成 30s safety net
+
                 sse_connected.set()
                 async for line in resp.aiter_lines():
                     if completion.is_set():
@@ -538,8 +439,6 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
             if not isinstance(task, dict):
                 return None
             if task.get("status") == "completed":
-                # 已完成但 completion 事件还没到本协程：给 5s 短窗口，
-                # 让 SSE / 2s 紧密轮询把 result 取回来。
                 return 5.0
             remaining = task.get("remaining_time")
             if isinstance(remaining, (int, float)) and remaining > 0:
@@ -550,19 +449,6 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
             logger.debug(f"探测任务剩余倒计时失败（按超时处理）: {e}")
         return None
 
-    # R165 反馈丢失防御：把 TimeoutError 路径的 ``return`` 改成 set 一个
-    # ``timed_out`` 标志位，让 finally 里的 retry-before-close 能影响最终
-    # return 值。修复前是 ``except TimeoutError: return _make_resubmit_response``
-    # —— Python 语义下，``except`` 内的 return 把返回值锁定到 stack 上，
-    # 后续 ``finally`` 块即便 retry 拿到了真实 result 也无法覆盖返回值，
-    # 用户的反馈会被丢成 resubmit。改成 flag 写法让 retry 后的 result 总能
-    # 优先于 timeout 兜底，反馈数据零丢失。
-    #
-    # R689：超时不再一锤定音——先探测任务是否被用户延长了倒计时
-    # （extend 按钮 / typing auto-extend），仍有剩余时间就继续等待。
-    # ``_DEADLINE_EXTENSION_PROBE_MAX`` 防御 pathological 循环（正常场景
-    # extend 上限 3 次 + typing auto-extend 同样受 extends_max 约束，
-    # 探测次数远小于该上限）。
     timed_out = False
     try:
         remaining_wait = effective_timeout
@@ -594,26 +480,6 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         with contextlib.suppress(asyncio.CancelledError):
             await poll_task
 
-        # R17.4 / R165 retry-before-close 兜底：SSE 报告 completed 但首次
-        # ``_fetch_result()`` 撞到瞬时网络抖动（503 / connection
-        # error / DNS 短暂失败）时，``result_box[0]`` 还是 None ——
-        # 如果直接进 R13·B1 close 路径，``_close_orphan_task_best_effort``
-        # 的 ``POST /close`` 会让 web_ui ``task_queue.remove_task``
-        # 把**已经 completed**（且仍带着 user-feedback 的 result）的
-        # task 立即删掉，紧接着 ``_make_resubmit_response`` 让 AI
-        # 重新提交，用户辛辛苦苦填的反馈被永久丢失却零日志告警。
-        #
-        # R165：把 R17.4 的单次 retry 升级为**指数退避多次** retry——
-        # 实测网络抖动可能持续 100ms-1s（典型场景：TLS 重协商、
-        # cellular handoff、k8s service mesh 跨节点 evict 重连），
-        # 单次 retry 覆盖窗口太窄。改为 0/100/250/500/1000ms 五次退避，
-        # 加上 ``_fetch_result`` 内部 2s timeout，最坏 ~12s 内必然有一次
-        # 能拿到 result（远低于 backend_timeout）。一旦任意一次 retry
-        # 命中 result：填 ``result_box`` → 跳过 close（``is None`` 检查
-        # 会 short-circuit）。全部 retry 失败：真的没结果 → 走原 R13·B1
-        # ghost-task close 路径，行为和修复前完全一致（但下游 web_ui
-        # ``close`` 端点会对 COMPLETED 状态 short-circuit，保证 result
-        # 不被误删）。
         if result_box[0] is None:
             for retry_idx, backoff_s in enumerate(_FETCH_RETRY_BACKOFF_S):
                 if backoff_s > 0:
@@ -631,11 +497,6 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
                     )
                     break
 
-        # R13·B1 ghost-task cleanup
-        # 仅在没拿到 result 时才 close —— 拿到 result 说明 web_ui 已经
-        # 通过 /api/submit → task_queue.complete_task 把 task 标记
-        # completed 了，再 close 是 race（且后台 cleanup 线程会在 10s
-        # 后 GC，不需要重复操作）。
         if result_box[0] is None:
             await _close_orphan_task_best_effort(
                 task_id, target_host, config.port, client=_pooled_client()
@@ -645,17 +506,9 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         logger.info(f"任务完成: {task_id}")
         return cast(dict[str, Any], result_box[0])
 
-    # R165：timeout 兜底 —— retry 全部失败 + close 也没救回来时，才进入
-    # resubmit 路径。这是反馈丢失防御的最后一道防线，确保 result 永远优
-    # 先于 timeout 的兜底响应。
     if timed_out:
         return cast(dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
 
-    # R13·B1 残留兜底：既非 timeout、close 也已发出，如果 close 网络失败
-    # 而 task 在 web_ui 那侧仍 status=completed（罕见，需要 close 走 IO 错
-    # 而 GET 走通），最后再 fetch 一次能拿回 result——属于 best-effort 兜底，
-    # R17.4 retry-before-close 已经在 close 之前覆盖了主要 race，这一
-    # 行只覆盖"close 失败 + task 没被清"这个边缘场景。
     r = await _fetch_result()
     if r is not None:
         return r
@@ -677,39 +530,29 @@ def launch_feedback_ui(
     """
     import httpx  # used by `except httpx.HTTPError` below; ruff sees the usage
 
-    # 确保超时时间不小于300秒（0表示无限等待，保持不变）
     if timeout > 0:
         timeout = max(timeout, 300)
     try:
-        # 自动生成唯一 task_id（task_id 参数将被忽略，始终使用自动生成）
         task_id = server_config._generate_task_id()
 
-        # 验证输入参数
         cleaned_summary, cleaned_options = server_config.validate_input(
             summary, predefined_options
         )
 
-        # 获取配置
         config, auto_resubmit_timeout = service_manager.get_web_ui_config()
 
         logger.info(
             f"启动反馈界面: {cleaned_summary[:100]}... (自动生成task_id: {task_id})"
         )
 
-        # 确保 Web UI 正在运行（在同步函数中运行异步函数）
         asyncio.run(service_manager.ensure_web_ui_running(config))
 
-        # 通过 HTTP API 向 web_ui 添加任务
         target_host = server_config.get_target_host(config.host)
         api_url = f"http://{target_host}:{config.port}/api/tasks"
 
         try:
             client = service_manager.get_sync_client(config)
-            # R702：不再把 config 默认倒计时显式塞进 payload——路由会把
-            # 显式传入的 timeout 标记为 per-task explicit（config 热更新
-            # 永不覆盖）。MCP 侧的值本来就来自 config（get_web_ui_config），
-            # 省略后路由取同一 config 默认值，且任务保持「跟随热更新」的
-            # 历史语义（用户运行中改 frontend_countdown 仍即时生效）。
+
             response = client.post(
                 api_url,
                 json={
@@ -743,22 +586,14 @@ def launch_feedback_ui(
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
 
-            # 【新增】发送通知（立即触发，不阻塞主流程）
             if NOTIFICATION_AVAILABLE:
                 try:
-                    # 【关键修复】从配置文件刷新配置，解决跨进程配置不同步问题
-                    # Web UI 以子进程方式运行，配置更新只发生在 Web UI 进程中
-                    # MCP 服务器进程需要在发送通知前同步最新配置
                     notification_manager.refresh_config_from_file()
 
-                    # 截断消息，避免过长（Bark 有长度限制）
                     notification_message = cleaned_summary[:100]
                     if len(cleaned_summary) > 100:
                         notification_message += "..."
 
-                    # MCP 主进程统一发送：系统通知 + 声音 + Bark
-                    # Bark 由后端发起，避免"插件+MCP"场景下 Bark 丢失（前端不再触发 /api/notify-new-tasks）
-                    # 通知发送走 NotificationManager 的线程池（15s 超时），失败/超时不阻塞任务创建
                     mcp_types = [
                         NotificationType.SYSTEM,
                         NotificationType.SOUND,
@@ -779,13 +614,6 @@ def launch_feedback_ui(
                     if base_url:
                         notif_metadata["base_url"] = base_url
                     else:
-                        # ``for_external_use=True`` 返回空 = 当前监听只对本机
-                        # 可见（loopback），把 base_url 推给 Bark 反而会让手机
-                        # 点击通知时打开 ``http://localhost:port`` 解析到手机
-                        # 自身。此处不把 base_url 写进 metadata，让 Bark provider
-                        # 在缺失 base_url 时跳过 ``url`` 字段（参见
-                        # ``notification_providers.BarkNotificationProvider``）。
-                        # 仅记一次 info 级提示而非 warn，避免本地开发自测刷屏。
                         logger.info(
                             "Bark 通知 base_url 为空（host 为 loopback 或未配置 external_base_url）"
                             "；已跳过 url 字段，建议在设置面板配置 web_ui.external_base_url 或 mDNS"
@@ -807,7 +635,6 @@ def launch_feedback_ui(
                         logger.debug(f"任务 {task_id} 通知已跳过（通知系统已禁用）")
 
                 except Exception as e:
-                    # 通知失败不影响任务创建，仅记录警告
                     logger.warning(
                         f"发送任务通知失败: {e}，任务 {task_id} 已正常创建",
                         exc_info=True,
@@ -821,17 +648,15 @@ def launch_feedback_ui(
                 "error": f"无法连接到 Web UI：{e}。请确认 Web UI 服务已启动，并检查地址/端口配置（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl）。"
             }
 
-        # 【优化】使用统一的超时计算函数
-        # timeout=0 表示无限等待模式
         backend_timeout = server_config.calculate_backend_timeout(
             auto_resubmit_timeout,
-            max_timeout=max(timeout, 0),  # 传入的 timeout 参数作为参考
+            max_timeout=max(timeout, 0),
             infinite_wait=(timeout == 0),
         )
         logger.info(
             f"后端等待时间: {backend_timeout}秒 (前端倒计时: {auto_resubmit_timeout}秒, 传入timeout: {timeout}秒)"
         )
-        # 在同步函数中运行异步函数（废弃的 API，保持向后兼容）
+
         result = asyncio.run(wait_for_task_completion(task_id, timeout=backend_timeout))
 
         if "error" in result:
@@ -1137,8 +962,6 @@ async def interactive_feedback(
     """
     import httpx  # used by `except httpx.HTTPError` below; ruff sees the usage
 
-    # 漂移参数兜底：当 agent 误把别的 feedback MCP 工具的参数传给我们时，
-    # 仍然尽力解析出 message / predefined_options，避免首次调用直接报错。
     resolved_message: Any = message
     if resolved_message is None or (
         isinstance(resolved_message, str) and not resolved_message.strip()
@@ -1158,22 +981,6 @@ async def interactive_feedback(
         )
         resolved_options = options
 
-    # R167：移除了 v1.5.20 的 ``predefined_options_defaults`` 并行数组形态
-    # （任务 3 的"功能去重"）。LLM 应当统一使用 list[dict] 形态
-    # （``[{"label": ..., "default": true}]``）来表达"推荐项"——它单形态、
-    # 无并行数组对齐 bug、与业界主流（HTML <option selected>、React selectable
-    # array、JSON Schema enum+default）一致、且对将来扩展（icon / hint /
-    # disabled / value 等字段）友好。
-    #
-    # 兼容性：FastMCP 默认 ``additionalProperties: false``——客户端如果还在
-    # 传 ``predefined_options_defaults`` 会被 ToolError 拒掉并附 schema 错
-    # 误，提示迁移到 list[dict] 形态。这是有意为之的 hard deprecation：
-    # silent accept + 静默忽略 会让 LLM 持续 sample 错形态，硬错才能反馈
-    # 给 client 端 LLM 做自我纠正。
-
-    # 仅在调试场景下记录被忽略的兼容参数（INFO 级别会在生产中产生噪音，因此用 debug）。
-    # NOTE: `timeout_seconds` 是 `timeout` 的兼容别名（有些客户端显式带单位后缀），
-    # `task_id` 仅作为 trace ID 兼容（此服务器始终自动生成）；二者都纯日志不影响业务。
     _ignored_compat = {
         name: value
         for name, value in (
@@ -1195,11 +1002,6 @@ async def interactive_feedback(
             f"interactive_feedback: 收到兼容字段（已忽略）: {list(_ignored_compat.keys())}"
         )
 
-    # BM-1：参数验证失败是「用同样的参数无法恢复」的错误，应以 ToolError
-    # 上报给 agent，让 agent 调整参数后再重试，而不是无意义地消费 resubmit
-    # 文本反复调用（那会触发死循环）。
-    # 写在顶层 try/except 之外是为了让 ToolError 逃出下面的
-    # `except Exception -> _make_resubmit_response()` 兜底路径。
     try:
         (
             cleaned_message,
@@ -1221,15 +1023,8 @@ async def interactive_feedback(
     predefined_options_defaults = cleaned_defaults
 
     try:
-        # 自动生成唯一 task_id（避免极端并发下碰撞）
         task_id = server_config._generate_task_id()
 
-        # R40 P0-S3：task lifecycle 端到端诊断日志链。
-        # ``_task_t0`` 用 ``time.monotonic()`` 而不是 ``time.time()``——后者会
-        # 被 NTP / 用户改时钟扰动；前者单调递增，``time.completed`` 计算的
-        # ``duration_ms`` 永远 >= 0、可信度高。t0 在最早的稳定锚点采样
-        # （task_id 已经生成、参数已经 validate），把"工具入口到 task_id 落地"
-        # 的开销折进 task.created 之外的 server.boot 维度。
         _task_t0 = time.monotonic()
         logger.event(
             "task.created",
@@ -1255,20 +1050,15 @@ async def interactive_feedback(
             else 0,
         )
 
-        # 获取配置
         config, auto_resubmit_timeout = service_manager.get_web_ui_config()
         client = service_manager.get_async_client(config)
 
-        # 确保 Web UI 正在运行
         await service_manager.ensure_web_ui_running(config, client=client)
 
-        # 通过 HTTP API 添加任务
         target_host = server_config.get_target_host(config.host)
         api_url = f"http://{target_host}:{config.port}/api/tasks"
 
         try:
-            # R702：同 sync 路径——config 默认倒计时不显式入 payload，
-            # 避免任务被误标 per-task explicit 而脱离 config 热更新同步。
             response = await client.post(
                 api_url,
                 json={
@@ -1279,8 +1069,6 @@ async def interactive_feedback(
                     "feedback_placeholder": feedback_placeholder,
                     "question_type": question_type,
                     "header_label": header_label,
-                    # Loop engineering P1：loop 上下文透传；normalize/clamp
-                    # 统一在 task_queue.add_task 完成。
                     "loop_id": loop_id,
                     "loop_objective": loop_objective,
                     "loop_phase": loop_phase,
@@ -1291,7 +1079,6 @@ async def interactive_feedback(
             )
 
             if response.status_code != 200:
-                # 记录详细错误信息到日志
                 error_detail = "未知错误"
                 try:
                     payload = response.json()
@@ -1308,7 +1095,6 @@ async def interactive_feedback(
                         if response.text:
                             error_detail = response.text[:200]
                     except Exception:
-                        # response.text 读取失败不应影响主流程
                         pass
                 logger.error(
                     f"添加任务失败: HTTP {response.status_code}, 详情: {error_detail}"
@@ -1319,7 +1105,7 @@ async def interactive_feedback(
                     stage="notify",
                     reason=f"http_{response.status_code}",
                 )
-                # 返回配置的提示语，引导 AI 重新调用工具
+
                 return server_config._make_resubmit_response()
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
@@ -1337,22 +1123,14 @@ async def interactive_feedback(
                 web_ui_port=int(config.port),
             )
 
-            # 【新增】发送通知（立即触发，不阻塞主流程）
             if NOTIFICATION_AVAILABLE:
                 try:
-                    # 【关键修复】从配置文件刷新配置，解决跨进程配置不同步问题
-                    # Web UI 以子进程方式运行，配置更新只发生在 Web UI 进程中
-                    # MCP 服务器进程需要在发送通知前同步最新配置
                     notification_manager.refresh_config_from_file()
 
-                    # 截断消息，避免过长（Bark 有长度限制）
                     notification_message = cleaned_message[:100]
                     if len(cleaned_message) > 100:
                         notification_message += "..."
 
-                    # MCP 主进程统一发送：系统通知 + 声音 + Bark
-                    # Bark 由后端发起，避免"插件+MCP"场景下 Bark 丢失（前端不再触发 /api/notify-new-tasks）
-                    # 通知发送走 NotificationManager 的线程池（15s 超时），失败/超时不阻塞任务创建
                     mcp_types = [
                         NotificationType.SYSTEM,
                         NotificationType.SOUND,
@@ -1374,7 +1152,6 @@ async def interactive_feedback(
                         logger.debug(f"任务 {task_id} 通知已跳过（通知系统已禁用）")
 
                 except Exception as e:
-                    # 通知失败不影响任务创建，仅记录警告
                     logger.warning(
                         f"发送任务通知失败: {e}，任务 {task_id} 已正常创建",
                         exc_info=True,
@@ -1391,10 +1168,9 @@ async def interactive_feedback(
                 reason=f"httpx_error:{type(e).__name__}",
             )
             _bump_feedback_counter("failed_total")
-            # 返回配置的提示语，引导 AI 重新调用工具
+
             return server_config._make_resubmit_response()
 
-        # 【优化】使用统一的超时计算函数，利用 feedback.timeout 作为上限
         backend_timeout = server_config.calculate_backend_timeout(auto_resubmit_timeout)
         logger.info(
             f"后端等待时间: {backend_timeout}秒 (前端倒计时: {auto_resubmit_timeout}秒)"
@@ -1402,7 +1178,6 @@ async def interactive_feedback(
         result = await wait_for_task_completion(task_id, timeout=backend_timeout)
 
         if "error" in result:
-            # 记录任务执行失败的详细错误
             logger.error(f"任务执行失败: {result['error']}, 任务 ID: {task_id}")
             logger.event(
                 "task.failed",
@@ -1412,15 +1187,9 @@ async def interactive_feedback(
                 duration_ms=int((time.monotonic() - _task_t0) * 1000),
             )
             _bump_feedback_counter("failed_total")
-            # 返回配置的提示语，引导 AI 重新调用工具
+
             return server_config._make_resubmit_response()
 
-        # wait_for_task_completion 的降级返回（超时/任务 404）形态是
-        # ``{"text": resubmit_prompt}``——只可能来自 ``_make_resubmit_response
-        # (as_mcp=False)``（真实反馈 result 恒含 user_input / selected_options
-        # / images 键）。按 R47 计数器契约，"wait 阶段超时 / 任务丢失"属于
-        # ``failed_total``，不能记为 completed；R40 事件链同理应打
-        # ``task.failed(stage=wait)`` 而非 ``task.completed``。
         if (
             isinstance(result, dict)
             and set(result.keys()) == {"text"}
@@ -1456,9 +1225,7 @@ async def interactive_feedback(
             duration_ms=_completed_duration_ms,
         )
 
-        # 解析返回：兼容新旧格式
         if isinstance(result, dict):
-            # 新格式（结构化 JSON，可能含 images）
             if (
                 "images" in result
                 or "user_input" in result
@@ -1466,7 +1233,6 @@ async def interactive_feedback(
             ):
                 return server_config.parse_structured_response(result)
 
-            # 旧格式：只有文本反馈
             legacy = result.get("interactive_feedback")
             if isinstance(legacy, str) and legacy.strip():
                 return [
@@ -1476,7 +1242,6 @@ async def interactive_feedback(
                     )
                 ]
 
-            # 最后兜底：尽量取 text 字段，否则转字符串
             fallback = (
                 result.get("text")
                 if isinstance(result.get("text"), str)
@@ -1489,7 +1254,6 @@ async def interactive_feedback(
                 )
             ]
 
-        # 简单字符串结果
         return [
             TextContent(
                 type="text",
@@ -1500,7 +1264,7 @@ async def interactive_feedback(
     except Exception as e:
         logger.error(f"interactive_feedback 工具执行失败: {e}", exc_info=True)
         _bump_feedback_counter("failed_total")
-        # 返回配置的提示语，引导 AI 重新调用工具
+
         return server_config._make_resubmit_response()
 
 
@@ -1532,7 +1296,6 @@ class FeedbackServiceContext:
         """清理所有服务进程（退出上下文时）"""
         del exc_tb
         try:
-            # 上下文退出不等同于进程退出：仅清理子进程/端口等资源，保留通知线程池可用性
             self.service_manager.cleanup_all(shutdown_notification_manager=False)
             if exc_type is KeyboardInterrupt:
                 logger.info("收到中断信号，服务已清理")

@@ -1,10 +1,4 @@
-"""TOML 解析/保存引擎 Mixin。
-
-提供 ConfigManager 在保存/更新 TOML 配置文件时所需的
-解析、保留注释格式的写回、以及 network_security 段定位能力。
-
-使用 tomlkit 实现注释保留，替代旧版 JSONC 引擎中 800+ 行的手写解析器。
-"""
+"""TOML 解析/保存引擎 Mixin。"""
 
 from __future__ import annotations
 
@@ -30,10 +24,6 @@ class TomlEngineMixin:
         @staticmethod
         def _exclude_network_security(config: dict[str, Any]) -> dict[str, Any]: ...
 
-    # ------------------------------------------------------------------
-    # TOML 解析
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _parse_toml(content: str) -> dict[str, Any]:
         """解析 TOML 内容为普通 dict（丢弃 tomlkit 元数据）"""
@@ -44,10 +34,6 @@ class TomlEngineMixin:
     def _parse_toml_document(content: str) -> tomlkit.TOMLDocument:
         """解析 TOML 内容为 TOMLDocument（保留注释/格式元数据，用于写回）"""
         return tomlkit.parse(content)
-
-    # ------------------------------------------------------------------
-    # TOML 保存（保留注释格式）
-    # ------------------------------------------------------------------
 
     def _save_toml_with_comments(self, config: dict[str, Any]) -> str:
         """保存 TOML 配置并保留原有注释和格式，排除 network_security"""
@@ -85,10 +71,6 @@ class TomlEngineMixin:
                     table[key] = value
             else:
                 table[key] = value
-
-    # ------------------------------------------------------------------
-    # network_security 段操作
-    # ------------------------------------------------------------------
 
     def _save_network_security_toml(self, ns_config: dict[str, Any]) -> str:
         """仅更新 TOML 文件中的 network_security 段并返回完整内容"""

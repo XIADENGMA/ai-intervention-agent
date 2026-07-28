@@ -1,22 +1,4 @@
-"""MCP 服务器配置与工具函数 — 配置数据类、常量、输入验证、响应解析。
-
-从 server.py 提取的无状态模块：
-- WebUIConfig / FeedbackConfig 数据类及其 getter
-- 超时计算、输入验证、图片处理、MCP 响应构建
-- 所有函数不依赖 server.py 的全局状态（缓存、进程管理等）
-
-R20.9 性能优化（lazy mcp.types）：
-================================
-``mcp.types`` 单独 import 约 ~184 ms（被 task_queue → server_config 间接拖入
-即可观察到）。MCP 响应构建（``parse_structured_response`` / ``_process_image``
-/ ``_make_resubmit_response``）只在 MCP server 主进程调用，Web UI 子进程
-压根用不到 ``ImageContent`` / ``TextContent`` / ``ContentBlock``。
-
-通过 ``from __future__ import annotations``（PEP 563）+ ``TYPE_CHECKING``
-gate + 一次性缓存的 ``_lazy_mcp_types()`` 访问器，把 ``mcp.types`` 推迟到
-**首次实际调用**响应构建函数时才加载。Web UI 子进程从此完全不会触发
-``mcp.types`` 加载，task_queue 间接 import 时间从 ~218 ms 降至 ~30 ms。
-"""
+"""MCP 服务器配置与工具函数 — 配置数据类、常量、输入验证、响应解析。"""
 
 from __future__ import annotations
 
@@ -46,25 +28,15 @@ from ai_intervention_agent.runtime_constants import (
 )
 
 if TYPE_CHECKING:
-    # 仅供类型检查器解析签名/注解；运行时绝不触发 mcp.types 加载。
-    # 与下方 ``_lazy_mcp_types()`` 配合实现「类型注解零成本 + 运行时
-    # lazy load」双赢。``TextContent`` 在 ``__future__ annotations`` 下
     # 仅出现在字符串化的类型注解中，ruff 看不到使用——用 noqa 显式声明。
     from mcp.types import ContentBlock, ImageContent, TextContent  # noqa: F401
 
-# R20.9：mcp.types 单例缓存。首次调用 `_lazy_mcp_types()` 时才真正 import
-# `mcp.types` 模块（~184 ms），后续调用直接返回缓存。Web UI 子进程不会调用
-# 任何使用本访问器的函数，因此该模块永远不会被加载。
+
 _mcp_types_module: Any = None
 
 
 def _lazy_mcp_types() -> Any:
-    """懒加载并缓存 ``mcp.types`` 模块对象（线程安全：GIL + 幂等赋值）。
-
-    返回的对象有 ``TextContent`` / ``ImageContent`` / ``ContentBlock`` 等
-    类属性。调用方应直接通过本函数返回值访问，不要重新 ``import mcp.types``
-    （那会让 lazy 化的努力前功尽弃）。
-    """
+    """懒加载并缓存 ``mcp.types`` 模块对象（线程安全：GIL + 幂等赋值）。"""
     global _mcp_types_module
     if _mcp_types_module is None:
         from mcp import types as _mcp_types
@@ -75,49 +47,13 @@ def _lazy_mcp_types() -> Any:
 
 logger = EnhancedLogger(__name__)
 
-# ============================================================================
-# 超时与边界常量
-# ============================================================================
 
-# NOTE: 这些 MIN/MAX 常量必须与 ``shared_types.SECTION_MODELS::feedback`` 中的
-# Pydantic ``_clamp_int(min, max, default)`` 边界保持一致 —— 否则会出现「config.toml
-# 写 frontend_countdown=1000，shared_types Pydantic 接受 1000，但 web_ui_validators /
-# task_queue 用本文件的常量把它 clamp 回 250」这种 docs 撒谎、行为不一致的漂移。
-# ``tests/test_server_config_shared_types_parity.py`` 锁住此契约。
-# Constants are imported from ``runtime_constants`` and re-exported here for
-# backward compatibility. Do not move the source of truth back into this module:
-# ``server_config`` imports Pydantic models, while Web UI cold-start paths need
-# these numeric values without that cost.
-
-# R166: 大幅放宽文本长度限制（"手动输入 / 自动返回 / 额外附加"三块均收敛到
-# 远超正常使用的软上限）。背景：之前 10000 字符的硬截断会让"LLM 输出长上
-# 下文 / 用户粘贴长技术文档"的合法场景被默默截断 + "..."，反馈数据丢失却
-# 零日志告警。R166 把软上限抬高 ~10-100×，让正常使用永远不被截断，同时
-# 保留 task_queue.add_task 的 10MB 字节硬上限作为唯一的 DoS 防御：
-#
-#   软上限（本文件）─┐
-#                   ├──→ "warn but never block" 语义，方便日志诊断异常 caller
-#   硬上限（task_queue ─┘    10MB 字节）：拒绝级，唯一的"反 DoS"护栏
-#
-# 软上限阈值参考：
-#   * 100 万字符 ≈ 1 MB ASCII / ~3 MB UTF-8 中文 → 远超合理 prompt + LLM 输出场景
-#   * 仍远低于 10MB 字节硬上限（保留 ~3-10× 余量）
-#   * 截断时仍保留原 "+ ..." 行为以保持向后兼容（测试断言依赖此前缀）
-PROMPT_MAX_LENGTH = 100_000  # 提示语最大长度（resubmit_prompt / prompt_suffix）
+PROMPT_MAX_LENGTH = 100_000
 RESUBMIT_PROMPT_DEFAULT = "请立即调用 interactive_feedback 工具"
 PROMPT_SUFFIX_DEFAULT = "\n请积极调用 interactive_feedback 工具"
 
-MAX_MESSAGE_LENGTH = (
-    1_000_000  # 用户输入/提示文本最大长度（约 1MB UTF-8，远低于 10MB 硬上限）
-)
-MAX_OPTION_LENGTH = (
-    10_000  # 单个预定义选项最大长度（防 UI 渲染异常用，正常 option 不会超过 200）
-)
-
-
-# ============================================================================
-# 配置数据类
-# ============================================================================
+MAX_MESSAGE_LENGTH = 1_000_000
+MAX_OPTION_LENGTH = 10_000
 
 
 class WebUIConfig(BaseModel):
@@ -126,12 +62,7 @@ class WebUIConfig(BaseModel):
     PORT_MIN: ClassVar[int] = 1
     PORT_MAX: ClassVar[int] = 65535
     PORT_PRIVILEGED: ClassVar[int] = 1024
-    # 不变量：以下 6 个常量必须等于 ``shared_types.SECTION_MODELS::web_ui`` 中
-    # 对应 Pydantic 字段的 ``BeforeValidator(_clamp_int/_clamp_float(...))`` 边界。
-    # 否则 ``service_manager._load_web_ui_config_from_disk`` 会做"二次 clamp"，
-    # 把已通过 Pydantic 校验的用户值悄悄截断（例如 ``http_request_timeout=500``
-    # → Pydantic 接受 500 → 这里被强行降到 300）。详见
-    # ``tests/test_server_config_shared_types_parity.py::TestWebUIConfigSharedTypesParity``。
+
     TIMEOUT_MIN: ClassVar[int] = 1
     TIMEOUT_MAX: ClassVar[int] = 600
     MAX_RETRIES_MIN: ClassVar[int] = 0
@@ -240,11 +171,6 @@ class FeedbackConfig(BaseModel):
         )
 
 
-# ============================================================================
-# 配置读取函数
-# ============================================================================
-
-
 def get_feedback_config() -> FeedbackConfig:
     """从配置文件加载反馈配置"""
     try:
@@ -337,22 +263,12 @@ def _make_resubmit_response(as_mcp: bool = True) -> list | dict:
     """创建错误/超时的重新提交响应"""
     resubmit_prompt, _ = get_feedback_prompts()
     if as_mcp:
-        # R20.9: lazy load mcp.types，避免子进程 import 链路被污染
         return [_lazy_mcp_types().TextContent(type="text", text=resubmit_prompt)]
     return {"text": resubmit_prompt}
 
 
-# ============================================================================
-# 输入验证
-# ============================================================================
-
-
 def _normalize_option_default(value: Any) -> bool:
-    """把任意输入归一化为 bool（接受 true/false/1/0/"true"/"false"/"yes"/"no"）。
-
-    保持宽松：未知值视为未默认选中（False），避免因 LLM 偶发地传入字符串
-    类型的 "true"/"false" 而把"默认勾选"功能直接打掉。
-    """
+    """把任意输入归一化为 bool（接受 true/false/1/0/"true"/"false"/"yes"/"no"）。"""
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
@@ -365,27 +281,7 @@ def _normalize_option_default(value: Any) -> bool:
 def validate_input_with_defaults(
     prompt: str, predefined_options: list | None = None
 ) -> tuple[str, list[str], list[bool]]:
-    """验证清理输入：截断过长内容，过滤非法选项，并解析每项的"默认选中"状态。
-
-    `predefined_options` 兼容三种格式（向后兼容 + TODO #3 增强）：
-
-    1. 纯字符串：``"选项 A"`` —— default 为 False
-    2. 带默认选中的对象：``{"label": "选项 B", "default": True}`` ——
-       支持的别名：``label`` / ``text`` / ``value``，``default`` /
-       ``selected`` / ``checked``。
-    3. 紧凑数组：``["选项 C", true]`` —— 第一项为 label，第二项为 default。
-
-    Returns
-    -------
-    tuple[str, list[str], list[bool]]
-        归一化后的 ``(prompt, options_labels, options_defaults)``，两个列表长度
-        始终一致，长度为 0 表示用户未提供选项。
-
-    See Also
-    --------
-    validate_input : 旧版本，仅返回 ``(prompt, options_labels)``，向后兼容；
-        若仅关心 label 不需要 default 信息时使用即可。
-    """
+    """验证清理输入：截断过长内容，过滤非法选项，并解析每项的"默认选中"状态。"""
     try:
         cleaned_prompt = prompt.strip()
     except AttributeError:
@@ -406,7 +302,6 @@ def validate_input_with_defaults(
             if isinstance(option, str):
                 label_raw = option
             elif isinstance(option, dict):
-                # 兼容多种命名约定：label / text / value，selected / default / checked
                 label_raw = (
                     option.get("label")
                     if option.get("label") is not None
@@ -450,20 +345,11 @@ def validate_input_with_defaults(
 def validate_input(
     prompt: str, predefined_options: list | None = None
 ) -> tuple[str, list[str]]:
-    """验证清理输入：截断过长内容，过滤非法选项（向后兼容签名）。
-
-    返回 ``(prompt, options_labels)``。如需同时获取每项的"默认选中"状态，
-    请使用 :func:`validate_input_with_defaults`。
-    """
+    """验证清理输入：截断过长内容，过滤非法选项（向后兼容签名）。"""
     cleaned_prompt, cleaned_options, _ = validate_input_with_defaults(
         prompt, predefined_options
     )
     return cleaned_prompt, cleaned_options
-
-
-# ============================================================================
-# 工具函数
-# ============================================================================
 
 
 def _generate_task_id() -> str:
@@ -478,20 +364,7 @@ def get_target_host(host: str) -> str:
 
 
 def is_loopback_url(url: str) -> bool:
-    """判断 URL 的 host 是否解析到本机回环地址。
-
-    覆盖三类常见写法：
-        * 字面量 ``localhost`` / ``127.0.0.1`` / ``::1`` / ``[::1]``
-        * 整个 ``127.0.0.0/8`` IPv4 段（``127.123.45.67`` 也算回环）
-        * ``ipaddress.ip_address(host).is_loopback`` 真值的 IPv6 地址
-
-    用于在 Bark / 跨设备通知场景过滤 ``http://localhost:8080`` 这类
-    "对外推送但点了打不开" 的 base_url：手机 Bark 解析 loopback 会指向
-    手机自己，必然打不开 Web UI。
-
-    任何解析失败 / 空串 / 非 string 输入都返回 ``False``，让调用方按
-    "未识别即放行" 处理，避免误伤合法的 LAN/公网 URL。
-    """
+    """判断 URL 的 host 是否解析到本机回环地址。"""
     if not isinstance(url, str):
         return False
 
@@ -527,23 +400,7 @@ def resolve_external_base_url(
     *,
     for_external_use: bool = False,
 ) -> str:
-    """解析"对外可访问"的 Web UI 基地址，用于通知点击跳转等场景。
-
-    优先级：
-        1. ``[web_ui] external_base_url`` 配置（用户显式指定，如 ``http://ai.local:8080``）
-        2. mDNS 地址（``[mdns] hostname``，默认 ``ai.local``），仅在 mDNS 显式启用
-           或 ``auto`` 且监听地址不是 loopback 时使用
-        3. ``http://{target_host}:{port}``（基于 ``[web_ui] host/port`` 推导）
-
-    返回值会去掉末尾斜杠，便于直接和 ``/path`` 拼接；解析失败时返回空串。
-
-    参数 ``for_external_use``（默认 ``False`` 保持向后兼容）：
-        * ``False``：保留原契约——任何解析成功的 URL 都返回，包括 loopback。
-        * ``True``：调用方明确声明 "我要给跨设备/外部场景用"，函数会在
-          解析结果命中 :func:`is_loopback_url` 时返回 ``""``，迫使调用方
-          走 "无外部可达地址" 的降级路径（例如 Bark 通知不附 ``url`` 字段、
-          UI 显示提示让用户配 ``external_base_url`` 或 ``web_ui.host``）。
-    """
+    """解析"对外可访问"的 Web UI 基地址，用于通知点击跳转等场景。"""
     try:
         config_mgr = get_config()
         web_section = config_mgr.get_section("web_ui") or {}
@@ -622,18 +479,7 @@ def resolve_external_base_url(
 
 
 def suggest_lan_base_url(port: int) -> str | None:
-    """探测一个适合对外推送的 LAN base_url（``http://<lan-ipv4>:<port>``）。
-
-    用于 Bark / 跨设备通知场景：当 :func:`resolve_external_base_url` 在
-    ``for_external_use=True`` 模式返回空串时，UI / 日志可以用本函数给出
-    "你应该配成什么样" 的具体推荐。
-
-    内部复用 :func:`web_ui_mdns_utils.detect_best_publish_ipv4`（lazy import，
-    避免冷启动加载 ``psutil``）。它会跳过 ``docker0`` / VPN tunnel / 回环 /
-    link-local 地址，优先返回路由探测到的默认出口 IPv4，再退化到物理网卡
-    枚举。任何探测失败都返回 ``None``，调用方应优雅降级（例如 UI 隐藏
-    "推荐 LAN IP" 行）。
-    """
+    """探测一个适合对外推送的 LAN base_url（``http://<lan-ipv4>:<port>``）。"""
     try:
         port_int = int(port)
     except (TypeError, ValueError):
@@ -672,11 +518,6 @@ def suggest_lan_base_url(port: int) -> str | None:
     return f"http://{ip}:{port_int}"
 
 
-# ============================================================================
-# 图片处理与 MCP 响应构建
-# ============================================================================
-
-
 def _format_file_size(size: int) -> str:
     """格式化文件大小为人类可读格式"""
     if size < 1024:
@@ -710,8 +551,6 @@ def _guess_mime_type_from_data(base64_data: str) -> str | None:
 
         if raw.startswith(b"RIFF") and len(raw) >= 12 and raw[8:12] == b"WEBP":
             return "image/webp"
-
-        # SVG 检测已移除：与 file_validator.py 安全策略对齐，SVG 可嵌入脚本
 
     except Exception:
         pass
@@ -757,7 +596,6 @@ def _process_image(image: dict, index: int) -> tuple[ImageContent | None, str | 
     size = image.get("size", len(base64_data) * 3 // 4)
     text_desc = f"=== 图片 {index + 1} ===\n文件名: {filename}\n类型: {content_type}\n大小: {_format_file_size(size)}"
 
-    # R20.9: lazy load mcp.types
     return (
         _lazy_mcp_types().ImageContent(
             type="image", data=base64_data, mimeType=str(content_type)
@@ -817,9 +655,6 @@ def parse_structured_response(
 
     combined_text = _append_prompt_suffix(combined_text)
 
-    # R20.9: 单次调用内 hoist 一次 _lazy_mcp_types() 引用，避免 isinstance
-    # 与 append 各自重复函数调用（同一个调用栈内 mcp.types 已经被 lazy 加载，
-    # 但 attribute lookup 有微小开销）。
     _mt = _lazy_mcp_types()
     text_cls = _mt.TextContent
     image_cls = _mt.ImageContent

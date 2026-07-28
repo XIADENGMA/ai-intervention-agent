@@ -1,8 +1,4 @@
-"""配置导出/导入/备份/恢复 Mixin。
-
-提供 ConfigManager 的配置数据导出、导入（合并/覆盖）、
-文件备份及恢复能力。
-"""
+"""配置导出/导入/备份/恢复 Mixin。"""
 
 from __future__ import annotations
 
@@ -176,7 +172,6 @@ class IOOperationsMixin:
             else:
                 content = json.dumps(restored_config, indent=2, ensure_ascii=False)
 
-            # 原子写入：tempfile → fsync → os.replace
             fd, tmp_path = tempfile.mkstemp(
                 suffix=".tmp", dir=str(self.config_file.parent)
             )

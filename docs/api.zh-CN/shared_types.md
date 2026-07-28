@@ -4,13 +4,6 @@
 
 共享类型定义（Pydantic 配置段模型 + TypedDict 反馈结构）
 
-目的：
-- 配置段模型：提供 TOML 配置段的运行时校验与类型安全
-- TypedDict：让 `ty` 在跨模块分析时拥有一致的结构化类型
-
-命名规则：
-- 配置段模型以 `SectionConfig` 后缀命名，与 notification_manager.NotificationConfig 等运行时模型区分
-
 ## 函数
 
 ### `_coerce_bool(v: Any) -> Any`

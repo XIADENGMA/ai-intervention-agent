@@ -59,27 +59,7 @@ from ai_intervention_agent.server_config import (
 
 logger = EnhancedLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# 通知系统（可选依赖，R25.2 改为延迟加载）
-# ---------------------------------------------------------------------------
-#
-# R25.2 backstory：原先模块顶层直接 ``from notification_manager import notification_manager``
-# 触发 ``NotificationManager()`` 单例构造（含线程池启动 + 磁盘配置 I/O），并通过
-# ``notification_manager._update_bark_provider`` 在 ``bark_enabled=True`` 时进一步
-# 拉起 ``notification_providers``，后者顶层 ``import httpx`` 把 ~55 ms cold-start
-# 成本绑死在 MCP 主进程上。但 MCP 主进程在收到首个 ``interactive_feedback`` 调用
-# 之前完全不需要通知系统——所有 ``send_notification`` 路径都从工具调用流程发起。
-#
-# 所以改成 tri-state 懒加载：
-# - ``_notification_initialized = False``：还没尝试加载
-# - 加载成功：``_notification_manager_singleton`` / ``_initialize_notification_system_fn`` 被填充，
-#   ``NOTIFICATION_AVAILABLE = True``
-# - 加载失败（罕见，仅 ImportError 时）：两个引用保持 None，``NOTIFICATION_AVAILABLE = False``
-#
-# ``NOTIFICATION_AVAILABLE`` 仍然是 ``bool`` 模块级名，向后兼容旧的 ``if NOTIFICATION_AVAILABLE:``
-# 判断；但只有在 ``_ensure_notification_system_loaded()`` 至少被调用过一次之后才会反映真实状态。
-# ``cleanup_all`` 路径里我们额外检查 ``_notification_initialized``，避免「从未用过通知系统、
-# 进程退出时却为了 shutdown 反向触发加载」的浪费。
+
 NOTIFICATION_AVAILABLE: bool = False
 _notification_initialized: bool = False
 _notification_manager_singleton: Any = None
@@ -139,9 +119,6 @@ def _ensure_notification_system_loaded() -> tuple[Any, Any]:
     return _notification_manager_singleton, _initialize_notification_system_fn
 
 
-# ---------------------------------------------------------------------------
-# HTTP 客户端单例 + 配置缓存
-# ---------------------------------------------------------------------------
 _async_client: httpx.AsyncClient | None = None
 _sync_client: httpx.Client | None = None
 _http_client_lock = threading.Lock()
@@ -149,40 +126,13 @@ _http_client_lock = threading.Lock()
 _config_cache: dict[str, Any] = {"config": None, "timestamp": 0.0, "ttl": 10.0}
 _config_cache_lock = threading.Lock()
 
-# 每次 ``_invalidate_runtime_caches_on_config_change`` 触发都会自增 1。
-# ``get_web_ui_config`` 在 cache miss → load 阶段记录 generation，
-# load 完毕写回前 re-check：若中途被 invalidate 过，丢弃此次 load 结果，
-# 避免 "load 期间 config.toml 改了 → 旧值复活" 的 race（详见函数注释）。
+
 _config_cache_generation: int = 0
 
 _config_callbacks_registered: bool = False
 _config_callbacks_lock = threading.Lock()
 
 
-# ---------------------------------------------------------------------------
-# 环境变量覆盖（env override）：让 uvx / Docker / systemd 等"无法直接编辑
-# config.toml"的运行场景能在进程启动时一次性覆盖 `web_ui.host` /
-# `web_ui.port` / `web_ui.language`，无需再 cd 到用户配置目录改文件。
-#
-# 设计动机
-# ----
-# mcp-feedback-enhanced 等同类 MCP 产品广泛支持 `MCP_WEB_HOST` /
-# `MCP_WEB_PORT` / `MCP_LANGUAGE` 风格的 env vars，已经形成事实标准。
-# 我们沿用项目现有的 `AI_INTERVENTION_AGENT_*` 命名前缀（与
-# `AI_INTERVENTION_AGENT_CONFIG_FILE` / `AI_INTERVENTION_AGENT_LOG_LEVEL`
-# 一致），既保持内部一致性，又为来自竞品的用户提供等价能力。
-#
-# 行为契约
-# ----
-# - env override 在 :func:`get_web_ui_config` 内 `WebUIConfig` 构造前应用
-#   一次，结果随 10s TTL 缓存（进程内一致，不会被 config.toml 热重载抹掉）。
-# - 非法值（int 解析失败 / 越界 / 空白）记 ``logger.warning`` 并 fallback
-#   到 config.toml 或默认值，**不抛异常**——env override 是便利路径，
-#   错值不应让 server 启动失败。
-# - 命中 override 时记 ``logger.info``（含原值与新值），运维能在 stderr
-#   反查"为什么端口不是 config.toml 里写的那个"。
-# - 端口范围 [1, 65535] 与 Pydantic ``WebUISectionConfig.port`` clamp 一致。
-# ---------------------------------------------------------------------------
 _ENV_WEB_UI_HOST = "AI_INTERVENTION_AGENT_WEB_UI_HOST"
 _ENV_WEB_UI_PORT = "AI_INTERVENTION_AGENT_WEB_UI_PORT"
 _ENV_WEB_UI_LANGUAGE = "AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE"
@@ -267,8 +217,6 @@ def _invalidate_runtime_caches_on_config_change() -> None:
             _config_cache["timestamp"] = 0
             _config_cache_generation += 1
     except Exception as e:
-        # R118: 不扩散到 ConfigManager 回调注册中心（其他回调还要继续跑），
-        # 但留下 debug 痕迹，便于排查"reload 不生效"。
         logger.debug(
             "[R118] _invalidate_runtime_caches_on_config_change "
             f"_config_cache_lock 段失败 (heat reload 可能不生效): "
@@ -285,8 +233,6 @@ def _invalidate_runtime_caches_on_config_change() -> None:
             _async_client = None
         _close_async_client_best_effort(old_async)
     except Exception as e:
-        # R118: 不扩散；但留下 debug 痕迹便于排查"reload 后请求仍走老 client"
-        # 与"连接池泄漏"两类用户可见症状的 root cause。
         logger.debug(
             "[R118] _invalidate_runtime_caches_on_config_change "
             f"_http_client_lock 段失败 (新请求可能仍走老 client，连接池泄漏): "
@@ -329,11 +275,6 @@ def _ensure_config_change_callbacks_registered() -> None:
             _config_callbacks_registered = True
         except Exception as e:
             logger.debug(f"注册配置变更回调失败（下次调用时重试）: {e}")
-
-
-# ---------------------------------------------------------------------------
-# HTTP 客户端管理
-# ---------------------------------------------------------------------------
 
 
 def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
@@ -389,11 +330,6 @@ def create_http_session(config: WebUIConfig) -> httpx.Client:
     R25.2: 实际加载延迟到 ``get_sync_client``。
     """
     return get_sync_client(config)
-
-
-# ---------------------------------------------------------------------------
-# Web 服务状态检查
-# ---------------------------------------------------------------------------
 
 
 def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
@@ -465,11 +401,6 @@ def health_check_service(config: WebUIConfig) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# ServiceManager 单例
-# ---------------------------------------------------------------------------
-
-
 class ServiceManager:
     """服务进程生命周期管理器（线程安全单例）"""
 
@@ -518,19 +449,7 @@ class ServiceManager:
 
         if threading.current_thread() is threading.main_thread():
             self._should_exit = True
-            # R17.5：自定义 SIGINT/SIGTERM handler **吞掉**了 Python 解释器
-            # 的默认行为：
-            #   - SIGINT：默认是把 SIGINT 翻译成 ``KeyboardInterrupt``
-            #     抛给主线程；我们注册了 handler 就替换了这一翻译。
-            #   - SIGTERM：默认是直接 ``raise SystemExit`` / 让 C 层 abort
-            #     进程；handler 替换后进程不会自动退出。
-            # 所以 cleanup 跑完后，mcp.run() 的 stdio loop **仍在阻塞**等
-            # 下一个消息——cleanup 结果是关 web_ui 子进程而非关本进程，
-            # 用户看到的是"按 Ctrl+C 没反应 / 监督程序发 SIGTERM 没反应"
-            # 的僵尸态。显式 ``raise KeyboardInterrupt`` 让 ``server.main()``
-            # 的 ``except KeyboardInterrupt`` 兼容路径接管：它会再调一次
-            # ``cleanup_services``（幂等所以无害），然后正常 ``break`` 出
-            # 重试循环并 ``return``。
+
             raise KeyboardInterrupt(f"signal {signum} → graceful shutdown")
         else:
             logger.info("非主线程收到信号，已清理服务但不强制退出")
@@ -724,11 +643,6 @@ class ServiceManager:
         return status
 
 
-# ---------------------------------------------------------------------------
-# 配置加载
-# ---------------------------------------------------------------------------
-
-
 def invalidate_web_ui_config_cache() -> None:
     """CR#16 F-5：清空 ``get_web_ui_config()`` 的 TTL 缓存（public helper）。
 
@@ -820,8 +734,6 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
 
         language = str(web_ui_config.get("language", "auto"))
 
-        # 环境变量覆盖（uvx / Docker / systemd 友好的"无需改 config.toml"路径）。
-        # env 命中时记 info 让运维能反查；非法值记 warning 并 fallback（不阻断启动）。
         env_host = _coerce_env_str(_ENV_WEB_UI_HOST)
         if env_host:
             logger.info(
@@ -886,17 +798,12 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
         raise ValueError(f"Web UI 配置加载失败: {e}") from e
 
 
-# ---------------------------------------------------------------------------
-# Web 服务启动 / 内容更新 / 状态确认
-# ---------------------------------------------------------------------------
-
-
 def _get_web_ui_log_path(script_dir: Path) -> Path:
     """获取 Web UI 子进程日志文件路径，自动创建 logs 目录并截断过大文件。"""
     log_dir = script_dir / "logs"
     log_dir.mkdir(exist_ok=True)
     log_path = log_dir / "web_ui.log"
-    # 超过 5MB 时截断为空，简易日志轮转
+
     try:
         if log_path.exists() and log_path.stat().st_size > 5 * 1024 * 1024:
             log_path.write_text("")
@@ -934,7 +841,6 @@ def _is_port_available(host: str, port: int) -> bool:
     """
     families: list[int] = []
     if ":" in host:
-        # IPv6 字面量优先 IPv6 socket
         families.append(socket.AF_INET6)
     else:
         families.append(socket.AF_INET)
@@ -942,16 +848,10 @@ def _is_port_available(host: str, port: int) -> bool:
     for family in families:
         try:
             with socket.socket(family, socket.SOCK_STREAM) as s:
-                # SO_REUSEADDR：避免上一个进程的 TIME_WAIT 假性占用
-                # 误报为冲突；SO_REUSEPORT 不开（macOS / Linux 行为不
-                # 一致，反而可能让 pre-flight 通过但实际启动失败）。
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                # bind 失败抛 OSError：errno 48 (macOS) / 98 (Linux)
-                # = EADDRINUSE，errno 49 (macOS) / 99 (Linux) =
-                # EADDRNOTAVAIL（无效 host）。两种都视作"不可用"。
+
                 s.bind((host, port))
-            # bind 成功后立刻关闭（with 退出会 close 释放端口）；子
-            # 进程启动时再次 bind 才是真正的服务监听。
+
             return True
         except OSError as exc:
             logger.debug(
@@ -989,23 +889,7 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
         )
         return
 
-    # Pre-flight 端口可用性检查：避免子进程因 EADDRINUSE 立即退出却要
-    # 等满 15s health-check 才报错。能跑到这里说明：
-    #   1. 没有同名 service_name 的子进程在跑（is_process_running=False）
-    #   2. 没有任何 Web UI（包括外部）在监听该端口（health_check=False）
-    # 那么端口若不可 bind，必定是另一个非我们的进程占着。
     if not _is_port_available(config.host, config.port):
-        # 友好 error message：内联可执行的解决方案，让用户不用翻
-        # docs/troubleshooting.md 就能立刻修。
-        #
-        # 设计要点：
-        # 1. 第一行含 host:port（兼容 ``test_port_in_use_message_mentions_host_and_port``
-        #    等已有测试断言）；
-        # 2. 列出 3 条 actionable 路径，**env override** 是第一推荐——它
-        #    与本项目新增的 ``AI_INTERVENTION_AGENT_WEB_UI_PORT`` 形成闭环，
-        #    用户不用改 ``config.toml``、不用重启 IDE 就能换端口；
-        # 3. 错误码保持 ``port_in_use``，不破坏上层 monitoring / VS Code
-        #    插件的精确文案路径（见 ``test_port_in_use_raises_fast_without_popen``）。
         msg = (
             f"端口 {config.host}:{config.port} 已被占用（health-check 未识别为本服务）。"
             "常见解决方案："
@@ -1094,7 +978,6 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
             if elapsed >= max_wait:
                 break
 
-            # 前 3s 快速检测（200ms），之后放慢（500ms）
             interval = 0.2 if elapsed < 3.0 else 0.5
             if attempt % 5 == 0:
                 logger.debug(f"等待服务启动... ({elapsed:.1f}s)")
@@ -1312,10 +1195,6 @@ def cleanup_http_clients() -> None:
             if _sync_client is not None and not _sync_client.is_closed:
                 _sync_client.close()
         except Exception as e:
-            # R118: 不扩散（async client 清理还要继续），但留下 debug 痕迹
-            # 便于排查连接池资源泄漏。注意 ``str(e)`` 不直接包含敏感数据
-            # （httpx.Client.close 异常通常只是 transport / pool 状态），
-            # 但 exc_info=True 仍可能在 traceback 暴露 URL，不打 traceback。
             logger.debug(
                 "[R118] cleanup_http_clients _sync_client.close() raised "
                 "(suppressed to keep cleanup chain intact; FD may leak): "

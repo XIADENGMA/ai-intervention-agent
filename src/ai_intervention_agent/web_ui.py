@@ -46,29 +46,11 @@ from flask.typing import ResponseReturnValue
 from flask_compress import Compress
 from flask_cors import CORS
 
-# R26.3: ``markdown`` 顶级 import 实测 ~8.9 ms cold-start cost (cold cache, macOS M1 / Python 3.11)，
-# 加上 ``markdown.Markdown(extensions=[...10 plugins...])`` 实例化的 ~10-15 ms（codehilite
-# Pygments + footnote AST + nl2br + md_in_html + ... 一次性预热全部插件的 regex/lexer），合计
-# ~20-25 ms 落在 ``web_ui`` 子进程冷启动的 wall-clock 上。R26.3 把两件事都推迟到首次
-# ``render_markdown(text)`` 调用：(1) ``import markdown`` 下沉到 ``render_markdown`` 体内，
-# (2) ``markdown.Markdown(...)`` 实例化也推迟，由 ``self.md`` 的 ``None`` sentinel 触发，
-# 配 ``self._md_lock`` 守住「双重检查 lazy init」语义（``markdown.Markdown`` 实例非线程安全，
-# 现成的锁顺手保护初始化 race）。生产路径上首次 ``render_markdown`` 是 ``GET /api/config``
-# 第一次轮询命中 active task 时；早于此之前的 ``GET /static/*``、``GET /``、``OPTIONS *``
-# 等路径都不需要 Markdown 实例，纯粹的延迟收益。
-#
-# R26.1/R452: ``flask_limiter`` imports 故意不在这里，也不在
-# ``WebFeedbackUI.__init__`` 里。Web UI 默认桌面 profile 用本地
-# ``WebUiRateLimiter`` 保留 ``limit`` / ``exempt`` 兼容面，避免构造期重新拉入
-# ``flask_limiter`` 的 cold-start 成本。
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.feedback_types import FeedbackResult
 from ai_intervention_agent.i18n import msg
 from ai_intervention_agent.protocol import get_capabilities, get_server_clock
 from ai_intervention_agent.remote_environment import detect_remote_environment
-
-# R20.8: 直接 import 自 task_queue_singleton 模块，避免拖入 fastmcp/mcp 依赖链
-# （web_ui.py 是子进程入口，不需要 MCP server 能力，详见 task_queue_singleton.py 注释）。
 from ai_intervention_agent.runtime_constants import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     AUTO_RESUBMIT_TIMEOUT_MAX,
@@ -135,11 +117,6 @@ def get_config() -> Any:
     return _get_config()
 
 
-# ============================================================================
-# 版本号和项目信息
-# ============================================================================
-
-# GitHub 仓库地址
 GITHUB_URL = "https://github.com/XIADENGMA/ai-intervention-agent"
 
 
@@ -169,7 +146,6 @@ def get_project_version() -> str:
 
         return version("ai-intervention-agent")
     except PackageNotFoundError:
-        # 包尚未通过 pip / uv 安装；走开发模式 pyproject.toml 解析路径。
         pass
     except Exception as e:
         logger.warning(
@@ -178,10 +154,6 @@ def get_project_version() -> str:
         )
 
     try:
-        # __file__ 是 src/ai_intervention_agent/web_ui.py：
-        #   parents[0] = src/ai_intervention_agent/
-        #   parents[1] = src/
-        #   parents[2] = <repo-root>/
         pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
 
         if pyproject_path.exists():
@@ -198,7 +170,6 @@ def get_project_version() -> str:
                 )
                 return raw_version if isinstance(raw_version, str) else str(raw_version)
             except Exception:
-                # 兜底：正则提取 version = "X.Y.Z" 那一行
                 with open(pyproject_path, encoding="utf-8") as f:
                     content = f.read()
                 match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
@@ -247,15 +218,6 @@ def _read_inline_locale_json(locale_path_str: str) -> str | None:
         return None
 
 
-# ============================================================================
-# Swagger UI opt-in helpers (R23.3)
-# ============================================================================
-
-# 接受的"启用 Swagger"环境变量取值（大小写不敏感、首尾空白 strip）。这套
-# 真值集合与 ``config_manager`` 内的 env-bool 解析保持一致，方便运维脚本
-# 用同一组取值控制各种 opt-in flag。其它任何字符串（含未设置 / 空串 /
-# "0" / "false" / "no" / "off"）都视为禁用，避免「无意中泄漏环境变量」
-# 误启用 Swagger 文档端点。
 _SWAGGER_ENABLED_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 _MISSING_OPTION_DEFAULTS: object = object()
 _SWAGGER_DISABLED_FALLBACK_HTML = """<!DOCTYPE html>
@@ -311,14 +273,8 @@ def _task_remaining_time(task: Any, now_monotonic: float) -> int:
     try:
         return int(get_remaining_time(now_monotonic=now_monotonic))
     except TypeError:
-        # Compatibility for old task-like objects and tests whose method predates
-        # the injected monotonic snapshot argument.
         return int(get_remaining_time())
 
-
-# ============================================================================
-# 模块级状态（配置热更新回调使用，web_ui_config_sync 通过 lazy import 访问）
-# ============================================================================
 
 _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED: bool = False
 _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT: int | None = None
@@ -331,41 +287,12 @@ _NETWORK_SECURITY_CALLBACK_LOCK = threading.Lock()
 # `with _FEEDBACK_TIMEOUT_CALLBACK_LOCK:` (line 47), 即同一线程在持锁状态
 # 下重入获取同一锁。Lock 会 self-deadlock, 必须 RLock。
 _FEEDBACK_TIMEOUT_CALLBACK_LOCK = threading.RLock()
-# R48：``config_changed`` SSE 推送回调注册状态。一次注册全局生效；后续
-# config 文件 mtime 变化时通过 ``_sse_bus.emit("config_changed", ...)``
-# 让所有连着的 client（浏览器 PWA / VSCode webview / 状态栏）显式提示
-# 「配置已变更，建议重载」，而不是让用户忍受"我以为我改了配置但没生效"
-# 的 silent staleness。
+
+
 _CONFIG_CHANGED_SSE_CALLBACK_REGISTERED: bool = False
 _CONFIG_CHANGED_SSE_CALLBACK_LOCK = threading.Lock()
 
-# ============================================================================
-# R26.2: ``_get_template_context`` 热路径常量与 lru_cache
-# ============================================================================
-#
-# ``_get_template_context`` 在两条路径上跑：(a) 浏览器对 ``/`` 的每次 GET（人
-# 类用户每次刷新页面 1 次），(b) VS Code webview 的每次 ``_getHtmlContent`` 重
-# 渲染（``resolveWebviewView`` 初始 + ``setUrl`` 切换 + 语言切换 re-render
-# 等场景，单次会话可能 5-10 次）。每次调用之前实测 ~0.07 ms，但里面有 4 次
-# ``Path(file_path).stat().st_mtime`` syscall（CSS/multi_task/theme/app 各
-# 一次）+ 一次 ``Path(__file__).resolve()`` syscall + 每次都重新分配 12 元素
-# 的 ``_RTL_LANG_PREFIXES`` tuple，全是稳态可缓存的纯函数依赖。R26.2 做以下三
-# 件事：
-# - 把 ``_RTL_LANG_PREFIXES`` 提到模块级 frozenset（lookup O(1)，分配一次）；
-# - 在 ``__init__`` 里把 ``static_dir`` 算好缓存到 ``self``；
-# - 把 ``_get_file_version`` 拆成接受 ``str`` 的 ``@lru_cache`` 自由函数，按文件路径缓存
-#   stat 结果。dev 场景下编辑文件需要重启 web_ui subprocess 才能反映新版本号，
-#   但这与现有 ``_read_inline_locale_json`` 的 lru_cache 行为一致——dev 重启
-#   subprocess 已是日常操作，不算回归。
-#
-# 收益：``_get_template_context`` 从 ~0.07 ms 进一步降到 ~0.02 ms（每次调用
-# 省 4 个 stat() syscall + 1 个 Path.resolve() syscall + 12 元素 tuple 分配），
-# 在多 webview 重渲染场景下累积可见。
-# R26.3: ``markdown.Markdown`` 实例的 extensions / extension_configs 提到模块级，
-# 让 ``render_markdown`` 的 lazy-init 路径只调用一行 ``markdown.Markdown(**_MD_INIT_KWARGS)``，
-# 配置内容与原来逐字相同——10 个扩展（fenced_code / codehilite / tables / toc / nl2br /
-# attr_list / def_list / abbr / footnotes / md_in_html）+ codehilite 的 Pygments + monokai
-# 内联样式配置。修改这两个常量等同于改变全部 prompt 的渲染行为，需要走 doc + 测试同步流程。
+
 _MD_EXTENSIONS: list[str] = [
     "fenced_code",
     "codehilite",
@@ -485,28 +412,23 @@ class WebFeedbackUI(
         self.external_base_url = external_base_url
         self.mdns_hostname = mdns_hostname
         self.trusted_hosts = trusted_hosts or []
-        # mDNS / DNS-SD 状态（仅在 run() 真正启动服务时启用）
+
         self._mdns_zeroconf: Any | None = None
         self._mdns_service_info: Any | None = None
         self._mdns_hostname: str | None = None
         self._mdns_publish_ip: str | None = None
-        # R20.11: mDNS register 在后台 daemon 线程异步执行，避免 1.7s 的 conflict-probe
-        # 阻塞 Flask listen socket 的可用性。run() 启动 thread，_stop_mdns 在 finally
-        # 中 join 等待清理。
+
         self._mdns_thread: threading.Thread | None = None
         self.feedback_result: FeedbackResult | None = None
         self._project_root: Path = Path(__file__).resolve().parent
-        # R26.2: 缓存 static 目录路径，避免每次 ``_get_template_context`` 都重新
-        # ``Path(__file__).resolve().parent / "static"``（含 syscall + 字符串拼接）
+
         self._static_dir: Path = self._project_root / "static"
         self.current_prompt = prompt if prompt else ""
         self.current_options = predefined_options or []
         self.current_options_defaults: list[bool] = []
         self.current_task_id = task_id
         self.current_auto_resubmit_timeout = auto_resubmit_timeout
-        # 单任务模式下：current_auto_resubmit_timeout 是否为“显式指定”（/api/update 传入）
-        # - False：认为来自配置默认值，应随配置热更新
-        # - True：认为调用方显式指定，不随全局配置变化
+
         self._single_task_timeout_explicit = False
         self.has_content = bool(prompt)
         self.initial_empty = not bool(prompt)
@@ -542,57 +464,8 @@ class WebFeedbackUI(
             supports_credentials=False,
         )
 
-        # ==================================================================
-        # R17.6 第一道闸：请求体上限（multipart 解析前的硬闸）
-        # ==================================================================
-        # 设 ``MAX_CONTENT_LENGTH`` 让 Flask/Werkzeug 在 multipart 解析阶段就 reject
-        # 超大请求 —— 避免恶意请求把 100GB 单个 ``image_*`` part 先流到磁盘临时文件
-        # 再被下游 ``_upload_helpers`` cap 拒绝（已经晚了：磁盘写入 + 后续
-        # ``file.read()`` 全量加载 = 必然 OOM/磁盘写满）。
-        #
-        # 阈值 = ``MAX_TOTAL_UPLOAD_BYTES`` (100 MB) + 1 MB buffer，覆盖：
-        #   - multipart boundary + part headers（每张图 ~1-2 KB × 10 张 = ~20 KB）
-        #   - ``feedback_text`` / ``selected_options`` form 字段（< 100 KB 上限）
-        #   - 其他 form 字段 + safety margin
-        # form-only 文本请求 < 1 KB，不受影响（OWASP "Limit upload size" 推荐做法）。
-        #
-        # 这是分层防御的第一层；后续闸在 ``_upload_helpers.py`` 的模块 docstring
-        # 中详细枚举（per-file cap / per-request cap / magic-number 验证）。
-        # ==================================================================
         self.app.config["MAX_CONTENT_LENGTH"] = MAX_TOTAL_UPLOAD_BYTES + 1024 * 1024
 
-        # OpenAPI / Swagger 文档（访问 /apidocs 查看交互式 API 文档）
-        # ------------------------------------------------------------------
-        # R23.3：env-gated lazy init —— 默认完全跳过 flasgger 导入与 Swagger
-        # 实例化，给 web_ui 子进程 cold start 省回 ~75 ms。
-        #
-        # why
-        # - 实测 ``from flasgger import Swagger`` 在 macOS / Python 3.11 上
-        #   是 74-78 ms 的同步成本（pulls in ``flasgger.base``、``jsonschema``
-        #   验证器图、``mistune`` 渲染器、``yaml.SafeLoader`` 等），加上
-        #   ``Swagger(app, template=...)`` 实例化又 ~0.5 ms。这 75 ms 全部
-        #   阻塞在 web_ui 子进程的 main thread 上，直接出现在「AI agent 调
-        #   ``interactive_feedback`` → 浏览器能打开页面」的用户感知延迟里
-        #   （``service_manager.spawn_subprocess`` 的 ready-probe 必须等 web_ui
-        #   listen socket bind 完成才会 return；flasgger import 在 listen 之前）。
-        # - Swagger UI 是开发者调试工具，不是面向最终用户的功能 —— 在 GitHub
-        #   issues 历史 + Discord 反馈里，没有任何普通用户提到访问 /apidocs/，
-        #   只有少数几个项目维护者在 debug API 时会用。把它做成 opt-in 等于
-        #   把 75 ms 的成本只让真正需要它的开发者付。
-        # - opt-in 写法选用环境变量而不是 config.json 字段：(a) 子进程启动早于
-        #   ``config_manager.get_config()`` 完成 schema 校验，env var 是最早可
-        #   读的；(b) 12-factor 应用最佳实践把"是否启用调试端点"放在环境，
-        #   不污染持久化配置；(c) 开发场景一行 ``AI_AGENT_ENABLE_SWAGGER=1
-        #   uv run python web_ui.py ...`` 就能切回去，零仓库改动。
-        # - 默认禁用时 ``/apidocs/`` 仍然可访问，但返回一个轻量级 HTML 提示
-        #   页面（< 2 KB，纯 inline，无 JS 依赖）解释如何启用，并链回 GitHub
-        #   README 的 dev guide section —— 避免「访问得到 404 但不知道为啥」
-        #   的认知摩擦，符合 OWASP "fail informatively, not silently" 准则。
-        #
-        # 启用条件：``AI_AGENT_ENABLE_SWAGGER`` 取值在 {"1", "true", "yes",
-        # "on"}（大小写不敏感、首尾空白 strip）。其它值（含未设置 / 空串 /
-        # "0" / "false"）一律视为禁用。这套布尔解析与 ``config_manager`` 里
-        # 已有的 env-bool helper 行为一致，便于运维自动化脚本统一传参。
         self.app.config["SWAGGER"] = {
             "title": "AI Intervention Agent API",
             "version": get_project_version(),
@@ -605,23 +478,9 @@ class WebFeedbackUI(
         else:
             self._register_swagger_disabled_fallback()
 
-        # 记录当前实例（用于单任务模式热更新兜底）
         global _CURRENT_WEB_UI_INSTANCE
         _CURRENT_WEB_UI_INSTANCE = self
 
-        # ==================================================================
-        # Gzip 压缩配置
-        # ==================================================================
-        # 启用响应压缩，显著减少传输大小：
-        # - CSS: ~85% 压缩率（232KB → ~35KB）
-        # - JavaScript: ~70% 压缩率
-        # - JSON: ~90% 压缩率（包括 Lottie 动画）
-        #
-        # 配置项：
-        # - COMPRESS_MIMETYPES: 压缩的 MIME 类型
-        # - COMPRESS_LEVEL: 压缩级别（1-9，6 为平衡点）
-        # - COMPRESS_MIN_SIZE: 最小压缩阈值（500 字节以下不压缩）
-        # ==================================================================
         self.app.config["COMPRESS_MIMETYPES"] = [
             "text/html",
             "text/css",
@@ -634,16 +493,12 @@ class WebFeedbackUI(
             "application/xml+rss",
             "image/svg+xml",
         ]
-        self.app.config["COMPRESS_LEVEL"] = 6  # 压缩级别（平衡压缩率和 CPU）
-        self.app.config["COMPRESS_MIN_SIZE"] = 500  # 小于 500 字节不压缩
+        self.app.config["COMPRESS_LEVEL"] = 6
+        self.app.config["COMPRESS_MIN_SIZE"] = 500
         Compress(self.app)
 
         self.network_security_config = validate_network_security_config({})
 
-        # R452: construction-time cold start now stays off the config_manager /
-        # pydantic / task_queue / flask_limiter graph. Runtime hooks are installed
-        # by the first request that needs them, while this lightweight limiter keeps
-        # the long-standing ``self.limiter.limit/exempt`` route-decorator surface.
         self.limiter: WebUiLimiterProtocol = WebUiRateLimiter(
             app=self.app,
             default_limits=["60 per minute", "10 per second"],
@@ -730,8 +585,6 @@ class WebFeedbackUI(
         def _swagger_disabled_view() -> ResponseReturnValue:
             return rendered, 200, {"Content-Type": "text/html; charset=utf-8"}
 
-        # 与 flasgger 启用时注册的 ``/apidocs/`` 路由路径保持一致，方便
-        # docs 链接跨启用 / 禁用模式都用同一个 URL。
         self.app.add_url_rule(
             "/apidocs/",
             endpoint="swagger_disabled_apidocs",
@@ -793,19 +646,7 @@ class WebFeedbackUI(
         """
         self._md_lock = threading.Lock()
         self.md: Any = None
-        # P0 / R20.7：``/api/config`` 是被 VSCode webview + 浏览器 web UI 每 ~2-30s
-        # 反复轮询的 hot path，handler 中的 ``render_markdown(active_task.prompt)``
-        # 是 ~5-20 ms 的 CPU 密集型路径（codehilite Pygments + footnote AST + LaTeX
-        # 扫描 + nl2br rewrite 等 10+ 扩展）。但 prompt 在同一个 task 生命周期内
-        # **不会变**（除非 ``/api/update`` 显式改写或新 task 接管 active），所以
-        # 同一个文本会被重新解析几十到几百次。
-        #
-        # 缓存策略：以完整 prompt 字符串为 key，渲染后的 HTML 为 value，dict 配合
-        # 插入顺序当 LRU。容量 16 = 远大于 ``max_tasks=10``，在合理使用场景下能
-        # 同时缓存所有 active + pending 任务的渲染结果，命中率应接近 100%。
-        # 共享 ``_md_lock``：避免在 ``self.md.reset() / convert()`` 期间又有
-        # 线程穿越 cache miss 路径触发并发 reset/convert（``markdown.Markdown``
-        # 实例**非线程安全**，不能并发 convert）。
+
         self._md_cache: dict[str, str] = {}
         self._md_cache_capacity: int = 16
 
@@ -854,12 +695,6 @@ class WebFeedbackUI(
         if not text:
             return ""
         with self._md_lock:
-            # R26.3: lazy-init ``markdown.Markdown(...)`` 实例。
-            # 临界区已经持有 ``self._md_lock``，所以这是个标准的「单次初始化」
-            # pattern——即使 N 个线程同时跑到这里，第一个进入锁的线程构造实例，
-            # 后续线程看到 ``self.md is not None`` 直接跳过初始化 block。
-            # ``import markdown`` 也在此处下沉，sys.modules 缓存让重复 import
-            # 是 ~50 ns 的字典查询，不是真的重新解析模块。
             if self.md is None:
                 import markdown
 
@@ -870,7 +705,6 @@ class WebFeedbackUI(
 
             cached = self._md_cache.get(text)
             if cached is not None:
-                # LRU touch：把命中条目移到末尾（最近使用）
                 self._md_cache.pop(text)
                 self._md_cache[text] = cached
                 return cached
@@ -878,9 +712,7 @@ class WebFeedbackUI(
             self.md.reset()
             html = str(self.md.convert(text))
 
-            # 写入 cache（超容量时逐出最旧条目）
             if len(self._md_cache) >= self._md_cache_capacity:
-                # ``dict`` 保证插入顺序，``next(iter(...))`` 是最旧 key
                 oldest_key = next(iter(self._md_cache))
                 self._md_cache.pop(oldest_key, None)
             self._md_cache[text] = html
@@ -992,20 +824,15 @@ class WebFeedbackUI(
                 description: 服务器内部错误
             """
             try:
-                # 从 TOML 配置读取语言设置，随每次响应返回给前端（插件/Web 通用）
                 try:
                     ui_lang = get_config().get_section("web_ui").get("language", "auto")
                 except Exception:
                     ui_lang = "auto"
 
-                # 优先从 TaskQueue 获取激活任务
                 task_queue = get_task_queue()
                 active_task = task_queue.get_active_task()
 
                 if active_task:
-                    # 使用TaskQueue中的激活任务
-                    # 返回剩余时间而非固定超时，解决刷新页面后倒计时重置的问题
-                    # 【优化】添加 server_time 和 deadline，让前端可以基于服务器时间计算倒计时
                     now_monotonic = time.monotonic()
                     remaining_time = _task_remaining_time(active_task, now_monotonic)
                     server_time = time.time()
@@ -1027,13 +854,6 @@ class WebFeedbackUI(
                             "persistent": True,
                             "has_content": True,
                             "initial_empty": False,
-                            # R691（TODO#5 跨端一致性）：/api/config 补齐三个
-                            # 任务级字段。此前仅 /api/tasks/<id> 返回，导致
-                            # 依赖本端点的 VSCode webview 拿不到 per-task
-                            # placeholder / yesno / header chip 信息。
-                            # getattr 兜底：路由历史上兼容 duck-typed
-                            # task（部分单测用 SimpleNamespace 构造），真实
-                            # Task 模型始终携带这三个字段。
                             "feedback_placeholder": getattr(
                                 active_task, "feedback_placeholder", None
                             ),
@@ -1041,8 +861,6 @@ class WebFeedbackUI(
                                 active_task, "question_type", None
                             ),
                             "header_label": getattr(active_task, "header_label", None),
-                            # Loop engineering P1：loop 上下文（getattr 兜底
-                            # 兼容 duck-typed task，与 header_label 同模式）
                             "loop_id": getattr(active_task, "loop_id", None),
                             "loop_objective": getattr(
                                 active_task, "loop_objective", None
@@ -1057,14 +875,11 @@ class WebFeedbackUI(
                         }
                     )
                 else:
-                    # 如果没有激活任务，检查是否有 pending 任务
                     first_task = task_queue.get_first_incomplete_task()
                     if first_task is not None:
-                        # 有未完成任务存在，激活第一个
                         task_queue.set_active_task(first_task.task_id)
                         logger.info(f"自动激活第一个pending任务: {first_task.task_id}")
 
-                        # 【优化】添加 server_time 和 deadline，让前端可以基于服务器时间计算倒计时
                         now_monotonic = time.monotonic()
                         remaining_time = _task_remaining_time(first_task, now_monotonic)
                         server_time = time.time()
@@ -1086,7 +901,6 @@ class WebFeedbackUI(
                                 "persistent": True,
                                 "has_content": True,
                                 "initial_empty": False,
-                                # R691：同 active-task 分支，补齐任务级字段
                                 "feedback_placeholder": getattr(
                                     first_task, "feedback_placeholder", None
                                 ),
@@ -1096,7 +910,6 @@ class WebFeedbackUI(
                                 "header_label": getattr(
                                     first_task, "header_label", None
                                 ),
-                                # Loop engineering P1：同 active-task 分支
                                 "loop_id": getattr(first_task, "loop_id", None),
                                 "loop_objective": getattr(
                                     first_task, "loop_objective", None
@@ -1111,7 +924,6 @@ class WebFeedbackUI(
                             }
                         )
                     elif task_queue.has_tasks():
-                        # 所有任务都是 completed 状态，显示无有效内容
                         logger.info("所有任务均已完成，显示无有效内容页面")
                         return jsonify(
                             {
@@ -1128,9 +940,6 @@ class WebFeedbackUI(
                             }
                         )
 
-                    # 回退到旧的单任务模式
-                    # 单任务模式没有创建时间，remaining_time 等于 auto_resubmit_timeout
-                    # 【热更新增强】若未显式指定 timeout，则使用配置文件的默认值（运行中修改可立即生效）
                     timeout_explicit = bool(
                         getattr(self, "_single_task_timeout_explicit", True)
                     )
@@ -1158,10 +967,8 @@ class WebFeedbackUI(
                                 _get_default_auto_resubmit_timeout_from_config()
                             )
                         except Exception:
-                            # 配置读取失败不影响主流程，沿用当前值
                             pass
                         with self._state_lock:
-                            # 保持实例状态同步，便于其他逻辑复用
                             self.current_auto_resubmit_timeout = effective_timeout
 
                     prompt_html = ""
@@ -1190,7 +997,7 @@ class WebFeedbackUI(
                     )
             except Exception as e:
                 logger.error(f"获取配置失败: {e}", exc_info=True)
-                # 返回安全的默认响应
+
                 return jsonify(
                     {
                         "prompt": "",
@@ -1224,12 +1031,7 @@ class WebFeedbackUI(
                     message:
                       type: string
             """
-            # 关闭计时器**故意**保持 non-daemon（threading.Timer 默认即 non-daemon）：
-            # 我们要先把 200 OK 返回给前端，再走 0.5s 延迟去 ``os.kill(SIGINT)`` 优雅
-            # 关停 Flask。如果改成 daemon=True，Python 解释器在主线程结束瞬间会立刻
-            # 杀掉计时器线程，``shutdown_server`` 可能根本没机会执行 → 出现"前端
-            # 收到 success 但服务一直未关"的悬挂状态。non-daemon 让进程**等到**
-            # 计时器跑完再退，这是优雅停机契约的关键一环。
+
             threading.Timer(0.5, self.shutdown_server).start()
             return jsonify({"status": "success", "message": msg("server.shuttingDown")})
 
@@ -1329,14 +1131,12 @@ class WebFeedbackUI(
                 logger.error(f"更新语言配置失败: {e}", exc_info=True)
                 return jsonify({"status": "error", "message": str(e)}), 500
 
-        # 路由通过 Mixin 注册（各 Mixin 定义在 web_ui_routes/ 下）
         self._setup_task_routes()
         self._setup_feedback_routes()
         self._setup_notification_routes()
         self._setup_static_routes()
         self._setup_system_routes()
 
-        # 模板缺失降级：返回简洁 HTML 错误页（无外部依赖）
         from jinja2 import TemplateNotFound
 
         @self.app.errorhandler(TemplateNotFound)
@@ -1355,7 +1155,6 @@ class WebFeedbackUI(
                 500,
             )
 
-        # 全局异常处理：将 AIAgentError 统一转为标准 JSON 错误响应
         from ai_intervention_agent.exceptions import AIAgentError
 
         @self.app.errorhandler(AIAgentError)
@@ -1376,21 +1175,6 @@ class WebFeedbackUI(
             )
             return jsonify(body), status
 
-        # mining-cycle-4 §4.5 B.4 borrow #1 — pretty 404 page for
-        # stale/broken UI navigation. 借鉴 mcp-feedback-enhanced PR #207
-        # session-not-found UX。Plain Flask 404 confuses user (especially
-        # after server restart or task TTL expiry); pretty page gives a
-        # clear "task not found" message + Home link + i18n.
-        #
-        # JSON / HTML 分流规则（R712 修订）：
-        #   - ``/api/`` 与 ``/metrics`` 前缀 → 永远 JSON（程序化客户端）；
-        #   - 显式 ``Accept`` 含 json → JSON（curl -H / fetch 场景）；
-        #   - 其余 → 品牌 404 页。
-        # 历史版本只看 ``Accept: text/html`` 启发式，但 PWA Service Worker
-        # 转发 navigation 请求时 Accept 头会丢失（实测 SW fetch(request)
-        # 后服务端收不到 text/html），浏览器用户被错误打到 JSON 分支，
-        # 精心做的 not_found.html 反而永远展示不出来。SW 自己的注释都在
-        # 强调"不依赖 Accept 头脆弱启发式"——服务端同样按路径分流兜底。
         @self.app.errorhandler(404)
         def handle_404(exc: object) -> ResponseReturnValue:
             from flask import render_template
@@ -1409,7 +1193,6 @@ class WebFeedbackUI(
                     404,
                 )
             except Exception:
-                # fallback: 模板不存在或渲染失败 → 简洁 inline HTML
                 from markupsafe import escape
 
                 return (
@@ -1474,35 +1257,18 @@ class WebFeedbackUI(
         except Exception:
             ui_lang = "auto"
 
-        # HTML 根 lang 属性："auto" 时退化为 "en"（客户端 i18n 会在 DOM 上再改 <html lang>）。
-        # 必须是有效 BCP-47 tag，避免 <html lang="auto"> 导致屏幕阅读器判断错乱。
-        # feat-zhtw-locale 后 zh-TW 是一等支持语言，与 en / zh-CN 同等对待。
         html_lang = ui_lang if ui_lang in ("en", "zh-CN", "zh-TW") else "en"
 
-        # HTML 根 dir 属性：用 R26.2 的模块级 frozenset 做 O(1) 成员查询。
-        # 取 ``html_lang`` 的 BCP-47 主语言子标签（hyphen 之前的部分），与 RTL
-        # 语言集合做单次 ``in`` 查询——比原来 12 次 ``startswith(p + "-") or == p``
-        # 比较快一个数量级。
         primary_subtag = html_lang.lower().partition("-")[0]
         html_dir = "rtl" if primary_subtag in _RTL_LANG_PREFIXES else "ltr"
 
-        # R26.2: 优先用 ``__init__`` 填好的 ``self._static_dir``（避免 syscall），
-        # 退回到模块级 lru_cache 兜底（``object.__new__(WebFeedbackUI)`` 测试场景）
         static_dir = getattr(self, "_static_dir", None) or _get_module_static_dir()
 
-        # R20.12-B: 当后端已经知道首屏语言（非 ``auto``）时，把对应 locale JSON 内联进 HTML，
-        # 让 ``i18n.init()`` 跳过一次 ``fetch /static/locales/<lang>.json``（11 KB / 30-80 ms RTT）。
-        # ``auto`` 模式时浏览器要先探测 ``navigator.language`` 才能决定下载哪个 locale，
-        # server 没法预知，故仅在显式设置语言时启用。zh-TW（feat-zhtw-locale）
-        # 与 en / zh-CN 一样享受内联优化——历史上此处漏加导致繁中用户始终
-        # 多付一次 locale fetch。
         inline_locale_json: str | None = None
         if ui_lang in ("en", "zh-CN", "zh-TW"):
             locale_path = static_dir / "locales" / f"{ui_lang}.json"
             inline_locale_json = _read_inline_locale_json(str(locale_path))
 
-        # R707：iOS A2HS 横幅的服务端 dismiss 状态。快捷指令 WebView 的
-        # localStorage 不持久，dismiss 必须由后端记忆并随首屏注入。
         try:
             ios_a2hs_dismissed = bool(
                 get_config().get_section("web_ui").get("ios_a2hs_hint_dismissed", False)
@@ -1575,13 +1341,6 @@ class WebFeedbackUI(
                     str(static_dir / "locales" / "_pseudo" / "pseudo.json")
                 ),
             },
-            # R27.2: 给 i18n.js / state.js / marked.js / prism.min.js 也加上版本号查询
-            # 串，模板中下游 ``<link rel="preload">`` 与 ``<script defer>`` 一起统一带
-            # ``?v={{ ... }}``，从 ``serve_js`` 的 ``Cache-Control: public, max-age=3600``
-            # （1 小时短缓存）升级到 ``public, max-age=31536000, immutable``（1 年永久
-            # 缓存），重复打开 web_ui 不再走 304 revalidation 往返。每个 ``_compute_file_version``
-            # 调用是 ``Path.stat()`` + ``str`` 截取，命中率 100% 的 ``lru_cache(maxsize=64)``
-            # 加持下 4 次新增成本 < 1 µs。
             "i18n_js_version": _compute_file_version(
                 str(static_dir / "js" / "i18n.js")
             ),
@@ -1594,36 +1353,24 @@ class WebFeedbackUI(
             "prism_min_js_version": _compute_file_version(
                 str(static_dir / "js" / "prism.min.js")
             ),
-            # R137: feedback textarea 高度持久化模块版本号
             "feedback_textarea_height_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_textarea_height.js")
             ),
-            # R138: feedback 字符计数器模块版本号
             "feedback_char_counter_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_char_counter.js")
             ),
-            # R139: feedback per-task 草稿持久化模块版本号
             "feedback_drafts_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_drafts.js")
             ),
-            # R248 / mining-8 Track A: iOS Safari A2HS hint banner 模块版本号
             "ios_a2hs_hint_version": _compute_file_version(
                 str(static_dir / "js" / "ios_a2hs_hint.js")
             ),
-            # R140: feedback 提交模式切换模块版本号
             "feedback_submit_mode_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_submit_mode.js")
             ),
-            # R144: 快捷键 cheatsheet overlay 模块版本号
             "keyboard_shortcut_help_version": _compute_file_version(
                 str(static_dir / "js" / "keyboard_shortcut_help.js")
             ),
-            # ``notification_test_button_version`` / ``activity_dashboard_version``
-            # 已随 feat-remove-test 移除：用户不再使用设置页的"发送系统自检通知"
-            # 与"活动面板"两个 UI 入口，对应 JS 模块也已经删除。
-            # 后端 ``/api/system/notifications/test``、``/api/system/health``、
-            # ``/api/system/sse-stats``、``/api/system/recent-logs`` API 保留供
-            # CI / 监控脚本独立调用。
             "inline_locale_json": inline_locale_json,
         }
 
@@ -1816,8 +1563,7 @@ class WebFeedbackUI(
             - 服务器关闭后才返回，适用于单次任务模式
         """
         print("\nWeb反馈界面已启动")
-        # 0.0.0.0 是“监听所有网卡”的服务端绑定地址，但并不适合作为浏览器访问地址。
-        # 部分浏览器/环境访问 http://0.0.0.0:PORT 时可能出现异常（例如权限/请求失败）。
+
         if self.host == "0.0.0.0":
             print(f"监听地址: http://{self.host}:{self.port}")
             print(f"本机访问（推荐）: http://127.0.0.1:{self.port}")
@@ -1828,11 +1574,6 @@ class WebFeedbackUI(
         else:
             print(f"请在浏览器中打开: http://{self.host}:{self.port}")
 
-        # R225 / Cycle 12: SSH / WSL 远程环境探测。当 host=127.0.0.1 时, 远程
-        # 会话的本地浏览器**无法直接访问** 上面打印的 URL — 静默打印
-        # "请在浏览器中打开 http://127.0.0.1:8080" 让用户白浪费几分钟排查
-        # 网络问题。本块仅当真的检测到远程环境且 bind 是回环时才追加
-        # 一句可操作提示, 不替换原有打印, 不改变实际行为。
         if self.host in ("127.0.0.1", "localhost"):
             env_info = detect_remote_environment()
             if env_info["is_ssh"]:
@@ -1859,11 +1600,6 @@ class WebFeedbackUI(
                     "`AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0`。"
                 )
 
-        # mDNS 发布（默认：bind_interface 不是 127.0.0.1 时启用）
-        # R20.11：异步发布以避免 zeroconf.register_service 的 ~1.7s mDNS conflict-probe
-        # 阻塞 app.run() 进入 listen。后台 daemon 线程并行注册；_stop_mdns 会 join 线程。
-        # 用户访问 http://127.0.0.1:port / http://<lan-ip>:port 不依赖 mDNS 名字解析，
-        # 仅 LAN 上的其他设备使用 ai.local 时才会等 mDNS announcement 完成。
         self._mdns_thread = threading.Thread(
             target=self._start_mdns_if_needed,
             name="ai-agent-mdns-register",
@@ -1871,20 +1607,6 @@ class WebFeedbackUI(
         )
         self._mdns_thread.start()
 
-        # R59：给 web_ui 子进程的**主线程**显式注册 SIGTERM handler。
-        # ----------------------------------------------------------------
-        # 默认情况下 Python 的 SIGTERM handler 是直接 SystemExit，bypass
-        # ``app.run()`` 的 ``KeyboardInterrupt`` 捕获 → 我们的 ``finally``
-        # 永远跑不到，``self._stop_mdns()`` 也就不执行：浏览器侧 SSE 长连
-        # 接、mDNS announcement、werkzeug worker thread 都是被 OS 强行 close
-        # 而非 graceful close。后果：
-        # - LAN 上其它设备仍然把 ``ai.local`` 解析到这个已关闭的进程，要等
-        #   下一次 mDNS TTL 过期才能感知；
-        # - SSE generator 的 ``finally: bus.unsubscribe(q)`` 不跑 → 内存里
-        #   残留的 queue 直到下次 emit 触发 backpressure 才被 GC。
-        # 把 SIGTERM 翻译成 ``KeyboardInterrupt``，复用现成的 ``app.run()``
-        # 退出路径走 ``finally: self._stop_mdns()``。仅在主线程注册，避免
-        # 嵌套 ``ValueError: signal only works in main thread``。
         try:
             if threading.current_thread() is threading.main_thread() and hasattr(
                 signal, "SIGTERM"
@@ -1898,8 +1620,6 @@ class WebFeedbackUI(
 
                 signal.signal(signal.SIGTERM, _term_to_keyboard_interrupt)
         except (ValueError, OSError) as sig_exc:
-            # Windows 不支持某些 signal；非主线程也可能抛 ValueError。
-            # 静默跳过：默认 SIGTERM behaviour 仍然是 SystemExit，至少能退。
             logger.debug(f"无法注册 SIGTERM handler: {sig_exc}")
 
         print("🔄 页面将保持打开，可实时更新内容")
@@ -1993,10 +1713,9 @@ def web_feedback_ui(
     result = ui.run()
 
     if output_file and result:
-        # 确保目录存在
         output_path = Path(str(output_file)).expanduser()
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        # 保存结果到输出文件
+
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         return None

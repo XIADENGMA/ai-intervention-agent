@@ -47,13 +47,9 @@ from ai_intervention_agent.file_validator import validate_uploaded_file
 logger = EnhancedLogger(__name__)
 
 MAX_IMAGES_PER_REQUEST: int = 10
-MAX_TOTAL_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 10 张 × 10 MB
-# R17.6 第二道闸：单文件读取硬上限。与 ``file_validator.FileValidator.__init__``
-# 默认 ``max_file_size = 10 * 1024 * 1024`` 完全一致，确保读取层 cap 与验证层
-# cap 不会出现 drift。任何超过本上限的 part 都在 ``file.read()`` 阶段就被截断
-# 拒绝，比依赖下游 ``validate_uploaded_file`` 的"文件大小超过限制" 错误更早一拍
-# 生效（节省一次内存拷贝 + 一次正则扫描），同时阻止 ``MAX_CONTENT_LENGTH`` 被
-# 上游剥离时的单 part OOM。
+MAX_TOTAL_UPLOAD_BYTES: int = 100 * 1024 * 1024
+
+
 MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024
 
 
@@ -105,10 +101,6 @@ def extract_uploaded_images(
         if not file or not file.filename:
             continue
         try:
-            # R17.6 第二道闸：read 至多 MAX_FILE_SIZE_BYTES + 1 字节，
-            # 用 +1 让超出阈值的 part 能够被检测到（"恰好等于" vs
-            # "超过" 的歧义判定）。内存占用始终被严格 cap 在 10 MB +
-            # 1 字节，攻击者无法靠"单 part 无限大"耗尽内存。
             file_content = file.read(MAX_FILE_SIZE_BYTES + 1)
             if len(file_content) > MAX_FILE_SIZE_BYTES:
                 logger.warning(

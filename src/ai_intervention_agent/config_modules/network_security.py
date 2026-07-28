@@ -1,8 +1,4 @@
-"""Network Security 配置管理 Mixin。
-
-提供 ConfigManager 中与 network_security 段相关的
-校验、读取、写入、增量更新能力。
-"""
+"""Network Security 配置管理 Mixin。"""
 
 from __future__ import annotations
 
@@ -172,15 +168,6 @@ class NetworkSecurityMixin:
             logger.warning("trusted_hosts 不是列表，使用默认值")
         trusted_hosts = _dedupe_keep_order(trusted_hosts)
 
-        # R189 / T4：可选 API token（与 loopback gate 共存的认证副通道）。
-        # 校验规则：
-        # - 缺省 / 非字符串 / 空字符串 → 视作未配置（关闭认证）；
-        # - 配置了但长度 < 16 字符 → 警告并视作未配置（防 brute-force：
-        #   16 字符 ≈ 96 bit entropy 是 NIST SP 800-63B 推荐的 secret
-        #   最小熵下限）；
-        # - 长度 > 256 字符 → 警告并截断为前 256 字符（header 总长度有限）；
-        # - 含 whitespace / control char → 警告并清洗，避免无意中粘贴的
-        #   换行 / tab 让 ``compare_digest`` 永远 False。
         api_token_raw = raw.get("api_token", default_ns.get("api_token", ""))
         api_token = ""
         if isinstance(api_token_raw, str):
@@ -210,12 +197,6 @@ class NetworkSecurityMixin:
                 f"network_security.api_token 不是字符串（{type(api_token_raw).__name__}），已视作未配置"
             )
 
-        # R199 / Cycle 7: api_token_rotated_at —— rotation 元数据
-        # 时间戳，ISO-8601 UTC 格式（"YYYY-MM-DDTHH:MM:SS{.fff}+00:00" 或
-        # "...Z"）。非法格式 → 视作未设置（空串）。**不**做时区转换、
-        # **不**做格式 normalization——按 R195 endpoint 写入的格式原样
-        # 存储。读端 ``GET /api/system/api-token-info``（R199）自己处理
-        # parse + age 计算。
         rotated_at_raw = raw.get(
             "api_token_rotated_at", default_ns.get("api_token_rotated_at", "")
         )
@@ -223,8 +204,6 @@ class NetworkSecurityMixin:
         if isinstance(rotated_at_raw, str):
             ts = rotated_at_raw.strip()
             if ts:
-                # 轻量格式校验：必须以 ``Z`` 或 ``+00:00`` 结尾（UTC 标识）；
-                # 且能被 ``datetime.fromisoformat`` 解析。任何 fail → 丢弃。
                 if not ts.endswith(("Z", "+00:00")):
                     logger.warning(
                         f"network_security.api_token_rotated_at 不是 UTC 时间戳"
@@ -248,20 +227,6 @@ class NetworkSecurityMixin:
                 f"（{type(rotated_at_raw).__name__}），已视作未设置"
             )
 
-        # R200 / Cycle 8 · F-199-1 from CR#20 §4.1：「stale ghost」cascade-clear
-        # ----------------------------------------------------------------
-        # 如果 api_token 已经被清空（管理员手动撤销 / config drift / write
-        # error 后 reset），但 api_token_rotated_at 仍然指向上一次 rotation
-        # 时间戳——`GET /api/system/api-token-info` 会返回 ``has_token=false``
-        # 但 ``age_seconds`` 非 ``null`` 的 misleading 状态，让 dashboard 误
-        # 报「token 60 天未轮换」（实际 token 已经被撤销）。
-        #
-        # Sanitize 策略：发现这种不一致 → log warning + 把 rotated_at 清空，
-        # 保证「token 在 → rotated_at 存在；token 不在 → rotated_at 也不
-        # 在」的双向不变量在 normalize 后总是成立。
-        #
-        # 注意只对「validate 走完后」的最终值做这道清理，**不**修改 caller
-        # 传入的 raw dict（避免影响后续 write-path 决策）。
         if not api_token and rotated_at:
             logger.warning(
                 "network_security.api_token 已被撤销（空串）但 api_token_rotated_at"
@@ -312,24 +277,11 @@ class NetworkSecurityMixin:
             raise
 
     def _save_network_security_config_immediate(self, validated_ns: dict[str, Any]):
-        """将 network_security 原子写回配置文件（不走通用保存逻辑，避免被排除）。
-
-        **R119**：``_create_default_config_file()`` 失败原 ``except Exception:
-        pass`` 完全静默——下面 ``content = self.config_file.read_text()`` 的
-        ``except`` 会兜底（line 197），但用户看到的错误是「读不到 config
-        文件」，root cause（创建失败的具体原因）被吞掉，无法排查
-        「权限 / 父目录不存在 / 磁盘满」等真实问题。
-
-        与 R117 / R118 同 spirit：保持 try/except（不让 create 失败立刻
-        阻断 save 流程，让 read 兜底处理），但加 debug 痕迹便于排查。
-        """
+        """将 network_security 原子写回配置文件（不走通用保存逻辑，避免被排除）。"""
         try:
             if not self.config_file.exists():
                 self._create_default_config_file()
         except Exception as e:
-            # R119: 不扩散（下面 read 会兜底处理 "config 文件不存在"），
-            # 但留 debug 痕迹便于排查 "为什么 create 失败"——典型 root
-            # cause 是父目录不存在、权限不够、磁盘满，pre-R119 全部静默。
             try:
                 import logging
 
@@ -339,8 +291,6 @@ class NetworkSecurityMixin:
                     f"{type(e).__name__}: {e}"
                 )
             except Exception:
-                # logging 不能扩散——这是配置保存路径，logging 自己崩了
-                # 也不应该让保存流程跟着断
                 pass
 
         content = ""
@@ -350,7 +300,6 @@ class NetworkSecurityMixin:
         except Exception as e:
             raise RuntimeError(f"读取配置文件失败: {e}") from e
 
-        # TOML 格式
         if self._is_toml_file():
             base = content or (self._original_content or "")
             if base:
@@ -370,7 +319,6 @@ class NetworkSecurityMixin:
             self._update_file_mtime()
             return
 
-        # JSON 格式（降级兼容）
         try:
             full = json.loads(content) if content.strip() else {}
             if not isinstance(full, dict):

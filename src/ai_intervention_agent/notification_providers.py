@@ -1,7 +1,4 @@
-"""通知提供者实现 - Web/Sound/Bark/System 四种通知方式。
-
-所有提供者实现 send(event) -> bool 接口，由 NotificationManager 调用。
-"""
+"""通知提供者实现 - Web/Sound/Bark/System 四种通知方式。"""
 
 import re
 import string
@@ -21,17 +18,6 @@ from ai_intervention_agent.notification_models import (
 logger = EnhancedLogger(__name__)
 
 
-# R706 (TODO#14/32)：Bark 点击跳转 URL 的宽松 scheme 校验。
-#
-# iOS Bark 客户端的 ``url`` 字段支持**任意 URL scheme** 跳转——
-# ``shortcuts://run-shortcut?name=xxx`` 打开快捷指令、``bark://``、
-# 第三方 App 深链等，不限于 http(s)。旧实现要求渲染结果以
-# ``http(s)://`` 开头，把 ``shortcuts://`` 模板整个丢弃，导致
-# "点击通知打开快捷指令" 的推荐用法完全不可用。
-#
-# 正则说明：scheme 语法遵循 RFC 3986 §3.1（字母开头 + 字母/数字/
-# ``+ - .``），并强制 ``://`` 层级形式——``javascript:`` /
-# ``data:`` 等无 authority 的 scheme 天然不匹配，不会被误放行。
 _BARK_CLICK_URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://\S+$")
 
 
@@ -43,21 +29,7 @@ def _is_acceptable_bark_click_url(url: str) -> bool:
 
 
 def _bark_url_is_loopback(url: str) -> bool:
-    """Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。
-
-    手机收到 Bark 通知时，``http://localhost:8080`` 等 loopback URL 会被
-    手机自身解析（RFC 6762 §11 / RFC 5735）—— 把这种 URL 推过去等于让用户
-    点开后看到 "无法访问"，反而不如不附 ``url`` 字段（这样 Bark 默认行为
-    是停留在通知中心，体验更可控）。
-
-    R706：loopback 抑制仅对 ``http(s)://`` 生效——自定义 scheme
-    （``shortcuts://`` 等）由 iOS 系统按 App 深链处理，不涉及网络 host
-    解析，``shortcuts://localhost`` 这类奇异值也不该被误杀。
-
-    实现 lazy import ``server_config.is_loopback_url`` 以避免触发 ``mcp.types``
-    的级联加载（参见 ``server_config._lazy_mcp_types``），任何 import / 解析
-    异常都返回 ``False``，让通知链路按 "未识别即放行" 优雅降级。
-    """
+    """Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。"""
     if not isinstance(url, str) or not url:
         return False
     if not url.lower().startswith(("http://", "https://")):
@@ -85,19 +57,6 @@ class _LazyHttpx:
 httpx: Any = _LazyHttpx()
 
 
-# ---------------------------------------------------------------------------
-# Bark URL 模板渲染辅助
-#
-# 设计目标：
-# - 用户在配置里写 "http://ai.local:8080/?task_id={task_id}" 这种模板时，
-#   Bark 通知能正确渲染并嵌入 metadata。
-# - 任何缺失的占位符（例如模板里有 {weird_key} 但 metadata 没给）原样保留，
-#   绝不抛 KeyError，从而避免一条配置错误导致整个 Bark 通知发不出去。
-# - 任何无法被序列化为字符串的值（None / dict / list 等）一律退化为空串，
-#   防止 Pythonic 表达污染 URL（例如 "[1, 2]"）。
-# ---------------------------------------------------------------------------
-
-
 class _BarkSafeFormatDict(dict):
     """str.format_map() 的兜底字典：未命中的 key 原样返回 "{key}"。"""
 
@@ -118,11 +77,7 @@ def _coerce_bark_format_value(value: Any) -> str:
 
 
 def render_bark_url_template(template: str, params: dict[str, Any]) -> str:
-    """安全渲染 Bark 点击 URL 模板。
-
-    - 模板为空 / 渲染异常时返回空串（调用方应判空跳过 url 字段）。
-    - 不会抛出 KeyError；缺失的占位符保持 "{name}" 字面量（便于排查）。
-    """
+    """安全渲染 Bark 点击 URL 模板。"""
     tpl = (template or "").strip()
     if not tpl:
         return ""
@@ -134,7 +89,6 @@ def render_bark_url_template(template: str, params: dict[str, Any]) -> str:
     try:
         return _BARK_TEMPLATE_FORMATTER.vformat(tpl, (), safe_params).strip()
     except (ValueError, IndexError) as exc:
-        # 例如未闭合的 "{"、位置参数引用，记 warn 但不抛
         logger.warning(
             f"渲染 Bark URL 模板失败: template={tpl!r} error={exc}; 已退化为空 URL"
         )
@@ -180,7 +134,6 @@ class WebNotificationProvider(BaseNotificationProvider):
     def send(self, event: NotificationEvent) -> bool:
         """准备通知数据到 event.metadata['web_notification_data']"""
         try:
-            # 验证标题和消息非空
             if not event.title or not event.title.strip():
                 logger.warning(f"Web通知标题为空，跳过发送: {event.id}")
                 return False
@@ -189,13 +142,10 @@ class WebNotificationProvider(BaseNotificationProvider):
                 logger.warning(f"Web通知消息为空，跳过发送: {event.id}")
                 return False
 
-            # 验证web_timeout为正数
             timeout = max(self.config.web_timeout, 1)
 
-            # 浅拷贝 metadata，避免后续 provider payload 写回污染快照。
             metadata_copy = event.metadata.copy() if event.metadata else {}
 
-            # 构建通知数据
             notification_data = {
                 "id": event.id,
                 "type": "notification",
@@ -241,10 +191,8 @@ class SoundNotificationProvider(BaseNotificationProvider):
                 self.config.sound_file, self.sound_files["default"]
             )
 
-            # 验证音量范围0.0-1.0
             volume = max(0.0, min(self.config.sound_volume, 1.0))
 
-            # 浅拷贝 metadata，避免后续 provider payload 写回污染快照。
             metadata_copy = event.metadata.copy() if event.metadata else {}
 
             sound_data = {
@@ -275,7 +223,6 @@ class BarkNotificationProvider(BaseNotificationProvider):
         {"title", "body", "device_key", "icon", "action", "url", "copy"}
     )
 
-    # 允许转发到 Bark 服务器的元数据键白名单（防止内部数据泄漏到第三方）
     _ALLOWED_METADATA_KEYS = frozenset(
         {
             "group",
@@ -290,7 +237,6 @@ class BarkNotificationProvider(BaseNotificationProvider):
         }
     )
 
-    # 【安全】脱敏规则：避免在日志/调试信息中泄露 APNs device token 等敏感标识
     _APNS_DEVICE_URL_RE = re.compile(
         r"(https://api\.push\.apple\.com/3/device/)[0-9a-fA-F]{16,}"
     )
@@ -321,36 +267,10 @@ class BarkNotificationProvider(BaseNotificationProvider):
         )
 
     def close(self) -> None:
-        """关闭 HTTP Session，释放连接池资源（幂等）。
-
-        **R117**：``httpx.Client.close()`` 抛异常曾经被 ``except Exception:
-        pass`` 完全静默——这是 ``shutdown()`` / ``atexit`` 路径上**唯一**
-        承担连接池清理的调用，静默失败意味着连接池资源（TCP socket、
-        keep-alive 连接、HTTP/2 stream 状态）有可能泄漏却没有任何信号
-        让运维 / 维护者察觉。
-
-        修复策略：保持 try/except 不让异常扩散打断 shutdown chain（其他
-        provider 的 close() 还要继续走），但把 exception 写到 debug 级
-        日志——正常运行时不噪音，需要排查"为什么我的 ai-intervention-agent
-        进程不释放连接 / FD"时打开 debug 立刻看到 root cause。
-
-        与项目"fail-loud, no silent skips"政策（cf. R107-R110 系列）一致：
-        资源清理失败比业务逻辑失败更隐蔽，更需要可观测性兜底。
-        """
+        """关闭 HTTP Session，释放连接池资源（幂等）。"""
         try:
             self.session.close()
         except Exception as e:
-            # R117: 不扩散异常（保持 shutdown chain 完整），但留下 debug
-            # 痕迹便于排查连接池资源泄漏。注意 ``_sanitize_error_text``
-            # 已经处理了 device token / APNs URL 等敏感数据脱敏。
-            #
-            # **故意不使用 exc_info=True**：Python ``logging`` 的 ``exc_info``
-            # 会把原始 traceback 字符串注入日志记录，traceback 里包含**未脱敏**
-            # 的原始 ``RuntimeError("closed with device_token=...")`` 等异常
-            # 消息，绕过了 ``_sanitize_error_text`` 的脱敏 —— 等于让安全脱敏
-            # 形同虚设。``type(e).__name__`` + sanitized ``str(e)`` 已经够
-            # debug 排查用，traceback 在 R114 / 普通 ``except Exception``
-            # 路径上才需要。
             logger.debug(
                 "[R117] BarkNotificationProvider.close() httpx.Client.close() "
                 f"raised (suppressed to keep shutdown chain intact): "
@@ -364,12 +284,10 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 logger.debug("Bark通知已禁用")
                 return False
 
-            # 验证配置格式和完整性
             if not self.config.bark_url or not self.config.bark_device_key:
                 logger.warning("Bark配置不完整，跳过发送")
                 return False
 
-            # 验证 URL 格式（基本检查）
             if not (
                 self.config.bark_url.startswith("http://")
                 or self.config.bark_url.startswith("https://")
@@ -377,17 +295,14 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 logger.error(f"Bark URL 格式无效: {self.config.bark_url}")
                 return False
 
-            # 【优化】提前 strip 并缓存，避免重复调用
             device_key_stripped = self.config.bark_device_key.strip()
             title_stripped = event.title.strip() if event.title else ""
             message_stripped = event.message.strip() if event.message else ""
 
-            # 验证 device_key 不为空字符串
             if not device_key_stripped:
                 logger.error("Bark device_key 为空字符串")
                 return False
 
-            # 验证标题和消息非空
             if not title_stripped:
                 logger.warning(f"Bark通知标题为空，跳过发送: {event.id}")
                 return False
@@ -396,27 +311,19 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 logger.warning(f"Bark通知消息为空，跳过发送: {event.id}")
                 return False
 
-            # 使用缓存的 strip 结果
             bark_data = {
                 "title": title_stripped,
                 "body": message_stripped,
                 "device_key": device_key_stripped,
             }
 
-            # 只在有值时添加可选字段
             if self.config.bark_icon:
                 bark_data["icon"] = self.config.bark_icon
 
-            # 点击行为：
-            # - 配置里的 bark_action 是枚举（none/url/copy），不是“动作 URL”
-            # - Bark 常见实现使用 url/copy 字段；发送 action="none/url/copy" 可能触发服务端 4xx
             bark_action = (self.config.bark_action or "").strip()
             if bark_action and bark_action != "none":
                 if bark_action in ("url", "copy"):
                     if bark_action == "url":
-                        # 优先从事件元数据中取 URL（例如 web_ui_url/url/action_url）
-                        # R706：候选校验为「任意合法 scheme://」（shortcuts://
-                        # 等自定义 scheme 可用于打开快捷指令 / App 深链）。
                         url_value = None
                         if event.metadata:
                             for key in ("url", "web_ui_url", "action_url", "link"):
@@ -424,17 +331,12 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                 if isinstance(value, str) and value.strip():
                                     candidate = value.strip()
                                     if not _is_acceptable_bark_click_url(candidate):
-                                        # 非 ``scheme://`` 形态（裸词 /
-                                        # ``javascript:`` 等）——发给 Bark 也
-                                        # 无法跳转，跳过让 fallback 模板兜底。
                                         logger.warning(
                                             f"event.metadata['{key}']={candidate!r} "
                                             "不是合法跳转 URL，已忽略此候选"
                                         )
                                         continue
                                     if _bark_url_is_loopback(candidate):
-                                        # 跨设备推送场景下 loopback 必然解析到手机
-                                        # 自身，丢弃后让 fallback 模板再尝试一次。
                                         logger.warning(
                                             f"event.metadata['{key}']={candidate!r} 是回环地址，"
                                             "手机端 Bark 无法跳转，已忽略此候选"
@@ -443,8 +345,6 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                     url_value = candidate
                                     break
 
-                        # metadata 没有提供 URL 时，回退到 bark_url_template
-                        # 设计：模板只在缺省时生效，避免覆盖调用方明确指定的 URL
                         if not url_value:
                             template = (
                                 getattr(self.config, "bark_url_template", "") or ""
@@ -463,16 +363,9 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                     "base_url": (base_url or "").rstrip("/"),
                                 }
                                 rendered = render_bark_url_template(template, params)
-                                # R706：接受任意合法 ``scheme://`` 形式——
-                                # ``shortcuts://run-shortcut?name=xxx`` 等自定义
-                                # scheme 是 Bark 推荐用法（点击通知打开快捷
-                                # 指令）；loopback 抑制仅对 http(s) 生效。
+
                                 if _is_acceptable_bark_click_url(rendered):
                                     if _bark_url_is_loopback(rendered):
-                                        # 模板里包含 loopback host 时，例如用户写
-                                        # ``http://127.0.0.1:8080/...`` 或上游
-                                        # base_url 解析成 loopback——丢弃 url 字段，
-                                        # Bark 默认行为是停在通知中心。
                                         logger.warning(
                                             f"bark_url_template 渲染结果命中回环地址 {rendered!r}，"
                                             "已抑制 url 字段；建议将 web_ui.host 改为 0.0.0.0 "
@@ -488,12 +381,10 @@ class BarkNotificationProvider(BaseNotificationProvider):
                         if url_value:
                             bark_data["url"] = url_value
                         else:
-                            # 不视为错误：没有 URL 也可以正常推送
                             logger.debug(
                                 f"Bark 点击行为为 url，但未提供可用链接，已忽略: {event.id}"
                             )
                     else:
-                        # copy：默认复制通知正文；如元数据提供 copy/copy_text，则优先使用
                         copy_value = None
                         if event.metadata:
                             for key in ("copy", "copy_text", "copyContent"):
@@ -503,7 +394,6 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                     break
                         bark_data["copy"] = copy_value or message_stripped
                 else:
-                    # 兼容旧用法：直接将 bark_action 当作 URL（仅当其像 URL）
                     if bark_action.startswith(("http://", "https://")):
                         if _bark_url_is_loopback(bark_action):
                             logger.warning(
@@ -513,12 +403,10 @@ class BarkNotificationProvider(BaseNotificationProvider):
                         else:
                             bark_data["url"] = bark_action
                     else:
-                        # 未知值直接忽略，避免发送无效字段导致请求失败
                         logger.debug(
                             f"未知 bark_action='{bark_action}'，已忽略: {event.id}"
                         )
 
-            # 白名单机制：仅转发允许的元数据键，防止内部数据泄漏到第三方 Bark 服务
             if event.metadata:
                 for key, value in event.metadata.items():
                     if key in self._RESERVED_KEYS:
@@ -528,34 +416,29 @@ class BarkNotificationProvider(BaseNotificationProvider):
                     if isinstance(value, (str, int, float, bool, type(None))):
                         bark_data[key] = value
 
-            # 【可配置】Bark 请求超时（秒）
             try:
                 timeout_seconds = max(int(getattr(self.config, "bark_timeout", 10)), 1)
             except (TypeError, ValueError):
                 timeout_seconds = 10
 
-            # 默认 headers 已在 __init__ 中设置
             response = self.session.post(
                 self.config.bark_url,
                 json=bark_data,
                 timeout=timeout_seconds,
             )
 
-            # 接受所有2xx状态码为成功
             if 200 <= response.status_code < 300:
                 logger.info(
                     f"Bark通知发送成功: {event.id} (状态码: {response.status_code})"
                 )
                 return True
             else:
-                # Bark 往往返回 JSON（code/message）；尽量解析以便排查
                 try:
                     error_detail = response.json()
                 except Exception:
                     error_detail = response.text
                 sanitized_detail = self._sanitize_error_text(str(error_detail))
 
-                # 仅在 debug / 测试事件时将错误细节写入 event.metadata，便于上层展示
                 try:
                     is_debug = bool(getattr(self.config, "debug", False))
                     is_test_event = bool(
@@ -567,7 +450,6 @@ class BarkNotificationProvider(BaseNotificationProvider):
                             "detail": sanitized_detail[:800],
                         }
                 except Exception:
-                    # 不让调试信息写入影响主流程
                     pass
 
                 logger.error(
@@ -599,8 +481,6 @@ class SystemNotificationProvider(BaseNotificationProvider):
     def _check_system_support(self):
         """尝试导入 plyer 设置 supported 状态"""
         try:
-            # macOS 下 plyer 依赖 pyobjus；若缺失，plyer 在导入阶段会向 stderr 打印 traceback，
-            # 但系统通知本身也无法使用。这里提前探测并跳过导入，避免在 scripts/manual_test.py 等场景产生噪声。
             if sys.platform == "darwin" and find_spec("pyobjus") is None:
                 self._notify = None
                 self.supported = False
@@ -617,29 +497,10 @@ class SystemNotificationProvider(BaseNotificationProvider):
             self.supported = False
             logger.debug("系统通知不支持（缺少plyer库）")
 
-    # plyer.notify(..., timeout=N) 的 N 是「通知显示时长（秒）」，**不是**
-    # 发送超时——plyer 没有发送超时入口，调用过程是同步阻塞到底层平台 API
-    # （macOS osascript / Windows balloon notification / Linux libnotify）
-    # 返回。
-    #
-    # 这里复用 ``NotificationManager._process_event`` 里的
-    # ``as_completed(timeout=bark_timeout + buffer)`` 作为兜底：
-    # 如果底层平台 API 卡住超过 15s，``as_completed`` 会抛 ``TimeoutError``
-    # 并把这条 future 视为失败（``cancel()`` 对运行中任务无效，但 future
-    # 不会再被等下去）。
-    #
-    # 故意保持 ``timeout=10``（10 秒显示时长）而不是更长：超过 10s 仍未消失
-    # 的桌面通知大概率被用户错过，且会和后续 task 的通知打架。
     _DISPLAY_DURATION_SECONDS = 10
 
     def send(self, event: NotificationEvent) -> bool:
-        """调用 plyer 发送系统通知
-
-        注意：``timeout`` 参数指通知 banner 在屏幕上显示的时长，不是发送超时。
-        plyer 自身没有发送超时机制；如果底层平台 API 卡住，依赖
-        ``NotificationManager._process_event`` 的 ``as_completed`` 兜底
-        （见 ``notification_manager._AS_COMPLETED_TIMEOUT_BUFFER_SECONDS``）。
-        """
+        """调用 plyer 发送系统通知"""
         try:
             if not self.supported:
                 logger.debug("系统通知不支持，跳过发送")

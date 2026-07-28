@@ -4,14 +4,6 @@
 
 配置热更新回调 — 从 web_ui.py 提取的纯逻辑。
 
-管理 feedback.auto_resubmit_timeout 和 network_security 配置变更后
-对运行中任务/Web UI 实例的同步逻辑。
-
-设计约束：
-- 模块级状态变量保留在 web_ui.py（测试通过 web_ui.XXX 读写）
-- get_config / get_task_queue 通过 lazy import web_ui 获取
-  → 测试 @patch("web_ui.get_config") 即可生效，无需修改
-
 ## 函数
 
 ### `_get_default_auto_resubmit_timeout_from_config() -> int`
@@ -34,20 +26,13 @@
 
 确保仅注册一次 feedback.auto_resubmit_timeout 热更新回调。
 
+R702：注册时只记录当前配置基线（_LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT），
+不立即同步已存在任务——同步只在配置真正变更的回调里发生。
+
 ### `_emit_config_changed_to_sse_bus() -> None`
 
 配置变更回调：通过 SSE 总线推一个 ``config_changed`` 事件（带 debounce）。
 
-所有已连接的 client（浏览器 PWA / VSCode Webview）都会立刻收到这个
-事件，UI 自行决定是 toast 提示还是 silent log。
-
-R50-B：leading-edge debounce 防止 mtime 风暴下 SSE 事件刷屏。
-详见 ``_CONFIG_CHANGED_EMIT_DEBOUNCE_S`` 注释。
-
 ### `_ensure_config_changed_sse_callback_registered() -> None`
 
 确保仅注册一次 config_changed SSE 推送回调（R48）。
-
-与 ``_ensure_*_hot_reload_callback_registered`` 同样的 idempotent
-模式：模块级 flag + lock 双检，保证不重复注册同一个 callback。
-注册失败 → 降级到"只在重启时生效"，记录 warning 但不抛异常。

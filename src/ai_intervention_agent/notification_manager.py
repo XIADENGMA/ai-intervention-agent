@@ -36,29 +36,9 @@ from ai_intervention_agent.notification_models import (
     NotificationType,
 )
 
-# 说明：
-# - 通知事件/枚举已抽到 notification_models.py，避免 manager/provider 循环依赖
-# - BarkProvider 仍采用延迟导入：仅在需要时加载，降低启动时开销与依赖耦合
-
 logger = EnhancedLogger(__name__)
 
 
-# `_process_event` 用 ``concurrent.futures.as_completed(..., timeout=...)``
-# 等待所有 channel 的 future。这个窗口必须严格大于 ``self.config.bark_timeout``
-# （目前唯一会真正阻塞 thread-pool 工作线程的 HTTP-bound provider；其他 channel
-# 走纯本地 metadata 准备或 plyer 调用，瞬时返回）。
-#
-# 历史上这里硬编码 ``timeout=15`` + 注释 "（Bark 默认10秒）"——这把 ``bark_timeout``
-# 用户合法配置范围 ``[1, 300]`` 中的所有 ``> 15`` 取值都拍死了：
-#   1. 用户把 ``bark_timeout`` 配成 30（Bark 服务器在跨境网络下 25s 才返回是常态）。
-#   2. ``as_completed`` 在 15s 抛 TimeoutError；Bark future 仍在 thread-pool 跑。
-#   3. ``success_count == 0`` 触发 retry，新一轮 future 进 pool 排队。
-#   4. 老 future 在 25s 跑完返回 200；新 future 也跑完返回 200。
-#   5. 用户的 iOS 在不到 30s 内收到两条同样的 Bark 推送 = 重复打扰。
-#
-# Buffer 而不是 +0：thread-pool 调度尾时延 + httpx connection-pool warmup +
-# DNS 解析（首次）合计 < 5s，所以这里 +5 既能屏蔽尾时延，又不会让健康的 Bark
-# 失败时 retry 拖太久。
 _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS = 5
 _MISSING_STATS_FIELD = object()
 _NOTIFICATION_LATENCY_INF_BUCKET = float("inf")
@@ -76,7 +56,6 @@ def _new_provider_stats() -> dict[str, Any]:
         "last_latency_ms": None,
         "latency_ms_total": 0,
         "latency_ms_count": 0,
-        # R145: 连续成功 / 连续失败计数
         "success_streak": 0,
         "failure_streak": 0,
     }
@@ -101,28 +80,9 @@ def _get_or_create_provider_stats(
     return cast("dict[str, Any]", stats_obj)
 
 
-# R136: 通知 in-flight 队列断电恢复
-# ----------------------------------------------------------------------------
-# 文件名 / schema_version / TTL 三个常量是公开契约；测试侧也读它们做断言，
-# 改动需要先写迁移逻辑（schema_version 升级）。
-#
-# **为什么要持久化**：
-# - ``_event_queue`` / ``_finalized_event_ids`` 都在内存里，进程异常退出
-#   （崩溃 / SIGKILL / OOM / 容器被驱逐）时彻底丢，运维侧完全看不到
-#   "上次重启时还有 N 条通知没投递"。
-# - 在分布式 worker / Cloud Native 部署中这是基础观察性盲点。
-#
-# **为什么不自动重发**：
-# - 用户关电脑回家睡觉，第二天开机重发昨天的 50 条通知 = 噪音灾难。
-# - 在 R136 范围内，仅做"持久化 + 启动时加载暴露给 stats"，把"是否
-#   重发"决策权让给将来的 R136-A（如果用户有需求）。
-#
-# **TTL = 5 分钟**：典型用户场景下，通知如果 5 分钟内没投递成功就基本
-# 失去时效（feedback 已经过期 / 用户已经看过了），保持文件长期不增长，
-# 重启后也只看最近 5 分钟内的真正"飞行中"事件。
 _INFLIGHT_FILE_NAME: str = "notification_inflight.json"
 _INFLIGHT_SCHEMA_VERSION: int = 1
-_INFLIGHT_TTL_SECONDS: int = 300  # 5 分钟
+_INFLIGHT_TTL_SECONDS: int = 300
 _COMPACT_JSON_SEPARATORS: tuple[str, str] = (",", ":")
 
 
@@ -148,48 +108,9 @@ def _get_inflight_file_dir() -> Path | None:
         return None
 
 
-# ``ThreadPoolExecutor`` worker 数 = 通知渠道总数。
-#
-# why：
-#     ``_process_event`` 会为每个 ``event.types`` 里的渠道 submit 一个
-#     future。如果 ``max_workers < len(NotificationType)``，"全开"用户
-#     submit 的最后几个 future 会进队列等空闲 worker——一旦前面的
-#     渠道接近 ``bark_timeout`` 边缘（HTTPS 上行卡住、DNS 解析慢
-#     等），``as_completed(timeout=bark_timeout + buffer)`` 会先到期
-#     强 cancel 排队中的 future，用户漏收一条通知却零日志告警。
-#
-#     绑定到 ``len(NotificationType)`` 让两边自动同步：未来加新渠道
-#     时只在 ``notification_models.NotificationType`` 里加一项，本
-#     文件无需手动跟随调整常量。
-#
-# 资源开销：
-#     ``ThreadPoolExecutor`` 是惰性创建 worker 的（``submit`` 时按需
-#     ``_adjust_thread_count``），所以即使 ``max_workers=10`` 没人用
-#     也不会真起 10 个线程。本项目当前是 4 个渠道，每个 worker 大约
-#     8KB stack + Python 帧开销 ≈ 几十 KB——上限提到 4 几乎零成本。
 _NOTIFICATION_WORKER_COUNT = len(NotificationType)
 
 
-# ``_schedule_retry`` 的 thundering-herd 防御：在 ``retry_delay`` 之上叠加
-# ``[0, retry_delay * jitter_ratio]`` 区间的随机抖动。
-#
-# 行业最佳实践（AWS Architecture Blog "Exponential Backoff and Jitter" /
-# Google SRE Workbook §22）：当 N 个客户端在网络抖动后同时失败、同时重试，
-# 没有 jitter 的话所有重试会在同一时刻撞向同一个下游服务，造成 thundering
-# herd → 下游永远恢复不了。引入 0-50% 的随机延迟即可把重试时刻打散，让下游
-# 有喘息窗口。
-#
-# 我们这里**故意不用指数退避**（``2^retry_count`` 那种）：
-#   1. ``max_retries`` 默认 3，指数退避在小 N 下没什么区别。
-#   2. ``retry_delay`` 默认 2s——加指数退避后总等待变成 2+4+8=14s，对单用户
-#      场景的感知延迟太长。
-#   3. Notification 不是关键路径（用户已经看到 Web UI），重试只是 best-effort，
-#      没必要为了 4-th-retry 的低概率场景拉高 99 分位延迟。
-# 简单的固定延迟 + jitter 是这个场景的甜蜜点。
-#
-# ``retry_delay == 0`` 时绕过 jitter（见 ``_schedule_retry`` 的 fast-path）：
-#   1. 测试代码 / 高频压测路径会显式设 ``retry_delay = 0`` 期望「立即重试」。
-#   2. 引入 jitter 会让那些场景出现亚秒级抖动 → 测试断言不稳定。
 _RETRY_DELAY_JITTER_RATIO = 0.5
 
 
@@ -198,53 +119,43 @@ class NotificationConfig(BaseModel):
 
     model_config = ConfigDict(validate_assignment=True)
 
-    # ==================== 全局开关 ====================
     enabled: bool = True
     debug: bool = False
 
-    # ==================== Web 通知配置 ====================
     web_enabled: bool = True
     web_permission_auto_request: bool = True
     web_icon: str = "default"
     web_timeout: int = 5000
 
-    # ==================== 声音通知配置 ====================
     sound_enabled: bool = True
     sound_volume: float = 0.8
     sound_file: str = "default"
     sound_mute: bool = False
 
-    # ==================== 触发时机配置 ====================
     trigger_immediate: bool = True
     trigger_delay: int = 30
     trigger_repeat: bool = False
     trigger_repeat_interval: int = 60
 
-    # ==================== 错误处理配置 ====================
     retry_count: int = 3
     retry_delay: int = 2
     fallback_enabled: bool = True
 
-    # ==================== 移动设备优化 ====================
     mobile_optimized: bool = True
     mobile_vibrate: bool = True
 
-    # ==================== Bark 通知配置（可选）====================
     bark_enabled: bool = False
     bark_url: str = ""
     bark_device_key: str = ""
     bark_icon: str = ""
     bark_action: str = "none"
     bark_timeout: int = 10
-    # 当 bark_action == "url" 时，事件 metadata 没有提供 url/web_ui_url/action_url/link
-    # 则按此模板渲染。支持的占位符：{task_id} / {event_id} / {base_url}
+
     bark_url_template: str = "{base_url}/?task_id={task_id}"
 
-    # ==================== 系统/平台原生通知 ====================
     system_enabled: bool = False
     macos_native_enabled: bool = True
 
-    # ==================== 边界常量 ====================
     SOUND_VOLUME_MIN: ClassVar[float] = 0.0
     SOUND_VOLUME_MAX: ClassVar[float] = 1.0
     BARK_ACTIONS_VALID: ClassVar[tuple[str, ...]] = ("none", "url", "copy")
@@ -353,8 +264,8 @@ class NotificationConfig(BaseModel):
 class NotificationManager:
     """通知管理器（单例）- 管理提供者注册、事件队列、配置和回调，线程安全。"""
 
-    _instance = None  # 单例实例
-    _lock = threading.Lock()  # 单例创建锁
+    _instance = None
+    _lock = threading.Lock()
 
     def __new__(cls):
         """双重检查锁定创建单例"""
@@ -367,7 +278,7 @@ class NotificationManager:
 
     def __init__(self):
         """初始化配置、提供者字典、事件队列、线程池和回调"""
-        # __new__ 只保证“创建单例对象”线程安全；这里还需要保证“只初始化一次”
+
         if getattr(self, "_initialized", False):
             return
 
@@ -385,50 +296,28 @@ class NotificationManager:
                     code="init_failed",
                 ) from e
 
-            # 初始化通知提供者字典
             self._providers: dict[NotificationType, Any] = {}
             self._providers_lock = threading.Lock()
 
-            # 初始化事件队列和锁
             self._event_queue: list[NotificationEvent] = []
             self._queue_lock = threading.Lock()
 
-            # 【线程安全】配置锁，保护 config 对象的并发读写
-            # 用于 refresh_config_from_file() 和 update_config_without_save()
             self._config_lock = threading.Lock()
 
-            # 【性能优化】配置缓存：记录配置文件的最后修改时间
-            # 只有文件修改时间变化时才重新读取配置，避免频繁 I/O
             self._config_file_mtime: float = 0.0
 
-            # 初始化工作线程相关（预留扩展）
             self._worker_thread = None
             self._stop_event = threading.Event()
 
-            # 【性能优化】使用线程池异步发送通知，避免阻塞主流程。
-            # max_workers 动态等于 ``NotificationType`` 成员数（目前 4：
-            # WEB/SOUND/BARK/SYSTEM），这样：
-            #   1. 用户同时启用全部渠道时，每个渠道都有专属 worker，
-            #      最慢渠道（典型是 BARK 走 HTTPS 上行）不会让其他
-            #      渠道排队等空闲 worker；
-            #   2. 未来新增渠道时只需在枚举里加一项，线程池自动伸缩，
-            #      不需要再来这里改硬编码常量。
-            # 历史上写死 ``max_workers=3``：在 4 渠道全开时第 4 个 future
-            # 进队列等，前 3 个卡接近 ``bark_timeout`` 边缘时第 4 个
-            # 根本没机会跑，``as_completed`` timeout 后被强 cancel——
-            # 用户漏收一条通知，零日志告警。
             self._executor = ThreadPoolExecutor(
                 max_workers=_NOTIFICATION_WORKER_COUNT,
                 thread_name_prefix="NotificationWorker",
             )
 
-            # 【可靠性】延迟通知 Timer 管理（用于测试/退出时可控清理）
-            # key: event_id -> threading.Timer
             self._delayed_timers: dict[str, threading.Timer] = {}
             self._delayed_timers_lock = threading.Lock()
             self._shutdown_called: bool = False
 
-            # 【可观测性】基础统计信息（用于调试/监控；不写入磁盘）
             self._stats_lock = threading.Lock()
             self._stats: dict[str, Any] = {
                 "events_total": 0,
@@ -440,62 +329,30 @@ class NotificationManager:
                 "last_event_at": None,
                 "providers": {},  # {type: {attempts/success/failure/last_error/...}}
             }
-            # R191 / Cycle 5：provider 级 latency histogram（per-provider 一份）。
-            # 与 ``_stats[providers][...]["latency_ms_total"]`` 互补：那边只
-            # 能算 average，histogram 才能算 P95/P99 percentile。
-            #
-            # 桶设计：见 ``_DEFAULT_LATENCY_BUCKETS_SECONDS``——R196 / Cycle 6
-            # 起改为 notification-specific 桶（50 ms – 10 s 密集采样），不再
-            # 与 ``mcp_tool_call_metrics`` 共用。两者的实测延迟分布差异极大
-            # （tool 调用：10 – 300 s 人工思考主导；notification：50 ms –
-            # 500 ms 网络往返主导），同桶会让 dashboard 切 axis 增加运维
-            # 认知负担。
-            #
-            # 状态形态：{provider_name: {count, sum_seconds, buckets: {le: cumulative_count}}}
-            # 锁：复用 _stats_lock 避免双锁死锁（histogram 写入是 latency
-            # 记录路径的下游，本来就持 _stats_lock）。
+
             self._provider_latency_histograms: dict[str, dict[str, Any]] = {}
-            # 记录已“最终完成”的事件，避免重试场景重复计数
+
             self._finalized_event_ids: dict[str, None] = {}
             self._finalized_max_size: int = 500
 
-            # R136: in-flight 通知持久化追踪
-            # ``_inflight_persisted_ids``：当前已写入磁盘 inflight 文件的
-            # event id 集合；``_create_event`` 入队后 ``add()``，
-            # ``_mark_event_finalized`` 收尾时 ``discard()``；落盘文件 = 集
-            # 合内事件的 dump，原子替换。
-            #
-            # ``_inflight_seen_at_startup``：进程启动时一次性 load 的「上
-            # 次进程退出时还在 in-flight 的事件元数据」；TTL 过滤后剩下的
-            # 直接暴露给 ``get_status()``，给运维仪表板 / on-call 一个信
-            # 号——不会自动重发，避免「重启后用户被旧通知刷屏」尴尬。
             self._inflight_persisted_ids: set[str] = set()
             self._inflight_seen_at_startup: list[dict[str, Any]] = []
 
-            # 初始化回调函数字典
             self._callbacks_lock = threading.Lock()
             self._callbacks: dict[str, list[Callable]] = {}
 
-            # 标记已初始化
             self._initialized = True
 
-            # 根据调试模式设置日志级别
             if self.config.debug:
                 logger.setLevel(logging.DEBUG)
                 logger.debug("通知管理器初始化完成（调试模式）")
             else:
                 logger.info("通知管理器初始化完成")
 
-            # 【关键修复】根据初始配置注册 Bark 提供者
-            # 之前的问题：只有在运行时通过 update_config_without_save 更改 bark_enabled 时
-            # 才会调用 _update_bark_provider，导致启动时即使 bark_enabled=True 也不会注册
             if self.config.bark_enabled:
                 self._update_bark_provider()
                 logger.info("已根据初始配置注册 Bark 通知提供者")
 
-            # R136: 启动时一次性恢复磁盘上的 in-flight 通知元数据。失败
-            # 不阻塞启动——磁盘问题 / JSON 损坏 / schema 不匹配都按"清
-            # 空"处理，不让单一文件错误把整个通知系统拖死。
             try:
                 self._inflight_seen_at_startup = self._load_persisted_inflight_events()
                 if self._inflight_seen_at_startup:
@@ -587,12 +444,6 @@ class NotificationManager:
             self._callbacks = {}
 
         with self._delayed_timers_lock:
-            # 取消 pending timers, 避免它们在后续测试触发回调。
-            # R120 silent-failure baseline: timer.cancel() 在已 cancel /
-            # 已 fire 状态下 idempotent (CPython source: 设个 flag), 不应
-            # raise; 但出于防御性编程 + 不希望 reset 因为某个 race condition
-            # 半途崩掉, 这里包 try/except 是有意 silent (test-only path,
-            # 残留 timer 在最坏情况只会延后清理一个 cycle)。
             for timer in tuple(self._delayed_timers.values()):
                 try:
                     timer.cancel()
@@ -601,11 +452,8 @@ class NotificationManager:
             self._delayed_timers = {}
 
         with self._providers_lock:
-            # 注意: 不清 _providers (保留已注册 providers, 避免破坏 fixture
-            # 的 _update_bark_provider 调用), 只清 in-flight state
             pass
 
-        # inflight: 直接覆盖, 不需锁 (单进程串行测试)
         self._inflight_persisted_ids = set()
         self._inflight_seen_at_startup = []
 
@@ -681,10 +529,8 @@ class NotificationManager:
         inst = super().__new__(cls)
         inst._initialized = True
 
-        # config: 默认 NotificationConfig, 不读文件
         inst.config = NotificationConfig()
 
-        # locks
         inst._stats_lock = threading.Lock()
         inst._providers_lock = threading.Lock()
         inst._callbacks_lock = threading.Lock()
@@ -692,7 +538,6 @@ class NotificationManager:
         inst._queue_lock = threading.Lock()
         inst._config_lock = threading.Lock()
 
-        # state dicts (与 __init__ 对齐)
         inst._providers = {}
         inst._stats = {
             "events_total": 0,
@@ -710,17 +555,14 @@ class NotificationManager:
         inst._finalized_event_ids = {}
         inst._event_queue = []
 
-        # state caps
         inst._finalized_max_size = 500
         inst._config_file_mtime = 0.0
 
-        # lifecycle
         inst._executor = None
         inst._worker_thread = None
         inst._stop_event = threading.Event()
         inst._shutdown_called = False
 
-        # inflight
         inst._inflight_persisted_ids = set()
         inst._inflight_seen_at_startup = []
 
@@ -747,10 +589,6 @@ class NotificationManager:
                 close()
         except Exception as e:
             logger.debug(f"关闭通知提供者资源失败（忽略）: {e}")
-
-    # -----------------------------------------------------------------
-    # R191 / Cycle 5 · Provider latency histogram instrumentation
-    # -----------------------------------------------------------------
 
     _DEFAULT_LATENCY_BUCKETS_SECONDS: tuple[float, ...] = (
         0.05,
@@ -809,11 +647,6 @@ class NotificationManager:
             return
         state = self._provider_latency_histograms.get(provider_name)
         if state is None:
-            # ty 0.0.34: dict 字面量推导把 value union 化 (``int | float |
-            # dict[float, int]``), 让下面 ``state["count"] += 1`` 落入 ty
-            # 认为不能 += 的分支。``cast`` 强制窄化回 attribute 声明的
-            # ``dict[str, Any]`` 类型 (line 417), 与 mcp_tool_call_metrics
-            # 同款 type-safe narrow 模式。
             state = cast(
                 "dict[str, Any]",
                 {
@@ -886,17 +719,13 @@ class NotificationManager:
             logger.debug("通知功能已禁用，跳过发送")
             return ""
 
-        # 【资源生命周期】若已 shutdown，则拒绝继续发送，避免线程池已关闭导致异常
         if getattr(self, "_shutdown_called", False):
             logger.debug("通知管理器已关闭，跳过发送")
             return ""
 
-        # 生成事件ID。创建时间同时用于 stats，避免同一 enqueue 流程里重复
-        # 读取 wall clock 并产生毫秒级漂移。
         created_at_ts = time.time()
         event_id = f"notification_{int(created_at_ts * 1000)}_{uuid.uuid4().hex[:8]}"
 
-        # 默认通知类型
         if types is None:
             types = []
             if self.config.web_enabled:
@@ -908,7 +737,6 @@ class NotificationManager:
             if self.config.system_enabled:
                 types.append(NotificationType.SYSTEM)
 
-        # 兼容：priority 支持传入字符串（例如 "high"）
         event_priority = NotificationPriority.NORMAL
         if isinstance(priority, NotificationPriority):
             event_priority = priority
@@ -918,7 +746,6 @@ class NotificationManager:
             except Exception:
                 event_priority = NotificationPriority.NORMAL
 
-        # 创建通知事件
         event = NotificationEvent(
             id=event_id,
             title=title,
@@ -930,26 +757,21 @@ class NotificationManager:
             priority=event_priority,
         )
 
-        # 【可观测性】记录事件创建（只计一次，不随重试重复）
         try:
             with self._stats_lock:
                 self._stats["events_total"] += 1
                 self._stats["last_event_id"] = event_id
                 self._stats["last_event_at"] = created_at_ts
         except Exception:
-            # 统计不影响主流程
             pass
 
-        # 添加到队列
         with self._queue_lock:
             self._event_queue.append(event)
-            # 防止队列无限增长（仅保留最近 N 个事件用于调试/状态展示）
+
             max_keep = 200
             if len(self._event_queue) > max_keep:
                 self._event_queue = self._event_queue[-max_keep:]
 
-        # R136: 入队后立即记入 in-flight 持久化集合并落盘。失败不影响
-        # 主流程——磁盘满 / 权限错误时通知仍能正常投递。
         try:
             self._track_event_inflight(event)
         except Exception as exc:
@@ -961,12 +783,9 @@ class NotificationManager:
 
         logger.debug(f"通知事件已创建: {event_id} - {title}")
 
-        # 立即处理或延迟处理
         if trigger == NotificationTrigger.IMMEDIATE:
             self._process_event(event)
         elif trigger == NotificationTrigger.DELAYED:
-            # 【可靠性】threading.Timer 默认是非守护线程，可能导致测试/进程退出被阻塞
-            # 这里将 Timer 设为守护线程，并纳入统一管理以便 shutdown() 清理
             if getattr(self, "_shutdown_called", False):
                 logger.debug("通知管理器已关闭，跳过延迟通知调度")
                 return event_id
@@ -975,7 +794,6 @@ class NotificationManager:
                 try:
                     self._process_event(event)
                 finally:
-                    # 清理 Timer 引用，避免字典增长
                     with self._delayed_timers_lock:
                         self._delayed_timers.pop(event.id, None)
 
@@ -1011,7 +829,7 @@ class NotificationManager:
                 if event.id in self._finalized_event_ids:
                     return
                 self._finalized_event_ids[event.id] = None
-                # 容量淘汰：超出上限时删除最早插入的条目
+
                 while len(self._finalized_event_ids) > self._finalized_max_size:
                     oldest_key = next(iter(self._finalized_event_ids))
                     del self._finalized_event_ids[oldest_key]
@@ -1019,9 +837,7 @@ class NotificationManager:
                     self._stats["events_succeeded"] += 1
                 else:
                     self._stats["events_failed"] += 1
-            # R136: 事件最终化后从 in-flight 持久化集合摘除并刷盘。
-            # 锁外调用（_untrack_event_inflight 自带 _queue_lock 保护），
-            # 不污染 _stats_lock。失败不影响主流程。
+
             try:
                 self._untrack_event_inflight(event.id)
             except Exception as exc:
@@ -1031,10 +847,6 @@ class NotificationManager:
                     exc,
                 )
         except Exception as e:
-            # R117: 不扩散异常（_process_event 调用方期望本函数 best-effort
-            # 即可），但留下 debug 痕迹便于排查 stats 偏移。注意只在 debug
-            # 级——这条失败本身不是用户可见的功能性 bug，warn / error 会
-            # 污染正常日志噪音预算（cf. R114 的同类降噪决策）。
             logger.debug(
                 "[R117] _mark_event_finalized stats update raised "
                 f"(suppressed to keep _process_event flow intact): "
@@ -1080,22 +892,6 @@ class NotificationManager:
             self._delayed_timers[timer_key] = timer
         timer.start()
 
-    # ------------------------------------------------------------------
-    # R136: in-flight 持久化辅助方法
-    # ------------------------------------------------------------------
-    #
-    # 设计要点：
-    # - 持久化文件 = 当前 ``_inflight_persisted_ids`` 集合内事件的 dump，
-    #   原子替换（写 .tmp → ``os.replace``）。
-    # - 入队 / 摘除两条路径都过 ``_queue_lock`` 保证集合一致性。
-    # - 序列化用 ``NotificationEvent.model_dump`` 以便复用 pydantic 校验
-    #   逻辑；启动 load 不重建 ``NotificationEvent`` 对象，仅返回原始
-    #   dict 给 ``get_status`` 使用——避免 enum 反序列化在 pydantic
-    #   v2 模式下的 strict mode 噪音。
-    # - 集合空时主动删除文件，避免长期保留空 envelope。
-    # - 任何 disk I/O 都包 try/except，磁盘满 / 权限错误 / 文件锁竞争
-    #   都不能让通知主路径挂掉。
-
     def _inflight_file_path(self) -> Path | None:
         """R136 — 返回 inflight 持久化文件绝对路径，或 ``None`` 表示
         持久化不可用（无 config dir 时）。"""
@@ -1119,7 +915,7 @@ class NotificationManager:
                 self._inflight_persisted_ids = set()
                 ids = self._inflight_persisted_ids
             ids.add(event.id)
-            # 把当前队列里 id 仍在集合内的事件序列化落盘
+
             self._persist_inflight_unlocked()
 
     def _untrack_event_inflight(self, event_id: str) -> None:
@@ -1149,7 +945,6 @@ class NotificationManager:
         ids = getattr(self, "_inflight_persisted_ids", None)
         try:
             if not ids:
-                # 空集合：删文件
                 try:
                     path.unlink(missing_ok=True)
                 except OSError:
@@ -1163,10 +958,6 @@ class NotificationManager:
                 "saved_at": saved_at_iso,
                 "events": [
                     {
-                        # NotificationEvent.model_dump() 输出含 trigger /
-                        # types / priority 等 enum，pydantic v2 默认会
-                        # dump 成枚举值（str），重启读时直接 dict 暴露给
-                        # stats，不重建模型对象避免 strict mode 噪音
                         **e.model_dump(mode="json"),
                         "saved_at_ts": saved_at_ts,
                     }
@@ -1236,8 +1027,7 @@ class NotificationManager:
             saved_at_ts = entry.get("saved_at_ts", 0)
             if not isinstance(saved_at_ts, (int, float)):
                 continue
-            # TTL 过滤：超期事件直接丢，避免重启后看到一周前的 stale
-            # in-flight（典型场景：用户关电脑回家，第二天开机）
+
             if now - saved_at_ts > _INFLIGHT_TTL_SECONDS:
                 continue
             filtered.append(entry)
@@ -1245,7 +1035,7 @@ class NotificationManager:
 
     def _process_event(self, event: NotificationEvent):
         """并行发送通知到所有渠道，失败时重试或降级"""
-        # shutdown 后可能仍有残留 Timer/线程回调进入，这里直接跳过避免线程池已关闭报错
+
         if getattr(self, "_shutdown_called", False):
             logger.debug(f"通知管理器已关闭，跳过事件处理: {event.id}")
             return
@@ -1253,33 +1043,16 @@ class NotificationManager:
         try:
             logger.debug(f"处理通知事件: {event.id}")
 
-            # 【可观测性】记录一次“事件尝试”（重试会重复计数）
             try:
                 with self._stats_lock:
                     self._stats["attempts_total"] += 1
             except Exception:
                 pass
 
-            # 【性能优化】使用线程池并行发送通知
             if not event.types:
                 logger.debug(f"通知事件无指定类型，跳过: {event.id}")
                 return
 
-            # **R114**：``_shutdown_called`` 与 ``_executor.submit`` 之间存在
-            # TOCTOU 窗口——线程 A 在第 579 行已经检查 ``_shutdown_called=False``
-            # 进入本块，线程 B 同时调 ``shutdown()`` 把 ``_shutdown_called=True`` +
-            # ``_executor.shutdown(cancel_futures=True)``，此时线程 A 再调
-            # ``self._executor.submit(...)`` 会抛 ``RuntimeError: cannot schedule
-            # new futures after shutdown``。R114 之前这条 RuntimeError 由外层
-            # ``except Exception`` 兜底，被记成 ERROR 级 ``处理通知事件失败``
-            # 日志——日志归因不准（看上去像 provider 故障，实际是 atexit /
-            # restart / 显式 shutdown 引发的良性竞态），还会污染监控告警。
-            #
-            # 修复策略：把 submit 循环单独包一层 ``try/except RuntimeError``，
-            # 命中后识别为"shutdown 并发竞态"——和第 579 行的"shutdown 后跳过
-            # 事件"语义一致——降级为 DEBUG 日志并 return；不进入外层 except，
-            # 也不触发重试。注意只 catch ``RuntimeError`` 这一狭窄异常类型，
-            # 真正的 provider / 序列化异常仍由外层 except 兜底，可观测性不变。
             futures = {}
             try:
                 for notification_type in event.types:
@@ -1288,15 +1061,13 @@ class NotificationManager:
                     )
                     futures[future] = notification_type
             except RuntimeError as submit_err:
-                # 二次确认：``_shutdown_called`` 真为 True 时才走 R114 静默路径，
-                # 否则（比如 RuntimeError 来自其它原因）仍交给外层 except 处理。
                 if getattr(self, "_shutdown_called", False):
                     logger.debug(
                         f"[R114] _executor.submit 与 shutdown 竞态，跳过事件: "
                         f"{event.id} (submitted={len(futures)}/{len(event.types)}, "
                         f"reason={submit_err})"
                     )
-                    # 已 submit 的 future 让 cancel_futures=True 自然取消即可。
+
                     return
                 raise
 
@@ -1304,13 +1075,6 @@ class NotificationManager:
             completed_count = 0
             total_count = len(futures)
 
-            # 【优化】使用 try-except 捕获超时，避免未完成任务导致错误日志
-            # as_completed 超时时会抛出 TimeoutError: "N (of M) futures unfinished"
-            #
-            # Window = ``bark_timeout`` + buffer：见模块顶部
-            # ``_AS_COMPLETED_TIMEOUT_BUFFER_SECONDS`` 的设计说明。这一行历史上
-            # 硬编码 ``timeout=15``，会在 ``bark_timeout > 15`` 时让用户重复
-            # 收到 Bark 推送——已通过 ``test_notification_manager_as_completed_timeout``
             # 锁住 contract。
             try:
                 bark_timeout = max(int(getattr(self.config, "bark_timeout", 10)), 1)
@@ -1329,14 +1093,12 @@ class NotificationManager:
                             exc_info=True,
                         )
             except TimeoutError:
-                # 【优化】超时时记录警告而非错误，因为部分通知可能已成功
                 unfinished_count = total_count - completed_count
                 logger.warning(
                     f"通知发送部分超时: {event.id} - "
                     f"{completed_count}/{total_count} 完成，{unfinished_count} 未完成"
                 )
-                # 尝试取消未完成的任务
-                # 注意：cancel() 对已在运行的任务不会生效，只能取消排队中的任务
+
                 for future, notification_type in futures.items():
                     if not future.done():
                         cancelled = future.cancel()
@@ -1347,11 +1109,9 @@ class NotificationManager:
                                 f"任务正在运行，无法取消: {notification_type.value}"
                             )
 
-            # 触发回调（每次尝试都会触发，便于调试/前端展示）
             self.trigger_callbacks("notification_sent", event, success_count)
 
             if success_count == 0:
-                # 失败：若仍有重试额度，则调度重试并提前返回（不进入降级）
                 if event.retry_count < event.max_retries:
                     event.retry_count += 1
                     try:
@@ -1368,13 +1128,11 @@ class NotificationManager:
                     self.trigger_callbacks("notification_retry_scheduled", event)
                     return
 
-                # 无重试额度：最终失败
                 self._mark_event_finalized(event, succeeded=False)
                 if self.config.fallback_enabled:
                     logger.warning(f"所有通知方式失败，启用降级处理: {event.id}")
                     self._handle_fallback(event)
             else:
-                # 只要有任一渠道成功，视为成功（并终止后续重试）
                 self._mark_event_finalized(event, succeeded=True)
                 logger.info(
                     f"通知发送完成: {event.id} - 成功 {success_count}/{total_count}"
@@ -1382,7 +1140,7 @@ class NotificationManager:
 
         except Exception as e:
             logger.error(f"处理通知事件失败: {event.id} - {e}", exc_info=True)
-            # 异常：优先走重试；重试耗尽再降级
+
             if event.retry_count < event.max_retries:
                 event.retry_count += 1
                 try:
@@ -1410,7 +1168,7 @@ class NotificationManager:
             provider = self._providers.get(notification_type)
         if not provider:
             logger.debug(f"未找到通知提供者: {notification_type.value}")
-            # 【可观测性】即便 provider 缺失，也记录一次失败（避免“静默丢失”）
+
             try:
                 with self._stats_lock:
                     stats = _get_or_create_provider_stats(
@@ -1420,7 +1178,7 @@ class NotificationManager:
                     stats["failure"] += 1
                     stats["last_failure_at"] = time.time()
                     stats["last_error"] = "provider_not_registered"
-                    # R145: not_registered 视为失败，累加 failure_streak
+
                     stats["failure_streak"] = (
                         int(stats.get("failure_streak", 0) or 0) + 1
                     )
@@ -1430,7 +1188,6 @@ class NotificationManager:
             return False
 
         try:
-            # 【可观测性】记录提供者级别的尝试次数
             try:
                 with self._stats_lock:
                     stats = _get_or_create_provider_stats(
@@ -1441,7 +1198,7 @@ class NotificationManager:
                 pass
 
             started_at = time.time()
-            # 调用提供者的发送方法
+
             if hasattr(provider, "send"):
                 ok = bool(provider.send(event))
             else:
@@ -1450,7 +1207,6 @@ class NotificationManager:
             completed_at = time.time()
             latency_ms = max(int((completed_at - started_at) * 1000), 0)
 
-            # 【可观测性】记录结果与最近错误
             try:
                 with self._stats_lock:
                     stats = _get_or_create_provider_stats(
@@ -1463,11 +1219,9 @@ class NotificationManager:
                     stats["latency_ms_count"] = (
                         int(stats.get("latency_ms_count", 0) or 0) + 1
                     )
-                    # R191：同步写入 provider latency histogram。已经
-                    # 在 ``_stats_lock`` 内，``_record_provider_latency_bucket``
-                    # 不重复加锁。``latency_ms`` 是 int 毫秒，换算成秒
+
                     # 才是 Prom histogram ``aiia_notification_send_duration
-                    # _seconds`` 的单位。
+
                     self._record_provider_latency_bucket(
                         notification_type.value, latency_ms / 1000.0
                     )
@@ -1475,8 +1229,7 @@ class NotificationManager:
                         stats["success"] += 1
                         stats["last_success_at"] = completed_at
                         stats["last_error"] = None
-                        # R145: success_streak / failure_streak 维护——
-                        # 成功 → 累加 success_streak，failure_streak 归零
+
                         stats["success_streak"] = (
                             int(stats.get("success_streak", 0) or 0) + 1
                         )
@@ -1484,7 +1237,7 @@ class NotificationManager:
                     else:
                         stats["failure"] += 1
                         stats["last_failure_at"] = completed_at
-                        # Bark 在 debug/test 模式下会写入 event.metadata["bark_error"]
+
                         last_error = None
                         if (
                             notification_type == NotificationType.BARK
@@ -1495,7 +1248,7 @@ class NotificationManager:
                         stats["last_error"] = (
                             str(last_error)[:800] if last_error is not None else None
                         )
-                        # R145: 失败 → 累加 failure_streak，success_streak 归零
+
                         stats["failure_streak"] = (
                             int(stats.get("failure_streak", 0) or 0) + 1
                         )
@@ -1507,7 +1260,6 @@ class NotificationManager:
         except Exception as e:
             logger.error(f"发送通知失败 {notification_type.value}: {e}", exc_info=True)
 
-            # 【可观测性】记录异常
             try:
                 with self._stats_lock:
                     stats = _get_or_create_provider_stats(
@@ -1516,7 +1268,7 @@ class NotificationManager:
                     stats["failure"] += 1
                     stats["last_failure_at"] = time.time()
                     stats["last_error"] = f"{type(e).__name__}: {e}"[:800]
-                    # R145: 异常路径视为失败，累加 failure_streak
+
                     stats["failure_streak"] = (
                         int(stats.get("failure_streak", 0) or 0) + 1
                     )
@@ -1562,7 +1314,6 @@ class NotificationManager:
             return
         self._shutdown_called = True
 
-        # 取消所有未触发的延迟通知
         try:
             with self._delayed_timers_lock:
                 timers = tuple(self._delayed_timers.values())
@@ -1575,39 +1326,29 @@ class NotificationManager:
         except Exception as e:
             logger.debug(f"取消延迟通知 Timer 失败（忽略）: {e}")
 
-        # 关闭线程池
         try:
-            # cancel_futures 在 Python 3.9+ 可用
             self._executor.shutdown(wait=wait, cancel_futures=True)
         except TypeError:
-            # 兼容旧签名（尽管项目要求 3.11+，这里保持稳健）
             self._executor.shutdown(wait=wait)
         except Exception as e:
             logger.debug(f"关闭通知线程池失败（忽略）: {e}")
 
-        # grace-wait：给 in-flight worker 显式时间窗口收尾。
-        # 仅在 ``wait=False`` 且 ``grace_period > 0`` 时启用——
-        # ``wait=True`` 已是无限等待，不需要再叠加 grace。
         if not wait and grace_period > 0:
             try:
                 deadline = time.monotonic() + grace_period
-                # ``_threads`` 是 ``ThreadPoolExecutor`` 私有属性
-                # （CPython 3.9-3.13 一直存在），这里仅 read 不 mutate。
+
                 worker_threads = tuple(getattr(self._executor, "_threads", ()) or ())
                 for t in worker_threads:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        # 超时了，剩下的 worker 留给 Python 主进程退出阶段 join
                         break
                     try:
                         t.join(timeout=remaining)
                     except Exception:
-                        # join 罕见地抛异常（线程对象失效等），跳过
                         continue
             except Exception as e:
                 logger.debug(f"grace-wait 期间异常（忽略）: {e}")
 
-        # 关闭并清空 providers（释放可能的网络连接池等资源）
         try:
             with self._providers_lock:
                 providers = tuple(self._providers.values())
@@ -1623,8 +1364,7 @@ class NotificationManager:
             return
 
         self._shutdown_called = False
-        # 与 ``__init__`` 保持完全一致——不能在这里 fork 出独立的常量，
-        # 否则未来加新通知渠道时容易遗漏一处。
+
         self._executor = ThreadPoolExecutor(
             max_workers=_NOTIFICATION_WORKER_COUNT,
             thread_name_prefix="NotificationWorker",
@@ -1642,20 +1382,16 @@ class NotificationManager:
         try:
             config_mgr = get_config()
 
-            # 【性能优化】检查配置文件是否有更新
             config_file_path = config_mgr.config_file
             try:
                 current_mtime = config_file_path.stat().st_mtime
 
-                # 非强制模式下，如果文件未变化则跳过刷新
                 if not force and current_mtime == self._config_file_mtime:
                     logger.debug("配置文件未变化，跳过刷新")
                     return
 
-                # 无论是否强制，都更新 mtime 缓存
                 self._config_file_mtime = current_mtime
             except OSError:
-                # 如果无法获取文件修改时间，继续刷新配置
                 pass
 
             cfg = config_mgr.get_section("notification")
@@ -1693,7 +1429,6 @@ class NotificationManager:
 
                 logger.debug("已从配置文件刷新通知配置")
 
-                # 如果 bark_enabled 状态发生变化，动态更新提供者
                 bark_now_enabled = self.config.bark_enabled
                 if bark_was_enabled != bark_now_enabled:
                     self._update_bark_provider()
@@ -1711,7 +1446,7 @@ class NotificationManager:
 
     def update_config_without_save(self, **kwargs: Any) -> None:
         """仅内存更新配置，不写文件。bark_enabled 变化时自动更新提供者。"""
-        # 【线程安全】使用配置锁保护配置更新操作
+
         with self._config_lock:
             bark_was_enabled = self.config.bark_enabled
             sensitive_keys = {"bark_device_key"}
@@ -1724,7 +1459,6 @@ class NotificationManager:
                     else:
                         logger.debug(f"配置已更新: {key} = {value}")
 
-            # 如果Bark配置发生变化，动态更新提供者
             bark_now_enabled = self.config.bark_enabled
             if bark_was_enabled != bark_now_enabled:
                 self._update_bark_provider()
@@ -1733,12 +1467,9 @@ class NotificationManager:
         """根据 bark_enabled 动态添加/移除 Bark 提供者（延迟导入避免循环依赖）"""
         try:
             if self.config.bark_enabled:
-                # 启用Bark通知，添加提供者
                 with self._providers_lock:
                     bark_registered = NotificationType.BARK in self._providers
                 if not bark_registered:
-                    # 【关键修复】使用延迟导入解决循环导入问题
-                    # 在方法内部导入，而非模块级别，避免加载时循环依赖
                     from ai_intervention_agent.notification_providers import (
                         BarkNotificationProvider,
                     )
@@ -1747,7 +1478,6 @@ class NotificationManager:
                     self.register_provider(NotificationType.BARK, bark_provider)
                     logger.info("Bark通知提供者已动态添加")
             else:
-                # 禁用Bark通知，移除提供者
                 removed: Any | None = None
                 with self._providers_lock:
                     removed = self._providers.pop(NotificationType.BARK, None)
@@ -1770,10 +1500,8 @@ class NotificationManager:
         try:
             config_mgr = get_config()
 
-            # 内部 sound_volume 始终为 0.0-1.0，保存到文件时转为 0-100 整数
             sound_volume_int = round(self.config.sound_volume * 100)
 
-            # 构建配置字典
             notification_config = {
                 "enabled": self.config.enabled,
                 "debug": self.config.debug,
@@ -1800,7 +1528,6 @@ class NotificationManager:
                 "bark_url_template": self.config.bark_url_template,
             }
 
-            # 更新配置文件
             config_mgr.update_section("notification", notification_config)
             logger.debug("配置已保存到文件")
         except Exception as e:
@@ -1818,18 +1545,15 @@ class NotificationManager:
           段仅"暴露给 stats"，进程不会自动重发——避免重启后用户被旧
           通知刷屏；运维 / dashboard 可基于此发出 alarm。
         """
-        # 线程安全地获取队列大小
+
         with self._queue_lock:
             queue_size = len(self._event_queue)
-            # R136: getattr 兜底兼容绕开 __init__ 的测试 helper / 老调用
-            # 路径——这条路径不应该是常态，但 fail-soft 比 fail-hard 更
-            # 适合 status 端点（端点本身不应当因为内部字段缺失就 5xx）。
+
             inflight_persisted_ids = getattr(self, "_inflight_persisted_ids", None)
             inflight_persisted_count = (
                 len(inflight_persisted_ids) if inflight_persisted_ids is not None else 0
             )
 
-        # 线程安全地获取统计快照
         try:
             with self._stats_lock:
                 stats_snapshot = self._stats.copy()
@@ -1843,7 +1567,7 @@ class NotificationManager:
                     else {}
                 )
                 stats_snapshot["providers"] = providers_stats
-                # 计算派生指标（阶段 A：delivery_success_rate 等）
+
                 try:
                     succeeded = int(stats_snapshot.get("events_succeeded", 0) or 0)
                     failed = int(stats_snapshot.get("events_failed", 0) or 0)
@@ -1859,7 +1583,6 @@ class NotificationManager:
                 except Exception:
                     pass
 
-                # 提供者级别 success_rate（不影响主流程）
                 try:
                     for st in providers_stats.values():
                         attempts = int(st.get("attempts", 0) or 0)
@@ -1882,9 +1605,6 @@ class NotificationManager:
         with self._providers_lock:
             providers = [t.value for t in self._providers]
 
-        # R469: avoid eager ``[]`` fallback allocation on the normal initialized
-        # status path. Still copy the list before returning so callers cannot
-        # mutate internal startup state.
         inflight_seen_at_startup = getattr(self, "_inflight_seen_at_startup", None)
         inflight_seen_at_startup_copy = (
             list(inflight_seen_at_startup)
@@ -1907,21 +1627,14 @@ class NotificationManager:
                 "bark_timeout": self.config.bark_timeout,
             },
             "stats": stats_snapshot,
-            # R136: 当前进程持久化集合的 inflight 事件数（≥0）；
-            # 启动时一次性 load 的上次未投递事件元数据列表（list 副本，
-            # 防 caller 改写内部状态）。``getattr`` 兜底兼容绕开 __init__
-            # 的测试 helper / 老调用路径。
             "inflight_persisted_count": inflight_persisted_count,
             "inflight_seen_at_startup": inflight_seen_at_startup_copy,
         }
 
 
-# 全局通知管理器实例
 notification_manager = NotificationManager()
 
-# 【资源生命周期】进程退出时尽量清理后台资源（Timer/线程池）
-# - 避免测试或 REPL 退出时出现线程池阻塞
-# - shutdown() 幂等，重复调用安全
+
 import atexit  # noqa: E402
 
 # atexit 的 grace 窗口（秒）。1.5s 是经验值：
@@ -1940,7 +1653,6 @@ def _shutdown_global_notification_manager():
             wait=False, grace_period=_ATEXIT_GRACE_PERIOD_SECONDS
         )
     except Exception:
-        # 退出阶段不再抛异常
         pass
 
 

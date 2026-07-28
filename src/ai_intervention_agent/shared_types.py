@@ -1,21 +1,8 @@
-"""
-共享类型定义（Pydantic 配置段模型 + TypedDict 反馈结构）
-
-目的：
-- 配置段模型：提供 TOML 配置段的运行时校验与类型安全
-- TypedDict：让 `ty` 在跨模块分析时拥有一致的结构化类型
-
-命名规则：
-- 配置段模型以 `SectionConfig` 后缀命名，与 notification_manager.NotificationConfig 等运行时模型区分
-"""
+"""共享类型定义（Pydantic 配置段模型 + TypedDict 反馈结构）"""
 
 from typing import Annotated, Any, TypedDict
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict
-
-# ---------------------------------------------------------------------------
-# 可复用的 Pydantic 前置校验器（替代 safe_bool / safe_int / safe_str）
-# ---------------------------------------------------------------------------
 
 
 def _coerce_bool(v: Any) -> Any:
@@ -109,11 +96,6 @@ SafeFloat = Annotated[float, BeforeValidator(_coerce_float)]
 SafeStr = Annotated[str, BeforeValidator(_coerce_str)]
 
 
-# ---------------------------------------------------------------------------
-# 反馈数据结构（TypedDict，用于运行时字典构造）
-# ---------------------------------------------------------------------------
-
-
 class FeedbackImage(TypedDict, total=False):
     """单张图片的结构（Web UI / MCP 交互中使用）"""
 
@@ -131,14 +113,6 @@ class FeedbackResult(TypedDict):
     user_input: str
     selected_options: list[str]
     images: list[FeedbackImage]
-
-
-# ---------------------------------------------------------------------------
-# Pydantic 配置段模型（与 config_manager._get_default_config 对齐）
-#
-# 每个模型的默认值即为 TOML 配置的默认值（单一真相源）。
-# extra="allow" 确保未知键不会被丢弃（用户可自定义扩展键）。
-# ---------------------------------------------------------------------------
 
 
 class NotificationSectionConfig(BaseModel):
@@ -168,12 +142,7 @@ class NotificationSectionConfig(BaseModel):
     bark_icon: SafeStr = ""
     bark_action: SafeStr = "none"
     bark_timeout: Annotated[int, BeforeValidator(_clamp_int(1, 300, 10))] = 10
-    # bark_url_template: 当 bark_action == "url" 且事件 metadata 未提供具体链接时，
-    # 用此模板生成点击跳转 URL；支持 {task_id} / {event_id} / {base_url} 占位符，
-    # 未识别的占位符会原样保留，不会抛出 KeyError。
-    # R706：接受任意合法 "scheme://" URL——除 http(s) 外也支持
-    # "shortcuts://run-shortcut?name=ai%20intervention%20agent" 这类
-    # iOS 深链（点击 Bark 通知直接打开快捷指令）
+
     bark_url_template: SafeStr = "{base_url}/?task_id={task_id}"
 
 
@@ -189,26 +158,11 @@ class WebUISectionConfig(BaseModel):
     http_request_timeout: Annotated[int, BeforeValidator(_clamp_int(1, 600, 30))] = 30
     http_max_retries: Annotated[int, BeforeValidator(_clamp_int(0, 20, 3))] = 3
     http_retry_delay: Annotated[float, BeforeValidator(_clamp_float(0, 60, 1.0))] = 1.0
-    # log_level: standalone server 的 enhanced_logging 模块日志级别。
-    # 有效值（不区分大小写）："DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"；
-    # 运行时还可被 ``AI_INTERVENTION_AGENT_LOG_LEVEL`` 环境变量覆盖（env var
-    # 胜出，便于不改 config.toml 做一次性 debug）。这里仅做 ``SafeStr`` 不做
-    # 严格 enum 校验——``enhanced_logging.get_log_level_from_config`` 自己负
-    # 责无效值的 fallback 与 warning，避免 Pydantic 阶段就抛 ValidationError
-    # 把整个 web_ui section 拒绝掉（用户体验：错一个 log_level 不应炸掉整个
-    # web_ui section 的别的字段）。
+
     log_level: SafeStr = "WARNING"
-    # external_base_url: 可选；用于拼装 Bark 点击 URL 等"外部跳转"链接。
-    # 留空时优先按 mDNS（http://{mdns.hostname}:{port}）兜底，再回退到
-    # http://{host}:{port}；用户可填反代域名，例如 "https://ai.example.com"。
-    # 末尾斜杠会被视为同义字符，运行时会做规范化。
+
     external_base_url: SafeStr = ""
-    # ios_a2hs_hint_dismissed: iOS「安装到桌面」引导横幅的服务端 dismiss
-    # 状态（R707）。快捷指令「显示网页」（SFSafariViewController）的
-    # localStorage 与 Safari 不共享且跨会话不持久——纯前端 dismiss 存不
-    # 住，横幅每次都重新弹。用户点叉后前端调
-    # POST /api/system/ios-a2hs-dismiss 写入 true，模板渲染时注入该值，
-    # 任何设备/会话关一次就永久不再显示（单用户工具的全局语义）。
+
     ios_a2hs_hint_dismissed: SafeBool = False
 
 
@@ -236,25 +190,12 @@ class NetworkSecuritySectionConfig(BaseModel):
         "172.16.0.0/12",
     ]
     blocked_ips: list[str] = []
-    # Explicit additional request Host values accepted by Flask TRUSTED_HOSTS.
-    # Defaults are derived at runtime from loopback, bind_interface, mDNS, and
-    # web_ui.external_base_url; this field is only for custom DNS/proxy names.
+
     trusted_hosts: list[str] = []
     access_control_enabled: SafeBool = True
-    # R189 / T4: 可选 API token 认证。空串=未配置（loopback-only）。
-    # 长度约束（< 16 视作未配置；> 256 截断；含空白清洗）由
-    # ``NetworkSecurityMixin._validate_network_security_config`` 强制执行；
-    # 这里的 model 仅声明字段、不做长度校验——保持 pydantic schema 与
-    # toml 默认值一致即可。
+
     api_token: SafeStr = ""
-    # R199 / Cycle 7: API token 上次轮换的 ISO-8601 UTC 时间戳（``Z`` 或
-    # ``+00:00`` 结尾）。由 ``POST /api/system/rotate-api-token``（R195）
-    # 在轮换时自动写入；``GET /api/system/api-token-info``（R199 新增）
-    # 读取后计算 token age。空串 = 从未轮换或字段未配置。格式校验由
-    # ``NetworkSecurityMixin._validate_network_security_config`` 强制执行
-    # —— 非法格式回退为空串。这个字段是**元数据**，不影响 token 鉴权
-    # 本身；只是给 admin 工具一个「该 token 多久没换了」的信号源，
-    # 配合 NIST SP 800-63B 30-90 天轮换建议做 dashboard alert。
+
     api_token_rotated_at: SafeStr = ""
 
 
@@ -271,10 +212,6 @@ class FeedbackSectionConfig(BaseModel):
     prompt_suffix: SafeStr = "\n请积极调用 interactive_feedback 工具"
 
 
-# ---------------------------------------------------------------------------
-# 段名 → 模型类 注册表（供 config_manager 使用）
-# ---------------------------------------------------------------------------
-
 SECTION_MODELS: dict[str, type[BaseModel]] = {
     "notification": NotificationSectionConfig,
     "web_ui": WebUISectionConfig,
@@ -283,9 +220,7 @@ SECTION_MODELS: dict[str, type[BaseModel]] = {
     "feedback": FeedbackSectionConfig,
 }
 
-# ---------------------------------------------------------------------------
-# 向后兼容别名（旧名 → 新名，逐步淘汰）
-# ---------------------------------------------------------------------------
+
 NotificationConfig = NotificationSectionConfig
 MdnsConfig = MdnsSectionConfig
 NetworkSecurityConfig = NetworkSecuritySectionConfig

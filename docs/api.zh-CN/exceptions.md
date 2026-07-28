@@ -4,35 +4,17 @@
 
 项目统一异常定义。
 
-所有业务异常均继承 AIAgentError 基类，支持结构化错误码与附加详情，
-便于日志分析、错误追踪和前端展示。
-
 ## 函数
 
 ### `make_error_response(message: str, status_code: int = 400) -> tuple[dict[str, Any], int]`
 
 构建标准化的 Flask API 错误响应。
 
-返回值可直接作为 Flask 路由的 return 值（jsonify 由调用方负责）。
-
-用法::
-
-    from ai_intervention_agent.exceptions import make_error_response
-    from flask import jsonify
-    return jsonify(make_error_response("任务不存在", 404, code="not_found")[0]), 404
-    # 或更简洁：
-    body, status = make_error_response("任务不存在", 404, code="not_found")
-    return jsonify(body), status
-
 ## 类
 
 ### `class AIAgentError`
 
 项目基础异常。
-
-属性:
-    code: 机器可读的错误码（如 "service_unavailable"），可选
-    details: 附加结构化信息，便于调试或前端展示
 
 #### 方法
 

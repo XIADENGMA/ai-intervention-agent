@@ -8,20 +8,6 @@
     />
     <title>AI Intervention Agent</title>
 
-    <!--
-      PWA / favicon 图标家族（按设备分别覆盖）：
-      - SVG 优先，桌面浏览器与 Android Chrome 都能直接使用矢量
-      - 16/32 PNG 给老旧浏览器和 Windows 任务栏
-      - 180 PNG 是 iOS Safari「添加到主屏幕」必需（iOS 不读 SVG）
-      - manifest 中再列 192/512/maskable，安装为 PWA 时图标才正确
-
-      BUG4 修复：所有 icon URL 带 ``?v={{ version }}`` cache-busting query。
-      理由：service worker 走 cache-first（``notification-service-worker.js``
-      的 ``/icons/`` 白名单），版本号变化时 SW cache key 自然失效，浏览器
-      会重新拉取最新图标。配合 SW 的 offline-resilient fallback（fetch
-      失败时返回 503 而非 reject），后台中断恢复后图标能自动重新加载，
-      不再需要 Cmd+Shift+R 硬刷新。
-    -->
     <link
       rel="icon"
       type="image/svg+xml"
@@ -58,7 +44,6 @@
     <meta name="apple-mobile-web-app-title" content="AI Agent" />
     <meta name="mobile-web-app-capable" content="yes" />
 
-    <!-- 0.0.0.0 访问兼容性：尽早重定向到 127.0.0.1，避免浏览器/Fetch/通知权限异常 -->
     <script nonce="{{ csp_nonce }}">
       (function redirectZeroHostToLoopback() {
         try {
@@ -78,16 +63,6 @@
       })();
     </script>
 
-    <!-- R250 / mining-9 perf-audit cycle-3 §3.1 — Anti-FOUC theme bootstrap
-         主题模块 ``theme.js`` 在 ``<body>`` 末尾 defer 加载，浏览器解析到此
-         时 ``ThemeManager.init`` 尚未执行，``<html data-theme>`` 未写。
-         结果：用户偏好与系统偏好不符（如系统亮色但偏好 dark）时会先按系
-         统偏好渲染 → defer 脚本 fire 后突变到用户偏好 → 肉眼可见 FOUC。
-         本脚本同步读 localStorage + 解析 auto 偏好 → 立即写 data-theme，
-         让 CSS 第一帧就用正确变量。~15 LoC 同步开销 < 1ms（缓存 hot），
-         远小于一次 layout/paint 切换成本（~10-30ms）。后续 ``theme.js``
-         init 不冲突（同 attribute 写入是幂等的）。
-         CSP nonce 必须保留——CSP `script-src 'nonce-...'` 不允许裸 inline。-->
     <script nonce="{{ csp_nonce }}">
       (function antiFoucThemeBootstrap() {
         try {
@@ -109,18 +84,6 @@
       })();
     </script>
 
-    <!-- 资源预加载优化：减少首屏渲染阻塞
-         R21.1：扩展 preload 范围至首屏 critical JS（app.js / multi_task.js / i18n.js / state.js），
-         让浏览器在 head 解析阶段就并行下载这些 body 末尾 defer 加载的脚本，FCP 提早 30-100 ms。
-         R27.1：把 head 内 ``<script defer>`` 加载的 ``marked.js`` 与 ``prism.min.js``
-         也补进 preload 列表 —— 虽然 head defer 脚本浏览器扫到时已经在并行下载，但
-         preload 让 preload-scanner（lookahead pre-parser）在 ``<head>`` 解析的最早期
-         就发起请求，比 ``<script defer>`` 主解析器扫到时再发请求更早 ~5-15 ms；
-         同时将 ``prism.js`` 切换到 ``prism.min.js``（upstream 自带 minified 版本，
-         功能等价、行为字节级一致），原始 58 KB → 25 KB（brotli 后 15 KB → 7.3 KB），
-         首屏可省 ~33 KB 带宽与对应解析时间。
-         必须保留 ``?v=`` 版本号 query 与下游 ``<script>`` 标签**完全一致**，否则 preload 缓存命中失败。
-         CSP nonce 不属于 URL 的一部分，无需在 preload link 上声明。 -->
     <link
       rel="preload"
       href="/static/css/prism.css?v={{ prism_css_version }}"
@@ -157,47 +120,29 @@
       as="script"
     />
 
-    <!-- MathJax 数学公式支持 - 按需加载优化（1.17MB → 需要时才加载）
-         R20.12-A: 加 `defer` 解 head 同步阻塞 — 该脚本只定义 `window.MathJax`
-         配置 + `window.hasMathContent` / `window.loadMathJaxIfNeeded` helper，
-         真正的 tex-mml-chtml.js 是用户首次粘贴含公式 Markdown 时才动态 appendChild，
-         此时 DOMContentLoaded 早已 fire，defer 完全安全。defer 按 HTML 顺序执行，
-         本脚本仍是第一个 defer，先于 marked / prism / app 加载，依赖关系不变。 -->
     <script
       defer
       src="/static/js/mathjax-loader.js?v={{ mathjax_loader_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- Prism.js 代码高亮 CSS -->
     <link
       rel="stylesheet"
       href="/static/css/prism.css?v={{ prism_css_version }}"
     />
 
-    <!-- marked.js Markdown 渲染（defer 属性：按顺序异步加载）
-         R27.2：``?v={{ marked_js_version }}`` 让 ``serve_js`` 路由匹配带版本查询
-         分支，缓存策略从 ``max-age=3600``（1 小时）升级到 ``max-age=31536000,
-         immutable``（1 年永久），重复打开 web_ui 跳过 304 revalidation 往返。 -->
     <script
       defer
       src="/static/js/marked.js?v={{ marked_js_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- Prism.js 代码高亮 JS（defer 属性：按顺序异步加载）
-         R27.1：切换到 ``prism.min.js``（upstream 自带 minified 版本），与 ``prism.js``
-         功能行为字节级等价，但体积 58 KB → 25 KB（brotli 后 15 KB → 7.3 KB），
-         同时上方 ``<head>`` 内有匹配的 preload link 让 preload-scanner 抢先发请求。
-         R27.2：与 ``marked.js`` 一致带 ``?v={{ prism_min_js_version }}`` 实现 1 年
-         immutable 缓存策略升级。 -->
     <script
       defer
       src="/static/js/prism.min.js?v={{ prism_min_js_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- 主样式表（外部文件，带版本哈希用于缓存控制） -->
     <link
       rel="stylesheet"
       href="/static/css/main.css?v={{ css_version }}"
@@ -327,15 +272,7 @@
           AI Intervention Agent
         </h1>
         <div class="header-actions">
-          <!-- §3.1 SSE 连接状态指示器（feat-sse-status-indicator）
-               对标 mcp-feedback-enhanced 的 Connection Monitoring。
-               设计原则：**非侵入式** —— 默认（已连接）隐藏，仅在
-               reconnecting / disconnected 状态可见，零打扰健康路径。
 
-               状态由 multi_task.js 通过 ``setSseStatus(state)``
-               切换 ``data-sse-state`` 属性；CSS 根据属性切换可见性
-               + 颜色 + 动画。无 JS 模块加载时元素保持隐藏，不破坏
-               legacy 路径。 -->
           <span
             id="sse-status-indicator"
             class="sse-status-indicator"
@@ -399,19 +336,7 @@
               />
             </svg>
           </button>
-          <!-- ``#export-tasks-btn``（R125b 引入的右上角任务列表下载按钮）已按
-               用户偏好移除。后端 ``/api/tasks/export`` API 保留供 CI / 备份脚本
-               独立调用（R125/R135 用例文档化）。
-               历史 R125b/R232 invariant 锚点见 ``tests/test_icon_only_buttons_aria_label_invariant_r232.py``
-               与 ``CHANGELOG`` 中 feat-remove-download 段。
-               ----
-               ``#pwa-install-btn`` / ``#pwa-install-dismiss-btn``（原 R247 /
-               mining-7 Track A 自定义 PWA 安装提示按钮）也已按 cycle-22
-               用户偏好整体下架（``feat-remove-pwa-install``）。manifest 与
-               Service Worker 保留，PWA 安装能力本身完全不受影响，用户依然
-               可以通过 Chrome 地址栏「安装」图标 / iOS Safari Share → 添加
-               到主屏幕 等浏览器原生入口安装。invariant 锚点见
-               ``tests/test_feat_remove_pwa_install.py``。 -->
+
           <button
             class="settings-btn"
             id="settings-btn"
@@ -455,13 +380,6 @@
         </div>
       </div>
 
-      <!-- 统一三态面板（T1 · C10b / @aiia/tri-state-panel）
-           默认 data-state="ready" → CSS 将整个面板 display:none；通过 URL 调试参数
-           ?aiia_tri_state=loading|skeleton|empty|error[&aiia_tri_state_error=network|server_500|timeout|unknown]
-           [&aiia_tri_state_empty=default|filtered] 可手动切换到各分支用于 E2E 演示。
-           正式消费（loading/empty/error 真实业务驱动）由 C10d / S2 接入 window.AIIA_CONTENT_SM。
-           反向闸门（tests/test_runtime_behavior.py::test_pre_reserved_keys_not_yet_consumed）
-           依赖以下 13 个 data-i18n 声明以标记 Web 端消费完成。 -->
       <div
         id="aiia-tri-state-panel"
         class="aiia-tri-state-panel"
@@ -623,14 +541,7 @@
       <div id="content-container" class="content">
         <div class="feedback-group">
           <div class="header-info-container">
-            <!--
-              mining-cycle-3 §2.1 borrow #1 (gemini-cli ask_user.header)：
-              ≤16-char 短标签 chip，由 JS ``updateHeaderChip`` 控制显示。
-              默认 display:none，agent 提供 header_label 时 expose。
-              注意：chip 必须放在 .task-id-container 之外——后者被 CSS
-              无条件隐藏（任务 ID 已在标签页显示），chip 若嵌套其中会
-              被祖先 display:none 永久遮蔽（R695 修复）。
-            -->
+
             <span
               class="task-header-chip"
               id="task-header-chip"
@@ -659,8 +570,7 @@
             </div>
 
             <div class="countdown-container hidden" id="countdown-container">
-              <!-- R696：时钟图标改为 stroke:currentColor 的内联 SVG，
-                   跟随主题色（暗色琥珀 / 浅色深陶土橙），替换 emoji -->
+
               <span class="countdown-label" aria-hidden="true">
                 <svg
                   width="15"
@@ -678,20 +588,11 @@
                   <path d="M12 7v5l3 3" />
                 </svg>
               </span>
-              <!-- R709：不带 data-i18n——文案由 multi_task.js 每秒以
-                   _t("page.countdown", {seconds}) 重写（带参数插值）；
-                   translateDOM 的静态翻译会把它覆盖成未替换的
-                   "{seconds}s" 字面量。容器默认 hidden，初始静态文案
-                   不可见，无需模板级翻译。 -->
+
               <span class="countdown-text" id="countdown-text"
                 >0s until auto-resubmit</span
               >
-              <!-- feat-countdown-extend (§3.2): +60s 扩展按钮，靠在
-                   countdown text 右侧。默认 disabled + 隐藏，由
-                   ``updateCountdownExtendButton(task)`` 在 task 数据变
-                   化时同步可点击状态。点击触发
-                   POST /api/tasks/<task_id>/extend，成功后自动 refresh
-                   倒计时 + extends_used 计数。 -->
+
               <button
                 type="button"
                 id="countdown-extend-btn"
@@ -709,13 +610,7 @@
                   >+60s</span
                 >
               </button>
-              <!-- mining-6 Track A (cycle-5 §3.6 derivative): freeze button.
-                   永久禁用当前 task 的 auto-resubmit 倒计时；适合
-                   长任务场景（用户不希望被反复 resubmit 打断）。默认
-                   hidden + disabled，由 ``updateFreezeCountdownButton(task)``
-                   在 task 有 active timeout 时显示。点击触发
-                   POST /api/tasks/<task_id>/freeze，成功后倒计时圆环
-                   立刻消失（auto_resubmit_timeout = 0）。 -->
+
               <button
                 type="button"
                 id="countdown-freeze-btn"
@@ -736,14 +631,6 @@
             </div>
           </div>
 
-          <!--
-            Loop 工程 P2（docs/loop-engineering-design-notes.zh-CN.md §3.3）：
-            活动任务的 loop 上下文条。agent 在多轮循环里传入 loop_id /
-            loop_phase / iteration_label / loop_objective / success_criteria
-            时展示，让人在几十轮交互中不丢失"这一轮属于哪个目标、进行到
-            哪个阶段"的脉络。默认 display:none，由 JS ``updateLoopContext``
-            控制显隐；全部字段用 textContent 填充（XSS 安全）。
-          -->
           <div
             class="task-loop-context"
             id="task-loop-context"
@@ -803,12 +690,7 @@
                 id="loop-criteria-value"
               ></span>
             </div>
-            <!--
-              Loop 视图（设计笔记 §3.3 的分组折叠初版）：历史轮次时间线。
-              点击 toggle 拉取 GET /api/loops，按当前 loop_id 渲染已完成
-              轮次（轮次标签 / 阶段 / 完成时间 / verdict 摘要）。由
-              ``toggleLoopHistory`` 控制，全部 textContent 填充。
-            -->
+
             <button
               type="button"
               class="loop-history-toggle"
@@ -928,16 +810,6 @@
             </div>
           </div>
 
-          <!-- 图片放大预览模态框
-               R237 invariant 合规：``role="dialog"`` 元素必须以 ``hidden``
-               attribute 或 ``class="hidden"`` 默认隐藏，由 JS 在用户触发
-               时显示。这里选用标准 ``hidden`` attribute（而非 class），
-               原因：项目 ``.hidden`` class 是 ``display: none !important``
-               会胜过 ``.image-modal.show`` 的 ``display: flex``；标准
-               ``hidden`` attribute 来自 user-agent stylesheet (无 !important)，
-               作者样式表 ``.image-modal.show`` 可以正常 override。
-               配套 JS 见 image-upload.js 的 openImageModal / closeImageModal
-               (cycle-22 R261 follow-up). -->
           <div
             class="image-modal"
             id="image-modal"
@@ -962,7 +834,6 @@
             </div>
           </div>
 
-          <!-- 代码粘贴模态框（iOS/HTTP 等场景无法读取剪贴板时的降级方案） -->
           <div
             class="settings-panel hidden"
             id="code-paste-panel"
@@ -1050,10 +921,6 @@
             </div>
           </div>
 
-          <!-- 隐藏的文件上传input (R235 / Cycle 14: 标 aria-hidden=true +
-               tabindex=-1, 防止键盘 Tab 落焦到不可见 input, 也防止屏幕阅读器
-               读出无名字的 "file upload" 控件; 实际操作通过 #upload-image-btn
-               按钮触发 .click() 把焦点路由过来。) -->
           <input
             type="file"
             id="file-upload-input"
@@ -1073,7 +940,7 @@
               data-i18n-aria-label="page.feedbackTextareaAriaLabel"
               aria-label="Feedback message"
             ></textarea>
-            <!-- R138 — 反馈字符计数器（advisory，不强制 maxlength） -->
+
             <span
               id="feedback-char-counter"
               class="feedback-char-counter"
@@ -1337,14 +1204,7 @@
                     <span class="volume-value">80%</span>
                   </label>
                 </div>
-                <!--
-                  feat-custom-sound (mining-cycle-1 §3.4): 用户上传自定义
-                  通知音效（localStorage backed, 单 slot, MIME 白名单, ≤700KB）。
-                  - 上传后立即写 localStorage + decode 到 audioBuffers['custom']
-                  - playSound() 无参时自动 dispatch 到 'custom' (如果有 buffer)
-                  - Test/Clear/Default 三按钮覆盖完整生命周期
-                  详见 src/.../static/js/notification-manager.js::saveCustomSoundFromFile
-                -->
+
                 <div class="setting-item custom-sound-row">
                   <div class="setting-label">
                     <span
@@ -1740,18 +1600,7 @@
                     >
                   </button>
                 </div>
-                <!-- ``#system-notification-test-btn``（R146/R147/R150）与
-                     ``#activity-dashboard``（R152/R153/R156）两个设置 UI 已按
-                     用户偏好（feat-remove-test）移除。
 
-                     **后端 API 全部保留**，CI / 监控脚本仍可独立调用：
-                       - POST /api/system/notifications/test  （触发自检通知）
-                       - GET  /api/system/health              （投递状态 probe）
-                       - GET  /api/system/sse-stats           （SSE 总线指标）
-                       - GET  /api/system/recent-logs         （近期日志快照）
-
-                     历史不变量 / 回归契约统一迁移到
-                     ``tests/test_feat_remove_test_uis_removed.py``。 -->
                 <div class="setting-item">
                   <button class="btn btn-secondary" id="reset-settings-btn">
                     <svg
@@ -1774,13 +1623,7 @@
                     <span data-i18n="settings.resetBtn">Reset settings</span>
                   </button>
                 </div>
-                <!-- R274 / cycle-24 t24-1：``.export-tasks-row``（mining-2 §3.1
-                     cycle-3 polish 引入的 Settings 页 Export task history UI 入口）
-                     已按用户偏好整体下架。后端 ``/api/tasks/export`` API 保留
-                     供 CI / 备份脚本独立调用（R125/R135 用例文档化）。
-                     历史 invariant 锚点见
-                     ``tests/test_feat_remove_export_tasks_ui_r274.py``
-                     与 ``CHANGELOG`` 中 ``feat-remove-export-tasks-ui-r274`` 段。 -->
+
               </div>
             </div>
 
@@ -1813,13 +1656,12 @@
                     <option value="auto" data-i18n="settings.langAuto">
                       Auto-detect
                     </option>
-                    <!-- Endonyms (language self-names) stay untranslated for cross-locale consistency -->
+
                     <option value="en">English</option>
                     <option value="zh-CN" data-i18n="settings.langZhCN">
                       Chinese (Simplified)
                     </option>
-                    <!-- feat-zhtw-locale (§3.3): zh-TW 选项，文案派生自 zh-CN.json
-                         经 scripts/gen_zhtw_from_zhcn.py 转换，待 native review -->
+
                     <option value="zh-TW" data-i18n="settings.langZhTW">
                       Chinese (Traditional)
                     </option>
@@ -1959,7 +1801,7 @@
                   chars).
                 </div>
               </div>
-              <!-- R140 — 提交模式切换（Ctrl+Enter vs Enter） -->
+
               <div class="setting-item">
                 <label class="setting-label has-input">
                   <span class="setting-title" data-i18n="settings.submitMode"
@@ -2049,7 +1891,6 @@
               </div>
             </div>
 
-            <!-- 常用快捷键 -->
             <h4 class="settings-main-title shortcuts-section">
               <svg
                 class="section-icon"
@@ -2108,12 +1949,6 @@
               </div>
             </div>
 
-            <!-- 版本信息（feat-footer-link-web）：
-                 原本是「``AI Intervention Agent vX.Y.Z`` 文本 + 独立 GitHub
-                 图标按钮」两段；按用户偏好合并为「``[AI Intervention Agent X.Y.Z](GitHub)``」
-                 单链接 —— 整段名称 + 版本号本身可点击，跳到项目 GitHub 仓库。
-                 GitHub 图标作为视觉装饰移到链接前，``aria-hidden`` 让
-                 screen reader 跳过它，仅朗读链接文本即可。 -->
             <div class="version-info">
               <a
                 href="{{ github_url }}"
@@ -2171,8 +2006,6 @@
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- 统一状态机（window.AIIAState；与 state_machine.py 契约同步，详见 state.js）
-         R27.2：``?v={{ state_js_version }}`` 让 ``serve_js`` 命中 1 年 immutable 缓存。 -->
     <script
       defer
       src="/static/js/state.js?v={{ state_js_version }}"
@@ -2185,13 +2018,6 @@
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- i18n 国际化模块（必须在 app.js 之前加载）
-
-         R20.12-B: 服务端已知语言时（非 'auto'）把 locale JSON 内联，让 i18n.init() 跳过
-         一次 fetch /static/locales/<lang>.json (11 KB / 30-80 ms RTT)。
-         注入字符串里的 '<' 会被转义成 '\u003c'，避免 inline JSON 内偶现的 '</script>' 子串
-         提前关闭脚本块（XSS 防御标准做法）。
-         R27.2：``?v={{ i18n_js_version }}`` 让 ``serve_js`` 命中 1 年 immutable 缓存。 -->
     <script
       defer
       src="/static/js/i18n.js?v={{ i18n_js_version }}"
@@ -2246,10 +2072,6 @@
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- R696：lottie 运行时随首屏 defer 预加载（在 app.js 之前），
-         空态动画直接以 Lottie 呈现，消除「SVG 降级动画 → Lottie」的
-         可见切换。app.js 侧仍保留 AIIA_LOTTIE_JS_URL 动态加载兜底
-         （本标签加载失败时走 renderSproutFallback）。 -->
     <script
       defer
       src="/static/js/lottie.min.js?v={{ lottie_min_version }}"
@@ -2262,63 +2084,42 @@
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- R137 — Feedback textarea 高度持久化（localStorage + ResizeObserver） -->
     <script
       defer
       src="/static/js/feedback_textarea_height.js?v={{ feedback_textarea_height_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- R138 — Feedback textarea 字符计数器（三阈值变色 + i18n） -->
     <script
       defer
       src="/static/js/feedback_char_counter.js?v={{ feedback_char_counter_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- R139 — Feedback per-task 草稿持久化（autosave + hydrate） -->
     <script
       defer
       src="/static/js/feedback_drafts.js?v={{ feedback_drafts_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- R247 / mining-7 Track A — 自定义 PWA 安装提示按钮（beforeinstallprompt 捕获 +
-         localStorage dismissal + appinstalled 清理） -->
-    <!-- ``pwa_install.js`` 已随 ``feat-remove-pwa-install`` 整体下架（cycle-22）。
-         保留此空 placeholder 以防搜索"pwa_install"时找不到任何上下文。 -->
-
-    <!-- R248 / mining-8 Track A — iOS Safari "Add to Home Screen" hint banner
-         （仅在 iOS Safari + 非 standalone + 未 dismiss 时显示一次性底部 banner） -->
     <script
       defer
       src="/static/js/ios_a2hs_hint.js?v={{ ios_a2hs_hint_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- R140 — Feedback 提交模式切换（Ctrl+Enter vs Enter） -->
     <script
       defer
       src="/static/js/feedback_submit_mode.js?v={{ feedback_submit_mode_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- R144 — Keyboard shortcut cheatsheet overlay（按 ? 弹出） -->
     <script
       defer
       src="/static/js/keyboard_shortcut_help.js?v={{ keyboard_shortcut_help_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- ``notification_test_button.js`` / ``activity_dashboard.js`` 已随
-         feat-remove-test 一并移除（UI 入口已下线）。后端 API 见同名 setting
-         区注释。回归契约见 ``tests/test_feat_remove_test_uis_removed.py``。 -->
-
-    <!-- T1 · C10b: @aiia/tri-state-panel via Import Maps
-         importmap 必须出现在所有 <script type="module"> 之前（浏览器规范）。
-         业务代码通过 bare specifier `@aiia/tri-state-panel` 消费，Web UI 与 VSCode
-         webview 双端书写完全一致——真正的物理文件路径差异只在 importmap 映射里。
-         CSP 合规：importmap 与 module script 均携带 nonce，受 `script-src 'nonce-...'` 约束。 -->
     <script type="importmap" nonce="{{ csp_nonce }}">
       {
         "imports": {

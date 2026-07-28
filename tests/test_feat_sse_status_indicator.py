@@ -400,10 +400,11 @@ class TestI18nKeys(unittest.TestCase):
 # ============================================================
 class TestDesignAnchors(unittest.TestCase):
     def test_html_has_feat_anchor_comment(self) -> None:
+        # 注释锚点已清理，改锁功能的 DOM id 本身
         self.assertIn(
-            "feat-sse-status-indicator",
+            'id="sse-status-indicator"',
             WEB_UI_HTML.read_text(encoding="utf-8"),
-            "HTML 应有 feat-sse-status-indicator 注释锚点便于 grep / blame",
+            "web_ui.html 必须有 sse-status-indicator 元素",
         )
 
     def test_css_has_feat_anchor_comment(self) -> None:

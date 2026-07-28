@@ -19,33 +19,10 @@ if TYPE_CHECKING:
 logger = EnhancedLogger(__name__)
 
 
-# R20.14-D + R21.4：静态资源 Brotli + gzip 预压缩响应器
-# ============================================================================
-#
-# ``scripts/precompress_static.py`` 离线把 ``static/css/*.css``、
-# ``static/js/*.js``、``static/locales/*.json`` 这类大文件压成同名 ``.br``
-# (R21.4) 和 ``.gz`` (R20.14-D) 副本。本 helper 把「请求带
 # ``Accept-Encoding: br, gzip`` 时按优先级 br > gzip > identity 返回对应
-# 副本」的协商写到一个地方，所有 serve_* 路由共享。
-#
-# 协商优先级
-# -----------
-# 1. 客户端 ``Accept-Encoding`` 含 ``br`` 且 ``.br`` 副本存在 → 服务 ``.br``；
-# 2. 客户端 ``Accept-Encoding`` 含 ``gzip`` 且 ``.gz`` 副本存在 → 服务 ``.gz``；
-# 3. 否则服务原文件（零开销，识别 ``identity``）。
-#
-# Brotli 优先于 gzip 的理由：体积更小（实测 R21.4 -17% 到 -23% on top of gzip），
-# 主流浏览器自 2017 起全部支持，没有兼容性损失；少数 ``curl`` / 老脚本只发
-# ``gzip`` 我们退化到 gzip 也无碍。
-#
-# 失败兜底：
-# - 双副本都不存在 → 服务原文件（zero overhead）；
+
+
 # - 客户端不支持任何压缩 → 服务原文件（``Accept-Encoding: identity``）；
-# - 任何 IO 异常 → fallback 到原路径，让上层路由处理常规 404 / 500。
-#
-# 必须给所有响应（无论是否压缩）打 ``Vary: Accept-Encoding``，让 CDN /
-# 反向代理知道「同一 URL 在不同 Accept-Encoding 下产出不同响应」，避免一个
-# 客户端拿到的 ``.br`` 被另一个只支持 gzip 的客户端从中间缓存里命中。
 
 
 def _parse_accept_encoding(req_obj: object | None = None) -> set[str]:
@@ -55,10 +32,7 @@ def _parse_accept_encoding(req_obj: object | None = None) -> set[str]:
     顺序），要么用 ``*`` 占位；少数 ``q=0`` 表示「明确拒绝」时我们也尊重
     （``gzip;q=0`` 表示不要 gzip）。
     """
-    # 显式三元 + ``getattr`` 兜底：``req_obj`` 是 ``object | None`` 形式以
-    # 兼容测试时传 mock；ty 静态分析看不出 ``req_obj or request`` 在
-    # ``req_obj is None`` 时回退到全局 Flask ``request`` 代理，所以做一次
-    # 精确判空让类型推断把 fallback 路径单独 narrow 到 ``request``。
+
     src = req_obj if req_obj is not None else request
     headers = getattr(src, "headers", None)
     if headers is None:
@@ -72,7 +46,7 @@ def _parse_accept_encoding(req_obj: object | None = None) -> set[str]:
         token = raw_token.strip()
         if not token:
             continue
-        # 拆 ``gzip;q=0.5`` → name="gzip" + qval=0.5
+
         if ";" in token:
             name_part, _, params = token.partition(";")
             name = name_part.strip().lower()
@@ -145,13 +119,6 @@ def _send_with_optional_gzip(
     accepts_brotli = "br" in accepted_encodings or "*" in accepted_encodings
     accepts_gzip = "gzip" in accepted_encodings or "*" in accepted_encodings
 
-    # R710：压缩副本必须**不旧于**源文件才允许使用。此前只查
-    # ``is_file()``——源文件更新而 ``.br``/``.gz`` 未重建的窗口期
-    # （dev 改代码只跑 minify 没跑 precompress、部署产物不完整），
-    # 支持 br 的浏览器会拿到旧内容，并被 ``?v=<新版本>`` +
-    # ``Cache-Control: immutable`` 钉死在缓存里长达一年——比响应变慢
-    # 严重得多。过期副本直接回退 identity 源文件：宁可这次不压缩，
-    # 也绝不把陈旧字节配着新版本号发出去。
     def _compressed_is_fresh(compressed_path: Path, source_path: Path) -> bool:
         try:
             return compressed_path.stat().st_mtime >= source_path.stat().st_mtime
@@ -167,7 +134,6 @@ def _send_with_optional_gzip(
             and br_path.is_file()
             and _compressed_is_fresh(br_path, source_path)
         ):
-            # R21.4：Brotli 优先（实测体积比 gzip 小 17-23%，主流 client 全支持）
             response = send_from_directory(
                 str(directory), br_filename, mimetype=mimetype
             )
@@ -182,13 +148,11 @@ def _send_with_optional_gzip(
             )
             response.headers["Content-Encoding"] = "gzip"
     except OSError:
-        # IO 异常时落到 identity 分支
         response = None
 
     if response is None:
         response = send_from_directory(str(directory), filename, mimetype=mimetype)
 
-    # 即使没用压缩也要打 Vary，否则中间缓存可能错配。
     existing_vary = response.headers.get("Vary", "")
     if "Accept-Encoding" not in existing_vary:
         response.headers["Vary"] = (
@@ -421,7 +385,7 @@ class StaticRoutesMixin:
             actual_filename = self._get_minified_file(css_dir, filename, ".css")
 
             # R20.14-D：``Accept-Encoding: gzip`` + 同名 ``.gz`` 时，发送预压缩
-            # 副本（运行时零 CPU 开销，体积砍 70-85%）；否则原路径不变。
+
             response = _send_with_optional_gzip(
                 css_dir, actual_filename, mimetype="text/css"
             )
@@ -472,7 +436,6 @@ class StaticRoutesMixin:
 
             actual_filename = self._get_minified_file(js_dir, filename, ".js")
 
-            # R20.14-D：同 serve_css，gzip 协商优先，无 .gz 副本则透明 fallback。
             response = _send_with_optional_gzip(
                 js_dir, actual_filename, mimetype="application/javascript"
             )
@@ -557,8 +520,7 @@ class StaticRoutesMixin:
                 abort(404)
 
             lottie_dir = self._project_root / "static" / "lottie"
-            # R20.14-D：Lottie JSON 通常 50-200 KB（``loading-leaves.json`` 即
-            # 50 KB+），gzip 后 ~10-30 KB，3-5× 体积比，值得协商压缩。
+
             return _send_with_optional_gzip(
                 lottie_dir, filename, mimetype="application/json"
             )

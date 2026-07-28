@@ -1,13 +1,4 @@
-"""配置热更新回调 — 从 web_ui.py 提取的纯逻辑。
-
-管理 feedback.auto_resubmit_timeout 和 network_security 配置变更后
-对运行中任务/Web UI 实例的同步逻辑。
-
-设计约束：
-- 模块级状态变量保留在 web_ui.py（测试通过 web_ui.XXX 读写）
-- get_config / get_task_queue 通过 lazy import web_ui 获取
-  → 测试 @patch("web_ui.get_config") 即可生效，无需修改
-"""
+"""配置热更新回调 — 从 web_ui.py 提取的纯逻辑。"""
 
 from __future__ import annotations
 
@@ -122,7 +113,11 @@ def _ensure_network_security_hot_reload_callback_registered() -> None:
 
 
 def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
-    """确保仅注册一次 feedback.auto_resubmit_timeout 热更新回调。"""
+    """确保仅注册一次 feedback.auto_resubmit_timeout 热更新回调。
+
+    R702：注册时只记录当前配置基线（_LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT），
+    不立即同步已存在任务——同步只在配置真正变更的回调里发生。
+    """
     import ai_intervention_agent.web_ui as _wu
 
     if _wu._FEEDBACK_TIMEOUT_CALLBACK_REGISTERED:
@@ -136,12 +131,7 @@ def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
                 _sync_existing_tasks_timeout_from_config
             )
             _wu._FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = True
-            # R702（幽灵提交根因修复，方案 B）：注册 ≠ 配置变更。历史上
-            # 这里会立刻执行一次同步，把「重启后第一个 task/config 请求
-            # 之前创建的任务」（含 API 显式传 3600s 的）无差别覆盖为
-            # config 的 frontend_countdown（用户配置 30s）→ 30 秒后前端
-            # 如实自动提交。现在注册时只记录基准，真正的覆盖只发生在
-            # 之后 config 文件实际变更时（且 R702 方案 A 会跳过显式任务）。
+
             with _wu._FEEDBACK_TIMEOUT_CALLBACK_LOCK:
                 _wu._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT = (
                     _wu._get_default_auto_resubmit_timeout_from_config()
@@ -154,33 +144,6 @@ def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
                 f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}",
                 exc_info=True,
             )
-
-
-# ============================================================================
-# R48: config_changed SSE 推送
-#
-# 设计动机：项目里已经有 ``ConfigManager.start_file_watcher`` + 一组 ``register_
-# config_change_callback`` 在做"运行时热更新"——但用户视角下的反馈缺位：
-#
-#   - 改了 ``notification.bark_url``：要么走 ``_invalidate_runtime_caches_on_config_change``
-#     无声生效，要么压根不在热更新白名单里（多数复杂字段都是后者）。
-#   - 用户没有任何 UI 反馈，只能"改完配置 → 等 / 重启 → 试试看"；非常容易踩
-#     "我以为我改了，但其实是 cwd 错了 / 文件被自动迁移了"的坑。
-#
-# 解决方式：所有 config 变更都额外推一个 ``config_changed`` SSE 事件，让前端
-# （浏览器 PWA / VSCode Webview / VSCode 状态栏）能主动弹一行提示
-# "配置已变更，按 Ctrl+R 重载页面"。客户端不强制 reload，因为：
-#
-#   1. 已经热更新的字段（feedback / network_security）是无感生效的，
-#      用户重载只是为了看 UI 上的当前值；
-#   2. 还没热更新的字段（如 ``mcp.tool_metadata``）只能等下一次重启 server
-#      才能体现，重载页面也无济于事；
-#   3. 让客户端自己决定是 toast 还是 silent log 更合理。
-#
-# 安全性：``_sse_bus.emit`` 自身已经是线程安全 + backpressure-aware，
-# 即使每秒 10 次 mtime 变更也不会让 SSE 链路炸掉；保险起见我们的回调
-# 也只发一个 lightweight 字典，不带任何敏感配置内容。
-# ============================================================================
 
 
 _CONFIG_CHANGED_EMIT_DEBOUNCE_S: float = 0.25
@@ -207,14 +170,7 @@ _emit_debounce_lock: threading.Lock = threading.Lock()
 
 
 def _emit_config_changed_to_sse_bus() -> None:
-    """配置变更回调：通过 SSE 总线推一个 ``config_changed`` 事件（带 debounce）。
-
-    所有已连接的 client（浏览器 PWA / VSCode Webview）都会立刻收到这个
-    事件，UI 自行决定是 toast 提示还是 silent log。
-
-    R50-B：leading-edge debounce 防止 mtime 风暴下 SSE 事件刷屏。
-    详见 ``_CONFIG_CHANGED_EMIT_DEBOUNCE_S`` 注释。
-    """
+    """配置变更回调：通过 SSE 总线推一个 ``config_changed`` 事件（带 debounce）。"""
     global _last_emit_monotonic
     with _emit_debounce_lock:
         now = time.monotonic()
@@ -228,8 +184,6 @@ def _emit_config_changed_to_sse_bus() -> None:
         _last_emit_monotonic = now
 
     try:
-        # lazy import：避免模块加载阶段就拖入 web_ui_routes / Flask 等。
-        # ``_sse_bus`` 是 module-level singleton，import 不会有副作用。
         from ai_intervention_agent.web_ui_routes.task import _sse_bus
 
         _sse_bus.emit(
@@ -243,7 +197,6 @@ def _emit_config_changed_to_sse_bus() -> None:
         )
         logger.debug("config_changed 事件已通过 SSE 总线广播")
     except Exception as e:
-        # 推送失败不应影响主热更新流程；其它已注册的 callback 还会跑。
         logger.warning(
             f"广播 config_changed 事件失败（其它热更新回调不受影响）：{e}",
             exc_info=True,
@@ -251,12 +204,7 @@ def _emit_config_changed_to_sse_bus() -> None:
 
 
 def _ensure_config_changed_sse_callback_registered() -> None:
-    """确保仅注册一次 config_changed SSE 推送回调（R48）。
-
-    与 ``_ensure_*_hot_reload_callback_registered`` 同样的 idempotent
-    模式：模块级 flag + lock 双检，保证不重复注册同一个 callback。
-    注册失败 → 降级到"只在重启时生效"，记录 warning 但不抛异常。
-    """
+    """确保仅注册一次 config_changed SSE 推送回调（R48）。"""
     import ai_intervention_agent.web_ui as _wu
 
     if _wu._CONFIG_CHANGED_SSE_CALLBACK_REGISTERED:
