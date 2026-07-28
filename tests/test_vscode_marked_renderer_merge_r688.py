@@ -70,7 +70,6 @@ def test_configure_marked_uses_use_for_renderer_merge() -> None:
         "R688: 禁用原生 HTML 必须走 marked.use({renderer: ...})（部分合并），"
         "不能用 setOptions 整体替换 renderer"
     )
-    assert "R688" in body, "configureMarkedOnce 必须带 R688 注释标记便于回溯"
 
     set_options_match = re.search(r"marked\.setOptions\(\{(.*?)\}\)", body, re.DOTALL)
     assert set_options_match is not None, (

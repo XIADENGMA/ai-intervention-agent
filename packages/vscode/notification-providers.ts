@@ -5,8 +5,6 @@ import { execFile, execFileSync } from 'child_process'
 import { toAppleScriptStringLiteral, sanitizeForLog } from './applescript-executor'
 import type { Logger } from './logger'
 
-// ── 类型定义 ──
-
 interface ExecError extends Error {
   code?: string | number | null
   cause?: unknown
@@ -83,8 +81,6 @@ interface ProviderOptions {
   executor?: AppleScriptExecutorLike | null
   vscodeApi?: VsCodeApi
 }
-
-// ── 工具函数 ──
 
 function toNonEmptyString(value: unknown, fallback = ''): string {
   const s = value == null ? '' : String(value)
@@ -210,9 +206,7 @@ function findMacAppBundlePathFromAppRoot(appRoot: string): string {
   try {
     let p = (appRoot ?? '').toString().trim()
     if (!p) return ''
-    // 常见形态：
-    // - VS Code: /Applications/Visual Studio Code.app/Contents/Resources/app
-    // - Cursor:  /Applications/Cursor.app/Contents/Resources/app
+
     for (let i = 0; i < 12; i++) {
       if (!p) break
       if (p.toLowerCase().endsWith('.app')) return p
@@ -250,18 +244,13 @@ function ensureExecutable(filePath: string): boolean {
     try {
       fs.chmodSync(filePath, 0o755)
     } catch {
-      // 忽略：权限保持尽力而为（vsix 解压可能保留原始 mode）
+
     }
     return true
   } catch {
     return false
   }
 }
-
-// ── terminal-notifier 稳定路径管理 ──
-// macOS 按「应用路径 + bundle ID」来识别通知源。如果扩展升级/开发目录变化导致
-// terminal-notifier.app 路径变化，macOS 会注册为新的通知源，产生重复条目。
-// 将 terminal-notifier.app 安装到固定的 Application Support 路径来规避此问题。
 
 function getStableAppSupportDir(): string {
   const home = process.env.HOME || ''
@@ -293,7 +282,7 @@ function _migrateLegacyAppSupportDir(newDir: string): void {
     }
     fs.rmSync(legacyDir, { recursive: true, force: true })
   } catch {
-    // 迁移失败不阻塞正常流程
+
   }
 }
 
@@ -308,10 +297,6 @@ function readBundleVersionFromXmlPlist(infoPlistPath: string): string {
   }
 }
 
-/**
- * 将 vendor 目录中的 terminal-notifier.app 安装到 ~/Library/Application Support/ai-intervention-agent/
- * 确保 macOS 始终从同一路径加载，避免重复的通知中心注册条目。
- */
 function ensureStableTerminalNotifier(): StableResult {
   const fail = (error: string): StableResult => ({ bin: '', installed: false, error: error || '' })
 
@@ -362,8 +347,6 @@ function ensureStableTerminalNotifier(): StableResult {
     return fail(e instanceof Error ? e.message : 'unknown')
   }
 }
-
-// ── Provider 类 ──
 
 export class VSCodeApiNotificationProvider {
   private _logger: Logger | null
@@ -488,10 +471,6 @@ export class AppleScriptNotificationProvider {
     }
   }
 
-  /**
-   * 解析宿主 .app 路径（如 /Applications/Visual Studio Code.app）
-   * 用于 AppleScript `activate` 激活窗口
-   */
   _resolveHostAppBundlePath(): string {
     if (this._hostAppBundlePathResolved) return this._hostAppBundlePath
     try {
@@ -510,10 +489,6 @@ export class AppleScriptNotificationProvider {
     return this._hostAppBundlePath
   }
 
-  /**
-   * 发送通知后，尝试通过 AppleScript 激活宿主 IDE 窗口。
-   * best-effort 操作，不阻塞也不影响通知发送结果。
-   */
   _fireActivateHost(bundleId: string): void {
     if (!bundleId || !this._executor || typeof this._executor.runAppleScript !== 'function') return
     try {
@@ -533,11 +508,11 @@ export class AppleScriptNotificationProvider {
             )
           }
         } catch {
-          // 忽略
+
         }
       })
     } catch {
-      // 忽略：激活是 best-effort
+
     }
   }
 
@@ -594,7 +569,7 @@ export class AppleScriptNotificationProvider {
                 )
               }
             } catch {
-              // 忽略
+
             }
             return this._hostBundleId
           })
@@ -616,7 +591,7 @@ export class AppleScriptNotificationProvider {
                 )
               }
             } catch {
-              // 忽略
+
             }
             return ''
           })
@@ -640,7 +615,7 @@ export class AppleScriptNotificationProvider {
           )
         }
       } catch {
-        // 忽略
+
       }
       this._hostBundleIdResolved = true
       this._hostBundleId = ''
@@ -663,7 +638,7 @@ export class AppleScriptNotificationProvider {
             )
           }
         } catch {
-          // 忽略
+
         }
         return this._hostBundleId
       })
@@ -686,7 +661,7 @@ export class AppleScriptNotificationProvider {
             )
           }
         } catch {
-          // 忽略
+
         }
         return ''
       })
@@ -730,7 +705,7 @@ export class AppleScriptNotificationProvider {
           this._logger.debug(vscode.l10n.t('Skipping native notification: non-macOS platform'))
         }
       } catch {
-        // 忽略：日志系统异常不应影响通知流程
+
       }
       return false
     }
@@ -789,7 +764,7 @@ export class AppleScriptNotificationProvider {
           try {
             this._bundleInjectionDisabledUntilMs = Date.now() + 10 * 60 * 1000
           } catch {
-            // 忽略
+
           }
           try {
             if (this._logger && typeof this._logger.event === 'function') {
@@ -805,7 +780,7 @@ export class AppleScriptNotificationProvider {
               )
             }
           } catch {
-            // 忽略
+
           }
 
           try {
@@ -911,7 +886,7 @@ export class AppleScriptNotificationProvider {
           )
         }
       } catch {
-        // 忽略：日志系统异常不应影响通知流程
+
       }
       return false
     }
@@ -939,7 +914,7 @@ export class MacOSNativeNotificationProvider {
     this._terminalNotifierBin = ''
     this._terminalNotifierBinPromise = null
     this._lastDiagnostic = null
-    // 在 macOS 上延迟预加载 terminal-notifier，避免阻塞扩展激活
+
     if (process.platform === 'darwin') {
       this._warmupTerminalNotifier()
     }
@@ -971,7 +946,7 @@ export class MacOSNativeNotificationProvider {
           )
         }
       } catch {
-        /* noop */
+
       }
       return stable.bin
     }
@@ -987,7 +962,7 @@ export class MacOSNativeNotificationProvider {
           )
         }
       } catch {
-        /* noop */
+
       }
       return p
     }

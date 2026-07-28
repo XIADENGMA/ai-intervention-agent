@@ -315,8 +315,13 @@ def test_c_locale_loading_uses_promises_read_file_and_parallel() -> None:
         "activate 应当用 promise collector + ``Promise.all`` 并行加载 locale；"
         " pre-fix 串行 fs.readFileSync 慢一倍。"
     )
-    assert "fs.promises.readFile" in activate_body, (
-        "activate 内 locale 加载应改用 ``fs.promises.readFile``；"
+    # fs.promises.readFile 的实际调用在 loadHostLocale 帮手函数里
+    # （旧断言靠 activate 体内注释里的字样碰巧通过，注释清理后改锁真实位置）
+    loader = re.search(r"function\s+loadHostLocale\s*\([^)]*\)[^{]*\{", text)
+    assert loader, "loadHostLocale 帮手函数必须存在"
+    loader_body = _extract_block_by_brace(text, loader.end() - 1)
+    assert "fs.promises.readFile" in loader_body, (
+        "loadHostLocale 应使用 ``fs.promises.readFile``；"
         " 留着 fs.readFileSync 等于没改。"
     )
 

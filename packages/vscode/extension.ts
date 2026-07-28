@@ -5,21 +5,9 @@ import * as http from "http";
 import * as https from "https";
 import { WebviewProvider } from "./webview";
 import { createLogger } from "./logger";
-// P9·L8：``i18n-keys.d.ts`` 由 ``scripts/gen_i18n_types.py`` 从
-// ``packages/vscode/locales/en.json`` 生成，导出 ``I18nKey`` literal-union，
-// 让传入翻译 helper 的拼写错误（例如把 statusBar.unknown 打成
-// statusBar.unkown）在 tsc 阶段就挂掉，而不是让用户看到静默回显的原
-// key 字面量。
-// 注：本注释**刻意避免**写出 ``hostT(<quote><key><quote>)`` 这种调用形态——
-// 扫描脚本 ``scripts/check_i18n_orphan_keys.py`` 用正则匹配该形态收集
-// "实际引用的 key"，如果注释里写成调用形式会被当成真实引用，造成
-// ``used_keys > total_keys`` 的假信号（v1.5 历史上踩过）。
+
 import type { I18nKey } from "./i18n-keys";
 
-/**
- * AI Intervention Agent VSCode 扩展
- * iframe 模式 - 极简版本，仅显示服务器 Web UI
- */
 const DEFAULT_SERVER_URL = "http://localhost:8080";
 let EXT_VERSION = "0.0.0";
 try {
@@ -29,35 +17,10 @@ try {
     const _pkgPath = require("path").resolve(__dirname, "..", "package.json");
     EXT_VERSION = require(_pkgPath).version || EXT_VERSION;
   } catch {
-    // 忽略：打包/测试环境下可能读取不到版本号
+
   }
 }
 
-// R20.13-A：BUILD_ID 改 lazy + ``.git`` existence 守卫，省掉生产 VSIX 上每次扩展激活
-// 都付的 ~10 ms ``git rev-parse`` fork+exec 代价。
-//
-// 原因
-// ----
-// pre-fix 是模块加载时执行的 IIFE：``const BUILD_ID = (() => {...})()``。stamp
-// ``__BUILD_SHA__`` 仅在 CI 真正打包前会被 build 脚本 sed-replace 成 git SHA；
-// 安装到 ``~/.vscode/extensions/<id>-<ver>/`` 的生产 VSIX 里这串占位符照原样存在，
-// IIFE 走的是 catch 分支但**仍然付了** ``execSync('git rev-parse')`` 的 fork+exec
-// 代价（macOS M1 实测 8.7-10.1 ms / Apple Silicon），10 ms 是用户每次启动 VSCode /
-// reload window 都白扔的活动延迟，纯浪费。
-//
-// 设计
-// ----
-// 1. ``__BUILD_SHA__`` 已替换 → 直接用，零成本。
-// 2. ``.git`` 在仓库根（``__dirname/../../.git``）不存在 → 一次 ``fs.existsSync``
-//    （macOS M1 实测 5-20 µs，比 fork+exec 快 ~500-2000×）就直接返回 ``'dev'``。
-// 3. ``.git`` 存在（仅本地开发情境） → 才付 ``execSync`` 代价。
-// 4. 结果用 ``_cachedBuildId`` 缓存，``getBuildId()`` 多次调用零额外成本。
-//
-// 路径推导：production VSIX 的 ``__dirname`` = ``~/.vscode/extensions/<id>-<ver>/out/``
-// （或同级，取决于 tsc ``outDir``），再上溯两级到 ``~/.vscode/extensions/`` 也不可能
-// 出现 ``.git`` 目录。dev tree 的 ``__dirname`` = ``packages/vscode/``，上溯两级正好
-// 命中 repo root，``.git`` 存在。这套路径校验对 monorepo 化重构（packages/* 多走一
-// 层）也鲁棒：实在 ``.git`` 找不到就退回 ``'dev'``，无副作用。
 let _cachedBuildId: string | null = null;
 
 function getBuildId(): string {
@@ -153,7 +116,7 @@ async function loadHostLocale(
     );
     if (raw) hostLocales[loc] = JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    /* 忽略 */
+
   }
 }
 
@@ -184,7 +147,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   try {
     EXT_VERSION = context.extension.packageJSON.version || EXT_VERSION;
   } catch {
-    /* 忽略 */
+
   }
 
   try {
@@ -214,24 +177,6 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
     );
   }
 
-  // 扩展宿主 i18n：加载 locale 文件用于状态栏等 Host 侧 UI 翻译
-  //
-  // R20.13-C：从串行同步 ``fs.readFileSync × 2`` 改成 ``fs.promises.readFile +
-  // Promise.all`` 并行 async。
-  //
-  // 单文件读 ~50 µs，pre-fix 串行 ~100 µs（一个文件读完才开下一个），post-fix
-  // 并行 ~50 µs（事件循环让两次 I/O 同时排队，瓶颈是慢的那个）。绝对省时只
-  // 几十 µs，但也把活动函数从纯同步改成 async：
-  //   - 副作用 1：``activate`` 现在返回 ``Promise<void>``。VSCode 1.50+ 官方
-  //     contract 明确支持 async activate（见 ``vscode.d.ts`` 注释「The result
-  //     can be a Promise that resolves once activation has completed」），
-  //     所有依赖 activate 完成的 reload window / extension reload 流程都会
-  //     await 这个 Promise，不会因为提前 settle 拿到半成品状态。
-  //   - 副作用 2：``hostT`` 在 locale Promise 还没 resolve 之前被调用会回退到
-  //     原 key 字符串。pre-fix 同步逻辑天然不存在这个 race；post-fix 因为
-  //     用 ``await Promise.all`` 串到所有 ``provider`` / ``statusBar`` 初始化
-  //     之前，第一次 ``hostT`` 调用（line ~178 的 statusBar.tooltip）发生在
-  //     await 之后，contract 仍然是同步可见的 locale 数据，无 race。
   const hostLocales: Record<string, Record<string, unknown>> = {};
   let hostLang = "en";
   try {
@@ -245,10 +190,10 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       const vsLang = vscode.env.language || "";
       hostLang = vsLang.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
     } catch {
-      /* 忽略 */
+
     }
   } catch {
-    /* 忽略 */
+
   }
 
   const hostT = (key: I18nKey): string => {
@@ -392,10 +337,10 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           role: "status",
         };
       } catch {
-        // 忽略：不同宿主/版本下 accessibilityInformation 可能不可用
+
       }
     } catch {
-      // 忽略
+
     }
   };
 
@@ -416,7 +361,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       try {
         statusPollAbortController.abort();
       } catch {
-        // Ignore: AbortController can be partially implemented in older hosts.
+
       }
     }
     statusPollAbortController = null;
@@ -449,7 +394,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           try {
             controller.abort();
           } catch {
-            // 忽略：极少数环境 AbortController 可能不可用/不可中止
+
           }
         }, 1500)
       : null;
@@ -581,7 +526,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
             );
           }
         } catch {
-          // 新任务检测失败不应影响状态栏轮询
+
         }
       }
 
@@ -647,22 +592,12 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   let isWindowFocused = vscode.window.state.focused;
   let lastWebviewStatsAtMs = 0;
 
-  // SSE 连接状态
   let _sseReq: http.ClientRequest | null = null;
   let _sseConnected = false;
   let _sseReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let _sseReconnectDelay = 1000;
   let _sseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  // R40-S2：客户端持有的最后已收 event id（来自 SSE ``id:`` 行）。
-  // 我们走的是 Node `http.get` 直连 + 手动重连 + 自带 buffer 解析（不是浏览器
-  // EventSource），所以浏览器内置的 Last-Event-ID 自动补齐机制完全帮不上忙；
-  // 重连时手动同时塞进 URL ``?last_event_id=`` query 和 ``Last-Event-ID`` 头：
-  //   - query 让"中间代理 strip 掉 header"的极端场景仍能 resume；
-  //   - header 让任何标准 SSE-aware 中间件看到 token，符合 HTML Living Standard
-  //     的预期；
-  // 服务端 sse_events 路由 query > header 优先级解析，两边写一个不会冲突。
-  // ``gap_warning`` (id=-1) 服务端故意不输出 ``id:`` 行，所以这里 _lastEventId
-  // 不会被 -1 污染，避免重连时 after_id=-1 触发死循环。
+
   let _lastEventId: string | null = null;
 
   const _connectSSE = (): void => {
@@ -704,10 +639,6 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       _sseReconnectDelay = 1000;
       logger.event("sse.connected", {}, { level: "debug" });
 
-      // R40-S2：跨 chunk 累积 ``id:`` / ``event:`` / ``data:`` 三类字段，
-      // 在遇到空行（事件分隔符）时一次性 emit。原实现只看 ``data:`` 行，
-      // 错过了 ``id:`` 用于 resume，也错过了 ``event:`` 用于按事件类型分发
-      // （gap_warning 与 task_changed 不能再走同一条 ``new_status`` 路径）。
       let buffer = "";
       let pendingId: string | null = null;
       let pendingType: string | null = null;
@@ -721,12 +652,10 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         ) {
           return;
         }
-        // SSE 规范：多行 data 用 ``\n`` 拼接；为 0 行时 data 视为空字符串。
+
         const dataStr = pendingDataLines.join("\n");
         const evType = pendingType || "message";
 
-        // 仅为正整数 id 更新 _lastEventId（gap_warning id=-1 服务端不输出
-        // ``id:`` 行，理论上 pendingId 永远不会是 -1，但这里多一道防御）。
         if (pendingId !== null && pendingId !== "") {
           const parsedId = Number(pendingId);
           if (Number.isFinite(parsedId) && parsedId > 0) {
@@ -735,9 +664,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         }
 
         if (evType === "gap_warning") {
-          // history evict：服务端无法从 ring buffer 给我们补发完整事件序列；
-          // 客户端必须主动 fetch 全量。这里立刻 trigger status poll 而不是
-          // 等 80ms debounce——丢数据的窗口越短越好。
+
           logger.event("sse.gap_warning", { dataStr }, { level: "warn" });
           if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
           _sseDebounceTimer = setTimeout(() => {
@@ -751,11 +678,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         }
 
         if (evType === "config_changed") {
-          // R48：服务端检测到 config 文件变更，给运维 / 用户一个 toast 提示。
-          // 状态栏侧不强制 fetch（config 多数字段已经走 ConfigManager 热更新
-          // 静默生效；与 task 状态无关，不影响 status-bar 数字）。仅记录事件
-          // + 弹一条非阻塞 information message，让用户知道"我刚改的 toml 被
-          // server 看见了"。
+
           logger.event("sse.config_changed", { dataStr }, { level: "info" });
           let hint = "AI Intervention Agent: configuration file changed.";
           try {
@@ -764,14 +687,13 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
               hint = detail.hint;
             }
           } catch {
-            /* fallback hint */
+
           }
           try {
-            // ``vscode`` 模块在本文件顶部已 import；调用 setStatusBarMessage
-            // 让通知出现在 VSCode status bar 区域 6 秒，不弹 modal。
+
             vscode.window.setStatusBarMessage(`$(sync) ${hint}`, 6000);
           } catch {
-            /* ignore: 在 unit-test 沙箱里 vscode.window 可能被 stub */
+
           }
           pendingId = null;
           pendingType = null;
@@ -780,9 +702,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         }
 
         if (evType === "heartbeat") {
-          // R51-B：服务端每 25s 推一帧 named-event heartbeat 替代旧的 SSE comment。
-          // 状态栏不需要任何视觉变化（heartbeat 是"连接还活着"的 keep-alive），
-          // 仅做 trace log 让排查长连接断流问题时能看到 last-heartbeat 时间。
+
           logger.event("sse.heartbeat", { dataStr }, { level: "debug" });
           pendingId = null;
           pendingType = null;
@@ -791,8 +711,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         }
 
         if (evType !== "task_changed" && evType !== "message") {
-          // 未识别的事件类型：写一条 trace 日志便于排查，但不当 task_changed
-          // 处理（避免误更新 status bar）。
+
           logger.event(
             "sse.unknown_event",
             { evType, dataStr },
@@ -812,16 +731,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
               { taskId: ev.task_id, status: ev.new_status },
               { level: "debug" },
             );
-            // R20.14-C：optimistic status bar update from embedded stats
-            // ----------------------------------------------------------
-            // 服务端 R20.14-C 起在 task_changed 事件里直接 push
-            // ``stats: {pending, active, completed, total}``。我们立刻
-            // 把它绘制到 status bar，让用户看到的延迟从「80ms 防抖 +
-            // 3ms fetch round-trip = 83ms」缩短到「SSE 网络抖动 ≈ 1-2ms」。
-            // 同时保留 80ms 的 debounce + scheduleStatusPoll(0)：fetch
-            // 仍然要跑，新任务检测（dispatchNewTaskNotification）依赖完整
-            // tasks 数组，且 fetch 是 stats 的 canonical truth 来源。
-            // 这里的 optimistic 路径只走「视觉反馈优先」语义。
+
             const optStats =
               ev.stats && typeof ev.stats === "object"
                 ? (ev.stats as Record<string, unknown>)
@@ -848,7 +758,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
             }, 80);
           }
         } catch {
-          /* noop */
+
         }
         pendingId = null;
         pendingType = null;
@@ -863,12 +773,12 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         buffer = lines.pop() || "";
         for (const line of lines) {
           if (line === "") {
-            // 空行：事件结束，flush pending event
+
             flushPendingEvent();
             continue;
           }
           if (line.startsWith(":")) {
-            // 注释行（含 heartbeat ``: heartbeat``）：忽略
+
             continue;
           }
           if (line.startsWith("id:")) {
@@ -880,12 +790,11 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
             continue;
           }
           if (line.startsWith("data:")) {
-            // SSE 规范：``data:`` 后允许有可选空格；多行 data 各自 strip
-            // 一次前导空格后用 ``\n`` 拼接。
+
             pendingDataLines.push(line.slice(5).replace(/^\s/, ""));
             continue;
           }
-          // 其他字段（如 retry:）忽略：我们不暴露给 server 控制重连节奏。
+
         }
       });
       res.on("end", () => {
@@ -908,7 +817,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       try {
         _sseReq.destroy();
       } catch {
-        /* noop */
+
       }
       _sseReq = null;
     }
@@ -939,7 +848,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       try {
         _sseReq.destroy();
       } catch {
-        /* noop */
+
       }
       _sseReq = null;
     }
@@ -1001,12 +910,6 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
     }
   };
 
-  // R20.13-F：``EXT_VERSION`` 透传到 ``WebviewProvider`` 构造器，让 webview HTML
-  // 渲染不必每次再调 ``vscode.extensions.getExtension('xiadengma.aia')`` 查表。
-  // pre-fix 每次 ``_getHtmlContent`` 调用（normal session 1-2 次，serverUrl 切换
-  // 会再触发一次）都跑一次 host extension registry 查表，~1-3 ms 噪声；post-fix
-  // 一次 activate 期间已经把 ``EXT_VERSION`` 解析好了（line 109 ``context.extension
-  // .packageJSON.version``），构造器直接接管，零冗余查表。
   const provider = new WebviewProvider(
     context.extensionUri,
     outputChannel,
@@ -1080,8 +983,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       provider,
       {
         webviewOptions: {
-          // VS Code 官方文档推荐优先用 getState/setState；retain 仅作为
-          // 复杂/诊断场景的显式开关，避免隐藏 webview 常驻带来的内存开销。
+
           retainContextWhenHidden: retainWebviewContextWhenHidden,
         },
       },
@@ -1150,7 +1052,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           ).onWindowFocusChanged(isWindowFocused);
         }
       } catch {
-        // 忽略：不同宿主/版本下 focus 事件不应影响主流程
+
       }
     }),
   );
@@ -1169,7 +1071,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           "aiInterventionAgent.feedbackView.focus",
         );
       } catch {
-        // 忽略：不同宿主/版本下该 view id 可能不可用
+
       }
     },
   );
@@ -1213,10 +1115,10 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           (provider as unknown as { dispose: () => void }).dispose();
         }
       } catch {
-        // 忽略
+
       }
     } catch {
-      // 忽略
+
     }
   };
   deactivateHook = cleanup;
@@ -1229,7 +1131,7 @@ function deactivate(): void {
       deactivateHook();
     }
   } catch {
-    // 忽略
+
   } finally {
     deactivateHook = null;
   }

@@ -63,7 +63,7 @@ export class NotificationCenter {
         this._deduper.delete(firstKey)
       }
     } catch {
-      // 忽略：去重表清理失败不应影响通知流程
+
     } finally {
       this._dedupeNextPruneAtMs = now + this._dedupePruneIntervalMs
     }
@@ -107,7 +107,7 @@ export class NotificationCenter {
           this._logger.debug(`provider_not_registered: ${type}`)
         }
       } catch {
-        // 忽略
+
       }
       return
     }
@@ -125,7 +125,7 @@ export class NotificationCenter {
           this._logger.warn(`provider_failed: ${type} ${msg ? `(${msg})` : ''}`.trim())
         }
       } catch {
-        // 忽略
+
       }
     }
   }
@@ -143,7 +143,7 @@ export class NotificationCenter {
         if (this._logger && typeof this._logger.debug === 'function') {
           this._logger.debug(`deduped: key=${dedupeKey} window=${this._dedupeWindowMs}ms`)
         }
-      } catch { /* noop */ }
+      } catch { }
       return { event, delivered: {}, skipped: true, reason: 'deduped' }
     }
 

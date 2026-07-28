@@ -39,10 +39,6 @@ export function sanitizeForLog(input: unknown, maxLen = 160): string {
   return `${singleLine.slice(0, maxLen)}…`
 }
 
-/**
- * 将任意输入安全转换为 AppleScript 字符串字面量（带双引号）。
- * 适用场景：需要把用户输入拼进 AppleScript 脚本时，避免破坏语法结构。
- */
 export function toAppleScriptStringLiteral(value: unknown): string {
   const raw = ((value ?? '') as string).toString()
   const escaped = raw
@@ -130,7 +126,7 @@ export class AppleScriptExecutor {
         )
       }
     } catch {
-      // 忽略
+
     }
 
     return new Promise<string>((resolve, reject) => {
@@ -155,11 +151,7 @@ export class AppleScriptExecutor {
               const errAny = error as NodeJS.ErrnoException & { killed?: boolean; signal?: string }
               const exitCode = typeof errAny.code === 'number' ? errAny.code : null
               const signal = errAny.signal ? String(errAny.signal) : ''
-              // Node ``execFile`` 在 stdout/stderr 总长度超过 ``maxBuffer`` 时抛
-              // ``ERR_CHILD_PROCESS_STDIO_MAXBUFFER`` 并 SIGTERM kill 子进程。
-              // 所以 ``errAny.killed === true``、``signal === 'SIGTERM'``，跟
-              // 真 timeout 不可区分 —— 必须用 ``error.code`` 字符串先单独
-              // 区分掉，否则用户看到的是误导的 ``APPLE_SCRIPT_TIMEOUT``。
+
               const errCodeStr = typeof errAny.code === 'string' ? errAny.code : ''
               const isMaxBufferOverflow = errCodeStr === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
               const isTimeout =
@@ -216,7 +208,7 @@ export class AppleScriptExecutor {
                   )
                 }
               } catch {
-                /* 忽略 */
+
               }
 
               reject(err)
@@ -248,7 +240,7 @@ export class AppleScriptExecutor {
                   )
                 }
               } catch {
-                /* 忽略 */
+
               }
 
               reject(err)
@@ -264,7 +256,7 @@ export class AppleScriptExecutor {
                 )
               }
             } catch {
-              /* 忽略 */
+
             }
 
             resolve(outText)
@@ -293,7 +285,7 @@ export class AppleScriptExecutor {
             )
           }
         } catch {
-          /* 忽略 */
+
         }
 
         reject(err)
@@ -303,12 +295,12 @@ export class AppleScriptExecutor {
       try {
         if (child && child.stdin) {
           child.stdin.on('error', () => {
-            // 忽略：stdin 已关闭时可能触发 EPIPE 等错误
+
           })
           child.stdin.end(body, 'utf8')
         }
       } catch {
-        // 忽略：失败信息会在回调中返回
+
       }
     })
   }

@@ -80,9 +80,6 @@ function newId(prefix = 'notification'): string {
   }
 }
 
-/**
- * 规范化 NotificationEvent（避免 Webview 侧传入异常结构导致扩展崩溃）
- */
 export function normalizeNotificationEvent(input: unknown): NotificationEvent {
   const evt = isPlainObject(input) ? input : {} as Record<string, unknown>
   const id = toNonEmptyString(evt.id, newId())

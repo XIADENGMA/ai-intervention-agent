@@ -13,23 +13,6 @@ import {
 
 const EXT_GITHUB_URL = "https://github.com/XIADENGMA/ai-intervention-agent";
 
-/**
- * 生成符合 CSP3 (`script-src 'nonce-...'`) 推荐熵阈值的 nonce。
- *
- * **不要换回 `Math.random()`。** 历史实现是 62-char alphabet × 32 字符
- * 的字符串，看起来熵很高，但 V8 的 `Math.random` 内部是 xorshift128+
- * (53 bits PRNG state)，输出在 [V8 源码](https://github.com/v8/v8/blob/main/src/numbers/math-random.cc)
- * 已经是公开可分析的 —— 攻击者只要观察少量 nonce 就能预测后续的，
- * 把"unsafe-inline 的兜底防御"打成纸糊（CSP3 §6 安全条款明确禁止
- * 用 non-CSPRNG 生成 nonce）。
- *
- * Node.js 的 `crypto.randomBytes(16)` 走 OS CSPRNG（macOS
- * `getentropy`、Linux `getrandom`、Windows `BCryptGenRandom`），16 字节
- * 即 128 bits 熵，超过 CSP3 推荐的 64 bits 阈值；`base64` 编码后是 24
- * 字符（含两位 `=` padding，浏览器 CSP nonce 比对不挑剔 padding）。
- *
- * 与 [VSCode 官方 webview-sample](https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts) 同步。
- */
 function getNonce(): string {
   return crypto.randomBytes(16).toString("base64");
 }
@@ -85,15 +68,6 @@ type VisibilityCallback = (visible: boolean) => void;
 type TaskStatsCallback = (stats: TaskStatsState) => void;
 type TaskIdsCallback = (ids: string[]) => void;
 
-/**
- * AI交互代理的Webview视图提供器
- *
- * 功能说明：
- * - 提供侧边栏webview视图，展示任务反馈界面
- * - 完全独立实现HTML/CSS/JS，无需iframe
- * - 支持多任务标签页切换和倒计时显示
- * - 实现与本地服务器的轮询通信机制
- */
 export class WebviewProvider implements vscode.WebviewViewProvider {
   private _extensionUri: vscode.Uri;
   private _outputChannel: vscode.OutputChannel;
@@ -127,13 +101,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _cachedStaticAssets: {
     activityIconSvg: string;
   } | null;
-  // R20.13-E：``inlineAllLocalesLiteral`` 是 ``_getHtmlContent`` 每次都要序列化
-  // 一次的 ~10 KB JSON。对单个 webview 生命周期内 ``_cachedLocales`` 内容很少
-  // 变（只有 ``_preloadResources`` 第一次填充 + 偶尔 fallback 补一两条 entry），
-  // 把序列化结果缓存起来配合一个键（locale 名集合 + 内容长度签名）做轻量失效。
-  // 命中缓存时 ``_getHtmlContent`` 直接拿 string 拼 HTML，省去 ``JSON.stringify``
-  // (~50-100 µs) + ``replace(/</g, ...)`` (~5 µs)。绝对值噪声级，但配合 R20.12-B
-  // 的「能不重算就别重算」思路，一致性比 µs 更重要。
+
   private _cachedInlineAllLocalesJson: string | null;
   private _cachedInlineAllLocalesKey: string | null;
   private _prefetchServerLangPromise: Promise<void> | null;
@@ -141,9 +109,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _visibilityBenchmarkSeq: number;
   private _retainContextWhenHidden: boolean;
   private _webviewServerUrl: string;
-  // R692 (TODO#6-2)：通知直达任务。webview 隐藏期间派发新任务通知时记录
-  // 首个 task_id；用户点击状态栏/通知回到面板（webview 变为可见）时，
-  // 在时间窗内把该任务推给前端切换，实现"点通知 → 直达对应任务"。
+
   private _pendingNotifiedTaskId: string;
   private _pendingNotifiedTaskAtMs: number;
 
@@ -202,9 +168,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     );
     this._serverUrl = serverUrl;
     this._webviewServerUrl = this._normalizeWebviewServerUrl(serverUrl);
-    // R20.13-B/F：从 host 端 ``activate`` 一次性传入版本号，免得每次
-    // ``_getHtmlContent`` 都掏 ``vscode.extensions.getExtension`` 注册表查表
-    // （macOS M1 实测每次 ~1-3 ms，热路径 1-2 次 / 会话）。
+
     this._extensionVersion =
       typeof extensionVersion === "string" && extensionVersion
         ? extensionVersion
@@ -257,13 +221,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const fallback = this._normalizeWebviewServerUrl(this._serverUrl);
     this._webviewServerUrl = fallback;
 
-    // R453: VS Code webviews execute on the user's local UI side even when
-    // the extension host is remote. A literal localhost URL in webview JS can
-    // therefore point at the wrong machine in Remote SSH / Dev Containers /
-    // Codespaces. Keep extension-host fetches on _serverUrl, but forward the
-    // browser-facing webview URL through asExternalUri when VS Code can provide
-    // one. If forwarding is unavailable, retain the direct URL so desktop-local
-    // sessions and older hosts keep working.
     try {
       const forwarded = await vscode.env.asExternalUri(vscode.Uri.parse(fallback));
       const forwardedText = forwarded.toString();
@@ -276,32 +233,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private async _preloadResources(): Promise<void> {
-    // R24.1/R462: critical disk reads 并行化。
-    //
-    // why
-    // - R24.1 pre-fix 是「en locale → await → zh-CN locale → await → svg →
-    //   await → lottie → await」纯串行 disk read（每次 ~50-200 µs，
-    //   含 ``vscode.workspace.fs.readFile`` 的 IPC overhead）。在
-    //   ``resolveWebviewView`` 的 hot path 上累计 ~50 ms（已在 line 426
-    //   的注释里量化），是 webview 首屏渲染前**唯一**的同步阻塞点。
-    // - critical read 之间**没有任何数据依赖**：locale en 不依赖 zh-CN，
-    //   SVG 不依赖 locale。串行只是 historical
-    //   accident（早期单文件版本逐步加进来时没有重构）。
-    // - R462 后，445KB ``lottie/sprout.json`` 不再由 host 端读取/JSON.parse：
-    //   ``_getHtmlContent`` 已经固定内联 null，并把 ``data-no-content-lottie-json-url``
-    //   交给 webview-ui 按需 fetch + force-cache。保留 host 预读只会拖慢
-    //   resolveWebviewView 的首屏路径，而且解析结果没有消费者。
-    // - ``Promise.all`` 把 wall-clock 缩到 ``max(read_a, read_b, read_c)``，
-    //   R462 再移除最大的 JSON read/parse，直接降低 cold-open IO 与 CPU。
-    // - 二次以后的 ``resolveWebviewView`` 走 ``_cachedLocales[loc]`` /
-    //   ``_cachedStaticAssets`` 的 fast-path（line 235 / 264 的 cache
-    //   guard），所以 R24.1 主要改善 cold-open / window reload 这种
-    //   首屏 critical path 场景。
-    //
-    // 容错保留：critical 文件保留原有的 ``safeReadTextFile`` ``vscode.workspace.fs``
-    // → ``fs.readFileSync`` fallback chain，所以 ``Promise.all`` 中即便
-    // 某一个 read fail，``catch`` 内部的兜底会把它降级到同步 fs，整体
-    // ``_preloadResources`` 的成功率与 pre-fix 完全一致。
+
     const decoder = new TextDecoder("utf-8");
 
     const loadLocale = async (loc: string): Promise<void> => {
@@ -330,7 +262,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
               unknown
             >;
         } catch {
-          /* 忽略 */
+
         }
       }
     };
@@ -351,13 +283,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       this._cachedStaticAssets = { activityIconSvg: svgText };
     };
 
-    // cr32 §3.2 fix [medium]：补 zh-TW.json 预加载。否则用户系统
-    // 语言是 zh-TW / zh-HK / zh-Hant* 时，``normalizeLang`` 已 fold 到
-    // ``zh-TW``（feat-zhtw-locale §3.3），但 ``_cachedLocales['zh-TW']``
-    // 不存在 → webview-ui.js 的 ``ensureLocaleRegistered`` 找不到 locale
-    // → ``_t()`` 静默 fallback 到 en，台湾用户体感是"插件忽略我的语言设置"。
-    // 预加载放在并行 ``Promise.all`` 内，~50 µs 额外 IO；如果文件缺失走
-    // 同一 ``try { fs.readFile } catch { fs.readFileSync }`` fallback 链。
     await Promise.all([
       loadLocale("en"),
       loadLocale("zh-CN"),
@@ -374,17 +299,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       try {
         controller.abort();
       } catch {
-        /* noop */
+
       }
     }
   }
 
   private _prefetchServerLanguage(): Promise<void> {
-    // 缓存短路：已有结果就不再发请求（updateServerUrl 会清空缓存以便重新预取）
+
     if (this._cachedServerLang) {
       return Promise.resolve();
     }
-    // 单飞锁：并发调用共享同一 Promise，避免对 /api/config 发起重复请求
+
     if (this._prefetchServerLangPromise) {
       return this._prefetchServerLangPromise;
     }
@@ -395,8 +320,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       try {
         controller =
           typeof AbortController !== "undefined" ? new AbortController() : null;
-        // 超时从 3500ms 收紧到 1000ms：localhost 本应毫秒级，失败即降级
-        // 不再重试：失败后前端 checkServerStatus 会通过 langDetected 回传语言
+
         if (controller) {
           this._prefetchServerLangAbortController = controller;
           const activeController = controller;
@@ -404,7 +328,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             try {
               activeController.abort();
             } catch {
-              /* noop */
+
             }
           }, 1000);
         }
@@ -440,7 +364,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
               try {
                 this._onLanguageChanged(data.language as string);
               } catch {
-                /* 忽略 */
+
               }
             }
             return;
@@ -474,7 +398,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       }
     })();
     this._prefetchServerLangPromise = task;
-    // 无论成功失败都清单飞锁，允许 updateServerUrl 后重新预取
+
     task.finally(() => {
       if (this._prefetchServerLangPromise === task) {
         this._prefetchServerLangPromise = null;
@@ -489,7 +413,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this._logger.info(String(message));
       }
     } catch {
-      // 忽略：日志系统异常不应影响主流程
+
     }
   }
 
@@ -503,7 +427,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         retainContextWhenHidden: this._retainContextWhenHidden,
       });
     } catch {
-      // Benchmark telemetry must never affect webview restore.
+
     }
   }
 
@@ -581,7 +505,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         fs.appendFileSync(outputPath, JSON.stringify(payload) + "\n", "utf8");
       }
     } catch {
-      // Benchmark telemetry must stay best-effort.
+
     }
   }
 
@@ -593,17 +517,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this._webviewReadyTimer = null;
       }
     } catch {
-      // 忽略
+
     }
     try {
       this._pendingMessages = [];
     } catch {
-      // 忽略
+
     }
     try {
       this._abortPrefetchServerLanguage();
     } catch {
-      // 忽略
+
     }
 
     try {
@@ -611,7 +535,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         try {
           d.dispose();
         } catch {
-          // 忽略
+
         }
       }
     } finally {
@@ -623,7 +547,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this._onVisibilityChanged(false);
       }
     } catch {
-      // 忽略
+
     }
 
     this._view = null;
@@ -631,14 +555,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   }
 
   async resolveWebviewView(webviewView: vscode.WebviewView): Promise<void> {
-    // 只阻塞本地 critical 资源预加载（locales/svg，首次 ~50ms，二次 ~0ms）
-    // 服务器语言预取改为 fire-and-forget，避免服务器不可达时首屏最坏 7.5s 空白
-    // 语言纠偏有两条备份链路：
-    //   1) _getHtmlContent 先用 vscode.env.language 兜底
-    //   2) 前端 checkServerStatus 拿到 language 后通过 langDetected 回传
+
     await Promise.all([this._preloadResources(), this._refreshWebviewServerUrl()]);
     this._prefetchServerLanguage().catch(() => {
-      /* 忽略：失败不影响首屏 */
+
     });
     this._view = webviewView;
 
@@ -676,13 +596,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       }
       if (webviewView.visible) {
         this._sendMessage({ type: "refresh" });
-        // BM-5：规避 VSCode issue #113188 的 ghost-rendering 残影。
-        // retainContextWhenHidden:true 时，隐藏→显示可能保留过期合成层；
-        // 发送 force-repaint 让前端用 rAF 触发 layer 重建清除残影。
+
         this._sendMessage({ type: "force-repaint" });
         this._sendVisibilityBenchmarkProbe();
-        // R692 (TODO#6-2)：隐藏期间有新任务通知 → 回到面板时直达该任务。
-        // 时间窗 120s：超过说明用户并非"看到通知立刻回来"，不再抢切换。
+
         const PENDING_NOTIFY_DEEPLINK_FRESH_MS = 120 * 1000;
         if (
           this._pendingNotifiedTaskId &&
@@ -721,7 +638,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         }
         this._abortPrefetchServerLanguage();
       } catch {
-        // 忽略
+
       }
 
       try {
@@ -729,7 +646,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           try {
             d.dispose();
           } catch {
-            // 忽略：单个 disposable 失败不应影响其它清理
+
           }
         }
       } finally {
@@ -772,7 +689,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         );
       }
     } catch {
-      // 忽略：诊断日志失败不应影响 Webview 初始化
+
     }
 
     this._webviewReady = false;
@@ -828,7 +745,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this._logger.debug(vscode.l10n.t("Webview ready"));
       }
     } catch {
-      // 忽略：日志系统异常不应影响主流程
+
     }
   }
 
@@ -849,32 +766,18 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         }
         this._pendingMessages = [];
       } catch {
-        // 忽略
+
       }
 
       const view = this._view;
-      // 同 resolveWebviewView：不 await 语言预取，避免切换 serverUrl 时首屏阻塞
+
       this._prefetchServerLanguage().catch(() => {
-        /* 忽略：失败不影响 UI */
+
       });
       Promise.all([this._preloadResources(), this._refreshWebviewServerUrl()])
         .catch(() => {})
         .finally(() => {
-          // R18.2 dispose-race guard：``_preloadResources`` 是 async（通常含
-          // 一次 HTTP probe），在它 pending 期间 webview 可能已被 dispose
-          // （extension deactivate / 用户折叠侧栏 → onDidDispose 触发）。
-          // 若不 short-circuit，stale finally 仍会：
-          //   1) 给 disposed view 赋 ``view.webview.html``（VSCode 多半 noop
-          //      但偶发抛 'Webview is disposed'，把 finally 转成 unhandled
-          //      rejection，污染 Output channel）；
-          //   2) 创建一个新的 ``_webviewReadyTimer``，2.5s 后写一条
-          //      ``webview.ready_timeout`` warning 日志 —— 但 webview 早已
-          //      不存在，这是 false-positive observability 噪声，会让运维
-          //      在排查"真" CSP / script 注入失败时被误导。
-          // 防御：对比 capture 时的 ``view`` 与当前 ``this._view``：不一致或
-          // 已为 null，则 stale finally 不再操作（既不重写 HTML 也不开新
-          // timer）。``dispose()`` 已经 ``clearTimeout`` 了之前的 timer，新
-          // timer 不再创建即可彻底闭环。
+
           if (this._view !== view) return;
           if (view.webview)
             view.webview.html = this._getHtmlContent(view.webview);
@@ -953,7 +856,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             this._logger.debug(text);
           }
         } catch {
-          // 忽略：日志系统异常不应影响主流程
+
         }
         break;
       case "error":
@@ -964,7 +867,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             this._log(vscode.l10n.t("[error] {0}", String(message.message)));
           }
         } catch {
-          // 忽略：日志系统异常不应影响主流程
+
         }
         break;
       case "ready":
@@ -976,7 +879,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         try {
           this._flushPendingMessages();
         } catch {
-          // 忽略
+
         }
         try {
           if (this._logger && typeof this._logger.event === "function") {
@@ -1018,7 +921,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             this._onTasksStatsChanged({ connected, active, pending, total });
           }
         } catch {
-          // 忽略：消息处理失败不应影响主流程
+
         }
         break;
       case "serverStatus":
@@ -1077,7 +980,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             }
           }
         } catch {
-          // 忽略：状态日志失败不应影响主流程
+
         }
         break;
       case "notify":
@@ -1129,15 +1032,13 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
               try {
                 this._onLanguageChanged(lang);
               } catch {
-                /* 忽略 */
+
               }
             }
-            // 前端 applyServerLanguage 已通过 i18n.setLang + retranslateAllI18nElements
-            // 就地重翻译（覆盖 data-i18n / data-i18n-title / data-i18n-placeholder /
-            // data-i18n-version），host 侧不再重设 webview.html，避免一次 HTML 重建闪烁。
+
           }
         } catch {
-          /* 忽略 */
+
         }
         break;
       case "visibilityBenchmarkResult":
@@ -1158,7 +1059,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       try {
         this._armRevealPanelOnNextFocus(event);
       } catch {
-        // 忽略
+
       }
       Promise.resolve()
         .then(() => this._notificationCenter.dispatch(event))
@@ -1194,7 +1095,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
               { level: "debug" },
             );
           } catch {
-            // 忽略：日志系统异常不应影响通知流程
+
           }
         })
         .catch((e: unknown) => {
@@ -1211,11 +1112,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
               { level: "warn" },
             );
           } catch {
-            // 忽略
+
           }
         });
     } catch {
-      // 忽略：通知分发失败不应影响主流程
+
     }
   }
 
@@ -1250,7 +1151,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
       this._revealPanelUntilMs = Date.now() + 30000;
     } catch {
-      // 忽略
+
     }
   }
 
@@ -1265,7 +1166,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       this._revealPanelUntilMs = 0;
       await vscode.commands.executeCommand("ai-intervention-agent.openPanel");
     } catch {
-      // 忽略
+
     }
   }
 
@@ -1282,7 +1183,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this._logger.debug(`_handleNotify: source=${src} dedupeKey=${dk}`);
       }
     } catch {
-      /* noop */
+
     }
     this._dispatchNotificationEvent(event);
     try {
@@ -1298,7 +1199,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this._onNewTaskIdsFromWebview(md.taskIds as string[]);
       }
     } catch {
-      // 同步失败不应影响通知流程
+
     }
   }
 
@@ -1336,21 +1237,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       });
   }
 
-  /**
-   * 处理 webview 发来的 openExternal 消息。
-   *
-   * VS Code webview 出于安全模型禁止 <a target="_blank" href="https://...">
-   * 直接 navigate（点击后看似无反应），需要由 host 调
-   * `vscode.env.openExternal` 显式打开默认浏览器。
-   *
-   * 安全约束：
-   * - 协议白名单仅放行 http(s) 与 mailto，避免 webview 借此 channel 调起
-   *   file:// / vscode:// / command: 等敏感 URI（潜在的本地命令执行/任意
-   *   文件读取风险）。
-   * - 任何解析失败 / 非法协议 / 缺失字段都静默返回，绝不抛出，避免单条坏
-   *   消息影响主消息循环。
-   * - 仅记录到 logger（不弹 UI），点击是低频用户行为，不需要打扰用户。
-   */
   _handleOpenExternal(message: WebviewMessage): void {
     try {
       const rawUrl = message && (message as Record<string, unknown>).url;
@@ -1365,7 +1251,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             );
           }
         } catch {
-          // 忽略：日志失败不影响安全决策
+
         }
         return;
       }
@@ -1381,7 +1267,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             );
           }
         } catch {
-          // 忽略
+
         }
         return;
       }
@@ -1394,32 +1280,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             );
           }
         } catch {
-          // 忽略
+
         }
       });
     } catch {
-      // 忽略：openExternal 异常不应影响主流程
+
     }
   }
 
-  /**
-   * TODO#12：在当前编辑器里打开服务器的 config.toml。
-   *
-   * 路径来源是设置面板里由 ``/api/get-feedback-prompts`` 的
-   * ``meta.config_file`` 填充的只读 input（webview 属同扩展打包的受信
-   * 代码，但仍做防御性校验：非空 + 绝对路径 + 无 URI scheme，拒绝
-   * 相对路径 / http(s) 等意外输入透传到文件系统 API）。
-   * 用 ``vscode.window.showTextDocument`` 在当前编辑器 tab 打开——
-   * 相比 Web UI 的「用 IDE 打开」（要探测 PATH 里的 CLI），扩展宿主
-   * 自身就是编辑器，原生 API 即可。
-   */
   _handleOpenConfigFile(message: WebviewMessage): void {
     try {
       const rawPath = message && (message as Record<string, unknown>).path;
       const filePath = typeof rawPath === "string" ? rawPath.trim() : "";
-      // 绝对路径白名单：POSIX 以 / 开头，Windows 盘符 C:\ / C:/ 开头。
-      // 该判断天然排除 http(s)://、file:// 等 URL 形态（不以 / 或盘符
-      // 开头），无需额外 scheme 黑名单（盘符 C: 反而会被 scheme 正则误伤）。
+
       const isAbsolute =
         filePath.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(filePath);
       if (!filePath || !isAbsolute) {
@@ -1430,7 +1303,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             );
           }
         } catch {
-          // 忽略
+
         }
         return;
       }
@@ -1445,14 +1318,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             );
           }
         } catch {
-          // 忽略
+
         }
         void vscode.window.showErrorMessage(
           vscode.l10n.t("Failed to open config file: {0}", filePath),
         );
       });
     } catch {
-      // 忽略：打开配置文件异常不应影响主流程
+
     }
   }
 
@@ -1469,7 +1342,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           );
         }
       } catch {
-        // 忽略：缓冲失败不应影响主流程
+
       }
       return;
     }
@@ -1487,7 +1360,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this._view.webview.postMessage(message);
       }
     } catch {
-      // 忽略：Webview 通信失败不应影响主流程
+
     }
   }
 
@@ -1527,7 +1400,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
               try {
                 controller.abort();
               } catch {
-                /* noop */
+
               }
             }, 2500)
           : null;
@@ -1604,7 +1477,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           );
         }
       } catch {
-        /* noop */
+
       }
 
       const config = await this._fetchNotificationConfig();
@@ -1623,7 +1496,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           );
         }
       } catch {
-        /* noop */
+
       }
 
       if (settings.enabled === false) {
@@ -1632,7 +1505,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             this._logger.debug("ext.new_task_notify: skipped (enabled=false)");
           }
         } catch {
-          /* noop */
+
         }
         return;
       }
@@ -1683,12 +1556,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           );
         }
       } catch {
-        /* noop */
+
       }
 
-      // R692 (TODO#6-2)：记录本轮通知的首个任务，等用户回到面板时直达。
-      // 本方法只在 webview 不可见时被 extension 调用（可见时上游跳过派发），
-      // 因此这里登记的 pending 深链不会干扰正在面板中操作的用户。
       this._pendingNotifiedTaskId = ids[0] || "";
       this._pendingNotifiedTaskAtMs = Date.now();
 
@@ -1718,7 +1588,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           );
         }
       } catch {
-        /* noop */
+
       }
     }
   }
@@ -1768,10 +1638,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const i18nJsUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, "i18n.js"),
     );
-    // T1 · C10c: @aiia/tri-state-panel 双端共享组件。tri-state-panel.js / -loader.js /
-    // -bootstrap.js / .css 是 static/ 源的字节级拷贝，由
-    // tests/test_tri_state_panel_parity.py::sha256 守护，禁止手工编辑
-    // packages/vscode/ 下这 4 个文件，请改 static/ 并同步拷贝。
+
     const triStatePanelJsUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, "tri-state-panel.js"),
     );
@@ -1781,11 +1648,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const triStatePanelBootstrapUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, "tri-state-panel-bootstrap.js"),
     );
-    // R20.13-B/F：从构造器一次性传入的 ``_extensionVersion`` 取值；不再
-    // 在 ``_getHtmlContent`` 热路径上做 ``vscode.extensions.getExtension``
-    // 注册表查表。``WebviewProvider`` 实例总是由 ``extension.ts::activate``
-    // 创建，``EXT_VERSION`` 在 activation 期间已经填好（``context.extension
-    // .packageJSON.version``）。
+
     const extensionVersion = this._extensionVersion;
     const githubUrl = EXT_GITHUB_URL || "";
     const githubUrlDisplay = githubUrl
@@ -1806,17 +1669,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       );
     const inlineNoContentFallbackSvgLiteral =
       safeStringForInlineScript(activityIconSvgText);
-    // Lottie JSON (445KB) 不再内联进 HTML，改由前端通过 data-no-content-lottie-json-url
-    // 懒加载（webview-ui.js 里的 loadNoContentLottieData 走 fetch + force-cache 兜底）。
-    // 收益：HTML 体积 ~500KB → ~50KB，resolveWebviewView 与 langDetected re-render 更快。
+
     const inlineNoContentLottieDataLiteral = "null";
 
     let i18nLang = "en";
-    // P9·L5·G1: Pseudo-locale developer switch. When
-    // ``ai-intervention-agent.i18n.pseudoLocale`` is true we force
-    // ``i18nLang`` to ``pseudo`` and load ``locales/_pseudo/pseudo.json``.
-    // Guard with try/catch so a broken workspace settings file never
-    // bricks the webview.
+
     let pseudoLocaleEnabled = false;
     try {
       pseudoLocaleEnabled = Boolean(
@@ -1858,7 +1715,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           ? (JSON.parse(localeText) as Record<string, unknown>)
           : null;
       } catch {
-        /* 忽略 */
+
       }
     }
     if (!i18nLocaleData) {
@@ -1872,7 +1729,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             ? (JSON.parse(fallbackText) as Record<string, unknown>)
             : null;
         } catch {
-          /* 忽略 */
+
         }
       }
       if (i18nLocaleData) i18nLang = "en";
@@ -1880,13 +1737,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const allLocales: Record<string, Record<string, unknown>> = {
       ...this._cachedLocales,
     };
-    // cr32 §3.2 fix [medium]：把 zh-TW 也加入 fallback 列表。预加载链路
-    // (``_preloadResources``) 通常已经把它填入 ``_cachedLocales``，但若
-    // ``vscode.workspace.fs`` async + 同步 fs fallback 都失败（典型场景：
-    // 文件刚被安装但 readFile 路径还没 settled），这里二次同步兜底，保证
-    // ``allLocales['zh-TW']`` 一定可用。否则 zh-TW 用户走 webview-ui 时
-    // ``registerLocale`` 拿不到数据 → ``_t()`` 静默 fallback 到 'en'，
-    // 体感与 web UI 不一致。
+
     if (
       !allLocales["en"] ||
       !allLocales["zh-CN"] ||
@@ -1901,13 +1752,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           if (text)
             allLocales[loc] = JSON.parse(text) as Record<string, unknown>;
         } catch {
-          /* 忽略 */
+
         }
       }
     }
-    // Pseudo locale is only bundled into allLocales when explicitly
-    // requested — we never want production sessions to accidentally
-    // swap in `[!ẗęśṭ!]` strings just because some cache key collides.
+
     if (pseudoLocaleEnabled && !allLocales["pseudo"]) {
       try {
         const text = safeReadTextFile(
@@ -1921,15 +1770,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         if (text)
           allLocales["pseudo"] = JSON.parse(text) as Record<string, unknown>;
       } catch {
-        /* 忽略 */
+
       }
     }
-    // R20.13-E：``safeJsonForInlineScript(allLocales)`` 序列化 ~10 KB JSON +
-    // ``replace(/</g, '\\u003c')`` 的代价，按 ``_cachedLocales`` 内容签名缓存
-    // 结果。键由「locale 名集合（排序、|分隔）+ 各 entry 字典 key 数」组成，
-    // 既反映新增 locale（如开了 pseudoLocale 之后），也反映 entry 大小级别的
-    // 变化；不靠完整 deep equal，因为 ``_cachedLocales`` 写入路径是 readFile +
-    // JSON.parse，正常生命周期内不会原地 mutate。
+
     const localeNames = Object.keys(allLocales).sort();
     let localeSignature = "";
     for (let i = 0; i < localeNames.length; i += 1) {
@@ -1957,12 +1801,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       ? safeJsonForInlineScript(i18nLocaleData)
       : "null";
     const inlineI18nLangLiteral = safeStringForInlineScript(i18nLang);
-    // Server-side, pre-paint string resolver used only for the first
-    // HTML render (before ``i18n.js`` finishes loading and can retranslate
-    // via ``translateDOM``). Supports Mustache ``{{name}}`` substitution
-    // to mirror the runtime API in ``packages/vscode/i18n.js``, so call
-    // sites like ``tl('settings.footer.versionLink', { version })`` produce
-    // the same output both pre- and post-hydration.
+
     const tl = (
       key: string,
       params?: Record<string, string | number>,
@@ -1982,17 +1821,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           : match,
       );
     };
-    // Pseudo locale contains only ASCII+Latin diacritics that Chromium
-    // renders fine under any BCP-47 tag; picking ``en-x-pseudo`` keeps
-    // accessibility tooling happy (lang must be a valid BCP-47 subtag).
+
     const htmlLang =
       i18nLang === "pseudo"
         ? "en-x-pseudo"
         : i18nLang === "zh-CN"
           ? "zh-CN"
           : "en";
-    // 目前仅支持 en / zh-CN（都 LTR）。显式注入 dir 以保持与 Web UI 的无障碍行为一致，
-    // 并与 packages/vscode/i18n.js::langToDir 白名单对齐，未来加 RTL 语言仅需扩同一套逻辑。
+
     const rtlPrefixes = [
       "ar",
       "fa",

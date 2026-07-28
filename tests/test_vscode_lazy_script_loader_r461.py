@@ -20,8 +20,9 @@ def _source() -> str:
 
 
 def _helper_body(source: str) -> str:
+    # 结束边界改用下一个函数定义（旧实现以注释行为界，注释已清理）
     start = source.index("  function loadLazyScriptOnce(")
-    end = source.index("  // 无有效内容页面", start)
+    end = source.index("  function parseRgbColor(", start)
     return source[start:end]
 
 

@@ -7,9 +7,6 @@ const LEVELS: Record<LogLevel, number> = {
   debug: 3
 }
 
-// =========================
-// 控噪策略（Phase 2）
-// =========================
 const DEDUPE_WINDOW_DEBUG_INFO_MS = 2500
 const DEDUPE_WINDOW_WARN_MS = 5000
 const DEDUPE_MAX_KEYS = 2000
@@ -93,7 +90,7 @@ function recordRecentLine(state: ChannelState | null, line: string): void {
       state.recentLines.splice(0, state.recentLines.length - RECENT_MAX_LINES)
     }
   } catch {
-    // 忽略
+
   }
 }
 
@@ -166,9 +163,7 @@ function redactSensitive(input: unknown): string {
 
     text = text.replace(/\bsk-[A-Za-z0-9]{32,}\b/g, '***REDACTED***')
     text = text.replace(/\bghp_[A-Za-z0-9]{36}\b/g, '***REDACTED***')
-    // R111：GitHub fine-grained PAT（github_pat_<11 char ID>_<82 char secret>，
-    // 2022 起 GitHub 主推格式，长度 ≈ 93 字符）。VS Code 端 logger 与
-    // Python 端 LogSanitizer (enhanced_logging.py R111) 保持脱敏对齐。
+
     text = text.replace(/\bgithub_pat_[A-Za-z0-9_]{60,}\b/g, '***REDACTED***')
     text = text.replace(/\bxoxb-[A-Za-z0-9-]{50,}\b/g, '***REDACTED***')
 
@@ -291,15 +286,6 @@ function formatLine({ ts, level, component, message }: FormatLineArgs): string {
   return `[${ts}] [${lvl}] [${comp}] ${msg}`
 }
 
-/**
- * 创建轻量、可控的日志器
- *
- * 设计目标：
- * - 精简：默认只输出 info/warn/error
- * - 必要：关键生命周期/状态变化必记；高频路径默认不刷屏
- * - 高效：先判级别再格式化，避免不必要的字符串拼接
- * - 清晰：统一格式，包含时间/级别/模块
- */
 export function createLogger(outputChannel: OutputChannelLike, opts: LoggerOptions = {}): Logger {
   const getLevel =
     typeof opts.getLevel === 'function' ? opts.getLevel : () => 'info'
@@ -323,7 +309,7 @@ export function createLogger(outputChannel: OutputChannelLike, opts: LoggerOptio
         return
       }
     } catch {
-      // 忽略：写入失败不应影响主流程
+
     }
 
     try {
@@ -339,7 +325,7 @@ export function createLogger(outputChannel: OutputChannelLike, opts: LoggerOptio
         direct.call(outputChannel, line)
       }
     } catch {
-      // 忽略
+
     }
   }
 
@@ -370,7 +356,7 @@ export function createLogger(outputChannel: OutputChannelLike, opts: LoggerOptio
       bucket.lastReportMs = now
       bucket.suppressed = 0
     } catch {
-      // 忽略
+
     }
   }
 
@@ -463,7 +449,7 @@ export function createLogger(outputChannel: OutputChannelLike, opts: LoggerOptio
         const payload = formatEventMessage(eventName, fields, msg)
         write(lvl, payload)
       } catch {
-        // 忽略：日志本身不应影响主流程
+
       }
     },
     child: (name: string): Logger =>

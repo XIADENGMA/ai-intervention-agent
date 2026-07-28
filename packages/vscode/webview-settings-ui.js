@@ -1,5 +1,5 @@
 (function () {
-  // 设置面板 UI：仅在用户打开“通知设置”时按需加载，避免阻塞首屏
+
   let vscode = null;
   try {
     vscode =
@@ -35,7 +35,7 @@
         return true;
       }
     } catch (e) {
-      // 忽略：设置面板异常不应影响主 UI
+
     }
     return false;
   }
@@ -59,7 +59,6 @@
     });
   }
 
-  // 防御性 i18n 初始化（与 webview-ui.js 同步，确保懒加载时 locale 已注册）
   (function ensureI18nReady() {
     try {
       var i18n =
@@ -91,7 +90,7 @@
         if (typeof i18n.setLang === "function") i18n.setLang(String(lang));
       }
     } catch (e) {
-      /* 忽略 */
+
     }
   })();
 
@@ -102,7 +101,7 @@
         (typeof window !== "undefined" && window.AIIA_I18N);
       if (i18n && typeof i18n.t === "function") return i18n.t(key, params);
     } catch (e) {
-      // 忽略
+
     }
     return key;
   }
@@ -140,7 +139,7 @@
   try {
     globalThis.__AIIA_retranslateSettingsPanel = retranslateSettingsPanel;
   } catch (e) {
-    /* 忽略 */
+
   }
 
   function getNotifyCore() {
@@ -167,7 +166,6 @@
     }
   }
 
-  // 通知设置热更新：当配置文件 / Web UI 修改后，设置面板自动同步（无需重启）
   const SETTINGS_AUTO_REFRESH_MS = 2000;
   let settingsAutoRefreshTimer = null;
   let settingsDirty = false;
@@ -177,7 +175,6 @@
   let lastNotificationSettingsHash = "";
   let settingsHintClearTimer = null;
 
-  // 设置自动保存：对齐原项目（修改即同步，无需手动点“保存”）
   const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 500;
   const SETTINGS_AUTO_SAVE_TIMEOUT_MS = 3500;
   let settingsAutoSaveTimer = null;
@@ -214,11 +211,10 @@
     const hint = document.getElementById("settingsHint");
     if (!hint) return;
     hint.textContent = text;
-    // CSP 收紧后禁止动态写入 inline style，这里改为 class 驱动
+
     hint.classList.toggle("aiia-error", !!isError);
     hint.classList.toggle("aiia-has-message", !!text);
 
-    // 自动清理：避免“已加载”这类状态常驻造成困惑
     if (settingsHintClearTimer) {
       clearTimeout(settingsHintClearTimer);
       settingsHintClearTimer = null;
@@ -227,11 +223,11 @@
       settingsHintClearTimer = setTimeout(() => {
         try {
           const overlay = document.getElementById("settingsOverlay");
-          // 面板已关闭则不需要再显示任何提示
+
           if (!overlay || overlay.classList.contains("hidden")) return;
           setSettingsHint("", false);
         } catch (e) {
-          // 忽略
+
         }
       }, autoClearMs);
     }
@@ -327,7 +323,7 @@
         settingsAutoSaveAbortController.abort();
       }
     } catch (e) {
-      // 忽略
+
     } finally {
       settingsAutoSaveAbortController = null;
       settingsAutoSaveInFlight = false;
@@ -354,7 +350,7 @@
   function startSettingsAutoRefresh() {
     if (settingsAutoRefreshTimer) return;
     settingsAutoRefreshTimer = setInterval(() => {
-      // 静默刷新：失败不打扰用户；成功时仅在“未编辑”状态下自动同步表单
+
       refreshNotificationSettingsFromServer({ force: false, silent: true });
     }, SETTINGS_AUTO_REFRESH_MS);
   }
@@ -377,7 +373,7 @@
     allowWhenClosed = false,
   } = {}) {
     const overlayOpen = isSettingsOverlayOpen();
-    // 默认只在设置面板打开时刷新；allowWhenClosed=true 用于面板关闭时的“逻辑配置加载”（不渲染表单）
+
     if (!overlayOpen && !allowWhenClosed) return false;
 
     const core = getNotifyCore();
@@ -437,7 +433,7 @@
       if (overlayOpen) {
         populateSettingsForm(next);
         if (!silent) {
-          // 更清晰：表示“已从服务端同步”，并自动淡出
+
           setSettingsHint(t("settings.hint.synced"), false, 1200);
         }
       }
@@ -497,7 +493,7 @@
       return;
     }
     if (settingsAutoSaveInFlight) {
-      // 有请求在飞：标记 pending，等当前请求结束后再同步最新值
+
       settingsAutoSavePending = true;
       if (allowWhenClosed) {
         settingsAutoSaveFlushWhenClosed = true;
@@ -537,7 +533,7 @@
           settingsAutoSaveAbortController.abort();
         }
       } catch (e) {
-        // 忽略
+
       }
 
       const fetchOptions = {
@@ -557,7 +553,7 @@
           try {
             currentSettingsAutoSaveAbortController.abort();
           } catch (e) {
-            /* 忽略 */
+
           }
         }, SETTINGS_AUTO_SAVE_TIMEOUT_MS);
       } else {
@@ -583,12 +579,9 @@
           core.setCachedNotificationSettings(mergedFull);
         }
       } catch (e) {
-        // 忽略
+
       }
 
-      // If the user changed another field while this request was awaiting
-      // fetch/json, keep the dirty bit set so finally schedules the queued
-      // save. Otherwise the older response can erase a newer edit.
       const hasPendingSave = settingsAutoSavePending;
       lastNotificationSettingsHash = mergedHash;
       settingsDirty = hasPendingSave;
@@ -596,7 +589,6 @@
         settingsRemoteChangedWhileDirty = false;
       }
 
-      // 同步成功：短暂提示后自动隐藏（避免常驻）
       setSettingsHint(t("settings.hint.synced"), false, 1200);
     } catch (e) {
       const msg =
@@ -617,7 +609,7 @@
       settingsAutoSaveInFlight = false;
       if (settingsAutoSavePending) {
         settingsAutoSavePending = false;
-        // 若期间仍有未同步修改，则再触发一次（debounce 复用，避免风暴）
+
         if (settingsDirty) {
           if (isSettingsOverlayOpen()) {
             scheduleSettingsAutoSave();
@@ -674,17 +666,6 @@
     }
   }
 
-  // Bark base_url 可达性诊断（TODO #3 / r42）
-  //
-  // 目标：当 server_config.resolve_external_base_url 解析到 loopback 时（默认
-  // bind=127.0.0.1 + 没填 external_base_url），手机端 Bark 收到的 url 必然指向
-  // 自己——本函数把后端 /api/system/network-base-url-status 的诊断信息渲染到
-  // settings 面板，引导用户复制 LAN URL 到 web_ui.external_base_url。
-  //
-  // 边界：
-  // - SERVER_URL 缺失（极端 webview 配置错配）→ 静默隐藏，避免空指针。
-  // - 后端探测失败 / 离线 / 5xx → 隐藏整个区块，不打扰主设置面板。
-  // - LAN IP 探测不到 → 显示 "no LAN" 提示，复制按钮隐藏。
   async function initBarkBaseUrlStatus() {
     const item = document.getElementById("settingsBarkBaseUrlStatus");
     const message = document.getElementById("settingsBarkBaseUrlMessage");
@@ -722,10 +703,7 @@
         const recommendation = String(data.recommendation || "ok");
 
         if (recommendation === "ok") {
-          // 单 brace ``{url}`` 不走 i18n 的 ICU/Mustache 引擎（ICU 用
-          // ``{name, plural,...}`` / Mustache 用 ``{{name}}``）。这里手动 replace
-          // 与 PWA settings-manager.js 保持一致，并通过
-          // scripts/check_i18n_param_signatures.py 的 strict gate。
+
           message.textContent = String(
             t("settings.bark.baseUrlStatusOk") || "",
           ).replace("{url}", effective);
@@ -801,8 +779,7 @@
             copyBtn.textContent = original;
           }, 1500);
         } catch (_e) {
-          // 复制失败：webview clipboard 权限问题或 textarea fallback 失败，
-          // 按 hint 提示用户手动复制即可。
+
         }
       });
     }
@@ -910,24 +887,12 @@
       if (settingsTestBarkBtn)
         settingsTestBarkBtn.addEventListener("click", testBark);
 
-      // Bark base_url 可达性诊断（TODO #3 / r42）：
-      //   /api/system/network-base-url-status 给设置面板展示「是否回环」+
-      //   「推荐 LAN URL」。VS Code webview CSP 已 allow connect-src=SERVER_URL，
-      //   直接 fetch；探测失败 / 远程 webview 无法访问时静默隐藏整个区块，避免
-      //   把后端 5xx / 超时 倒灌成 UI 噪音。锁定行为见
-      //   tests/test_bark_loopback_pwa_redirect_r42.py。
       try {
         initBarkBaseUrlStatus();
       } catch (_e) {
-        // 忽略：诊断面板失败不应影响主设置面板渲染
+
       }
 
-      // GitHub footer 外链：VS Code webview 默认禁止 <a target="_blank">
-      // 直接 navigate 到 https URL（点击后看似没反应）。这里劫持 click，
-      // 改走 vscode.postMessage({type:'openExternal', url}) → 主进程
-      // vscode.env.openExternal 打开默认浏览器，确保点击 GitHub 链接可达。
-      // 锁定行为：packages/vscode/test/extension.test.js 中的字面量回归点
-      // （选择器 / postMessage 类型 / host case / openExternal 调用 / 协议白名单）。
       const settingsFooterLinks = document.querySelectorAll(
         '.settings-footer-link[target="_blank"]',
       );
@@ -940,32 +905,18 @@
             e.stopPropagation();
             postMessage({ type: "openExternal", url: href });
           } catch (_e) {
-            // 忽略：拦截失败时退化为浏览器默认行为，不影响主流程
+
           }
         });
       });
 
-      // Debounce + accumulate：800ms 窗口内多个字段的修改必须合并保存。
-      //
-      // 历史 bug 重现：
-      //   T=0    用户改 frontend_countdown=60 → 设 timer(at 800ms)
-      //   T=300  用户改 resubmit_prompt="x"   → clearTimeout(旧 timer)，
-      //                                          新 timer(at 1100ms)
-      //   T=1100 发送 {resubmit_prompt:"x"}，frontend_countdown=60 永久丢失
-      //
-      // 修复：每次调用把 updates 合进 module-level pending buffer，timer 真正
-      // 触发时一次性 POST。clearTimeout 只是「重新计时」，不再丢弃 payload；
-      // close/dispose 会 flush 该 buffer，避免 800ms 窗口内关闭设置面板丢编辑。
-      // 锁定行为：tests/test_webview_debounce_save_feedback.test.mjs。
       const fbCountdown = document.getElementById("feedbackCountdown");
       const fbPrompt = document.getElementById("feedbackResubmitPrompt");
       const fbSuffix = document.getElementById("feedbackPromptSuffix");
       if (fbCountdown) {
         fbCountdown.addEventListener("change", () => {
           const v = parseInt(fbCountdown.value, 10);
-          // Range mirrors server_config.AUTO_RESUBMIT_TIMEOUT_MAX (3600s); 0
-          // remains the "disabled" sentinel. Locked by
-          // tests/test_frontend_input_range_parity.py.
+
           if (!isNaN(v) && v >= 0 && v <= 3600)
             _queueFeedbackConfigSaveFromUi({ frontend_countdown: v });
         });
@@ -981,9 +932,6 @@
         );
       }
 
-      // TODO#12：「在编辑器中打开配置文件」——把只读 input 里的路径
-      // （来自 /api/get-feedback-prompts 的 meta.config_file）交给宿主，
-      // 宿主用 vscode.window.showTextDocument 在当前编辑器 tab 打开。
       const openConfigBtn = document.getElementById("settingsOpenConfigBtn");
       if (openConfigBtn) {
         openConfigBtn.addEventListener("click", (e) => {
@@ -996,7 +944,7 @@
             if (!configPath) return;
             postMessage({ type: "openConfigFile", path: configPath });
           } catch (_e) {
-            // 忽略：打开配置失败不影响设置面板主流程
+
           }
         });
       }
@@ -1010,7 +958,7 @@
       }
       if (settingsPanel) {
         settingsPanel.addEventListener("click", (e) => e.stopPropagation());
-        // 设置面板：用户编辑时标记 dirty（避免热更新覆盖用户未保存输入）
+
         const maybeMarkDirty = (e) => {
           const t = e && e.target;
           const id = t && t.id ? String(t.id) : "";
@@ -1021,7 +969,7 @@
         settingsPanel.addEventListener("change", maybeMarkDirty);
       }
     } catch (e) {
-      // 忽略
+
     }
   }
 
@@ -1052,7 +1000,7 @@
         }
       }
     } catch (e) {
-      // 静默失败
+
     }
   }
 
@@ -1132,12 +1080,12 @@
     try {
       _flushPendingFeedbackConfigSaveFromUi();
     } catch (e) {
-      // 忽略
+
     }
     try {
       stopSettingsAutoRefresh();
     } catch (e) {
-      // 忽略
+
     }
     try {
       if (settingsHintClearTimer) {
@@ -1145,7 +1093,7 @@
         settingsHintClearTimer = null;
       }
     } catch (e) {
-      // 忽略
+
     }
   }
 
@@ -1162,7 +1110,7 @@
     try {
       window.AIIAWebviewSettingsUi = api;
     } catch (_) {
-      // 忽略
+
     }
   }
 })();

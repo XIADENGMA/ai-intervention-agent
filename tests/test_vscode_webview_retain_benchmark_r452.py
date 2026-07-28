@@ -34,7 +34,10 @@ def test_retain_context_is_explicit_opt_in_not_default() -> None:
     extension = EXTENSION_TS.read_text(encoding="utf-8")
     assert "webview.retainContextWhenHidden" in extension
     assert "retainContextWhenHidden: retainWebviewContextWhenHidden" in extension
-    assert "getState/setState" in extension
+    # 状态恢复路径（getState/setState 注释说明已清理）由 webview-ui.js 锁定
+    webview_ui = WEBVIEW_UI.read_text(encoding="utf-8")
+    assert "vscode.getState" in webview_ui
+    assert "vscode.setState" in webview_ui
 
 
 def test_webview_reports_probe_after_two_animation_frames() -> None:

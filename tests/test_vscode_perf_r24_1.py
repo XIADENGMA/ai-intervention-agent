@@ -347,16 +347,11 @@ def test_load_static_assets_writes_back_cached_object_at_end() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_preload_resources_has_r24_1_design_tag_comment() -> None:
-    """``_preloadResources`` 内联注释应含 ``R24.1`` 设计标签。
-
-    git blame / regression triage 时这个 tag 是定位 commit 的快捷方式
-    （和 R20.13-A/B/.../F、R22.* 的注释风格保持一致）。
-    """
+def test_preload_resources_parallelizes_critical_reads() -> None:
+    """R24.1 设计 tag 已随注释清理，改锁并行读的代码特征本身。"""
     body = _extract_preload_resources_body(_read(WEBVIEW_TS))
-    assert "R24.1" in body, (
-        "_preloadResources 函数体应含 ``R24.1`` 设计 tag 注释；"
-        " 这个 tag 是 git blame 快速定位优化设计的合约"
+    assert "Promise.all" in body, (
+        "_preloadResources 的 critical reads 必须保持 Promise.all 并行"
     )
 
 

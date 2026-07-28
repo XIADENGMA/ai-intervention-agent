@@ -1,4 +1,3 @@
-
 (function (root, factory) {
   const api = factory()
   if (typeof module !== 'undefined' && module.exports) {
@@ -36,7 +35,6 @@
       if (/iphone|ipad|ipod/.test(normalized)) return true
     }
 
-    // iPadOS 桌面模式经常暴露为 MacIntel，但同时存在触摸点。
     if (platform === 'MacIntel' && maxTouchPoints > 1) return true
 
     return false
@@ -149,7 +147,7 @@
           return luminance < 128 ? 'dark' : 'light'
         }
       } catch (_) {
-        // 忽略：某些宿主环境可能不支持 getComputedStyle / colorScheme
+
       }
     }
 

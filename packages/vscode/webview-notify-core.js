@@ -1,5 +1,5 @@
 ;(function () {
-  // 通知配置核心：负责从服务端拉取/规范化/缓存，并提供新任务通知派发（按需懒加载）
+
   let vscode = null
   try {
     vscode =
@@ -18,8 +18,6 @@
     }
   }
 
-  // Local i18n helper — mirrors webview-ui.js::t(): looks up AIIA_I18N and
-  // falls back to the bare key so a missing locale never breaks the path.
   function __ncT(key, params) {
     try {
       var i18n =
@@ -27,7 +25,7 @@
         (typeof window !== 'undefined' && window.AIIA_I18N)
       if (i18n && typeof i18n.t === 'function') return i18n.t(key, params)
     } catch (_e) {
-      /* noop */
+
     }
     return key
   }
@@ -44,7 +42,7 @@
         vscode.postMessage(message)
       }
     } catch (e) {
-      // 忽略：通知模块异常不应影响主 UI
+
     }
   }
 
@@ -73,7 +71,7 @@
       enabled: c.enabled !== false,
       webEnabled: c.web_enabled !== false,
       autoRequestPermission: c.auto_request_permission !== false,
-      // 后端默认 true（config.toml.default）；这里对齐“未显式关闭即开启”
+
       macosNativeEnabled: c.macos_native_enabled !== false,
       soundEnabled: c.sound_enabled !== false,
       soundMute: !!c.sound_mute,
@@ -123,7 +121,7 @@
           try {
             controller.abort()
           } catch (e) {
-            /* 忽略 */
+
           }
         }, SETTINGS_FETCH_TIMEOUT_MS)
       }
@@ -181,7 +179,6 @@
     return s.slice(0, maxLen) + '…'
   }
 
-  // taskData: Array<{ id, prompt }> 或 Array<string>（向后兼容纯 ID 数组）
   async function showNewTaskNotification(taskData) {
     try {
       var sourceItems = Array.isArray(taskData) ? taskData : [taskData]
@@ -198,7 +195,6 @@
       if (normalized.length === 0) return
       if (ids.length === 0) return
 
-      // 构建通知内容：优先使用第一个任务的 prompt 摘要
       var firstPrompt = (normalized[0] && normalized[0].prompt) || ''
       var summary = truncateSummary(firstPrompt, NOTIFY_SUMMARY_MAX_LEN)
       var msg
@@ -214,7 +210,6 @@
 
       logDebug('[notify-core] New task(s) detected: ' + msg)
 
-      // 后台刷新设置（不阻塞通知派发），使用缓存立即决策
       refreshNotificationSettingsFromServer({ force: false, silent: true }).catch(function () {})
 
       var settings = notificationSettings || { enabled: true, macosNativeEnabled: true }
@@ -246,11 +241,10 @@
         dedupeKey: 'new_tasks:' + ids.join('|')
       })
     } catch (e) {
-      // 忽略：通知失败不应影响主流程
+
     }
   }
 
-  // 暴露最小 API：供 webview-ui / settings-ui 按需调用
   const api = {
     refreshNotificationSettingsFromServer,
     getCachedNotificationSettings,
@@ -266,7 +260,7 @@
 
       window.AIIAWebviewNotifyCore = api
     } catch (_) {
-      // 忽略
+
     }
   }
 })()

@@ -1,49 +1,11 @@
-/* Webview 样式（从 webview.js 内联 <style> 抽取）
- *
- * 目的：
- * - 允许 Webview CSP 收紧（移除 style-src 'unsafe-inline'）
- * - 保持样式可维护、可缓存
- *
- * 注意：
- * - 该文件需要被打包进 VSIX（packages/vscode/package.json -> files）
- */
-
-/* ==========================================================================
- * CSS Cascade Layers：显式声明层级顺序（后声明的层优先级更高）
- *   reset       重置/默认值修正
- *   tokens      设计 token（颜色/尺寸/间距变量）
- *   base        基础元素样式（html/body/字体）
- *   components  组件样式（toast/settings/textarea 等）
- *   a11y        无障碍增强（focus/reduce-motion 细节）
- *   themes      主题覆盖（dark/light/high-contrast）
- *
- * 现状：新增此声明不会强制 reparent 已有规则。后续阶段可逐步把规则迁入层内，
- *       避免一次性大 diff 引入视觉回归；此处只建立接缝（IG-4）。
- * ========================================================================== */
 @layer reset, tokens, base, components, a11y, themes;
 
-/* 共享组件：统一三态面板（T1 · C10c）。
- * 单一真源为 static/css/tri-state-panel.css；packages/vscode/tri-state-panel.css
- * 是打包期字节级拷贝，由 tests/test_tri_state_panel_parity.py 守护 sha256 一致。
- * 自带 @layer components 声明，层级由本文件顶部的声明顺序统一排序。 */
 @import url("./tri-state-panel.css");
 
-/* [hidden] 属性全局兜底：放在任何 @layer 之外，优先级最高；
- * 即使后续规则用 display:flex/grid 覆盖，也能被 !important 强制隐藏。 */
 [hidden] {
   display: none !important;
 }
 
-/* ==========================================================================
- * 三态面板（Loading / Empty / Error）共享 token —— 服务 T1（C10a）。
- *
- * 与 Web UI 的 static/css/main.css :root 里同名 token **数值保持一致**，
- * 保证 T1 双端行为统一。颜色由 --vscode-* 原生主题变量提供（插件侧不自带
- * 颜色系统），所以这里只放尺寸 / 间距 / 圆角 / 过渡。
- *
- * 放在 @layer tokens 里避免被组件层规则覆盖；此 commit 只引入 token 接缝，
- * 真正消费 DOM 在 C10c（VSCode webview 侧三态面板落地）。
- * ========================================================================== */
 @layer tokens {
   :root {
     --aiia-state-padding-y: 32px;
@@ -72,7 +34,6 @@ body {
   height: 100%;
 }
 
-/* 通过 attribute 驱动 color-scheme（避免 JS 写 inline style 触发 CSP） */
 html[data-vscode-theme-kind="dark"] {
   color-scheme: dark;
 }
@@ -122,7 +83,7 @@ body {
   position: relative;
   min-height: 34px;
   gap: 6px;
-  padding: 4px 34px 4px 8px; /* 左右留白 + 右侧为设置按钮预留空间 */
+  padding: 4px 34px 4px 8px;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -290,17 +251,17 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--vscode-testing-iconQueued); /* 黄色 - 初始/加载状态 */
+  background: var(--vscode-testing-iconQueued);
   animation: breathing 2s ease-in-out infinite;
   flex-shrink: 0;
 }
 
 .breathing-light.connected {
-  background: var(--vscode-testing-iconPassed); /* 绿色 - 已连接 */
+  background: var(--vscode-testing-iconPassed);
 }
 
 .breathing-light.disconnected {
-  background: var(--vscode-testing-iconFailed); /* 红色 - 未连接 */
+  background: var(--vscode-testing-iconFailed);
 }
 
 @keyframes breathing {
@@ -329,14 +290,14 @@ body {
   height: 100%;
   color: var(--vscode-descriptionForeground);
   text-align: center;
-  padding: 24px 32px 64px; /* 整体略向上：底部留更大间隙 */
+  padding: 24px 32px 64px;
   position: relative;
 }
 
 .no-content-icon {
-  width: 120px; /* 对齐原项目：Lottie 容器较大 */
+  width: 120px;
   height: 120px;
-  font-size: 64px; /* 备用 emoji（对齐原项目 4rem ≈ 64px） */
+  font-size: 64px;
   margin-bottom: 8px;
   opacity: 1;
   display: flex;
@@ -354,7 +315,6 @@ body {
   height: 100%;
 }
 
-/* Lottie 降级 SVG：默认与 emoji 视觉尺寸对齐（避免 120px 容器下线条过粗） */
 .no-content-icon .aiia-fallback-icon {
   width: 64px;
   height: 64px;
@@ -415,7 +375,6 @@ body {
   will-change: transform;
 }
 
-/* VSCode 浅色主题：参考原项目的浅色进度条配色 */
 html[data-vscode-theme-kind="light"] .no-content-progress,
 body.vscode-light .no-content-progress {
   box-shadow: none;
@@ -473,7 +432,6 @@ body.vscode-light .no-content-progress-bar {
   word-break: break-word;
 }
 
-/* Markdown代码块样式 - 深色背景的多行代码展示 */
 .markdown-content pre {
   background: var(--vscode-editor-background);
   padding: 14px 16px;
@@ -564,7 +522,6 @@ body.vscode-light .no-content-progress-bar {
   font-style: italic;
 }
 
-/* Markdown 表格：避免宽表导致容器溢出 */
 .markdown-content table {
   display: block;
   max-width: 100%;
@@ -597,7 +554,7 @@ body.vscode-light .no-content-progress-bar {
 .scrollable-content {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 10px 8px 10px; /* 顶部4px，底部8px，左右留白 */
+  padding: 4px 10px 8px 10px;
   background: var(--vscode-sideBar-background);
   -webkit-overflow-scrolling: touch;
   will-change: scroll-position;
@@ -620,7 +577,7 @@ body.vscode-light .no-content-progress-bar {
 
 .fixed-input-area {
   flex-shrink: 0;
-  padding: 4px 10px 6px 10px; /* 左右留白，避免输入框贴边 */
+  padding: 4px 10px 6px 10px;
   background: transparent;
 }
 
@@ -682,7 +639,7 @@ body.vscode-light .no-content-progress-bar {
   padding: 12px;
   padding-top: 16px;
   padding-bottom: 48px;
-  background: transparent; /* 输入框边框内背景透明 */
+  background: transparent;
   color: var(--vscode-input-foreground);
   border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
   border-radius: 6px;
@@ -775,12 +732,8 @@ body.vscode-light .no-content-progress-bar {
   display: block;
 }
 
-/* R691（TODO#5 跨端一致性）：任务级 header chip（≤16 字符领域标签）。
-   与 web 端 #task-header-chip 同构；无 header_label 时保持 hidden。
-   R700：任务标签页现已优先显示 header_label（同一信息），chip 与其
-   重复，随 web 端一并有意下线；DOM/JS 保留。 */
 .task-header-chip {
-  display: none; /* R700：与标签页 header_label 信息重复，有意下线 */
+  display: none;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -796,9 +749,6 @@ body.vscode-light .no-content-progress-bar {
   border-radius: 9px;
 }
 
-/* Loop 工程 P4（与 web 端 .task-loop-context 同构）：活动任务 loop
-   上下文条。用户验收意见后与 web 端同一方向：中性平底卡（无品牌色
-   底/彩色左边框），chips 走中性胶囊；全部跟随 VSCode 主题变量。 */
 .task-loop-context {
   margin: 2px 0 10px;
   padding: 8px 10px;
@@ -834,7 +784,7 @@ body.vscode-light .no-content-progress-bar {
   border: 1px solid var(--vscode-panel-border);
   border-radius: 999px;
   white-space: nowrap;
-  user-select: text; /* user 应能复制 loop_id / 轮次 */
+  user-select: text;
 }
 
 .loop-context-line {
@@ -856,11 +806,10 @@ body.vscode-light .no-content-progress-bar {
 
 .loop-context-value {
   color: var(--vscode-foreground);
-  overflow-wrap: anywhere; /* objective/criteria 最长 500 字符，允许折行 */
+  overflow-wrap: anywhere;
   user-select: text;
 }
 
-/* Loop 视图（与 web 端同构）：历史轮次折叠面板。 */
 .loop-history-toggle {
   align-self: flex-start;
   display: inline-flex;
@@ -968,7 +917,6 @@ body.vscode-light .no-content-progress-bar {
   font-size: 10px;
 }
 
-/* Loop 工程 P4（与 web 端 .task-tab-iter 同构）：task tab 轮次徽标。 */
 .task-tab-iter {
   display: inline-block;
   padding: 0 5px;
@@ -985,9 +933,6 @@ body.vscode-light .no-content-progress-bar {
   flex-shrink: 0;
 }
 
-/* R691（TODO#5 跨端一致性）+ TODO#41：question_type="yesno" 的一行
-   Yes/No 按钮组。点击登记"选中态"（.selected + aria-pressed），提交时
-   合并发送——未选中 = 中性 outline，选中 = 主题主色填充。 */
 .yesno-button-group {
   display: flex;
   gap: 8px;
@@ -1028,13 +973,8 @@ body.vscode-light .no-content-progress-bar {
   cursor: not-allowed;
 }
 
-/* R690（TODO#5 web/插件功能对齐）：倒计时控制行（+60s / 冻结）。
-   使用 VSCode 主题次级按钮变量，与 insert-code/upload 按钮同一视觉层级。
-   R700（与 web 端 R699 对齐）：按用户决策下线可见入口——typing-hold
-   自动延长（输入中永不结束）取代手动按钮；DOM 与 JS 逻辑保留，仅视觉
-   隐藏。 */
 .countdown-controls {
-  display: none; /* R700：手动延长/冻结按钮下线，typing-hold 自动处理 */
+  display: none;
   justify-content: flex-end;
   gap: 6px;
   padding: 2px 0 6px;
@@ -1435,7 +1375,6 @@ body.vscode-light .no-content-progress-bar {
   border-color: var(--vscode-focusBorder);
 }
 
-/* TODO#12：配置路径行——只读路径 input 与「在编辑器中打开」按钮同行 */
 .settings-config-path-row {
   display: flex;
   align-items: stretch;
@@ -1444,7 +1383,7 @@ body.vscode-light .no-content-progress-bar {
 
 .settings-config-path-row input[type="text"] {
   flex: 1;
-  min-width: 0; /* 长路径可收缩，避免把按钮挤出面板 */
+  min-width: 0;
 }
 
 .settings-config-open-btn {
@@ -1564,9 +1503,6 @@ body.vscode-light .no-content-progress-bar {
   user-select: none;
 }
 
-/* feat-footer-link-plugin (cycle-22 restyle)：与 Web UI ``.version-info``
-   容器视觉对齐——上方分隔线 + 居中布局，便于在设置面板底部形成清晰的
-   「项目署名」分区。 */
 .settings-footer {
   display: flex;
   flex-direction: column;
@@ -1580,16 +1516,6 @@ body.vscode-light .no-content-progress-bar {
   width: 100%;
 }
 
-/* feat-footer-link-plugin (cycle-22 restyle)：从 VSCode textLink 简朴样式
-   升级为「胶囊按钮」(pill button) — 与 Web UI ``.version-link`` 视觉对齐
-   （圆角 8px + 半透明背景 + GitHub octocat icon prefix）。
-
-   主题适配策略 ── 不直接 hardcode dark / light 色值，而是用 ``rgba(127,
-   127, 127, .X)`` 这种**中性灰**做底，配合 ``var(--vscode-foreground)``
-   做文字色。这样 dark / light / high-contrast 三种主题下都能用同一组规则
-   render（hc 主题会自动用更高对比度的 ``--vscode-foreground``，无需 @media
-   分支）。GitHub 图标用 ``fill="currentColor"`` 继承链接文字色，主题切换
-   自动同步。 */
 .settings-footer-link {
   display: inline-flex;
   align-items: center;
@@ -1636,7 +1562,6 @@ body.vscode-light .no-content-progress-bar {
   display: inline-block;
 }
 
-/* 代码块工具栏（复制/语言标签） */
 .code-block-container {
   position: relative;
 }
@@ -1650,7 +1575,7 @@ body.vscode-light .no-content-progress-bar {
   gap: 6px;
   opacity: 0;
   transition: opacity 0.15s ease;
-  pointer-events: none; /* 仅按钮可点击 */
+  pointer-events: none;
 }
 
 .code-block-container:hover .code-toolbar {
@@ -1711,7 +1636,6 @@ body.vscode-light .no-content-progress-bar {
   display: none !important;
 }
 
-/* Webview 内 Toast（非侵入式反馈，避免用户误以为无响应） */
 .toast-host {
   position: absolute;
   left: 0;
@@ -1784,25 +1708,10 @@ body.vscode-light .no-content-progress-bar {
   );
 }
 
-/* ==========================================================================
- * BM-5：force-repaint 辅助 class（规避 VSCode issue #113188）
- *   webview.ts 在 onDidChangeVisibility (visible=true) 时发送 force-repaint，
- *   webview-ui.js 在两个 rAF 里切换本 class，触发合成层重建以清除 ghost 残影。
- *   prefers-reduced-motion 用户也应执行（这是视觉修复，不是动效）。
- * ========================================================================== */
 body.aiia-repainting {
   transform: translateZ(0);
 }
 
-/* ==========================================================================
- * BM-7：首帧 boot skeleton
- *   HTML 解析到此即可显示（link 标签仍然阻塞渲染，CSS 就绪即可命中规则）。
- *   设计目标：
- *     - 展示即将出现的 UI「形状」：标题条 / 正文条 / 按钮条
- *     - 不抖动、不吸走焦点、不干扰 toast/settings overlay
- *     - JS init() 成功后淡出 160ms，再通过 [hidden] 彻底脱离布局
- *     - prefers-reduced-motion：关闭 shimmer，改为静态半透明
- * ========================================================================== */
 .aiia-boot-skeleton {
   position: fixed;
   inset: 0;
@@ -1815,9 +1724,7 @@ body.aiia-repainting {
   pointer-events: none;
   opacity: 1;
   transition: opacity 160ms ease-out;
-  /* CSS 级兜底：若 JS 完全无法执行（文件 404 / parse error），
-   * 6s 起淡出、8s 彻底隐藏，避免永久遮盖底层 noContentState。
-   * JS 正常时会先走 --leaving（animation:none 覆盖此动画），提前退场。 */
+
   animation: aiia-boot-skeleton-autohide 8s ease-out forwards;
 }
 
@@ -1888,7 +1795,6 @@ body.aiia-repainting {
   }
 }
 
-/* 浅色主题下 shimmer 改成淡黑色反光，避免白底上白光不可见 */
 html[data-vscode-theme-kind="light"] .aiia-boot-skeleton__bar,
 body.vscode-light .aiia-boot-skeleton__bar {
   background-color: rgba(0, 0, 0, 0.06);
@@ -1901,19 +1807,12 @@ body.vscode-light .aiia-boot-skeleton__bar {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* 优雅地尊重用户偏好：直接不显示骨架屏，
-   * 底层 noContentState 会立即可见；JS 正常时也不需要骨架覆盖。
-   * 这样能避免 C1 全局规则把 animation-duration 降到 0.01ms 导致骨架「闪一下」。 */
+
   .aiia-boot-skeleton {
     display: none;
   }
 }
 
-/* ==========================================================================
- * A11y 层：键盘聚焦描边 + 减少动态效果偏好
- *   D3：仅在键盘聚焦（:focus-visible）时显示 outline，避免鼠标点击残留描边
- *   D2：用户开启「减少动态效果」时，抹平全局动画/过渡，保留结构可见
- * ========================================================================== */
 @layer a11y {
   :focus:not(:focus-visible) {
     outline: none;

@@ -144,8 +144,8 @@ class TestCssContract(unittest.TestCase):
         match = re.search(r"\.countdown-controls\s*\{([^}]*)\}", css)
         self.assertIsNotNone(match)
         assert match is not None
+        # R700 决策溯源由本测试 docstring 承载（CSS 注释已清理）
         self.assertIn("display: none", match.group(1))
-        self.assertIn("R700", match.group(1))
 
 
 class TestTickTypingGuardR700(unittest.TestCase):
