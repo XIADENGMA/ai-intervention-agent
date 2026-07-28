@@ -12,16 +12,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Changed
 
 - Repository-wide comment cleanup (maintainer decision: comments are
-  removed unless load-bearing): all narrative R-number archaeology,
-  textbook-style blocks, and section banners are stripped from the
-  web CSS/JS assets — `main.css` alone drops 42% of its lines.
-  Rule/code neutrality is proven by byte-identical minified outputs
-  before and after each batch. Functional comments survive (the
-  `AIIA-XSS-SAFE` security audit markers, `aiia:i18n-allow-cjk`
-  exemptions, eslint directives). Invariant tests that asserted
-  comment *text* (anchor tags, JSDoc mentions, comment-boundary
-  extractors, the finally-block meta-lint whitelist) now lock the
-  equivalent code features instead.
+  removed unless load-bearing), delivered in four verified batches:
+  web CSS (`main.css` −42% lines), all first-party web JS, the whole
+  VS Code extension package, and the Python sources + HTML templates
+  (~21 000 lines of narrative R-number archaeology, textbook blocks,
+  and section banners removed; docstrings shortened to their first
+  paragraph). Code neutrality proven by byte-identical minified
+  CSS/JS outputs, AST-identical Python (modulo docstrings), tsc +
+  eslint + the extension test suite, Jinja parses, and a live-server
+  smoke check. Load-bearing documentation survives as enforced code:
+  flasgger route docstrings (the YAML is the OpenAPI spec), the MCP
+  tool docstring, RLock/ReadWriteLock concurrency contracts
+  (R330/R331/R336, R22.2), decision rationales (R372 atexit grace,
+  R323 reset semantics), `NOTE(feat-remove-*)` route-retention
+  markers, `AIIA-XSS-SAFE` / `aiia:i18n-allow-cjk` / lint pragmas.
+  ~60 invariant tests that asserted comment text now lock the
+  equivalent code features (selectors, DOM ids, call sites, code
+  regexes) instead.
 
 ## [1.8.9] - 2026-07-28
 

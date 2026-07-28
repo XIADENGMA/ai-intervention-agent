@@ -753,7 +753,7 @@
 
     var zh = /^zh/i.test(currentLang)
     var sep = zh ? '、' : ', '
-    var conj = zh ? '和' : ' and '
+    var conj = zh ? '和' : ' and ' // aiia:i18n-allow-cjk
     return arr.slice(0, -1).join(sep) + conj + arr[arr.length - 1]
   }
 
