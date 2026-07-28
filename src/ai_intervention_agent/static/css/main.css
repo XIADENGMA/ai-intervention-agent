@@ -4089,7 +4089,9 @@ h1 {
     rgba(255, 255, 255, 0.15),
     transparent
   ); /* 渐变装饰线 */
-  border-radius: 20px 20px 0 0; /* 顶部圆角 */
+  /* TODO#44 回查扫描：与 .btn::before 同款隐患——option-item 在
+   * 768px 断点圆角变 16px，硬编码 20px 会与容器边界错位。 */
+  border-radius: inherit;
 }
 
 /**
