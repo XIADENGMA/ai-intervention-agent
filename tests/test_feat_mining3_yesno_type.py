@@ -1,8 +1,11 @@
 """mining-cycle-3 §2.1 borrow #2 (gemini-cli ``ask_user.yesno``)
 回归测试。
 
-设计回顾：``question_type='yesno'`` 让前端隐藏 textarea + 显示
-1 行 Yes/No 2-button，user 一击直接提交字面 "yes" / "no"。
+设计回顾（TODO#41 重设计后）：``question_type='yesno'`` 让前端在
+textarea 上方渲染 1 行 Yes/No 2-button。点击只登记"选中态"（再点
+取消、点另一按钮切换），textarea 保持可见供补充说明（可选），用户
+点「提交反馈」时发送 ``"yes"`` / ``"no"``（有补充时
+``"yes\\n\\n<补充>"``）。
 
 测试范围：
 1. ``Task`` model 字段（默认 None；接受 "yesno"）
@@ -10,7 +13,7 @@
    静默 None）
 3. ``server_feedback`` MCP schema 新参数
 4. POST /api/tasks 路由接收 + GET 返回
-5. 前端 ``updateYesnoButtonGroup`` helper + 调用点
+5. 前端 ``updateYesnoButtonGroup`` helper + 选中态登记/合并提交链路
 6. CSS rules + i18n keys
 7. 持久化 round-trip
 """
@@ -160,27 +163,87 @@ class TestFrontend(unittest.TestCase):
         self.assertIn('|| "Yes"', body)
         self.assertIn('|| "No"', body)
 
-    def test_helper_hides_textarea_on_yesno(self) -> None:
+    def test_helper_keeps_textarea_visible_on_yesno(self) -> None:
+        """TODO#41 关键 invariant：yesno 模式 textarea **保持可见**
+        （供补充说明），不允许出现 display="none" 隐藏路径。"""
         m = re.search(
             r"function\s+updateYesnoButtonGroup\(questionType\)\s*\{([\s\S]*?)\n\}\n",
             self.src,
         )
         assert m is not None
         body = m.group(1)
-        # 关键 invariant: yesno → textarea hide；其他 → restore
-        self.assertIn('feedbackTextarea.style.display = "none"', body)
+        self.assertNotIn('feedbackTextarea.style.display = "none"', body)
         self.assertIn('feedbackTextarea.style.display = ""', body)
 
-    def test_submit_writes_literal_yes_or_no(self) -> None:
-        """Yes button → ``ta.value = "yes"``；No button → ``"no"``。"""
+    def test_helper_sets_supplement_placeholder(self) -> None:
+        """yesno 模式把默认占位符换成"可补充说明"提示（仅当任务未
+        提供自定义 feedback_placeholder 时）。"""
         m = re.search(
             r"function\s+updateYesnoButtonGroup\(questionType\)\s*\{([\s\S]*?)\n\}\n",
             self.src,
         )
         assert m is not None
         body = m.group(1)
-        self.assertIn('_submit("yes")', body)
-        self.assertIn('_submit("no")', body)
+        self.assertIn('"page.yesnoSupplementPlaceholder"', body)
+
+    def test_click_registers_selection_instead_of_submitting(self) -> None:
+        """TODO#41：Yes/No 点击只登记选择（toggleYesnoSelection），
+        不得直接触发表单提交。"""
+        m = re.search(
+            r"function\s+updateYesnoButtonGroup\(questionType\)\s*\{([\s\S]*?)\n\}\n",
+            self.src,
+        )
+        assert m is not None
+        body = m.group(1)
+        self.assertIn('toggleYesnoSelection("yes")', body)
+        self.assertIn('toggleYesnoSelection("no")', body)
+        # 旧"一击直发"路径必须移除
+        self.assertNotIn("requestSubmit", body)
+        self.assertNotIn('_submit("yes")', body)
+
+    def test_toggle_and_sync_helpers_defined(self) -> None:
+        self.assertRegex(self.src, r"function\s+toggleYesnoSelection\(value\)\s*\{")
+        self.assertRegex(self.src, r"function\s+syncYesnoSelectedStyles\(\)\s*\{")
+
+    def test_toggle_supports_unselect_and_switch(self) -> None:
+        """再点同一按钮取消（delete）、点另一按钮切换（赋值）。"""
+        m = re.search(
+            r"function\s+toggleYesnoSelection\(value\)\s*\{([\s\S]*?)\n\}\n",
+            self.src,
+        )
+        assert m is not None
+        body = m.group(1)
+        self.assertIn("delete taskYesnoSelections[taskId]", body)
+        self.assertIn("taskYesnoSelections[taskId] = value", body)
+
+    def test_selected_state_uses_aria_pressed(self) -> None:
+        """选中态必须同步 aria-pressed（toggle button a11y 语义）。"""
+        self.assertIn('setAttribute("aria-pressed"', self.src)
+
+    def test_global_getter_and_clear_exposed(self) -> None:
+        """app.js 依赖的两个全局桥接函数必须暴露在 window 上。"""
+        self.assertIn("window.getActiveYesnoSelection = function", self.src)
+        self.assertIn("window.clearYesnoSelection = function", self.src)
+
+    def test_task_state_registered_and_cleaned(self) -> None:
+        """任务级选中态 map 注册 + 任务关闭/提交成功两条清理路径。"""
+        self.assertIn("window.taskYesnoSelections", self.src)
+        self.assertRegex(
+            self.src,
+            r"function\s+clearTaskLocalState[\s\S]{0,900}"
+            r"delete taskYesnoSelections\[normalizedTaskId\]",
+        )
+
+    def test_auto_submit_merges_yesno_selection(self) -> None:
+        """倒计时归零自动提交时，已点选未提交的 yes/no 不能丢。"""
+        m = re.search(
+            r"async function\s+autoSubmitTask\(taskId\)\s*\{([\s\S]*?)\n\}\n",
+            self.src,
+        )
+        assert m is not None
+        body = m.group(1)
+        self.assertIn("yesnoSelection", body)
+        self.assertIn("combinedText", body)
 
     def test_switch_task_calls_helper(self) -> None:
         self.assertIn(
@@ -210,6 +273,29 @@ class TestCss(unittest.TestCase):
         assert m is not None
         self.assertIn("44px", m.group(1))
 
+    def test_selected_state_rules(self) -> None:
+        """TODO#41：选中态高亮（深色基础 + 浅色主题覆盖两套都要有）。"""
+        self.assertIn(".btn.yesno-btn.selected", self.src)
+        self.assertIn('[data-theme="light"] .btn.yesno-btn.selected', self.src)
+
+
+class TestAppJsSubmitMerge(unittest.TestCase):
+    """TODO#41：app.js 手动提交链路合并 yes/no 选择。"""
+
+    src = (
+        REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "app.js"
+    ).read_text(encoding="utf-8")
+
+    def test_submit_reads_selection(self) -> None:
+        self.assertIn("window.getActiveYesnoSelection", self.src)
+
+    def test_submit_prefixes_literal(self) -> None:
+        """合并格式：选择在前，空行分隔补充说明。"""
+        self.assertIn("${yesnoSelection}\\n\\n${feedbackText}", self.src)
+
+    def test_success_cleanup_clears_selection(self) -> None:
+        self.assertIn("window.clearYesnoSelection", self.src)
+
 
 class TestI18nKeys(unittest.TestCase):
     def test_en_has_yes_no(self) -> None:
@@ -223,6 +309,16 @@ class TestI18nKeys(unittest.TestCase):
         page = data.get("page") or {}
         self.assertEqual(page.get("yesnoYes"), "是")
         self.assertEqual(page.get("yesnoNo"), "否")
+
+    def test_supplement_placeholder_keys(self) -> None:
+        """TODO#41：三语都要有补充说明占位符。"""
+        for path in (EN_JSON, ZH_CN_JSON):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            page = data.get("page") or {}
+            self.assertTrue(
+                page.get("yesnoSupplementPlaceholder"),
+                f"{path.name} 缺 page.yesnoSupplementPlaceholder",
+            )
 
 
 class TestPersistenceRoundTrip(unittest.TestCase):

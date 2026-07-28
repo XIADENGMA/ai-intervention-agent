@@ -56,7 +56,8 @@ def test_submit_feedback_entry_no_longer_chains_getelementbyid_value() -> None:
     assert "document.getElementById('feedbackText').value.trim()" not in source
     assert "const feedbackTextEl = document.getElementById('feedbackText')" in source
     assert "if (!feedbackTextEl)" in source
-    assert "const feedbackText = feedbackTextEl.value.trim()" in source
+    # TODO#41 之后 feedbackText 为 let（yesno 选择合并时需要重新赋值）
+    assert "let feedbackText = feedbackTextEl.value.trim()" in source
     assert source.index("if (!feedbackTextEl)") < source.index(
         "feedbackTextEl.value.trim()"
     )
@@ -76,6 +77,7 @@ def test_submit_feedback_missing_textarea_skips_submit_without_throwing() -> Non
           }},
         }};
         const currentConfig = {{ predefined_options: ['Keep'] }};
+        function getActiveYesnoSelection() {{ return null; }}
         async function submitWithData(text, selected) {{
           calls.push({{ text, selected }});
         }}
@@ -123,6 +125,7 @@ def test_submit_feedback_present_textarea_keeps_trim_and_selected_options() -> N
           }},
         }};
         const currentConfig = {{ predefined_options: ['Keep', 'Skip'] }};
+        function getActiveYesnoSelection() {{ return null; }}
         async function submitWithData(text, selected) {{
           calls.push({{ text, selected }});
         }}
@@ -144,5 +147,48 @@ def test_submit_feedback_present_textarea_keeps_trim_and_selected_options() -> N
 
     assert result == {
         "calls": [{"text": "Ship it", "selected": ["Keep"]}],
+        "logs": [],
+    }
+
+
+def test_submit_feedback_merges_yesno_selection_with_note() -> None:
+    """TODO#41：登记的 yes/no 选择在提交时与补充说明合并。"""
+    source = _submit_feedback_source()
+    script = textwrap.dedent(
+        f"""
+        const calls = [];
+        const logs = [];
+        const elements = {{
+          feedbackText: {{ value: '  only after tests pass  ' }},
+        }};
+        const vscode = {{ postMessage(message) {{ logs.push(message); }} }};
+        const document = {{
+          getElementById(id) {{
+            return Object.prototype.hasOwnProperty.call(elements, id) ? elements[id] : null;
+          }},
+        }};
+        const currentConfig = {{ predefined_options: [] }};
+        function getActiveYesnoSelection() {{ return 'yes'; }}
+        async function submitWithData(text, selected) {{
+          calls.push({{ text, selected }});
+        }}
+
+        {source}
+
+        submitFeedback()
+          .then(() => {{
+            process.stdout.write(JSON.stringify({{ calls, logs }}));
+          }})
+          .catch((error) => {{
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          }});
+        """
+    )
+
+    result = json.loads(_run_node(script))
+
+    assert result == {
+        "calls": [{"text": "yes\n\nonly after tests pass", "selected": []}],
         "logs": [],
     }

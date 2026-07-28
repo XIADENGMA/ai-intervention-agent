@@ -56,47 +56,36 @@ class TestPlaceholderMaxLengthConstant(unittest.TestCase):
 
 
 class TestYesnoAccessibilityHardening(unittest.TestCase):
-    """cr37 §8 #3 — hide textarea 必须 ``aria-hidden`` + ``tabindex=-1``，
-    并在 reveal 时清除这些标记。
+    """cr37 §8 #3（TODO#41 重设计后更新）— yesno 模式 textarea **保持
+    可见可交互**：不得再设置 ``aria-hidden`` / ``tabindex=-1``；两个分支
+    都必须清除旧版残留标记（防御从旧实现热更新过来的 DOM 状态）。
     """
 
     src = MULTI_TASK_JS.read_text(encoding="utf-8")
 
-    def test_hide_sets_aria_hidden_true(self) -> None:
+    def _body(self) -> str:
         m = re.search(
             r"function\s+updateYesnoButtonGroup\(questionType\)\s*\{([\s\S]*?)\n\}\n",
             self.src,
         )
-        self.assertIsNotNone(m)
         assert m is not None
-        body = m.group(1)
-        self.assertIn('setAttribute("aria-hidden", "true")', body)
-        self.assertIn('setAttribute("tabindex", "-1")', body)
+        return m.group(1)
 
-    def test_reveal_removes_aria_hidden(self) -> None:
-        m = re.search(
-            r"function\s+updateYesnoButtonGroup\(questionType\)\s*\{([\s\S]*?)\n\}\n",
-            self.src,
-        )
-        assert m is not None
-        body = m.group(1)
-        self.assertIn('removeAttribute("aria-hidden")', body)
-        self.assertIn('removeAttribute("tabindex")', body)
+    def test_yesno_never_sets_aria_hidden(self) -> None:
+        """TODO#41：textarea 供补充说明用，禁止 AT 隐藏标记。"""
+        body = self._body()
+        self.assertNotIn('setAttribute("aria-hidden"', body)
+        self.assertNotIn('setAttribute("tabindex"', body)
 
-    def test_hide_and_reveal_pair_is_symmetric(self) -> None:
-        """每个 setAttribute 调用应有对应的 removeAttribute 调用。
-        protect against future regression where reveal branch is reverted.
-        """
-        m = re.search(
-            r"function\s+updateYesnoButtonGroup\(questionType\)\s*\{([\s\S]*?)\n\}\n",
-            self.src,
-        )
-        assert m is not None
-        body = m.group(1)
-        # 1 set + 1 remove for aria-hidden
-        self.assertEqual(body.count('"aria-hidden"'), 2)
-        # 1 set + 1 remove for tabindex
-        self.assertEqual(body.count('"tabindex"'), 2)
+    def test_both_branches_clear_legacy_marks(self) -> None:
+        body = self._body()
+        # 非 yesno 分支 1 次 + yesno 分支 1 次 = 2 次防御性清除
+        self.assertEqual(body.count('removeAttribute("aria-hidden")'), 2)
+        self.assertEqual(body.count('removeAttribute("tabindex")'), 2)
+
+    def test_textarea_stays_visible_in_yesno_branch(self) -> None:
+        body = self._body()
+        self.assertNotIn('feedbackTextarea.style.display = "none"', body)
 
 
 class TestClampBehaviorUnchanged(unittest.TestCase):

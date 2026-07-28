@@ -139,11 +139,11 @@ Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_content.png">
-    <img alt="Desktop - feedback page (multi-task tabs, code highlighting, predefined options)" src=".github/assets/desktop_light_content.png" width="600" height="625" />
+    <img alt="Desktop - feedback page (multi-task tabs, Markdown table, code highlighting, math, predefined options)" src=".github/assets/desktop_light_content.png" width="600" height="646" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
-    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" width="180" height="590" />
+    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" width="180" height="605" />
   </picture>
 </p>
 

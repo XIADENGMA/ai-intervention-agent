@@ -78,6 +78,13 @@ if (typeof window.taskTextareaContents === "undefined") {
 if (typeof window.taskOptionsStates === "undefined") {
   window.taskOptionsStates = {}; // 存储每个任务的选项勾选状态
 }
+// TODO#41（yesno 补充说明）：每个 yesno 任务的"是/否"选中态。
+// 值域 'yes' | 'no'；未选择时无条目。点击是/否按钮只登记选择
+// （可再次点击取消、点另一按钮切换），实际发送发生在用户点
+// 「提交反馈」时——提交文本 = 选中字面量 + 可选补充说明。
+if (typeof window.taskYesnoSelections === "undefined") {
+  window.taskYesnoSelections = {};
+}
 if (typeof window.taskImages === "undefined") {
   window.taskImages = {}; // 存储每个任务的图片列表
 }
@@ -437,6 +444,7 @@ var tasksCountdownTickerTimer = window.tasksCountdownTickerTimer;
 var tasksPollingTimer = window.tasksPollingTimer;
 var taskTextareaContents = window.taskTextareaContents;
 var taskOptionsStates = window.taskOptionsStates;
+var taskYesnoSelections = window.taskYesnoSelections;
 var taskImages = window.taskImages;
 var pendingNewTaskCount = window.pendingNewTaskCount;
 var newTaskHintTimer = window.newTaskHintTimer;
@@ -636,6 +644,9 @@ function clearTaskLocalState(taskId) {
   }
   if (taskOptionsStates[normalizedTaskId] !== undefined) {
     delete taskOptionsStates[normalizedTaskId];
+  }
+  if (taskYesnoSelections[normalizedTaskId] !== undefined) {
+    delete taskYesnoSelections[normalizedTaskId];
   }
   if (taskImages[normalizedTaskId] !== undefined) {
     delete taskImages[normalizedTaskId];
@@ -3940,17 +3951,24 @@ function buildLoopHistoryRow(round) {
 /**
  * mining-cycle-3 §2.1 borrow #2 (gemini-cli ``ask_user.yesno``) —
  * 根据 ``task.question_type`` 在 textarea 主体上方渲染一行 Yes/No
- * button group；点击直接提交对应 "yes" / "no" 字面 feedback。
+ * button group。
  *
- * 行为：
- *   - question_type === "yesno" → 渲染 button group，隐藏 textarea
- *   - 其他值 → 移除 button group（如果有），恢复 textarea 显示
+ * 行为（TODO#41 重设计——"点按即发送"改为"选择 + 可补充说明"）：
+ *   - question_type === "yesno" → 渲染 button group；textarea **保持
+ *     可见**并把占位符换成"可补充说明（可选）"提示。点击是/否只把
+ *     选择登记进 ``taskYesnoSelections[activeTaskId]``（再点同一按钮
+ *     取消、点另一按钮切换），实际发送发生在用户点「提交反馈」时，
+ *     由 ``app.js`` 的 ``submitFeedback`` 读取
+ *     ``window.getActiveYesnoSelection()`` 拼出
+ *     ``"yes"`` / ``"yes\n\n<补充说明>"`` 提交。
+ *   - 其他值 → 移除 button group（如果有）。
  *
- * 为什么不替换 textarea 而是 hide/show：user 切换任务时如果新任务
+ * 为什么不替换 textarea 而是复用：user 切换任务时如果新任务
  * 不是 yesno 类型，textarea 必须秒回。重建 DOM 慢且会丢失任何
  * task-scope textarea 内容（taskTextareaContents 映射）。
  *
- * i18n: ``page.yesnoYes`` / ``page.yesnoNo`` + 英文 fallback。
+ * i18n: ``page.yesnoYes`` / ``page.yesnoNo`` /
+ * ``page.yesnoSupplementPlaceholder`` + 英文 fallback。
  */
 function updateYesnoButtonGroup(questionType) {
   var feedbackTextarea = document.getElementById("feedback-text");
@@ -3967,8 +3985,10 @@ function updateYesnoButtonGroup(questionType) {
   if (questionType !== "yesno") {
     if (existingGroup) existingGroup.remove();
     if (feedbackTextarea) {
+      // 历史遗留：旧实现会在 yesno 模式下隐藏 textarea（display:none +
+      // aria-hidden）。新实现不再隐藏，但仍在非 yesno 分支做一次恢复，
+      // 防御从旧版热更新过来的残留内联样式。
       feedbackTextarea.style.display = "";
-      // cr37 §8 #3 [info]: 恢复 textarea 时清除 a11y 隐藏标记
       feedbackTextarea.removeAttribute("aria-hidden");
       feedbackTextarea.removeAttribute("tabindex");
     }
@@ -3976,15 +3996,32 @@ function updateYesnoButtonGroup(questionType) {
   }
 
   if (feedbackTextarea) {
-    feedbackTextarea.style.display = "none";
-    // cr37 §8 #3 [info]: display=none 已经让屏幕阅读器跳过，但
-    // ``aria-hidden=true`` + ``tabindex=-1`` 双保险防止某些 AT 把
-    // 隐藏 textarea 误暴露给 user（Safari + VoiceOver 旧版有此问题）。
-    feedbackTextarea.setAttribute("aria-hidden", "true");
-    feedbackTextarea.setAttribute("tabindex", "-1");
+    // TODO#41：textarea 保持可见，供用户补充说明（可选）。
+    feedbackTextarea.style.display = "";
+    feedbackTextarea.removeAttribute("aria-hidden");
+    feedbackTextarea.removeAttribute("tabindex");
+    // 占位符提示"可补充说明"。仅当任务没有自定义 feedback_placeholder
+    // 时才覆盖（调用顺序保证 updateFeedbackPlaceholder 先跑：自定义
+    // placeholder 会摘掉 data-i18n-placeholder，此处据此判定）。
+    try {
+      if (feedbackTextarea.hasAttribute("data-i18n-placeholder")) {
+        var supplementHint =
+          t("page.yesnoSupplementPlaceholder") ||
+          "Optional note — click Submit to send it with your Yes/No choice";
+        feedbackTextarea.setAttribute(
+          "data-i18n-placeholder",
+          "page.yesnoSupplementPlaceholder",
+        );
+        feedbackTextarea.setAttribute("placeholder", supplementHint);
+      }
+    } catch (_e) {
+      // 测试桩元素可能缺 hasAttribute；占位符是增强，不阻塞渲染
+    }
   }
 
   if (existingGroup) {
+    // 组已存在（同任务轮询/语言切换重入）：只需同步选中态样式。
+    syncYesnoSelectedStyles();
     return;
   }
   if (!feedbackTextarea || !feedbackTextarea.parentNode) return;
@@ -3998,40 +4035,102 @@ function updateYesnoButtonGroup(questionType) {
 
   var yesBtn = document.createElement("button");
   yesBtn.type = "button";
-  yesBtn.className = "btn btn-primary yesno-btn yesno-btn-yes";
+  // TODO#41：两个按钮默认同为中性 secondary，选中态通过 .selected 高亮
+  //（旧版 yes=primary/no=secondary 的主次暗示与"点击=选择"语义冲突）。
+  yesBtn.className = "btn btn-secondary yesno-btn yesno-btn-yes";
   yesBtn.textContent = yesLabel;
   yesBtn.setAttribute("data-yesno-value", "yes");
+  yesBtn.setAttribute("aria-pressed", "false");
 
   var noBtn = document.createElement("button");
   noBtn.type = "button";
   noBtn.className = "btn btn-secondary yesno-btn yesno-btn-no";
   noBtn.textContent = noLabel;
   noBtn.setAttribute("data-yesno-value", "no");
+  noBtn.setAttribute("aria-pressed", "false");
 
-  function _submit(literal) {
-    var ta = document.getElementById("feedback-text");
-    if (ta) ta.value = literal;
-    var form = document.getElementById("feedback-form");
-    if (form && typeof form.requestSubmit === "function") {
-      form.requestSubmit();
-    } else if (form) {
-      form.submit();
-    } else {
-      var submitBtn = document.getElementById("submit-btn");
-      if (submitBtn) submitBtn.click();
-    }
-  }
   yesBtn.addEventListener("click", function () {
-    _submit("yes");
+    toggleYesnoSelection("yes");
   });
   noBtn.addEventListener("click", function () {
-    _submit("no");
+    toggleYesnoSelection("no");
   });
 
   group.appendChild(yesBtn);
   group.appendChild(noBtn);
   feedbackTextarea.parentNode.insertBefore(group, feedbackTextarea);
+  // 任务切换后从 taskYesnoSelections 恢复该任务此前的选择
+  syncYesnoSelectedStyles();
 }
+
+/**
+ * TODO#41：登记/切换当前任务的是否选择（不发送）。
+ *
+ * - 再次点击已选中的按钮 → 取消选择；
+ * - 点击另一按钮 → 切换选择；
+ * - 状态存 ``taskYesnoSelections[activeTaskId]``，任务切换/提交成功
+ *   /任务关闭时由相应路径恢复或清理。
+ */
+function toggleYesnoSelection(value) {
+  var taskId = normalizeTaskIdValue(activeTaskId);
+  if (!taskId) return;
+  if (taskYesnoSelections[taskId] === value) {
+    delete taskYesnoSelections[taskId];
+  } else {
+    taskYesnoSelections[taskId] = value;
+  }
+  syncYesnoSelectedStyles();
+}
+
+/**
+ * TODO#41：把 ``taskYesnoSelections[activeTaskId]`` 同步到按钮组的
+ * ``.selected`` class 与 ``aria-pressed``。幂等，可在渲染/切换/提交
+ * 后任意时机调用。
+ */
+function syncYesnoSelectedStyles() {
+  var group = document.getElementById("yesno-button-group");
+  if (!group || typeof group.querySelectorAll !== "function") return;
+  var taskId = normalizeTaskIdValue(activeTaskId);
+  var selection = taskId ? taskYesnoSelections[taskId] : undefined;
+  var buttons = group.querySelectorAll("[data-yesno-value]");
+  var buttonCount =
+    buttons && Number.isFinite(buttons.length) ? buttons.length : 0;
+  for (var i = 0; i < buttonCount; i += 1) {
+    if (!(i in buttons)) continue;
+    var btn = buttons[i];
+    var isSelected = btn.getAttribute("data-yesno-value") === selection;
+    if (isSelected) {
+      btn.classList.add("selected");
+    } else {
+      btn.classList.remove("selected");
+    }
+    btn.setAttribute("aria-pressed", isSelected ? "true" : "false");
+  }
+}
+
+/**
+ * TODO#41：暴露给 ``app.js`` 的 getter——当前活动任务的是否选择。
+ *
+ * @returns {"yes"|"no"|null} 未选择（或活动任务不是 yesno）时返回 null
+ */
+window.getActiveYesnoSelection = function () {
+  var taskId = normalizeTaskIdValue(activeTaskId);
+  if (!taskId) return null;
+  var selection = taskYesnoSelections[taskId];
+  return selection === "yes" || selection === "no" ? selection : null;
+};
+
+/**
+ * TODO#41：清除指定任务的是否选择（提交成功后由 ``app.js`` 调用；
+ * 传空则清当前活动任务）。同时刷新按钮样式。
+ */
+window.clearYesnoSelection = function (taskId) {
+  var normalized = normalizeTaskIdValue(taskId || activeTaskId);
+  if (normalized && taskYesnoSelections[normalized] !== undefined) {
+    delete taskYesnoSelections[normalized];
+  }
+  syncYesnoSelectedStyles();
+};
 
 /**
  * mining-cycle-3 §2.1 borrow #3 (gemini-cli `placeholder`) —
@@ -4857,14 +4956,29 @@ async function autoSubmitTask(taskId) {
 
   // R689 (TODO#13)：倒计时归零时优先提交用户已输入的内容——
   // 即使没点发送按钮，输入框文本 / 已勾选选项也不能丢。
+  // TODO#41：yesno 任务已点选但未提交的"是/否"同样不能丢——
+  // 合并规则与手动提交一致（"yes" 或 "yes\n\n<补充>"）。
   const typedText = collectTypedFeedbackForTask(taskId);
   const selectedOpts = collectSelectedOptionsForTask(taskId);
-  if ((typedText && typedText.trim()) || selectedOpts.length > 0) {
+  const yesnoSelection =
+    taskYesnoSelections && taskYesnoSelections[taskId] === "yes"
+      ? "yes"
+      : taskYesnoSelections && taskYesnoSelections[taskId] === "no"
+        ? "no"
+        : null;
+  let combinedText = typedText || "";
+  if (yesnoSelection) {
+    combinedText =
+      combinedText && combinedText.trim()
+        ? yesnoSelection + "\n\n" + combinedText
+        : yesnoSelection;
+  }
+  if ((combinedText && combinedText.trim()) || selectedOpts.length > 0) {
     _debugLog(
       `Auto-submitting user-typed content for ${taskId} ` +
-        `(${(typedText || "").length} chars, ${selectedOpts.length} options)`,
+        `(${(combinedText || "").length} chars, ${selectedOpts.length} options)`,
     );
-    await submitTaskFeedback(taskId, typedText || "", selectedOpts);
+    await submitTaskFeedback(taskId, combinedText || "", selectedOpts);
     return;
   }
 
@@ -5033,6 +5147,11 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       if (taskOptionsStates[taskId] !== undefined) {
         delete taskOptionsStates[taskId];
         _debugLog(`Cleared saved option selection state for task ${taskId}`);
+      }
+      if (taskYesnoSelections[taskId] !== undefined) {
+        delete taskYesnoSelections[taskId];
+        syncYesnoSelectedStyles();
+        _debugLog(`Cleared yes/no selection for task ${taskId}`);
       }
       if (taskImages[taskId] !== undefined) {
         delete taskImages[taskId];

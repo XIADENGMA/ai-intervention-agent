@@ -108,7 +108,8 @@
       "uploadImage": "Upload image",
       "submit": "Submit feedback",
       "yesnoYes": "Yes",
-      "yesnoNo": "No"
+      "yesnoNo": "No",
+      "yesnoSupplementPlaceholder": "Optional note — press Send to submit it with your Yes/No choice"
     },
     "toast": {
       "configFallback": "Config load failed, using task detail fallback",

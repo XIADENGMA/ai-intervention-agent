@@ -108,7 +108,8 @@
       "uploadImage": "上传图片",
       "submit": "提交反馈",
       "yesnoYes": "是",
-      "yesnoNo": "否"
+      "yesnoNo": "否",
+      "yesnoSupplementPlaceholder": "可补充说明（可选），点击发送按钮提交"
     },
     "toast": {
       "configFallback": "配置加载失败，已使用任务详情兜底",

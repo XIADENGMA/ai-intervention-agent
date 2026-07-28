@@ -113,7 +113,8 @@
       "uploadImage": "上傳圖片",
       "submit": "提交回饋",
       "yesnoYes": "是",
-      "yesnoNo": "否"
+      "yesnoNo": "否",
+      "yesnoSupplementPlaceholder": "可補充說明（可選），點擊發送按鈕提交"
     },
     "toast": {
       "configFallback": "設定載入失敗，已使用任務详情兜底",

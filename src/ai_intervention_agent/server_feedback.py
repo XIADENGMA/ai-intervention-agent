@@ -963,11 +963,15 @@ async def interactive_feedback(
     question_type: str | None = Field(
         default=None,
         description=(
-            "Optional UI mode hint: when ``'yesno'``, the frontend hides the "
-            "free-text textarea and renders a single-row Yes/No button pair. "
-            "User's click submits the literal string 'yes' or 'no' as the "
-            "feedback result — saves typing + Submit-button click for binary "
-            "decisions (approve/reject, proceed/abort, etc.). "
+            "Optional UI mode hint: when ``'yesno'``, the frontend renders a "
+            "single-row Yes/No button pair above the free-text textarea. "
+            "Clicking Yes/No marks the choice (click again to unselect, click "
+            "the other button to switch); the user may optionally type a "
+            "supplementary note, then presses Submit. The feedback result is "
+            "the literal string 'yes' or 'no', optionally followed by a blank "
+            "line and the user's note (e.g. ``'yes\\n\\nbut only after the "
+            "tests pass'``) — parse the first line for the binary decision "
+            "(approve/reject, proceed/abort, etc.). "
             "Allowed values: ``'yesno'`` (current) or ``None`` (default: keep "
             "textarea + optional ``predefined_options`` checkboxes). Unknown "
             "values silently treated as None (forward-compat for future types "

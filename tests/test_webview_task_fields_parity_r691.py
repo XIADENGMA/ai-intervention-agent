@@ -113,18 +113,53 @@ class TestWebviewSourceContract(unittest.TestCase):
         self.assertIn("function updateYesnoButtonGroup(", self.js)
         self.assertIn("updateYesnoButtonGroup(config.question_type)", self.js)
 
-    def test_yesno_buttons_submit_literal_answers(self) -> None:
+    def test_yesno_buttons_register_selection(self) -> None:
+        """TODO#41：点击是/否只登记选择（可取消/切换），不直接提交。"""
         match = re.search(
-            r"async function handleYesnoAnswerClick\(.*?\n  \}",
+            r"function handleYesnoToggleClick\(.*?\n  \}",
             self.js,
             re.DOTALL,
         )
-        self.assertIsNotNone(match, "未找到 handleYesnoAnswerClick")
+        self.assertIsNotNone(match, "未找到 handleYesnoToggleClick")
         assert match is not None
         body = match.group(0)
-        self.assertIn("'yes'", body)
-        self.assertIn("'no'", body)
-        self.assertIn("submitWithData(", body)
+        self.assertIn("taskYesnoSelections", body)
+        self.assertNotIn("submitWithData(", body, "点击不得直接提交")
+
+    def test_yesno_submit_merges_selection(self) -> None:
+        """提交路径把选择合并为 "yes" / "yes\\n\\n<补充>"。"""
+        match = re.search(
+            r"async function submitFeedback\(\).*?\n  \}",
+            self.js,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "未找到 submitFeedback")
+        assert match is not None
+        body = match.group(0)
+        self.assertIn("getActiveYesnoSelection()", body)
+        self.assertIn("yesnoSelection + '\\n\\n' + feedbackText", body)
+
+    def test_yesno_selection_state_and_a11y(self) -> None:
+        """选中态：状态 map + aria-pressed 同步 + 持久化。"""
+        self.assertIn("let taskYesnoSelections = {}", self.js)
+        self.assertIn("function syncYesnoSelectedStyles(", self.js)
+        self.assertIn("'aria-pressed'", self.js)
+        self.assertIn("taskYesnoSelections: taskYesnoSelections || {}", self.js)
+
+    def test_yesno_keeps_textarea_visible(self) -> None:
+        """TODO#41：yesno 模式 textarea-wrapper 不再隐藏。"""
+        match = re.search(
+            r"function updateYesnoButtonGroup\(.*?\n  \}",
+            self.js,
+            re.DOTALL,
+        )
+        assert match is not None
+        body = match.group(0)
+        self.assertNotIn(
+            "wrapper.classList.add('hidden')",
+            body.split("} else {")[0],
+            "yesno 分支不得隐藏 textarea-wrapper",
+        )
 
     def test_chip_clamped_to_sixteen_chars(self) -> None:
         match = re.search(r"function updateHeaderChip\(.*?\n  \}", self.js, re.DOTALL)
@@ -149,7 +184,7 @@ class TestLocaleKeys(unittest.TestCase):
                 (LOCALES_DIR / f"{locale}.json").read_text(encoding="utf-8")
             )
             form = data.get("ui", {}).get("form", {})
-            for key in ("yesnoYes", "yesnoNo"):
+            for key in ("yesnoYes", "yesnoNo", "yesnoSupplementPlaceholder"):
                 with self.subTest(locale=locale, key=key):
                     self.assertIn(key, form, f"{locale}.json 缺少 ui.form.{key}")
                     self.assertTrue(str(form[key]).strip())

@@ -700,14 +700,60 @@ class NotificationManager {
     }
   }
 
+  /**
+   * TODO#43（Cursor 内置浏览器通知修复）：检测 Electron 宿主环境。
+   *
+   * VS Code / Cursor 的内置浏览器（Electron webview / WebContentsView）
+   * 中，Service Worker 的 ``showNotification()`` 常见**静默失败**——
+   * Promise resolve 但系统通知不显示（electron#13041 / #10146）；而
+   * 页面级 ``new Notification()`` 会被 Electron 转成主进程原生通知，
+   * 支持良好。据此：Electron 环境跳过 SW 路径直接走页面级。
+   *
+   * UA 兜底不到（宿主重写 UA 隐藏 Electron 字样）的场景由
+   * ``showSystemNotification`` 里的 getNotifications 运行时验证补齐。
+   */
+  isElectronHost() {
+    try {
+      return /\bElectron\//i.test(navigator.userAgent)
+    } catch (_e) {
+      return false
+    }
+  }
+
   async showSystemNotification(title, notificationOptions, options = {}) {
-    const registration = await this.registerServiceWorker()
+    // TODO#43：Electron 宿主（VS Code / Cursor 内置浏览器）直接走页面级
+    // Notification，跳过已知会静默失败的 SW showNotification 路径。
+    const skipServiceWorkerPath = this.isElectronHost()
+    const registration = skipServiceWorkerPath
+      ? null
+      : await this.registerServiceWorker()
     if (registration && typeof registration.showNotification === 'function') {
       try {
         await registration.showNotification(title, notificationOptions)
-        return {
-          close() {}
+        // TODO#43 运行时验证：SW 通知在部分 webview 宿主中静默失败
+        // （resolve 但不显示，且 UA 可能被重写探测不到 Electron）。
+        // getNotifications 按同 tag 回查——查不到视为静默丢弃，回退
+        // 页面级 Notification；查询本身异常时保守视为成功（不改变
+        // 正常浏览器行为，Android Chrome 等依赖 SW 的平台不受影响）。
+        let displayed = true
+        try {
+          if (typeof registration.getNotifications === 'function') {
+            const shown = await registration.getNotifications({
+              tag: notificationOptions.tag
+            })
+            displayed = !!(shown && shown.length > 0)
+          }
+        } catch (_e) {
+          displayed = true
         }
+        if (displayed) {
+          return {
+            close() {}
+          }
+        }
+        console.warn(
+          'Service worker notification was silently dropped (likely an embedded webview host); falling back to page Notification'
+        )
       } catch (error) {
         console.warn('Failed to show notification via service worker; falling back to page Notification:', error)
       }

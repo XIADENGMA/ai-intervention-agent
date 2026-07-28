@@ -4514,7 +4514,9 @@ h1 {
     rgba(255, 255, 255, 0.3),
     transparent
   ); /* 渐变装饰线 */
-  border-radius: 20px 20px 0 0; /* 顶部圆角 */
+  /* TODO#44：跟随按钮实际圆角（移动端断点会改按钮圆角，硬编码 20px
+   * 会让装饰线/发光层形状与按钮边界错位） */
+  border-radius: inherit;
 }
 
 /**
@@ -4547,7 +4549,8 @@ h1 {
     rgba(255, 255, 255, 0.1) 0%,
     transparent 50%
   ); /* 渐变发光效果 */
-  border-radius: 20px; /* 圆角 */
+  /* TODO#44：跟随按钮实际圆角，见 .btn::before 同款说明 */
+  border-radius: inherit;
   opacity: 0; /* 默认透明（不可见） */
   transition: opacity 0.3s ease; /* 过渡动画 */
 }
@@ -7191,7 +7194,13 @@ code,
     margin: 0 1rem;
     min-height: 44px;
   }
-  .btn {
+  /* TODO#44（hover 错位修复）：本规则历史上写成裸 `.btn`，位于设置面板
+   * 样式区却影响**全局所有按钮**——把空态「关闭服务」按钮等在 ≤480px
+   * 视口的 padding/圆角意外改成 12px，与 768px 断点的 16px 圆角及
+   * `.btn::before/::after` 伪元素（当时硬编码 20px）三方不一致，hover
+   * 高亮形状与按钮边界对不上。收窄为 `.settings-content .btn`（设置
+   * 面板 + 代码粘贴模态框），全局按钮回归 768px 断点的统一定义。 */
+  .settings-content .btn {
     min-height: 44px;
     padding: 0.75rem 1rem;
     font-size: 0.95rem;
@@ -7344,7 +7353,13 @@ code,
 /* mining-cycle-3 §2.1 borrow #2 (gemini-cli yesno) —
  * 1-row Yes / No button group when task.question_type === "yesno".
  * 行内布局：两按钮平分宽度，gap 12px；移动端折行。
- * 不引入新设计 token；走现有 .btn-primary / .btn-secondary 色。
+ *
+ * TODO#41 重设计：点击不再直接提交，而是登记"选中态"（可切换/取消），
+ * 用户可在下方 textarea 补充说明后点「提交反馈」发送。
+ * 视觉语义：未选中 = 中性 outline；选中 = 品牌橙填充（.selected，
+ * 与 aria-pressed="true" 同步）。``.btn.yesno-btn`` 双类特异性
+ * （0-2-0）刻意压过 ``.btn-secondary`` 的填充底色，让"选中/未选中"
+ * 的对比完全由 .selected 承担。
  */
 .yesno-button-group {
   display: flex;
@@ -7356,6 +7371,32 @@ code,
   flex: 1 1 140px;
   min-height: 44px; /* a11y: 44x44 minimum touch target */
   font-weight: 600;
+}
+.btn.yesno-btn {
+  background: transparent;
+  border: 1.5px solid var(--border-primary);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+/* 顶部装饰线 + hover 发光层是实心按钮的语言，outline 态不适用 */
+.btn.yesno-btn::before,
+.btn.yesno-btn::after {
+  display: none;
+}
+.btn.yesno-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  box-shadow: none;
+}
+.btn.yesno-btn.selected {
+  background: #b35730; /* 与 .btn-primary 一致（WCAG 1.4.3 AA-normal） */
+  border-color: #b35730;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(217, 119, 87, 0.35);
+}
+.btn.yesno-btn.selected:hover {
+  background: #9a4929; /* 与 .btn-primary:hover 同家族加深 */
+  border-color: #9a4929;
 }
 
 /* mining-cycle-3 §2.1 borrow #1 (gemini-cli header chip) —
@@ -8845,6 +8886,31 @@ code,
 [data-theme="light"] .btn-secondary:hover {
   background: #8a4525; /* 更深 Book Cloth (hover, WCAG AAA-ish) */
   border-color: #8a4525;
+}
+
+/* TODO#41：yesno 按钮浅色主题覆盖——压过上方 `[data-theme="light"]
+ * .btn`（白字）与 `.btn-secondary`（Book Cloth 填充）规则，维持
+ * "未选中 = 中性 outline、选中 = 品牌橙填充"的对比语义。 */
+[data-theme="light"] .btn.yesno-btn {
+  background: transparent;
+  border-color: var(--border-primary);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+[data-theme="light"] .btn.yesno-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  box-shadow: none;
+}
+[data-theme="light"] .btn.yesno-btn.selected {
+  background: #b35730; /* 与 .btn-primary 一致（WCAG AA-normal） */
+  border-color: #b35730;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(217, 119, 87, 0.35);
+}
+[data-theme="light"] .btn.yesno-btn.selected:hover {
+  background: #9a4929;
+  border-color: #9a4929;
 }
 
 /* 浅色主题 - 主按钮使用 Orange

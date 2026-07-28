@@ -1683,6 +1683,10 @@ function clearSubmittedTaskLocalState(taskId) {
   if (typeof taskImages !== "undefined") {
     delete taskImages[taskId];
   }
+  // TODO#41：提交成功后清除该任务的"是/否"选择并同步按钮样式
+  if (typeof window.clearYesnoSelection === "function") {
+    window.clearYesnoSelection(taskId);
+  }
 }
 
 // R289 / cycle-27: 错误消息精细化。把 fetch + DOM 操作的 catch error 分类
@@ -1789,7 +1793,19 @@ async function submitFeedback() {
     );
     return;
   }
-  const feedbackText = feedbackTextEl.value.trim();
+  // TODO#41（yesno 补充说明）：yesno 任务点击"是/否"只登记选择，实际
+  // 发送在这里合成——"yes" / "no" 字面量在前（与 agent 端解析约定兼容），
+  // 用户补充说明（可选）用空行分隔跟在后面。
+  const yesnoSelection =
+    typeof window.getActiveYesnoSelection === "function"
+      ? window.getActiveYesnoSelection()
+      : null;
+  let feedbackText = feedbackTextEl.value.trim();
+  if (yesnoSelection) {
+    feedbackText = feedbackText
+      ? `${yesnoSelection}\n\n${feedbackText}`
+      : yesnoSelection;
+  }
   const selectedOptions = [];
 
   // 【修复】直接从 DOM 获取选中的预定义选项

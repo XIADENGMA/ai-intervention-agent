@@ -1379,6 +1379,10 @@
   let taskTextareaContents = {} // task_id -> string
   let taskOptionsStates = {} // task_id -> { [index:number]: boolean } | boolean[]
   let taskImages = {} // task_id -> Array<{name: string, data: string}>
+  // TODO#41（yesno 补充说明）：task_id -> 'yes' | 'no'。点击是/否只登记
+  // 选择（可取消/切换），提交时由 submitFeedback 合并为
+  // "yes" / "yes\n\n<补充>" 发送——与 web 端 taskYesnoSelections 同构。
+  let taskYesnoSelections = {}
 
   // Webview 状态持久化：默认不保留隐藏上下文，依靠 VS Code 推荐的
   // getState/setState 恢复输入/选项/图片；即使用户显式启用 retain，
@@ -1444,6 +1448,9 @@
       if (s.taskOptionsStates && typeof s.taskOptionsStates === 'object') {
         taskOptionsStates = { ...s.taskOptionsStates }
       }
+      if (s.taskYesnoSelections && typeof s.taskYesnoSelections === 'object') {
+        taskYesnoSelections = { ...s.taskYesnoSelections }
+      }
       if (typeof s.activeTaskId === 'string') {
         activeTaskId = s.activeTaskId || null
       }
@@ -1465,6 +1472,7 @@
         activeTaskId: activeTaskId || '',
         taskTextareaContents: trimTextareaContents(taskTextareaContents),
         taskOptionsStates: taskOptionsStates || {},
+        taskYesnoSelections: taskYesnoSelections || {},
         // 图片不做持久化：体积过大且易触发存储上限
         textareaManualRows:
           typeof textareaManualRows === 'number' && Number.isFinite(textareaManualRows)
@@ -2154,14 +2162,15 @@
         countdownFreezeBtn.addEventListener('click', handleCountdownFreezeClick)
       }
 
-      // R691（TODO#5 跨端一致性）：yesno 一键提交按钮
+      // R691（TODO#5 跨端一致性）+ TODO#41：yesno 选择按钮（登记选择，
+      // 提交时合并发送，不再一键直发）
       const yesnoYesBtn = document.getElementById('yesnoYesBtn')
       if (yesnoYesBtn) {
-        yesnoYesBtn.addEventListener('click', () => handleYesnoAnswerClick('yes'))
+        yesnoYesBtn.addEventListener('click', () => handleYesnoToggleClick('yes'))
       }
       const yesnoNoBtn = document.getElementById('yesnoNoBtn')
       if (yesnoNoBtn) {
-        yesnoNoBtn.addEventListener('click', () => handleYesnoAnswerClick('no'))
+        yesnoNoBtn.addEventListener('click', () => handleYesnoToggleClick('no'))
       }
 
       const uploadBtn = document.getElementById('uploadBtn')
@@ -2646,6 +2655,7 @@
       taskDeadlines = {}
       taskTextareaContents = {}
       taskOptionsStates = {}
+      taskYesnoSelections = {}
       taskImages = {}
       pendingImageUploadCounts = {}
       schedulePersistUiState()
@@ -2986,6 +2996,7 @@
       delete taskDeadlines[existingId]
       delete taskTextareaContents[existingId]
       delete taskOptionsStates[existingId]
+      delete taskYesnoSelections[existingId]
       delete taskImages[existingId]
       delete pendingImageUploadCounts[getPendingImageUploadKey(existingId)]
     })
@@ -4825,29 +4836,86 @@
     }
   }
 
-  // R691（TODO#5 跨端一致性）：question_type="yesno" 时隐藏 textarea 输入区，
-  // 显示一行 Yes/No 按钮（点击直接提交字面 "yes"/"no"）。
+  // R691（TODO#5 跨端一致性）+ TODO#41 重设计：question_type="yesno" 时
+  // 显示一行 Yes/No 按钮，textarea **保持可见**供补充说明（可选）。
+  // 点击是/否只登记选择（再点取消、点另一按钮切换），提交发生在用户点
+  // 发送按钮时（submitFeedback 合并 "yes"/"yes\n\n<补充>"）。
   // 与 web 端 updateYesnoButtonGroup 语义一致；按钮为静态 HTML（webview.ts），
-  // 这里只负责显隐切换。
+  // 这里负责显隐切换 + 选中态同步 + 占位符提示。
   function updateYesnoButtonGroup(questionType) {
     const group = document.getElementById('yesnoButtonGroup')
     const wrapper = document.querySelector('.textarea-wrapper')
     if (!group) return
     if (questionType === 'yesno') {
       group.classList.remove('hidden')
-      if (wrapper && wrapper.classList) wrapper.classList.add('hidden')
+      // TODO#41：textarea 不再隐藏（历史版本会加 hidden，这里显式移除
+      // 以防旧状态残留）。
+      if (wrapper && wrapper.classList) wrapper.classList.remove('hidden')
+      // 占位符换成"可补充说明"提示——仅当任务未提供自定义 placeholder
+      //（updateFeedbackPlaceholder 先跑；自定义值非空时不覆盖）。
+      try {
+        const textarea = document.getElementById('feedbackText')
+        const taskPlaceholder =
+          currentConfig && typeof currentConfig.feedback_placeholder === 'string'
+            ? currentConfig.feedback_placeholder.trim()
+            : ''
+        if (textarea && !taskPlaceholder) {
+          const hint = t('ui.form.yesnoSupplementPlaceholder')
+          if (typeof hint === 'string' && hint) {
+            textarea.setAttribute('placeholder', hint)
+          }
+        }
+      } catch (e) {
+        // 占位符是增强，不阻塞渲染
+      }
+      syncYesnoSelectedStyles()
     } else {
       group.classList.add('hidden')
       if (wrapper && wrapper.classList) wrapper.classList.remove('hidden')
     }
   }
 
-  async function handleYesnoAnswerClick(answer) {
-    const literal = answer === 'yes' ? 'yes' : 'no'
+  // TODO#41：登记/切换当前任务的是否选择（不发送）。
+  function handleYesnoToggleClick(value) {
     const taskId =
       activeTaskId || (currentConfig && currentConfig.task_id) || null
-    await submitWithData(literal, [], taskId)
-    setTimeout(() => requestImmediateRefresh(), 500)
+    if (!taskId) return
+    if (taskYesnoSelections[taskId] === value) {
+      delete taskYesnoSelections[taskId]
+    } else {
+      taskYesnoSelections[taskId] = value
+    }
+    syncYesnoSelectedStyles()
+    schedulePersistUiState()
+  }
+
+  // TODO#41：把当前任务的选择同步到按钮 .selected class + aria-pressed。
+  function syncYesnoSelectedStyles() {
+    const group = document.getElementById('yesnoButtonGroup')
+    if (!group) return
+    const taskId =
+      activeTaskId || (currentConfig && currentConfig.task_id) || null
+    const selection = taskId ? taskYesnoSelections[taskId] : undefined
+    const pairs = [
+      ['yesnoYesBtn', 'yes'],
+      ['yesnoNoBtn', 'no']
+    ]
+    for (const [btnId, value] of pairs) {
+      const btn = document.getElementById(btnId)
+      if (!btn) continue
+      const isSelected = selection === value
+      btn.classList.toggle('selected', isSelected)
+      btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false')
+    }
+  }
+
+  // TODO#41：当前任务的是否选择（'yes' | 'no' | null），供提交路径合并。
+  function getActiveYesnoSelection() {
+    const taskId =
+      activeTaskId || (currentConfig && currentConfig.task_id) || null
+    if (!taskId) return null
+    const selection = taskYesnoSelections[taskId]
+    return selection === 'yes' || selection === 'no' ? selection : null
   }
 
   // R690（TODO#5 web/插件功能对齐）：倒计时控制行（+60s / 冻结）。
@@ -5277,7 +5345,15 @@
       }
       return
     }
-    const feedbackText = feedbackTextEl.value.trim()
+    // TODO#41（yesno 补充说明）：登记的"是/否"选择在提交时合成——
+    // 字面量在前（与 agent 端解析约定兼容），补充说明用空行分隔跟在后面。
+    const yesnoSelection = getActiveYesnoSelection()
+    let feedbackText = feedbackTextEl.value.trim()
+    if (yesnoSelection) {
+      feedbackText = feedbackText
+        ? yesnoSelection + '\n\n' + feedbackText
+        : yesnoSelection
+    }
 
     // 获取选中的选项
     const selected = []
@@ -5523,6 +5599,10 @@
           }
           if (taskOptionsStates[taskIdToSubmit] !== undefined) {
             delete taskOptionsStates[taskIdToSubmit]
+          }
+          if (taskYesnoSelections[taskIdToSubmit] !== undefined) {
+            delete taskYesnoSelections[taskIdToSubmit]
+            syncYesnoSelectedStyles()
           }
           if (taskImages[taskIdToSubmit] !== undefined) {
             delete taskImages[taskIdToSubmit]

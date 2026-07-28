@@ -9,6 +9,48 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **Yes/No questions now support an optional note** (both Web UI and
+  the VS Code extension): clicking Yes/No no longer fires the answer
+  immediately — it marks the choice (click again to unselect, click
+  the other button to switch; `aria-pressed` kept in sync), the
+  textarea stays visible with an "optional note" placeholder, and
+  pressing Submit sends `yes` / `no`, or `yes\n\n<note>` when a note
+  was typed. The choice survives task switching, is merged by the
+  countdown auto-submit path too, and the MCP `question_type` docs
+  now describe the "parse the first line" convention. Guarded by the
+  updated `test_feat_mining3_yesno_type.py` +
+  `test_webview_task_fields_parity_r691.py`.
+- The empty-state shutdown button is now labeled "Stop service"
+  (zh-CN: 「关闭服务」) instead of the misleading "Close Web UI" —
+  it stops the whole backend process, not just the page. Related
+  status/terminal-card strings ("Stopping service…", "Service
+  stopped", failure toasts) updated across all three locales.
+
+### Fixed
+
+- Desktop notifications now reach users inside the Cursor / VS Code
+  built-in browser (Electron webview): the service-worker
+  `showNotification()` path commonly *silently fails* there (the
+  promise resolves but nothing is shown — electron#13041/#10146),
+  and the old code treated that resolve as success. Two new defense
+  layers: an `Electron/` UA probe routes straight to the page-level
+  `new Notification()` (which Electron maps to native notifications),
+  and after any SW notification a `getNotifications({tag})` read-back
+  verifies it actually registered, falling back to the page-level
+  constructor when it did not (query exceptions conservatively count
+  as success so Android Chrome's SW-only path is untouched). Guarded
+  by `test_notification_electron_webview_fallback_r714.py`.
+- Mobile-viewport hover feedback on the "Stop service" button now
+  matches the button's real shape: a bare `.btn` rule inside the
+  ≤480px settings-panel media block leaked its 12px radius + tighter
+  padding onto **every** button, fighting the 768px-breakpoint 16px
+  radius; and the `.btn::before/::after` decoration/glow pseudo
+  layers hard-coded a 20px radius. The stray rule is now scoped to
+  `.settings-content .btn` and both pseudo-elements inherit the
+  button's actual radius.
+
 ## [1.8.8] - 2026-07-26
 
 ### Fixed
