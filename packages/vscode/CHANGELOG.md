@@ -14,6 +14,20 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.8.9] — 2026-07-28
+
+### Changed
+
+- Yes/No questions (`question_type="yesno"`) now support an optional
+  note: clicking Yes/No marks the choice (click again to unselect,
+  click the other button to switch; `aria-pressed` kept in sync)
+  instead of submitting immediately, the textarea stays visible with
+  an "optional note" placeholder, and Send submits `yes` / `no` — or
+  `yes\n\n<note>` when a note was typed. The selection persists
+  across task switches and webview reloads, and unselected buttons
+  render as neutral outlines with the theme accent reserved for the
+  selected state. Localized in en / zh-CN / zh-TW.
+
 ### Added
 
 - Settings panel: an "Open" button next to the read-only config file

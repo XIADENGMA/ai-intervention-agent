@@ -9,6 +9,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.8.9] - 2026-07-28
+
 ### Changed
 
 - **Yes/No questions now support an optional note** (both Web UI and
@@ -49,7 +51,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   radius; and the `.btn::before/::after` decoration/glow pseudo
   layers hard-coded a 20px radius. The stray rule is now scoped to
   `.settings-content .btn` and both pseudo-elements inherit the
-  button's actual radius.
+  button's actual radius. A root-cause sweep found and fixed the same
+  defect class on `.option-item::before` (16px card vs 20px trim on
+  mobile).
 
 ## [1.8.8] - 2026-07-26
 
