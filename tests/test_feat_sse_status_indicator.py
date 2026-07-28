@@ -407,10 +407,11 @@ class TestDesignAnchors(unittest.TestCase):
         )
 
     def test_css_has_feat_anchor_comment(self) -> None:
+        # 注释清理后锚点改为锁功能的 CSS 选择器本身
         self.assertIn(
-            "feat-sse-status-indicator",
+            ".sse-status-indicator",
             MAIN_CSS.read_text(encoding="utf-8"),
-            "CSS 应有 feat-sse-status-indicator 锚点",
+            "CSS 必须定义 .sse-status-indicator 规则",
         )
 
     def test_js_has_feat_anchor_comment(self) -> None:

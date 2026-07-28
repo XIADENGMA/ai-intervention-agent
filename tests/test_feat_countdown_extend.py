@@ -577,10 +577,11 @@ class TestDesignAnchors(unittest.TestCase):
         )
 
     def test_css_has_anchor(self) -> None:
+        # 注释清理后锚点改为锁功能的 CSS 选择器本身
         self.assertIn(
-            "feat-countdown-extend",
+            ".countdown-extend-btn",
             MAIN_CSS.read_text(encoding="utf-8"),
-            "main.css 必须有 feat-countdown-extend 锚点",
+            "main.css 必须定义 .countdown-extend-btn 规则",
         )
 
     def test_js_has_anchor(self) -> None:

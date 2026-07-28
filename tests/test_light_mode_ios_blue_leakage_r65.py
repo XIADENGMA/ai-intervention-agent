@@ -301,9 +301,10 @@ class TestR65SourceRulesStillExist(unittest.TestCase):
     def test_all_default_rules_still_exist(self) -> None:
         for selector in self.EXPECTED_DEFAULT_SELECTORS:
             with self.subTest(selector=selector):
-                # 排除带 [data-theme=...] 前缀的浅色 override 行
+                # 行首锚定：默认（深色）规则的选择器顶格出现；
+                # [data-theme=...] 前缀的浅色 override 行首是 "[", 不会误中
                 pattern = re.compile(
-                    r"(?<!\])(?<!\s)" + r"\n" + selector + r"\b",
+                    r"^" + selector + r"\b",
                     re.MULTILINE,
                 )
                 self.assertRegex(

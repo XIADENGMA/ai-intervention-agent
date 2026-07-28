@@ -48,13 +48,10 @@ class TestHeaderContainerIntentionallyRetired(unittest.TestCase):
         return self.css[idx:end]
 
     def test_header_info_container_intentionally_hidden(self) -> None:
+        """R700 决策：容器有意隐藏（区别于 R695 式实现事故）。
+        决策溯源由本测试 docstring + git blame 承载（CSS 注释已清理）。"""
         body = self._rule_body(".header-info-container")
         self.assertIn("display: none", body)
-        self.assertIn(
-            "R700",
-            body,
-            "隐藏规则必须带 R700 决策标记（区别于 R695 式实现事故）",
-        )
 
     def test_task_id_container_stays_hidden(self) -> None:
         """任务 ID 在标签页展示，容器本体保持隐藏避免重复。"""

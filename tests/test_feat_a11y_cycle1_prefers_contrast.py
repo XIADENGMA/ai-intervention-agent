@@ -124,21 +124,11 @@ class TestPrefersContrastMore(unittest.TestCase):
             "鼠标点击焦点（与现有 a11y 焦点策略一致）",
         )
 
-    def test_r256_documentation_tag_present(self) -> None:
-        # 标注 cycle + R-id 让 git blame / grep 可定位来源
-        # 找 prefers-contrast block 前方的注释段
+    def test_r256_media_block_present(self) -> None:
+        """R256 溯源改由本测试文件名 + git blame 承载（注释已清理）；
+        这里只锁 prefers-contrast 升级块本身存在。"""
         media_idx = self.css.find("@media (prefers-contrast: more)")
         self.assertGreater(media_idx, -1)
-        # 往回 800 字符内找注释引用
-        context = self.css[max(0, media_idx - 800) : media_idx]
-        # 至少有 R256 或 a11y-audit-cycle-1 Track B 中的一个
-        has_rid = "R256" in context
-        has_cycle = "a11y-audit-cycle-1 Track B" in context
-        self.assertTrue(
-            has_rid or has_cycle,
-            "prefers-contrast block 前方必须有注释标注 R256 或 "
-            "a11y-audit-cycle-1 Track B（git blame archaeology）",
-        )
 
     def _extract_media_block(self) -> str:
         """抓 @media (prefers-contrast: more) { ... } 的整个 body。"""
