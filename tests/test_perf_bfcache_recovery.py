@@ -135,12 +135,12 @@ class TestPageShowListenerRegistered(unittest.TestCase):
             "监听同样的鲁棒性模式）",
         )
 
-    def test_perf_bfcache_anchor_in_comment(self) -> None:
-        """注释里必须有 perf-bfcache 锚点，便于 grep / blame。"""
+    def test_pageshow_persisted_listener_present(self) -> None:
+        """锁 bfcache 恢复的代码特征（注释锚点已清理）。"""
         self.assertIn(
-            "perf-bfcache",
+            'addEventListener("pageshow"',
             self.full,
-            "源码注释里必须有 ``perf-bfcache`` 锚点，便于追踪修复脉络",
+            "app.js 必须监听 pageshow 处理 bfcache 恢复",
         )
 
 

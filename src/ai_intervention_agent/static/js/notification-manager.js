@@ -1,43 +1,9 @@
-/**
- * 通知管理系统 - 从 app.js 拆分
- *
- * 提供 Web Notification API、音频播放、Service Worker 通知、
- * Bark 推送、事件去重、降级方案等完整通知功能。
- *
- * 依赖: dom-security.js (DOMSecurity), i18n.js (t())
- * 暴露: window.notificationManager (NotificationManager 实例)
- *
- * ──────────────────────────────────────────────────────────────────
- * R216 / Cycle 11 · F-cycle10-1 · console noise demotion
- * ──────────────────────────────────────────────────────────────────
- * 本模块原有 27 个 ``console.log`` 调用 (init / config-change /
- * 每次播放声音 / 每次降级通知 等)，对于通知频繁的会话, 浏览器
- * Console 会被刷屏, 真正的 ``console.warn`` / ``console.error``
- * (29 处) 被淹没在 INFO-级日志里, 用户难以发现 actionable 问题。
- *
- * R216 把所有 27 个 ``console.log`` 统一 demote 为 ``console.debug``
- * (Chrome DevTools 默认在 Console 顶部 filter 里关掉 Verbose / Debug
- * 级别——非开发者打开 DevTools 时不会看到这些; 开发者主动开启
- * Verbose 即可看到全部历史) ——零 helper / 零运行时开销, 纯方法
- * 名 rename, ``console.debug.apply(console, [...args])`` 与
- * ``console.log.apply(console, [...args])`` 在所有现代浏览器
- * (Chrome / Firefox / Safari / Edge) 行为完全一致, 只是 level
- * 不同。``console.warn`` / ``console.error`` 保留, 它们是真正
- * 应当被看见的信号。
- *
- * 守护: ``tests/test_notification_manager_console_noise_invariant_r216.py``
- * 字面 substring 检查源码不再出现带括号的 console.log 调用, 防止
- * 未来 contributor 不知道这条约定又加回 INFO 级日志。invariant 也
- * 守 console.debug 至少 ≥ 20 (证明真的发生了 demotion, 不是把 log
- * 全删光)。
- */
-
 function t(key, params) {
   try {
     if (window.AIIA_I18N && typeof window.AIIA_I18N.t === 'function') {
       return window.AIIA_I18N.t(key, params)
     }
-  } catch (_e) { /* noop */ }
+  } catch (_e) { }
   return key
 }
 
@@ -53,33 +19,9 @@ const AUTO_PERMISSION_REQUEST_LISTENER_OPTIONS = {
   passive: true
 }
 
-// ============================================================================
-// feat-custom-sound (mining-cycle-1 §3.4) — 自定义通知音效
-// ============================================================================
-//
-// 存储模型：单一 localStorage key 持久化用户上传的 1 个自定义音效。
-// 选择 "single slot" 而不是 multi-slot 的理由：
-//   - 5MB localStorage 配额；单个音效 base64 后 ~1.3x 实际字节，给单个
-//     ~700KB 的 ogg/mp3 留充足余量
-//   - 多 slot 引入命名 / 管理 UI 复杂度，竞品 mcp-feedback-enhanced 也
-//     只支持单个 custom slot
-//
-// MIME 白名单：浏览器 ``decodeAudioData`` 真正能解的格式
-//   - audio/mpeg (mp3)
-//   - audio/wav / audio/wave / audio/x-wav (wav)
-//   - audio/ogg (ogg vorbis / opus)
-//   - audio/webm (webm)
-//   - audio/aac (aac)
-//   - audio/mp4 (m4a)
-//   - audio/flac
-// 其它 MIME 一律拒绝，避免用户上传 .midi / .au / 视频被假冒为音频。
 const CUSTOM_SOUND_LS_KEY = 'aiia.notif.customSound.v1'
-const CUSTOM_SOUND_MAX_BYTES = 700 * 1024 // 700KB，base64 ~ 933KB，留 4MB+ 余量
-// cr33 §8 #1 fix：上限 30s 时长。理论上 700KB 已经 cap 了文件大小，但
-// 低比特率（如 32kbps mono ogg）可以塞进 30 分钟音频；decode 后 PCM
-// 1.4MB/分钟 (44.1kHz mono) → 30 分钟 = ~40MB；stereo 双倍 → 80MB；
-// 完全是真实 foot-gun。改在 ``saveCustomSoundFromFile`` 写 localStorage
-// **之前**做 ``decodeAudioData → duration`` 检查，超过阈值直接拒绝。
+const CUSTOM_SOUND_MAX_BYTES = 700 * 1024
+
 const CUSTOM_SOUND_MAX_DURATION_S = 30
 const CUSTOM_SOUND_ALLOWED_MIMES = [
   'audio/mpeg',
@@ -93,7 +35,6 @@ const CUSTOM_SOUND_ALLOWED_MIMES = [
   'audio/flac'
 ]
 
-// 通知管理系统
 class NotificationManager {
   constructor() {
     this.isSupported = 'Notification' in window
@@ -115,10 +56,7 @@ class NotificationManager {
       soundMute: false,
       autoRequestPermission: true,
       timeout: 5000,
-      // TODO#8-B：通知图标用 192px PNG 而非 SVG。WHATWG Notifications 标准
-      // 规定图标格式支持由平台决定、不支持时**静默丢弃**（无图标）；Chrome
-      // 官方（web.dev）最佳实践推荐 192px 以上的位图。icon-192.png 与页面
-      // favicon 同源同设计，各平台显示稳定。
+
       icon: '/icons/icon-192.png',
       mobileOptimized: true,
       mobileVibrate: true
@@ -152,7 +90,7 @@ class NotificationManager {
           origin
         )
       } catch (e) {
-        // 忽略：诊断日志失败不应影响通知初始化
+
       }
       this.syncPermissionState()
 
@@ -162,16 +100,6 @@ class NotificationManager {
         this.bindAutoPermissionRequest()
       }
 
-      // R21.2：service worker 注册移出 ``isSupported`` 守护
-      // ----------------------------------------------------------------
-      // 历史上 ``registerServiceWorker`` 只在 ``isSupported``（``Notification``
-      // API 存在）路径上跑，导致 iOS 16- / 部分 Android 自带浏览器（不支持
-      // ``Notification`` 但支持 ``serviceWorker``）拿不到 SW，自然也享受
-      // 不到静态资源 cache-first 加速。现在把注册提前到 init 主流程，
-      // ``registerServiceWorker`` 内部仍然有 ``supportsServiceWorkerNotifications``
-      // 守护（名字 misleading，但实现实际只检查 ``serviceWorker`` in
-      // navigator + secure context，与 Notification 无关），所以无 SW
-      // 支持的环境会优雅返回 null，不破坏现有契约。
       await this.registerServiceWorker()
 
       await this.initAudio()
@@ -220,7 +148,6 @@ class NotificationManager {
   bindAutoPermissionRequest() {
     if (!this.isSupported) return
 
-    // 非安全上下文下无法弹出权限请求，避免绑定无意义的自动触发
     if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
       this.removeAutoPermissionRequestListeners()
       return
@@ -352,7 +279,7 @@ class NotificationManager {
 
   async initAudio() {
     try {
-      // 检查浏览器音频支持
+
       const AudioContextClass =
         window.AudioContext || window.webkitAudioContext || window.mozAudioContext
       if (!AudioContextClass) {
@@ -360,7 +287,6 @@ class NotificationManager {
         return
       }
 
-      // 创建音频上下文（需要用户交互后才能启用）
       this.audioContext = new AudioContextClass()
 
       await this.loadAudioFile('default', DEFAULT_NOTIFICATION_SOUND_URL)
@@ -368,30 +294,16 @@ class NotificationManager {
         this._synthBuffer = this._createSynthNotificationBuffer()
       }
 
-      // feat-custom-sound (§3.4): 如果用户之前上传过自定义音效，
-      // 同步 decode 它到 audioBuffers['custom']。这样 ``playSound()``
-      // (无参) 会自动 dispatch 到 'custom'（如果 hasCustomSound() 为 true）。
-      // 失败时静默：用户上传时如果文件就是坏的，错误已经在上传时报过；
-      // init 阶段不应该 spam 用户控制台。
       await this.loadCustomSoundFromStorage()
 
       console.debug('Audio system initialized')
     } catch (error) {
       console.warn('Audio system initialization failed:', error)
-      // 降级：禁用音频功能
+
       this.config.soundEnabled = false
     }
   }
 
-  // ==========================================================================
-  // feat-custom-sound (§3.4): 自定义音效上传 / 加载 / 清理
-  // ==========================================================================
-
-  /**
-   * 检查 localStorage 是否有用户上传的自定义音效（不解码，只看 key 存在）。
-   * 用于 playSound() 路由决策 + Settings UI 显示状态。
-   * @returns {boolean}
-   */
   hasCustomSound() {
     try {
       const raw = localStorage.getItem(CUSTOM_SOUND_LS_KEY)
@@ -401,10 +313,6 @@ class NotificationManager {
     }
   }
 
-  /**
-   * 读取用户当前上传的自定义音效元数据（不返回 dataUri 主体）。
-   * @returns {{name: string, mime: string, size: number}|null}
-   */
   getCustomSoundMeta() {
     try {
       const raw = localStorage.getItem(CUSTOM_SOUND_LS_KEY)
@@ -421,21 +329,17 @@ class NotificationManager {
     }
   }
 
-  /**
-   * 从 localStorage 取自定义音效 dataUri，fetch + decode 到 audioBuffers['custom']。
-   * @returns {Promise<boolean>} true=加载成功
-   */
   async loadCustomSoundFromStorage() {
     if (!this.audioContext) return false
     let raw
     try {
       raw = localStorage.getItem(CUSTOM_SOUND_LS_KEY)
     } catch (e) {
-      // localStorage 可能在 Safari 隐私模式 / quota exceeded 时抛
+
       return false
     }
     if (!raw) {
-      // 没有自定义音效；确保 audioBuffers 里也没有 stale 'custom' buffer
+
       this.audioBuffers.delete('custom')
       return false
     }
@@ -459,25 +363,13 @@ class NotificationManager {
       console.debug(`Custom sound loaded: ${obj.name || '(unnamed)'}`)
       return true
     } catch (error) {
-      // decode 失败：把 stale entry 也清掉，避免每次启动都 retry 同一个坏文件。
+
       console.warn('Custom sound decode failed:', error)
       this.audioBuffers.delete('custom')
       return false
     }
   }
 
-  /**
-   * 用户上传自定义音效。
-   *
-   * 副作用：
-   *   - 校验 MIME / size；失败时返回 {success: false, error}
-   *   - 成功时写 localStorage + 触发 loadCustomSoundFromStorage 让新音效立即可用
-   *
-   * @param {File} file 来自 ``<input type="file" accept="audio/*">``
-   * @returns {Promise<{success: boolean, error?: string, meta?: object}>}
-   *   error code ∈ {'no_file', 'invalid_mime', 'too_large', 'read_failed',
-   *                  'storage_failed', 'decode_failed', 'duration_too_long'}
-   */
   async saveCustomSoundFromFile(file) {
     if (!file || typeof file !== 'object') {
       return { success: false, error: 'no_file' }
@@ -494,8 +386,7 @@ class NotificationManager {
         maxBytes: CUSTOM_SOUND_MAX_BYTES
       }
     }
-    // 读 dataURI（include base64 prefix），用 FileReader 而不是 arrayBuffer
-    // 因为 localStorage 只能存字符串，base64 是最方便的 round-trip 编码。
+
     const dataUri = await new Promise((resolve, reject) => {
       try {
         const fr = new FileReader()
@@ -509,12 +400,7 @@ class NotificationManager {
     if (!dataUri || !dataUri.startsWith('data:')) {
       return { success: false, error: 'read_failed' }
     }
-    // cr33 §8 #1 fix：在 setItem 之前先 decode + 检查 duration。
-    // why pre-storage：失败时 localStorage 完全没被污染，调用方不用做
-    // commit-then-rollback；且失败的 file 不会触发 ``decoded ===
-    // audioBuffers['custom']``，保留了已有 custom 音效。
-    // why duration check：700KB 大小 cap 仍然能塞 30 分钟 lo-bitrate 音频；
-    // 解码后 PCM 几十 MB，是真实内存 foot-gun。
+
     if (this.audioContext) {
       let preflightBuffer = null
       try {
@@ -549,23 +435,18 @@ class NotificationManager {
     }
     const decoded = await this.loadCustomSoundFromStorage()
     if (!decoded) {
-      // 兜底：理论上不会到这里（preflight 已通过）；如果 audioContext
-      // 在两次 decode 之间出问题，清掉 localStorage 让用户知道。
+
       this.clearCustomSound()
       return { success: false, error: 'decode_failed', meta }
     }
     return { success: true, meta }
   }
 
-  /**
-   * 清除自定义音效（localStorage + audioBuffers）。
-   * 设置 reset / Clear 按钮使用。
-   */
   clearCustomSound() {
     try {
       localStorage.removeItem(CUSTOM_SOUND_LS_KEY)
     } catch (e) {
-      // 忽略：清不掉就清不掉
+
     }
     this.audioBuffers.delete('custom')
   }
@@ -641,23 +522,13 @@ class NotificationManager {
         url,
         data: extraData,
         icon,
-        badge, // BUG4：保留解构以便外部传入的 badge 仍可被 spread 覆盖；默认不写到 notificationOptions（见下）
+        badge,
         tag,
         requireInteraction,
         silent,
         ...restOptions
       } = options
 
-      // BUG4 修复：去除默认 badge 字段。
-      //
-      // 历史代码默认 ``badge: badge || this.config.icon`` —— Android Chrome
-      // 会在通知中心和状态栏显示一个等价大小的小图标（"角标"），用户表示
-      // 不喜欢这种视觉噪声。桌面浏览器多数会忽略该字段，所以删除它在桌面
-      // 端无视觉变化；移动端则会回到"无 badge 的纯文字通知"。
-      //
-      // 仍允许调用方主动传 ``options.badge`` 覆盖（罕见用法），通过 ``...
-      // restOptions`` 不会带回 badge —— 因为它已经被解构出去 —— 所以只在
-      // 调用方显式传 badge 时才会写入 notificationOptions。
       const notificationOptions = {
         body: message,
         icon: icon || this.config.icon,
@@ -671,7 +542,7 @@ class NotificationManager {
         ...restOptions
       }
       if (typeof badge === 'string' && badge) {
-        // 调用方显式传入非空字符串时才尊重；空字符串 / undefined / null 都视为"不要 badge"。
+
         notificationOptions.badge = badge
       }
 
@@ -700,18 +571,6 @@ class NotificationManager {
     }
   }
 
-  /**
-   * TODO#43（Cursor 内置浏览器通知修复）：检测 Electron 宿主环境。
-   *
-   * VS Code / Cursor 的内置浏览器（Electron webview / WebContentsView）
-   * 中，Service Worker 的 ``showNotification()`` 常见**静默失败**——
-   * Promise resolve 但系统通知不显示（electron#13041 / #10146）；而
-   * 页面级 ``new Notification()`` 会被 Electron 转成主进程原生通知，
-   * 支持良好。据此：Electron 环境跳过 SW 路径直接走页面级。
-   *
-   * UA 兜底不到（宿主重写 UA 隐藏 Electron 字样）的场景由
-   * ``showSystemNotification`` 里的 getNotifications 运行时验证补齐。
-   */
   isElectronHost() {
     try {
       return /\bElectron\//i.test(navigator.userAgent)
@@ -721,8 +580,7 @@ class NotificationManager {
   }
 
   async showSystemNotification(title, notificationOptions, options = {}) {
-    // TODO#43：Electron 宿主（VS Code / Cursor 内置浏览器）直接走页面级
-    // Notification，跳过已知会静默失败的 SW showNotification 路径。
+
     const skipServiceWorkerPath = this.isElectronHost()
     const registration = skipServiceWorkerPath
       ? null
@@ -730,11 +588,7 @@ class NotificationManager {
     if (registration && typeof registration.showNotification === 'function') {
       try {
         await registration.showNotification(title, notificationOptions)
-        // TODO#43 运行时验证：SW 通知在部分 webview 宿主中静默失败
-        // （resolve 但不显示，且 UA 可能被重写探测不到 Electron）。
-        // getNotifications 按同 tag 回查——查不到视为静默丢弃，回退
-        // 页面级 Notification；查询本身异常时保守视为成功（不改变
-        // 正常浏览器行为，Android Chrome 等依赖 SW 的平台不受影响）。
+
         let displayed = true
         try {
           if (typeof registration.getNotifications === 'function') {
@@ -762,14 +616,12 @@ class NotificationManager {
     try {
       const notification = new Notification(title, notificationOptions)
 
-      // 设置超时自动关闭
       if (this.config.timeout > 0) {
         setTimeout(() => {
           notification.close()
         }, this.config.timeout)
       }
 
-      // 点击事件处理
       notification.onclick = () => {
         window.focus()
         notification.close()
@@ -778,7 +630,6 @@ class NotificationManager {
         }
       }
 
-      // 移动设备震动
       if (this.config.mobileVibrate && 'vibrate' in navigator) {
         navigator.vibrate([200, 100, 200])
       }
@@ -796,10 +647,6 @@ class NotificationManager {
       return false
     }
 
-    // feat-custom-sound (§3.4): 默认 dispatch —— 如果用户上传了 custom
-    // 音效，没有显式指定 soundName 时优先 'custom'；否则 fallback 'default'。
-    // 既保留显式 ``playSound('default')`` 的语义（默认音效测试按钮用），
-    // 又让常规通知路径自动 honor 用户偏好。
     if (soundName === null || soundName === undefined) {
       soundName = this.audioBuffers.has('custom') ? 'custom' : 'default'
     }
@@ -810,7 +657,6 @@ class NotificationManager {
       return this.playSoundFallback(soundName)
     }
 
-    // 恢复音频上下文（如果被暂停）
     if (this.audioContext.state === 'suspended') {
       try {
         await this.audioContext.resume()
@@ -829,7 +675,7 @@ class NotificationManager {
     const audioBuffer = this.audioBuffers.get(soundName)
     if (!audioBuffer) {
       console.warn(`Audio file not found: ${soundName}`)
-      // 尝试加载默认音频文件
+
       if (soundName !== 'default') {
         console.debug('Trying default audio file')
         return this.playSound('default', volume, retryCount)
@@ -846,11 +692,9 @@ class NotificationManager {
       source.connect(gainNode)
       gainNode.connect(this.audioContext.destination)
 
-      // 设置音量
       const finalVolume = volume !== null ? volume : this.config.soundVolume
       gainNode.gain.value = Math.max(0, Math.min(1, finalVolume))
 
-      // 添加错误处理
       source.addEventListener('ended', () => {
         console.debug(`Sound playback finished: ${soundName}`)
       })
@@ -875,22 +719,16 @@ class NotificationManager {
         soundName
       })
 
-      // 重试机制
       if (retryCount < 2) {
         console.debug(`Retry play sound (${retryCount + 1}/2): ${soundName}`)
-        await new Promise(resolve => setTimeout(resolve, 500)) // 等待500ms后重试
+        await new Promise(resolve => setTimeout(resolve, 500))
         return this.playSound(soundName, volume, retryCount + 1)
       }
 
-      // 重试失败，使用降级方案
       return this.playSoundFallback(soundName)
     }
   }
 
-  /**
-   * 用 Web Audio API 合成一个短促的"叮"声 (C5 → E5 双音，~200ms)
-   * @returns {AudioBuffer|null}
-   */
   _createSynthNotificationBuffer() {
     if (!this.audioContext) return null
     try {
@@ -947,10 +785,10 @@ class NotificationManager {
   }
 
   vibrateFallback() {
-    // 振动降级方案（移动设备）
+
     if (this.config.mobileVibrate && 'vibrate' in navigator) {
       try {
-        navigator.vibrate([200, 100, 200]) // 振动模式：200ms振动，100ms停止，200ms振动
+        navigator.vibrate([200, 100, 200])
         console.debug('Using vibration alert')
         return true
       } catch (error) {
@@ -965,10 +803,8 @@ class NotificationManager {
   async sendNotification(title, message, options = {}) {
     const results = []
 
-    // 同时执行Web通知和音频播放，确保同步
     const promises = []
 
-    // 显示Web通知
     if (this.config.webEnabled) {
       promises.push(
         this.showNotification(title, message, options).then(notification => ({
@@ -978,7 +814,6 @@ class NotificationManager {
       )
     }
 
-    // 播放声音
     if (this.config.soundEnabled) {
       promises.push(
         this.playSound(options.sound).then(soundSuccess => ({
@@ -988,7 +823,6 @@ class NotificationManager {
       )
     }
 
-    // 等待所有通知方式完成
     if (promises.length > 0) {
       try {
         const promiseResults = await Promise.all(promises)
@@ -1001,11 +835,6 @@ class NotificationManager {
     return results
   }
 
-  /**
-   * 统一的“前端通知中心入口”
-   * - 由各业务模块（如 multi_task.js）派发事件
-   * - 根据设备环境与配置做路由/降级
-   */
   async dispatchEvent(event) {
     try {
       const evt = event && typeof event === 'object' ? event : {}
@@ -1015,7 +844,6 @@ class NotificationManager {
         return await this.notifyNewTasks(evt)
       }
 
-      // 默认回退：若提供 title/message，则复用原 sendNotification 行为
       if (typeof evt.title === 'string' && typeof evt.message === 'string') {
         return await this.sendNotification(evt.title, evt.message, evt.options || {})
       }
@@ -1027,16 +855,6 @@ class NotificationManager {
     }
   }
 
-  /**
-   * 新任务通知（Web UI 侧）：
-   * - 页面可见且聚焦：桌面 Visual Hint + 声音提示（页内提示足够，不打扰）
-   * - 页面不可见或窗口失焦（TODO#8-A）：改发系统桌面通知——用户切走
-   *   标签页/最小化/在 IDE 等其他应用工作时，页内 Visual Hint 无人看见，
-   *   这正是 Web Notification API 的目标场景。点击通知会聚焦回本页面
-   *   （页面路径由 service worker ``notificationclick`` 路由匹配）。
-   * - 移动端 Bark 推送由后端 MCP 主进程在 server_feedback.py 里统一发送，
-   *   前端不再调用 /api/notify-new-tasks 以避免双推
-   */
   async notifyNewTasks(event = {}) {
     const countRaw = event && typeof event === 'object' ? event.count : null
     const taskIdsRaw = event && typeof event === 'object' ? event.taskIds : null
@@ -1068,11 +886,6 @@ class NotificationManager {
     const message =
       count === 1 && taskIdCount === 1 ? `New task added: ${taskIds[0]}` : `Received ${count} new task(s)`
 
-    // TODO#8-A：判断用户注意力是否在本页面。document.hidden 覆盖"切走
-    // 标签页/最小化"，!document.hasFocus() 覆盖"窗口可见但焦点在其他
-    // 应用（IDE 等）"。任一成立都说明页内 Visual Hint 无人看见。
-    // 防御性 try/catch + typeof 检查：测试 harness / 旧浏览器的 document
-    // 可能缺这些成员，此时按"页面可见"处理（维持原 Visual Hint 行为）。
     let pageAway = false
     try {
       if (typeof document !== 'undefined') {
@@ -1085,60 +898,43 @@ class NotificationManager {
     }
 
     if (pageAway) {
-      // 1a) 页面不在前台：发系统桌面通知。固定 tag 让连续到达的多个
-      // 任务折叠为一条（替换旧通知），避免通知轰炸。权限未授予时
-      // showNotification 内部自动降级（标题闪烁 + 页内提示）。
+
       try {
         await this.showNotification(title, message, {
           tag: 'aiia-new-tasks',
           requireInteraction: false
         })
       } catch (e) {
-        // 忽略：系统通知失败不应影响主流程（内部已有降级路径）
+
       }
     } else {
-      // 1b) 页面在前台：Visual Hint（不依赖系统通知权限）
+
       try {
         if (typeof window.showNewTaskVisualHint === 'function') {
           window.showNewTaskVisualHint(count)
         } else {
-          // 兜底：页面内通知（非系统通知）
+
           this.showInPageNotification(title, message, { timeout: 3000 })
         }
       } catch (e) {
-        // 忽略：视觉提示失败不应影响主流程
+
       }
     }
 
-    // 2) 声音提示：仍沿用现有配置（不使用系统通知）
     try {
       await this.playSound('default')
     } catch (e) {
-      // 忽略：声音播放失败不应影响主流程
-    }
 
-    // 注：移动端 Bark 推送已迁移到后端 MCP 主进程统一处理（server_feedback.py），
-    // 前端不再调用 /api/notify-new-tasks，避免 Web UI + 后端同时触发导致双推。
-    // 外部第三方客户端仍可按需 POST /api/notify-new-tasks 主动触发（API 兼容保留）。
+    }
 
     return { title, message, count, taskIds }
   }
 
   showFallbackNotification(title, message, options = {}) {
-    // 增强的降级方案：使用多种方式确保用户能收到通知
+
     console.debug(`Fallback notification: ${title} - ${message}`)
     const reason = options && typeof options === 'object' ? options.reason || 'unknown' : 'unknown'
 
-    // R214 / Cycle 10 · F-notif-fallback-1: 降级通知改用 type='warning'
-    // 而非 'info'，让 content-page 上的 toast 真的可见 (修前 'info' 类
-    // 型在 content page 上被 silently dropped, 见 app.js showStatus
-    // R214 注释)。同时根据 reason 追加 i18n 化的 hint 让用户知道为何
-    // 降级——单纯的 "标题: 消息" 不够 actionable, 用户不会去检查通知权限。
-    // reason -> i18n hint 映射 (用 callback 而非字符串 lookup, 让
-    // scripts/check_i18n_orphan_keys.py 的 literal-call 扫描器能识别
-    // 每个 i18n key 都被引用, 否则会被报为 orphan)。
-    // 其他/未知 reason (system_notification_failed / show_notification_exception
-    // 等底层异常) 不追加 hint, 用户不能立即修复, 不打扰。
     const reasonHintMap = {
       permission_denied: () => t('status.notifFallbackPermDenied'),
       permission_default: () => t('status.notifFallbackPermDefault'),
@@ -1150,31 +946,25 @@ class NotificationManager {
     const hintFn = reasonHintMap[reason]
     if (typeof hintFn === 'function') {
       const hint = hintFn()
-      // i18n 未加载时 t() 会原样返回 'status.notifFallback*' key,
-      // 此时不要把 ugly key 追加到 toast (检查包含 dot 的 key prefix)
+
       if (hint && !hint.startsWith('status.notifFallback')) {
         toastMessage = `${title}: ${message} — ${hint}`
       }
     }
 
-    // 1. 尝试使用页面状态消息 (warning level, R214 后 content page 可见)
     if (typeof showStatus === 'function') {
       showStatus(toastMessage, 'warning')
     }
 
-    // 2. 尝试使用浏览器标题闪烁
     this.flashTitle(title)
 
-    // 3. 尝试使用页面内弹窗（如果没有其他方式）
     if (!this.isSupported || this.permission === 'denied' || reason === 'insecure_context') {
       this.showInPageNotification(title, message, options)
     }
 
-    // 4. 尝试使用控制台样式输出
     console.debug(`%c[notification] ${title}`, 'color: #0084ff; font-weight: bold; font-size: 14px;')
     console.debug(`%c${message}`, 'color: #666; font-size: 12px;')
 
-    // 5. 记录降级事件用于统计
     this.recordFallbackEvent('notification', {
       title,
       message,
@@ -1195,7 +985,7 @@ class NotificationManager {
   }
 
   flashTitle(message) {
-    // 标题闪烁提醒；同一时间只保留一个 interval，避免连续降级通知互相恢复旧标题。
+
     this.clearTitleFlash()
     this._titleFlashOriginalTitle = document.title
     let flashCount = 0
@@ -1242,11 +1032,9 @@ class NotificationManager {
   }
 
   showInPageNotification(title, message, options = {}) {
-    // 创建页面内通知元素
-    // 使用安全的通知创建方法
+
     const notification = DOMSecurity.createNotification(title, message)
 
-    // 添加样式
     notification.style.cssText = `
       position: fixed;
       top: 20px;
@@ -1263,7 +1051,6 @@ class NotificationManager {
       font-family: inherit;
     `
 
-    // 添加内容样式
     const titleEl = notification.querySelector('.in-page-notification-title')
     const messageEl = notification.querySelector('.in-page-notification-message')
     const closeEl = notification.querySelector('.in-page-notification-close')
@@ -1285,7 +1072,6 @@ class NotificationManager {
       transition: all 0.2s ease;
     `
 
-    // 添加到页面
     document.body.appendChild(notification)
 
     let closeStarted = false
@@ -1307,7 +1093,6 @@ class NotificationManager {
       }, 300)
     }
 
-    // 关闭按钮事件
     closeEl.addEventListener('click', closeNotification)
 
     closeEl.addEventListener('mouseenter', () => {
@@ -1320,14 +1105,12 @@ class NotificationManager {
       closeEl.style.color = 'rgba(245, 245, 247, 0.6)'
     })
 
-    // 入场动画
     notification.style.transform = 'translateX(100%)'
     notification.style.transition = 'all 0.3s ease-out'
     setTimeout(() => {
       notification.style.transform = 'translateX(0)'
     }, 10)
 
-    // 自动关闭
     const timeoutMs = this._getInPageNotificationTimeoutMs(options)
     if (timeoutMs > 0) {
       autoCloseTimerId = setTimeout(closeNotification, timeoutMs)
@@ -1354,7 +1137,7 @@ class NotificationManager {
   }
 
   recordFallbackEvent(type, data) {
-    // 记录降级事件用于分析和改进
+
     const event = {
       type,
       data,
@@ -1363,12 +1146,10 @@ class NotificationManager {
       url: window.location.href
     }
 
-    // 性能优化：存储到本地存储
     try {
       const storageKey = 'ai-intervention-fallback-events'
       const events = JSON.parse(localStorage.getItem(storageKey) || '[]')
 
-      // 性能优化：清理过期事件
       const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
       const validEvents = this._collectRecentFallbackEvents(events, sevenDaysAgo, 49)
 
@@ -1376,11 +1157,10 @@ class NotificationManager {
 
       localStorage.setItem(storageKey, JSON.stringify(validEvents))
 
-      // 性能优化：监控存储空间使用
       this.monitorLocalStorageUsage(storageKey)
     } catch (error) {
       console.warn('Cannot record fallback event:', error)
-      // 如果存储失败，尝试清理存储空间
+
       this.cleanupLocalStorage()
     }
 
@@ -1389,7 +1169,6 @@ class NotificationManager {
     }
   }
 
-  // 性能优化：监控 localStorage 使用情况
   monitorLocalStorageUsage(key) {
     try {
       const data = localStorage.getItem(key)
@@ -1398,7 +1177,7 @@ class NotificationManager {
         const sizeInKB = (sizeInBytes / 1024).toFixed(2)
 
         if (sizeInBytes > 100 * 1024) {
-          // 超过100KB时警告
+
           console.warn(`localStorage event records are large: ${sizeInKB}KB; consider pruning`)
         }
 
@@ -1411,13 +1190,11 @@ class NotificationManager {
     }
   }
 
-  // 性能优化：清理 localStorage
   cleanupLocalStorage() {
     try {
       const storageKey = 'ai-intervention-fallback-events'
       const events = JSON.parse(localStorage.getItem(storageKey) || '[]')
 
-      // 只保留最近24小时的事件
       const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000
       const recentEvents = this._collectRecentFallbackEvents(events, oneDayAgo, 20)
 
@@ -1425,7 +1202,7 @@ class NotificationManager {
       console.debug(`localStorage pruning complete; kept ${recentEvents.length} events`)
     } catch (error) {
       console.error('localStorage pruning failed:', error)
-      // 最后手段：清空事件记录
+
       try {
         localStorage.removeItem('ai-intervention-fallback-events')
         console.debug('localStorage event records cleared')
@@ -1436,5 +1213,4 @@ class NotificationManager {
   }
 }
 
-// 创建全局通知管理器实例
 const notificationManager = new NotificationManager()

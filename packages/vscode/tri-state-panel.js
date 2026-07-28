@@ -1,29 +1,3 @@
-/*!
- * @aiia/tri-state-panel · Unified tri-state panel (skeleton/loading/empty/error/ready)
- *
- * Design (aligned with BEST_PRACTICES_PLAN.tmp.md §四 T1 and §T1 v3):
- *   - Strict guard-clause order: skeleton → loading → error → empty → ready.
- *     Only one branch is ever visible at a time; enforced via CSS [data-state]
- *     selectors (see static/css/tri-state-panel.css) so no JS race can show
- *     two branches simultaneously.
- *   - Make invalid states unrepresentable: transitions are constrained by the
- *     caller's state machine (see static/js/state.js `ContentStatus`).
- *   - A11y (aligned with docs/noise-levels.zh-CN.md): error uses
- *     role="alert"+aria-live="assertive"; all other branches use
- *     role="status"+aria-live="polite".
- *   - i18n: all user-visible strings are declared via `data-i18n` in the host
- *     HTML; this controller only toggles `data-state`/`data-empty-mode`/
- *     `data-error-mode`. Text replacement is delegated to the host's i18n
- *     module (window.AIIA_I18N on Web UI; equivalent on VSCode webview).
- *   - Zero framework dependency. Buildless ES module. Consumed via Import
- *     Maps (`@aiia/tri-state-panel`) so business code is symmetric across
- *     Web UI and VSCode webview (see templates/web_ui.html + VSCode webview).
- *
- * Source of truth lives in static/js/tri-state-panel.js. VSCode side is a
- * byte-identical copy created by scripts/package_vscode_vsix.mjs at packaging
- * time and guarded by tests/test_tri_state_panel_parity.py (sha256).
- */
-
 const VALID_STATES = Object.freeze(['skeleton', 'loading', 'empty', 'error', 'ready'])
 const ERROR_MODES = Object.freeze(['network', 'server_500', 'timeout', 'unknown'])
 const EMPTY_MODES = Object.freeze(['default', 'filtered'])
@@ -133,7 +107,7 @@ export class TriStatePanelController {
       try {
         this._unsubscribe()
       } catch (_e) {
-        /* noop */
+
       }
       this._unsubscribe = null
     }
@@ -143,7 +117,7 @@ export class TriStatePanelController {
 }
 
 function noop() {
-  /* intentional noop */
+
 }
 
 export const VERSION = '1.0.0'

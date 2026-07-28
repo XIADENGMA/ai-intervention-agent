@@ -106,15 +106,6 @@ class TestSettingsBackdropClickHandler(unittest.TestCase):
             "重复绑定，与 R265 ``aiiaWired`` 及 R263a ``aiiaInited`` 同模式",
         )
 
-    def test_r277_annotation_present(self) -> None:
-        """R277 注释 anchor 必须在源码中，方便未来维护者快速定位逻辑。"""
-        self.assertIn(
-            "R277",
-            self.src,
-            "R277: settings-manager.js 必须保留 R277 注释，标注 backdrop "
-            "click delegate 设计选择 + mining-15 audit 关系",
-        )
-
 
 class TestModalCloseDelegationConsistency(unittest.TestCase):
     """R277 cross-modal sanity: 验证 3 个 dialog backdrop click delegation

@@ -1,68 +1,10 @@
-/* AI Intervention Agent · Service Worker
- *
- * 一个文件承担三件事：
- *
- * 1. **通知点击路由**（既有功能，``notificationclick`` 事件）—— 接住系统
- *    通知中心的点击，把焦点切到已存在的 Web UI 标签页或新开一个窗口。
- *
- * 2. **静态资源缓存（R21.2/R459）** —— 对 ``/static/css/*`` / ``/static/js/*`` /
- *    ``/static/lottie/*`` / ``/static/locales/*`` / ``/icons/*`` /
- *    ``/sounds/*`` / ``/fonts/*`` 等"内容寻址"（``?v=hash`` 版本化）的静态
- *    资源走 **stale-while-revalidate**：cache hit 立刻返回本地副本，同时后台
- *    拉网络刷新 cache；cache miss 才阻塞等待网络。``/api/*`` 与 HTML 路径绕过缓存。
- *
- * 3. **导航离线兜底（R249）** —— 对 ``request.mode === 'navigate'`` 的 HTML
- *    导航请求走 **network-first**：有网时永远返回最新页面；网络失败时只兜底
- *    到 install 阶段预缓存的 ``/offline.html``。API / SSE / 静态资源不走这个
- *    路径，避免把动态状态伪装成可离线。
- *
- * 设计要点
- * --------
- * - **Cache 名带版本号**（``aiia-static-v2``）：当 SW 升级（比如重构 fetch
- *   逻辑），把版本号 bump 到 ``-v2``，``activate`` 阶段会清理所有旧版本
- *   ``aiia-static-*`` cache，避免 "升级后旧 cache 卡死"。
- * - **白名单 stale-while-revalidate**：只缓存"内容稳定 + 带版本号"的资源；任何
- *   ``/api/*``、``/sse``、HTML 路径（``/`` / 任何 200 但 ``Content-Type:
- *   text/html``）都不缓存，避免会话状态被冻结。
- * - **导航 network-first**：HTML 导航请求永远先走网络；只有网络失败才返回
- *   ``/offline.html``，所以离线兜底不会掩盖在线状态下的新版本页面。
- * - **同源限制**：只缓存 ``self.location.origin`` 下的资源，跨域引用一律
- *   走默认网络路径（避免 CDN / 第三方资源被错误冻结）。
- * - **离线 shell 单独 cache**：``OFFLINE_CACHE_NAME`` 使用 ``aiia-offline-*``
- *   前缀，与 ``aiia-static-*`` 静态资源 cache 分开升级、分开清理。
- * - **Cache size 限流**（``MAX_ENTRIES``）：超过上限时**异步**淘汰最早写入
- *   的 entry，不阻塞响应。LRU 严格性需要额外簿记，这里用 FIFO 近似（cache
- *   key 顺序就是 ``cache.keys()`` 返回顺序），代价是偶尔淘汰错对象，但
- *   静态资源版本化下 cache 命中已经是常态，FIFO 误差可接受。
- * - **失败兜底**：``cache.put`` 抛错（比如 quota exceeded、cache 已被清理）
- *   不能让响应失败——所有 cache 写入都被 ``.catch(() => {})`` 包裹。
- * - **Method 限制**：只缓存 GET 请求；POST/PUT/DELETE 一律 fall-through。
- * - **响应可消费一次**：``response.clone()`` 之前必须确保 stream 还没被读，
- *   ``cache.put(request, response.clone())`` 同步立刻 clone 取一份给 cache，
- *   原 response 给 fetch 的调用者消费。
- *
- * 不在本 SW 中处理的事
- * --------------------
- * - **Push notification**（推送通知）—— 仍由 `notification-manager.js` 走
- *   非 SW 路径或后端 Bark/Telegram 推送。
- * - **完整 PWA app-shell 离线模式**—— 本文件只提供导航失败时的
- *   ``/offline.html`` 兜底；不会离线缓存动态 HTML、API 结果或任务状态。
- * - **动态 API 缓存**（stale-while-revalidate /api/）—— ``/api/tasks`` 等
- *   端点状态高度动态，缓存反而错误地展示陈旧任务列表。永远 fall-through。
- */
-
 const STATIC_CACHE_NAME = 'aiia-static-v2'
-// R249 / mining-9 Track B：offline shell 单独 cache，名字带 ``-offline``
-// 后缀让 activate 阶段的 ``startsWith('aiia-static-')`` 清理不会误杀。
+
 const OFFLINE_CACHE_NAME = 'aiia-offline-v1'
 const OFFLINE_FALLBACK_URL = '/offline.html'
-// 200 entry 的硬上限：典型 Web UI 加载 ~80 静态资源（含 prism-components/
-// 多语言子包），200 留 2.5× headroom 应对未来无意识资源增长 + locale 切换
-// 累积。超过即异步 FIFO 淘汰。
+
 const MAX_ENTRIES = 200
 
-// 静态缓存策略适用的路径。``new RegExp`` 在 SW activate 阶段构造一次，
-// 后续 fetch 事件直接复用，零 per-request 编译开销。
 const CACHE_FIRST_PATTERNS = [
   /^\/static\/css\//,
   /^\/static\/js\//,
@@ -78,10 +20,7 @@ const CACHE_FIRST_PATTERNS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     (async () => {
-      // R249：install 阶段预缓存 offline.html，让离线场景下导航请求
-      // 兜底成功率 100%。失败不阻塞 install（用户可能首次访问就离
-      // 线，此时 fetch offline.html 也会失败 —— 那就 fall through 到
-      // 浏览器默认错误，下次有网时再缓存）。
+
       try {
         const cache = await caches.open(OFFLINE_CACHE_NAME)
         const offlineResponse = await fetch(OFFLINE_FALLBACK_URL, {
@@ -91,15 +30,13 @@ self.addEventListener('install', event => {
           await cache.put(OFFLINE_FALLBACK_URL, offlineResponse.clone())
         }
       } catch (_e) {
-        /* 忽略：offline 预缓存失败不阻塞 install */
+
       }
 
-      // skipWaiting 让新 SW 立刻接管而不是等待所有旧 client 关闭。
-      // 配合 activate 阶段的 cache 清理，确保升级链路最短。
       try {
         await self.skipWaiting()
       } catch (_e) {
-        /* 忽略：skipWaiting 失败极罕见 */
+
       }
     })()
   )
@@ -108,8 +45,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     (async () => {
-      // R21.2：清理旧版本 ``aiia-static-*`` cache，让 SW 升级后能回收存储。
-      // R249：同款清理也清理旧 ``aiia-offline-*`` 版本，保留当前 OFFLINE_CACHE_NAME。
+
       try {
         const cacheNames = await caches.keys()
         const deletions = []
@@ -126,29 +62,23 @@ self.addEventListener('activate', event => {
         }
         await Promise.all(deletions)
       } catch (e) {
-        // 忽略：cache.keys() 失败不影响 SW 接管
+
       }
 
       try {
         await self.clients.claim()
       } catch (e) {
-        // 忽略：claim 失败不影响 SW 后续 fetch handler 工作
+
       }
     })()
   )
 })
 
-/* R21.2 / R249：fetch event handler
- *   - 静态资源：stale-while-revalidate（whitelisted 路径）
- *   - 导航请求（HTML）：network-first + offline.html 兜底（R249 mining-9 Track B）
- *   - 其他：fall through 到浏览器默认 */
 self.addEventListener('fetch', event => {
   const request = event.request
 
-  // 只缓存 GET：POST/PUT/DELETE 都是状态变更，缓存绝对错误。
   if (request.method !== 'GET') return
 
-  // 只缓存同源：跨域资源不在我们控制下，避免误冻结第三方 CDN / API。
   let url
   try {
     url = new URL(request.url)
@@ -157,76 +87,42 @@ self.addEventListener('fetch', event => {
   }
   if (url.origin !== self.location.origin) return
 
-  // SSE 端点（如 /api/sse-events）虽然是 GET，但是 EventSource 长连接，
-  // 绝不能 cache。CACHE_FIRST_PATTERNS 已经排除了 /api/，但保险起见
-  // 再检查一遍 ``Accept: text/event-stream``。
   const acceptHeader = request.headers.get('Accept') || ''
   if (acceptHeader.includes('text/event-stream')) return
 
-  // R249：导航请求兜底
-  // ``request.mode === 'navigate'`` 是 fetch spec 标准识别 navigation（包括
-  // top-level + reload + back/forward），不依赖 Accept 头脆弱启发式。
-  // 离线兜底**只**作用于 navigation：API/static 资源走既有逻辑。
   if (request.mode === 'navigate') {
     event.respondWith(handleNavigationWithOfflineFallback(request))
     return
   }
 
-  // 白名单路径走 stale-while-revalidate
   if (!CACHE_FIRST_PATTERNS.some(re => re.test(url.pathname))) return
 
   event.respondWith(handleCacheFirst(request, event))
 })
 
-/* R249：navigation 请求 network-first + offline.html 兜底
- *
- * 策略：
- *   1. 优先走网络（HTML 内容 session-stale 风险大，绝不 cache-first）
- *   2. 网络成功 → 直接返回
- *   3. 网络失败 → 查 OFFLINE_CACHE_NAME 的 offline.html 副本兜底
- *   4. 兜底也没有 → 让浏览器走默认错误（不抛 reject，避免 SW 把请求标
- *      记为永久失败；返回一个透明 503 给浏览器）
- */
 async function handleNavigationWithOfflineFallback(request) {
   try {
     const networkResponse = await fetch(request)
     return networkResponse
   } catch (_e) {
-    // 网络失败 → offline.html 兜底
+
     try {
       const cache = await caches.open(OFFLINE_CACHE_NAME)
       const offlineFallback = await cache.match(OFFLINE_FALLBACK_URL)
       if (offlineFallback) return offlineFallback
     } catch (_e2) {
-      /* 忽略：cache 读取失败 → 落到 makeOfflineResponse */
+
     }
     return makeOfflineResponse(request)
   }
 }
 
-/* stale-while-revalidate 策略：先查 cache，命中直接返回并后台刷新；
- * 未命中走网络并异步写 cache。
- *
- * BUG4 修复（offline-resilient）：
- * 历史实现里 ``const networkResponse = await fetch(request)`` 在后端服务
- * 中断时直接抛 NetworkError，整个 ``handleCacheFirst`` promise reject →
- * ``event.respondWith`` reject → 浏览器认为该资源请求失败 → 之后即使
- * 后端恢复了，浏览器也不会主动重试（直到 Cmd+Shift+R 绕过 SW）。
- * 用户表现：后台中断恢复后图标不显示，必须硬刷新才能恢复。
- *
- * 新逻辑：
- *   1. 优先走 cache 命中（既有行为）；
- *   2. 未命中时尝试网络，但 fetch 抛错时再退化查一次 cache（即便没命中），
- *      返回一个非 OK Response（503）而不是 reject promise；
- *   3. 503 Response 让浏览器知道"这次拿不到，但不要把资源永久标记为坏的"，
- *      下次后端恢复后浏览器仍会重新请求。
- */
 async function handleCacheFirst(request, event) {
   let cache
   try {
     cache = await caches.open(STATIC_CACHE_NAME)
   } catch (e) {
-    // 完全失败时让浏览器走默认网络路径
+
     return fetch(request).catch(() => makeOfflineResponse(request))
   }
 
@@ -240,24 +136,19 @@ async function handleCacheFirst(request, event) {
       return cached
     }
   } catch (e) {
-    // cache.match 失败不致命，继续走网络
+
   }
 
-  // 未命中：网络拉取 + 异步写 cache
   let networkResponse
   try {
     networkResponse = await fetch(request)
   } catch (e) {
-    // 网络失败（后台离线 / DNS 故障 / 浏览器 abort）：
-    // 1. 再查一次 cache，捞 stale 副本（即便上面 cache.match 已查过，
-    //    此处的二次尝试主要是兜底"cache.match 抛错被 swallow"的极端情况）；
-    // 2. 都没命中 → 返回 503 而不是 reject promise，避免浏览器把资源
-    //    标记为"加载失败"而停止重试。
+
     try {
       const stale = await cache.match(request)
       if (stale) return stale
     } catch (_e) {
-      /* 忽略二次 cache.match 失败 */
+
     }
     return makeOfflineResponse(request)
   }
@@ -272,43 +163,31 @@ async function refreshStaticCache(request, cache) {
     const networkResponse = await fetch(request)
     await maybeCacheStaticResponse(request, cache, networkResponse)
   } catch (_e) {
-    /* 忽略：stale hit 已经返回；后台刷新失败不应影响页面 */
+
   }
 }
 
 async function maybeCacheStaticResponse(request, cache, networkResponse) {
-  // 只缓存 200 OK 响应。redirect / 4xx / 5xx 都不该写 cache。
-  // ``response.type === 'basic'`` 是同源响应；我们已经在 fetch handler 里
-  // 验证过同源，但 ``Response.type`` 在 SW spec 里仍可能是 'opaqueredirect'
-  // 等异常值，多查一次更稳。
+
   if (
     networkResponse &&
     networkResponse.ok &&
     networkResponse.status === 200 &&
     (networkResponse.type === 'basic' || networkResponse.type === 'default')
   ) {
-    // 异步写 cache：``response.clone()`` 同步执行（cheap），``cache.put``
-    // 走异步 promise，不阻塞响应返回给页面。
+
     const responseClone = networkResponse.clone()
     await cache.put(request, responseClone).then(
       () => {
         trimCache(cache).catch(() => {})
       },
       () => {
-        // 忽略：write 失败（quota exceeded、cache 被清等）不该影响响应
+
       }
     )
   }
 }
 
-/* BUG4：构造一个用于离线兜底的 Response。
- * 用 503 而非 504/404 的原因：
- *   - 503 (Service Unavailable) 语义上表达"暂时不可用"，浏览器会在后续
- *     访问中重试；
- *   - 404 会让浏览器把资源标记为"永久缺失"（特别是 favicon），后端恢复
- *     后仍不重试；
- *   - 504 (Gateway Timeout) 一般用于代理超时，语义不匹配。
- */
 function makeOfflineResponse(request) {
   return new Response('', {
     status: 503,
@@ -317,7 +196,6 @@ function makeOfflineResponse(request) {
   })
 }
 
-/* FIFO 淘汰：cache 超过 MAX_ENTRIES 时，删掉最早写入的 entry。 */
 async function trimCache(cache) {
   let keys
   try {
@@ -327,9 +205,6 @@ async function trimCache(cache) {
   }
   if (!Array.isArray(keys) || keys.length <= MAX_ENTRIES) return
 
-  // ``cache.keys()`` 按写入顺序返回（spec: "the order they were added"），
-  // 所以 ``keys[0]`` 是最早写的，``keys[keys.length - 1]`` 是最晚写的。
-  // 削减到 MAX_ENTRIES 大小：保留最后 MAX_ENTRIES 条，删除前面所有。
   const deletions = []
   const overflowCount = keys.length - MAX_ENTRIES
   for (let i = 0; i < overflowCount; i += 1) {
@@ -338,7 +213,6 @@ async function trimCache(cache) {
   await Promise.all(deletions)
 }
 
-/* 既有功能：通知点击路由，原样保留 */
 self.addEventListener('notificationclick', event => {
   event.notification.close()
 
@@ -367,7 +241,7 @@ self.addEventListener('notificationclick', event => {
             return
           }
         } catch (error) {
-          // 忽略无法解析的 client URL，继续尝试其他窗口
+
         }
       }
 

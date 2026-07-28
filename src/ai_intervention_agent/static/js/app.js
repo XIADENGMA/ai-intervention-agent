@@ -1,39 +1,3 @@
-/**
- * AI Intervention Agent - 主应用脚本
- *
- * 功能模块：
- *   - Lottie 动画配置和初始化
- *   - Markdown 渲染和代码高亮
- *   - 页面状态管理（无内容页面/内容页面切换）
- *   - 内容轮询逻辑
- *   - 表单处理和提交
- *   - 通知管理器
- *   - 设置管理器
- *   - 图片上传处理
- *   - 应用初始化
- *
- * 依赖：
- *   - mathjax-loader.js: MathJax 懒加载
- *   - multi_task.js: 多任务管理
- *   - theme.js: 主题管理
- *   - dom-security.js: DOM 安全工具
- *   - validation-utils.js: 验证工具
- *   - marked.js: Markdown 解析
- *   - prism.min.js: 代码高亮（R27.1：从 prism.js 切换到 upstream minified 版本）
- *   - lottie.min.js: 动画库
- */
-
-// ==================================================================
-// 访问地址兼容性处理（0.0.0.0 -> 127.0.0.1）
-// ==================================================================
-//
-// 背景：
-// - 0.0.0.0 是服务端“监听所有网卡”的绑定地址，适合服务端 bind，但不适合作为浏览器访问地址。
-// - 部分浏览器/环境下，访问 http://0.0.0.0:PORT 可能出现异常（如权限异常、请求失败、Failed to fetch）。
-//
-// 处理策略：
-// - 若检测到当前页面 hostname 为 0.0.0.0，则自动切换为 127.0.0.1（保持端口/路径/查询参数不变）
-// - 使用 location.replace 避免污染历史记录
 (function redirectZeroHostToLoopback() {
   try {
     const url = new URL(window.location.href);
@@ -45,13 +9,10 @@
       window.location.replace(url.toString());
     }
   } catch (e) {
-    // 忽略：不影响主流程
+
   }
 })();
 
-// ==================================================================
-// 全局错误兜底：捕获未处理的 JS 异常和 Promise 拒绝
-// ==================================================================
 window.addEventListener("error", function (event) {
   console.error("[global error]", event.error || event.message);
 });
@@ -59,22 +20,6 @@ window.addEventListener("unhandledrejection", function (event) {
   console.error("[unhandled rejection]", event.reason);
 });
 
-// ==================================================================
-// 带超时的 fetch 包装（防止网络异常时无限等待）
-//
-// 与朴素 `fetch(url, { signal })` 的差异：
-// - timeoutMs > 0 时自动添加超时信号；
-// - 调用方可以继续通过 options.signal 提供"外部取消"（例如页面卸载、用户
-//   手动取消）；外部信号和超时信号通过 AbortSignal.any（或兜底手写 merge）
-//   合并，**任何一方触发都会终止请求**，而不会像以前那样静默丢弃 caller signal。
-//
-// 浏览器兼容：
-// - AbortSignal.timeout() 和 AbortSignal.any() 在 Chrome 116+ / Firefox 124+ /
-//   Safari 17.4+ 已广泛可用；本函数对两者都做了 feature detect，缺失时用
-//   AbortController + addEventListener 手写 fallback。
-// - 极旧/受限宿主如果连 AbortController 也没有，就保留原 options 发起 fetch；
-//   此时无法合成 timeout，但不能因为缺少取消 API 而阻断请求本身。
-// ==================================================================
 function fetchWithTimeout(url, options, timeoutMs) {
   var userSignal = options && options.signal;
   var hasTimeout = typeof timeoutMs === "number" && timeoutMs > 0;
@@ -131,9 +76,6 @@ function fetchWithTimeout(url, options, timeoutMs) {
   });
 }
 
-// 主题管理器已在 theme.js 中定义和初始化
-// 此处不再重复定义，避免 CSP nonce 和重复声明问题
-
 let config = null;
 
 function t(key, params) {
@@ -142,23 +84,11 @@ function t(key, params) {
       return window.AIIA_I18N.t(key, params);
     }
   } catch (_e) {
-    /* noop */
+
   }
   return key;
 }
 
-// ==================================================================
-// marked.js 安全配置（禁用原生 HTML 渲染）
-// ==================================================================
-//
-// 背景：
-// - marked 默认允许 Markdown 中的原生 HTML（如 <style> / <iframe> / <script> 等）
-// - 即使有 CSP，原生 HTML 注入仍可能造成 UI 欺骗/样式污染（防御纵深不足）
-// - 这里选择“直接禁用 HTML token 的渲染”，让原生 HTML 在渲染结果中被丢弃
-//
-// 影响：
-// - Markdown 内嵌的原生 HTML 不再生效（常规 Markdown 语法不受影响）
-//
 if (typeof window.__aiiaMarkedSecurityConfigured === "undefined") {
   window.__aiiaMarkedSecurityConfigured = false;
 }
@@ -171,7 +101,7 @@ function configureMarkedSecurity() {
     if (typeof marked.use === "function") {
       marked.use({
         renderer: {
-          // token: { type: 'html', text: '...' }
+
           html() {
             return "";
           },
@@ -180,7 +110,7 @@ function configureMarkedSecurity() {
     }
 
     if (typeof marked.setOptions === "function") {
-      // 可复现/可预测输出：禁用 email 混淆与标题 id 生成（避免不必要的 DOM 变化）
+
       marked.setOptions({ mangle: false, headerIds: false });
     }
 
@@ -192,33 +122,6 @@ function configureMarkedSecurity() {
 
 configureMarkedSecurity();
 
-// ==================================================================
-// Lottie 嫩芽动画配置
-// ==================================================================
-//
-// 功能说明：
-//   在"无有效内容"页面显示循环播放的嫩芽生长动画，
-//   向用户传达"等待中/正在生长"的视觉隐喻。
-//
-// 动画来源：
-//   /static/lottie/sprout.json
-//
-// 主题适配：
-//   - 浅色模式：原色（深色线条）
-//   - 深色模式：通过 CSS filter: invert(1) 反转为白色线条
-//   - 叶子颜色因 invert 也会变化（可接受的视觉效果）
-//
-// 动态效果偏好（R712，推翻 R704 的静止帧契约）：
-//   R704 曾在 prefers-reduced-motion 开启时把 Lottie 静止到「完整
-//   长成」帧。真机验证后按维护者决策豁免：空态页的嫩芽动画（小幅
-//   面积装饰、无大幅位移/视差）照常循环播放，等待进度条同理（见
-//   main.css 的 reduce 块豁免）。页面其余动画继续尊重系统偏好。
-//
-// 降级处理：
-//   仅当 Lottie 运行时加载失败时，显示内置 SVG/CSS 备用图标
-// ==================================================================
-
-// Lottie 动画实例引用（用于后续控制如暂停/销毁）
 let hourglassAnimation = null;
 let _lottieLoadPromise = null;
 let _hourglassObserver = null;
@@ -239,7 +142,7 @@ function _isHourglassLifecycleActive(container, token) {
   try {
     if (container.isConnected === false) return false;
   } catch (_e) {
-    // 忽略
+
   }
   try {
     if (
@@ -250,7 +153,7 @@ function _isHourglassLifecycleActive(container, token) {
       return false;
     }
   } catch (_e) {
-    // 忽略
+
   }
   return true;
 }
@@ -259,7 +162,7 @@ function _disconnectHourglassObserver() {
   try {
     if (_hourglassObserver) _hourglassObserver.disconnect();
   } catch (_e) {
-    // 忽略
+
   }
   _hourglassObserver = null;
 }
@@ -268,7 +171,7 @@ function _clearHourglassLifecycleTimers() {
   try {
     if (_hourglassDelayTimer) clearTimeout(_hourglassDelayTimer);
   } catch (_e) {
-    // 忽略
+
   }
   _hourglassDelayTimer = null;
 
@@ -277,7 +180,7 @@ function _clearHourglassLifecycleTimers() {
       clearTimeout(_hourglassFallbackRemovalTimer);
     }
   } catch (_e) {
-    // 忽略
+
   }
   _hourglassFallbackRemovalTimer = null;
 
@@ -289,7 +192,7 @@ function _clearHourglassLifecycleTimers() {
       window.cancelIdleCallback(_hourglassIdleCallbackId);
     }
   } catch (_e) {
-    // 忽略
+
   }
   _hourglassIdleCallbackId = null;
 
@@ -298,14 +201,14 @@ function _clearHourglassLifecycleTimers() {
       window.removeEventListener("load", _hourglassLoadHandler);
     }
   } catch (_e) {
-    // 忽略
+
   }
   _hourglassLoadHandler = null;
 
   try {
     if (_hourglassThemeTimer) clearTimeout(_hourglassThemeTimer);
   } catch (_e) {
-    // 忽略
+
   }
   _hourglassThemeTimer = null;
 }
@@ -314,7 +217,7 @@ function destroyHourglassAnimation() {
   try {
     if (hourglassAnimation) hourglassAnimation.destroy();
   } catch (_e) {
-    // 忽略
+
   }
   hourglassAnimation = null;
 }
@@ -336,7 +239,7 @@ function installHourglassAnimationLifecycleHandlers() {
       disposeHourglassAnimationLifecycle();
     });
   } catch (_e) {
-    // 忽略
+
   }
 
   try {
@@ -346,7 +249,7 @@ function installHourglassAnimationLifecycleHandlers() {
       initHourglassAnimation();
     });
   } catch (_e) {
-    // 忽略
+
   }
 
   try {
@@ -358,22 +261,14 @@ function installHourglassAnimationLifecycleHandlers() {
       }
     });
   } catch (_e) {
-    // 忽略
+
   }
 }
 
-/**
- * 渲染“嫩芽”动画的 SVG/CSS 降级版本
- *
- * 设计目标：
- * - 不依赖外部资源（JSON/网络/库）
- * - 纯 SVG + CSS 动画，可在 Lottie 加载失败时仍提供动态反馈
- * - 颜色由容器的 filter/invert 统一控制（对齐 updateLottieAnimationColor）
- */
 function renderSproutFallback(container) {
   if (!container) return;
   try {
-    // 清空容器（避免和 Lottie 的 SVG 叠加）
+
     container.textContent = "";
     container.innerHTML = `
       <svg
@@ -408,7 +303,7 @@ function renderSproutFallback(container) {
       </svg>
     `;
   } catch (e) {
-    // 最后兜底：极端情况下显示文本提示，避免再退化为 emoji
+
     container.textContent = t("status.waiting");
   }
 }
@@ -437,10 +332,7 @@ function _createLottieAnimation(container, token) {
       container,
       renderer: "svg",
       loop: true,
-      // R712（推翻 R704 静止帧契约）：空态嫩芽动画豁免系统「减弱
-      // 动态效果」偏好，照常循环播放——小幅面积装饰动画、无大幅
-      // 位移/视差，维护者真机验证后决策豁免；页面其余动画仍尊重
-      // 系统偏好。
+
       autoplay: true,
       path: "/static/lottie/sprout.json",
       rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
@@ -451,9 +343,7 @@ function _createLottieAnimation(container, token) {
     });
     hourglassAnimation.addEventListener("error", () => {
       if (!_isHourglassLifecycleActive(container, token)) return;
-      // 先销毁失败实例再渲染降级 SVG：残留的实例会让下一次
-      // initHourglassAnimation 误判「动画健在」而直接 return，
-      // 且 destroy 会清空容器，必须在重绘 fallback 之前执行。
+
       destroyHourglassAnimation();
       renderSproutFallback(container);
       container.style.opacity = "1";
@@ -471,20 +361,6 @@ function _createLottieAnimation(container, token) {
   }
 }
 
-/**
- * 初始化嫩芽生长 Lottie 动画
- *
- * 策略（R696）：lottie.min.js 已随首屏 ``<script defer>`` 预加载（见
- * web_ui.html），本函数直接创建 Lottie 动画——空态从第一帧起就是
- * Lottie，不再先渲染 SVG 降级动画再热切换（旧流程的可见跳变即由
- * 该切换引起）。
- *
- * 动态效果偏好（R712，推翻 R704）：R704 曾让 prefers-reduced-motion
- * 用户看到静止帧；真机验证后按维护者决策豁免——嫩芽动画照常循环
- * 播放（小幅面积装饰、无大幅位移/视差），页面其余动画仍尊重系统
- * 偏好。仅一种情形回退到零依赖 SVG：lottie 运行时加载失败（离线/
- * CDN 故障，走 AIIA_LOTTIE_JS_URL 动态加载兜底后仍失败）。
- */
 function initHourglassAnimation() {
   installHourglassAnimationLifecycleHandlers();
 
@@ -515,43 +391,28 @@ function initHourglassAnimation() {
   });
 }
 
-/**
- * 根据当前主题更新 Lottie 动画的线条颜色
- *
- * 实现方式：
- *   使用 CSS filter: invert(1) 反转颜色，而非修改 SVG 内部属性。
- *   这种方式更简单可靠，且能在主题切换时即时生效。
- *
- * 效果：
- *   - invert(0) / none：保持原色
- *   - invert(1)：将所有颜色反转（黑→白，白→黑）
- */
 function updateLottieAnimationColor() {
   const container = document.getElementById("hourglass-lottie");
   if (!container) return;
 
-  // 获取当前主题状态
   const isLightTheme =
     document.documentElement.getAttribute("data-theme") === "light";
 
-  // 应用 CSS filter 实现颜色切换
   if (isLightTheme) {
-    // 浅色模式：保持原色（深色线条在浅色背景上清晰可见）
+
     container.style.filter = "none";
   } else {
-    // 深色模式：反转颜色（深色线条变为白色，在深色背景上清晰可见）
+
     container.style.filter = "invert(1)";
   }
 }
 
-// 监听主题变化事件（由 ThemeManager 在 theme.js 中派发）
-// 用于在用户切换主题时即时更新 Lottie 动画颜色
 window.addEventListener("theme-changed", (event) => {
-  // 延迟 50ms 执行，确保 DOM data-theme 属性已更新
+
   try {
     if (_hourglassThemeTimer) clearTimeout(_hourglassThemeTimer);
   } catch (_e) {
-    // 忽略
+
   }
   _hourglassThemeTimer = setTimeout(() => {
     _hourglassThemeTimer = null;
@@ -561,14 +422,8 @@ window.addEventListener("theme-changed", (event) => {
   }, 50);
 });
 
-// 高性能markdown渲染函数
-// isMarkdown: 是否为 Markdown 源文本（需要 marked.js 解析）
 function renderMarkdownContent(element, content, isMarkdown = false) {
-  // R687 (TODO#1 渲染抽搐修复，与 multi_task.js::updateDescriptionDisplay
-  // 同构)：SSE auto-refresh 路径可能以相同内容重入 loadConfig →
-  // renderMarkdownContent。内容未变化时幂等短路，避免 innerHTML 重建 +
-  // MathJax 重排造成的闪烁与选区丢失。dataset 兜底：测试桩元素可能没有
-  // dataset 属性。
+
   const renderedDataset = element && element.dataset ? element.dataset : null;
   if (
     renderedDataset &&
@@ -579,28 +434,20 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
   ) {
     return;
   }
-  // 使用requestAnimationFrame优化渲染时机
+
   _scheduleNextFrame(() => {
     if (content) {
-      // R709：写入真实动态内容前摘掉 data-i18n。#description 初始带
-      // ``data-i18n="page.loading"``（首屏骨架占位文案跟随语言），但
-      // ``translateDOM()`` 会对所有 ``[data-i18n]`` 元素整体覆盖
-      // ``textContent``——语言切换 / 慢网络下 ensureDefaultLocale 迟到
-      // 时，正在显示的任务 prompt 会被抹成「加载中…」；且 R687 渲染
-      // 签名仍匹配，下一轮轮询短路不重渲染，破坏是**永久的**。
+
       try {
         element.removeAttribute("data-i18n");
       } catch (_e) {
-        // 测试桩元素可能没有 removeAttribute
+
       }
       let htmlContent = content;
 
-      // 如果是 Markdown 文本，先用 marked.js 解析
       if (isMarkdown && typeof marked !== "undefined") {
         try {
-          // R712：LaTeX 风格数学定界符（\( \) / \[ \]）会被 marked 的
-          // 反斜杠转义吞掉，渲染前抽成占位符、渲染后回填（详见
-          // mathjax-loader.js 的 protectMathDelimiters docstring）。
+
           const mathGuard = window.protectMathDelimiters
             ? window.protectMathDelimiters(content)
             : { text: content, segments: [] };
@@ -616,47 +463,30 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
         }
       }
 
-      // 批量DOM操作优化
       const fragment = document.createDocumentFragment();
       const tempDiv = document.createElement("div");
       tempDiv.innerHTML = htmlContent;
 
-      // 移动所有子节点到fragment
       while (tempDiv.firstChild) {
         fragment.appendChild(tempDiv.firstChild);
       }
 
-      // 一次性更新DOM
       element.innerHTML = "";
       element.appendChild(fragment);
-      // R687：渲染成功后记录签名，供幂等短路比较
+
       if (renderedDataset) {
         renderedDataset.renderedContent = content;
       }
 
-      // 处理代码块，添加复制按钮
       processCodeBlocks(element);
 
-      // 处理删除线语法
       processStrikethrough(element);
 
-      /**
-       * 按需加载并渲染 MathJax 数学公式
-       *
-       * 加载策略：
-       *   1. 首先检测内容中是否包含数学公式（$...$, $$...$$, \(...\), \[...\]）
-       *   2. 如果有数学公式，触发 MathJax 懒加载（约 1.17MB）
-       *   3. MathJax 加载完成后，通过 startup.ready 回调自动渲染待处理元素
-       *
-       * 回退机制：
-       *   如果 loadMathJaxIfNeeded 未定义（理论上不会发生），
-       *   回退到直接检查 MathJax 对象并调用 typesetPromise
-       */
       const textContent = element.textContent || "";
       if (window.loadMathJaxIfNeeded) {
         window.loadMathJaxIfNeeded(element, textContent);
       } else if (window.MathJax && window.MathJax.typesetPromise) {
-        // 回退：如果 MathJax 已加载但 loadMathJaxIfNeeded 不可用，直接渲染
+
         window.MathJax.typesetPromise([element]).catch((err) => {
           console.warn("MathJax render failed:", err);
         });
@@ -667,7 +497,6 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
   });
 }
 
-// 处理代码块，添加复制按钮和语言标识
 function processCodeBlocks(container) {
   const codeBlocks = container.querySelectorAll("pre");
 
@@ -680,7 +509,7 @@ function processCodeBlocks(container) {
   ) {
     const pre = codeBlocks[codeBlockIndex];
     if (!pre) continue;
-    // 检查是否已经被处理过
+
     if (
       pre.parentElement &&
       pre.parentElement.classList.contains("code-block-container")
@@ -688,15 +517,12 @@ function processCodeBlocks(container) {
       continue;
     }
 
-    // 创建代码块容器
     const codeContainer = document.createElement("div");
     codeContainer.className = "code-block-container";
 
-    // 将 pre 元素包装在容器中
     pre.parentNode.insertBefore(codeContainer, pre);
     codeContainer.appendChild(pre);
 
-    // 检测语言类型
     const codeElement = pre.querySelector("code");
     let language = "text";
     if (codeElement && codeElement.className) {
@@ -706,11 +532,9 @@ function processCodeBlocks(container) {
       }
     }
 
-    // 创建工具栏
     const toolbar = document.createElement("div");
     toolbar.className = "code-toolbar";
 
-    // 添加语言标识
     if (language !== "text") {
       const langLabel = document.createElement("span");
       langLabel.className = "language-label";
@@ -718,12 +542,10 @@ function processCodeBlocks(container) {
       toolbar.appendChild(langLabel);
     }
 
-    // 使用安全的复制按钮创建方法
     const copyButton = DOMSecurity.createCopyButton(pre.textContent || "");
 
     toolbar.appendChild(copyButton);
 
-    // 将工具栏添加到容器中
     codeContainer.appendChild(toolbar);
   }
 }
@@ -774,24 +596,13 @@ function _scheduleCopyButtonRestore(button, restoreCallback) {
   button[COPY_BUTTON_RESTORE_TIMER_PROP] = timerId;
 }
 
-// 复制代码到剪贴板
 async function copyCodeToClipboard(preElement, button) {
-  // R285 / cycle-26 t26-2 (R268/R279/R280 entry-side 第四轮):
-  // preElement 与 button 是 caller (event handler) 传入的引用。点击瞬间
-  // 它们一定存在，但 await navigator.clipboard 之后可能：
-  // (a) preElement 因 markdown re-render (SSE auto-refresh) 被替换 → stale
-  // (b) button 因父 message bubble unmount → DOM detached
-  // 旧实现直接 ``button.innerHTML = ...`` 抛 TypeError → catch 路径再次
-  // ``button.innerHTML = errorIconSvg + ...`` 也抛 → 整个 setTimeout
-  // restore 链断裂，console error 无法被用户感知。
-  // R285 修复: 入口先 null/connected check，await 后访问也判 isConnected,
-  // best-effort UI feedback 缺失 silently skip。
+
   const checkIconSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.7803 4.21967C14.0732 4.51256 14.0732 4.98744 13.7803 5.28033L6.78033 12.2803C6.48744 12.5732 6.01256 12.5732 5.71967 12.2803L2.21967 8.78033C1.92678 8.48744 1.92678 8.01256 2.21967 7.71967C2.51256 7.42678 2.98744 7.42678 3.28033 7.71967L6.25 10.6893L12.7197 4.21967C13.0126 3.92678 13.4874 3.92678 13.7803 4.21967Z"/></svg>';
   const errorIconSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.21967 4.21967C4.51256 3.92678 4.98744 3.92678 5.28033 4.21967L8 6.93934L10.7197 4.21967C11.0126 3.92678 11.4874 3.92678 11.7803 4.21967C12.0732 4.51256 12.0732 4.98744 11.7803 5.28033L9.06066 8L11.7803 10.7197C12.0732 11.0126 12.0732 11.4874 11.7803 11.7803C11.4874 12.0732 11.0126 12.0732 10.7197 11.7803L8 9.06066L5.28033 11.7803C4.98744 12.0732 4.51256 12.0732 4.21967 11.7803C3.92678 11.4874 3.92678 11.0126 4.21967 10.7197L6.93934 8L4.21967 5.28033C3.92678 4.98744 3.92678 4.51256 4.21967 4.21967Z"/></svg>';
 
-  // R285 entry-side guard
   if (!preElement || !button) {
     console.warn("copyCodeToClipboard: preElement/button missing — abort");
     return;
@@ -805,8 +616,6 @@ async function copyCodeToClipboard(preElement, button) {
 
     await navigator.clipboard.writeText(textToCopy);
 
-    // R285: button 可能在 await 期间 detach (DOM re-render)，
-    // isConnected 检查比直接访问 innerHTML 安全
     if (!button.isConnected) {
       console.debug(
         "copyCodeToClipboard: button detached after copy success — skip UI",
@@ -815,7 +624,7 @@ async function copyCodeToClipboard(preElement, button) {
     }
     _beginCopyButtonTransientFeedback(button);
     // AIIA-XSS-SAFE: checkIconSvg 是开发者手写 SVG 字面量；t('status.copied')
-    // 走 locales/*.json 静态 key 且无参数。详见 docs/i18n.md § Security。
+
     button.innerHTML = checkIconSvg + t("status.copied");
     button.classList.remove("error");
     button.classList.add("copied");
@@ -828,8 +637,6 @@ async function copyCodeToClipboard(preElement, button) {
   } catch (err) {
     console.error("Copy failed:", err);
 
-    // R285: catch 路径同样需要 isConnected check —— err 可能就是因为
-    // button DOM detach 导致 (虽然多数 err 来自 navigator.clipboard)
     if (!button.isConnected) {
       console.debug(
         "copyCodeToClipboard: button detached during copy failure — skip UI",
@@ -838,7 +645,7 @@ async function copyCodeToClipboard(preElement, button) {
     }
     _beginCopyButtonTransientFeedback(button);
     // AIIA-XSS-SAFE: errorIconSvg 是开发者手写 SVG 字面量；t('status.copyFailed')
-    // 走 locales/*.json 静态 key 且无参数。与 line 561 success 路径同源安全。
+
     button.innerHTML = errorIconSvg + t("status.copyFailed");
     button.classList.remove("copied");
     button.classList.add("error");
@@ -851,12 +658,11 @@ async function copyCodeToClipboard(preElement, button) {
   }
 }
 
-// 处理删除线语法 ~~text~~
 function processStrikethrough(container) {
-  // 获取所有文本节点，但排除代码块
+
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode: function (node) {
-      // 排除代码块、pre、script 等标签内的文本
+
       const parent = node.parentElement;
       if (
         parent &&
@@ -878,7 +684,6 @@ function processStrikethrough(container) {
     textNodes.push(node);
   }
 
-  // 处理每个文本节点（使用 DOM API 避免 innerHTML 注入风险）
   for (
     let textNodeIndex = 0;
     textNodeIndex < textNodes.length;
@@ -908,31 +713,19 @@ function processStrikethrough(container) {
   }
 }
 
-// 加载配置
 async function loadConfig() {
   try {
     const response = await fetchWithTimeout("/api/config", undefined, 10000);
     config = await response.json();
 
-    // 检查是否有有效内容
     if (!config.has_content) {
       showNoContentPage();
-      // 不再显示动态状态消息，只保留HTML中的固定文本
+
       return;
     }
 
-    // 显示正常内容页面
     showContentPage();
 
-    // 页面首次加载不发送通知，只在内容变化时通知
-
-    // R285 / cycle-26 t26-2 (R268/R279/R280 entry-side 第四轮):
-    // loadConfig 在 await fetch 之后访问 DOM 节点。loadConfig 可能在
-    // SSE auto-refresh 路径多次重入；如果 #description 节点被 multi-task
-    // 切换 / 错误 fallback 替换，``renderMarkdownContent(null, ...)`` 会
-    // 抛 TypeError 被 catch 翻成 user-visible "Config load failed"——但
-    // 配置实际加载成功了，UI 渲染失败误报为"加载失败"。null check 兜底
-    // 让用户看到正确状态 (silently skip render + console.warn 留 trace)。
     const descriptionElement = document.getElementById("description");
     if (descriptionElement) {
       renderMarkdownContent(
@@ -946,21 +739,6 @@ async function loadConfig() {
       );
     }
 
-    // R705 (TODO#38 选项偶发不可见根因修复)：选项渲染统一委托
-    // multi_task.js 的 ``updateOptionsDisplay`` 单一入口。
-    //
-    // 旧实现的两个缺陷：
-    //   1. append 后只设 inline ``style.display = "block"``，但容器初始
-    //      ``class="hidden"`` 是 ``display: none !important``——inline
-    //      永远盖不过它，选项渲染进 DOM 却完全不可见；平时靠 1-2s 后
-    //      multi_task 的 ``loadTaskDetails`` 重建才"碰巧"变可见，一旦
-    //      该请求失败（移动端网络抖动 / 页面后台恢复），页面只剩主体
-    //      内容，选项永久隐藏。
-    //   2. 不清空容器直接 append——与 updateOptionsDisplay 的清空重建
-    //      语义不一致，是重复渲染的潜在源头。
-    //
-    // multi_task.js 在 app.js 之前以 defer 加载（模板顺序锁定），
-    // 此处函数必然已定义；typeof 守卫仅为独立加载 app.js 的测试桩兜底。
     if (typeof updateOptionsDisplay === "function") {
       updateOptionsDisplay(
         config.predefined_options,
@@ -973,8 +751,6 @@ async function loadConfig() {
       const optionsContainer = document.getElementById("options-container");
       const separator = document.getElementById("separator");
 
-      // R285: options-container / separator 任一缺失即跳过 options
-      // 渲染，不报"加载失败"。
       if (!optionsContainer || !separator) {
         console.warn(
           "loadConfig: #options-container or #separator missing — " +
@@ -1010,8 +786,6 @@ async function loadConfig() {
           optionsContainer.appendChild(optionDiv);
         }
 
-        // R705：必须用 classList 摘掉 ``.hidden``（display:none
-        // !important），inline display 无法覆盖它。
         optionsContainer.classList.remove("hidden");
         optionsContainer.classList.add("visible");
         separator.classList.remove("hidden");
@@ -1021,7 +795,7 @@ async function loadConfig() {
   } catch (error) {
     console.error("Config load failed:", error);
     showStatus(t("status.loadFailed"), "error");
-    throw error; // 重新抛出错误，让调用者知道加载失败
+    throw error;
   }
 }
 
@@ -1035,51 +809,31 @@ function setElementDisplayById(id, display) {
   return true;
 }
 
-// 显示无内容页面
 function showNoContentPage() {
   setElementDisplayById("content-container", "none");
   setElementDisplayById("no-content-container", "flex");
 
-  // 添加无内容模式的CSS类，启用特殊布局
   document.body.classList.add("no-content-mode");
 
-  // 隐藏任务标签栏（无内容时不需要显示）
   const taskTabsContainer = document.getElementById("task-tabs-container");
   if (taskTabsContainer) {
     taskTabsContainer.classList.add("hidden");
   }
 
-  // 显示关闭按钮，让用户可以关闭服务
   if (config) {
     setElementDisplayById("no-content-buttons", "block");
   }
 }
 
-// 显示内容页面
 function showContentPage() {
   setElementDisplayById("content-container", "block");
   setElementDisplayById("no-content-container", "none");
 
-  // 移除无内容模式的CSS类，恢复正常布局
   document.body.classList.remove("no-content-mode");
-
-  // 任务标签栏的显示由 multi_task.js 的 renderTaskTabs() 控制
-  // 这里不需要手动显示，等待 renderTaskTabs() 根据任务数量决定
 
   enableSubmitButton();
 }
 
-// R229 / R234 / Cycle 13-14: 全部 3 个元素 (submit-btn, insert-code-btn,
-// feedback-text) 的禁用视觉降级统一下沉到 CSS :disabled。
-//
-// R229 修了 #submit-btn / #insert-code-btn——它们的启用规则用了
-// !important，inline non-important 永远输，所以加 CSS :disabled 接管。
-// 当时 feedback-text 没改是因为它的 CSS 没用 !important, inline 真能生效,
-// 但走 inline 的代价是: 两套 hex 配色全是 dark-theme 值
-// (#2c2c2e / #8e8e93 / rgba(255,255,255,0.03) / #f5f5f7), 浅色主题切到时
-// textarea 的禁用视觉是错的 (深色背景显示在浅色页面上, 字体颜色对比度反
-// 转)。R234 把 textarea 也下沉到 CSS, 浅+深两套主题正确, 同时这里 JS 只
-// 剩 disabled 属性切换, 三个元素同模式同纪律。
 function disableSubmitButton() {
   const submitBtn = document.getElementById("submit-btn");
   const insertBtn = document.getElementById("insert-code-btn");
@@ -1100,14 +854,6 @@ function enableSubmitButton() {
   if (feedbackText) feedbackText.disabled = false;
 }
 
-// 显示状态消息
-//
-// R214 / Cycle 10 · F-notif-fallback-1: type 'warning' 也走 content-page
-// toast，否则 notification-manager 的 showFallbackNotification (R214 后
-// 用 'warning' 类型) 在 content page 上完全 silent —— 用户看不到任何视
-// 觉反馈，浏览器拒绝通知权限时只能 console.debug。修前: 仅 'success' /
-// 'error' 在 content page 可见; 修后: 'success' / 'warning' / 'error'
-// 都可见 ('info' 仍 silent 以维持 R214 之前的 INFO 噪声水位)。
 const _statusDismissTimers = Object.create(null);
 const _statusDismissGenerations = Object.create(null);
 
@@ -1125,8 +871,7 @@ function showStatus(message, type) {
     noContentContainer && noContentContainer.style.display === "flex";
 
   if (!isNoContentPage && type !== "error") {
-    // R214: success / warning 走 toast (warning 是降级通知的合理 level);
-    // info 维持 silent (大量内部状态变化用 info，不该到处 toast)。
+
     if (type === "success" || type === "warning") {
       _showToast(message);
     }
@@ -1149,7 +894,6 @@ function showStatus(message, type) {
   statusElement.className = `status-message status-${type}`;
   statusElement.style.display = "block";
 
-  // R214: warning 自动消失 5s (介于 success 3s 与 error 10s 之间)。
   const autoDismissMs =
     type === "success"
       ? 3000
@@ -1257,10 +1001,8 @@ function _showToast(message) {
   _toastHideTimerId = hideTimerId;
 }
 
-// 插入代码功能 - 与GUI版本逻辑完全一致
 async function insertCodeFromClipboard() {
-  // iOS/Safari/HTTP 等环境可能无法使用 navigator.clipboard.readText()
-  // 因此这里采用“优先读取剪贴板 -> 失败则弹出粘贴输入框”的策略
+
   let finished = false;
   let fallbackTimer = null;
 
@@ -1344,22 +1086,15 @@ function insertCodeBlockIntoFeedbackTextarea(text) {
     textAfter.length > 0 && !textAfter.startsWith("\n");
   const codeBlock = `${needsLeadingNewline ? "\n" : ""}${codeBlockBody}${needsTrailingNewline ? "\n" : ""}`;
 
-  // 插入代码块
   textarea.value = textBefore + codeBlock + textAfter;
 
-  // 将光标移动到代码块末尾（与GUI版本一致）
   const newCursorPos = textBefore.length + codeBlock.length;
   textarea.setSelectionRange(newCursorPos, newCursorPos);
   textarea.focus();
 }
 
-// R709：返回 ``{ key, text }``——调用方（openCodePasteModal）把 key 同步
-// 写进 ``data-i18n``，让 hint 在语言切换（translateDOM 重跑）时按正确
-// 原因重翻译，而不是被覆盖回默认 key 的翻译。每个分支保留
-// ``t("字面量")`` 调用形式，供 check_i18n_orphan_keys.py 的
-// ``JS_T_CALL_RE`` 识别（动态 key 变量无法被静态扫描器追踪）。
 function getClipboardFailureHint(error) {
-  // 针对常见失败原因给出更明确的提示（尤其是 iOS/HTTP/权限）
+
   try {
     if (!window.isSecureContext) {
       return { key: "status.clipboardHttp", text: t("status.clipboardHttp") };
@@ -1388,19 +1123,11 @@ function getClipboardFailureHint(error) {
       };
     }
   } catch (e) {
-    // 忽略：解析失败时走兜底提示文案
+
   }
   return { key: "status.clipboardDefault", text: t("status.clipboardDefault") };
 }
 
-// cycle-22 / cr51 follow-up #1：与 image-modal R263a / settings-panel 同套
-// capture-activeElement 模式 — 模态打开前 snapshot 真正触发它的元素，
-// 关闭时回归。比 hardcode 回 ``#feedback-text`` 更鲁棒的场景：
-//   1. 多 task tab 场景下 ``#feedback-text`` 可能并非当前 active task 的
-//      textarea（旧 hardcode 会跳到 cached 的第一个 textarea ID）；
-//   2. ``#feedback-text`` 元素本身可能在 SSE 重渲染后被替换，``getElementById``
-//      返回旧引用 → focus 失败 silent fail。
-// 仍保留 fallback 到 ``#feedback-text``，对齐升级前的语义。
 let _codePasteModalPreviouslyFocusedElement = null;
 let _codePasteModalKeydownWired = false;
 let _codePasteModalFocusTimerId = null;
@@ -1433,7 +1160,7 @@ function clearCodePasteModalFocusTimer() {
   try {
     clearTimeout(_codePasteModalFocusTimerId);
   } catch (_e) {
-    // 忽略：受限宿主下 clearTimeout 可能不可用
+
   }
   _codePasteModalFocusTimerId = null;
 }
@@ -1518,13 +1245,12 @@ function openCodePasteModal(error) {
   }
 
   if (hint) {
-    // R709：同步 data-i18n 为具体失败原因的 key——语言切换触发的
-    // translateDOM 会按此 key 重翻译，而不是覆盖回默认提示。
+
     const hintInfo = getClipboardFailureHint(error);
     try {
       hint.setAttribute("data-i18n", hintInfo.key);
     } catch (_e) {
-      // 忽略
+
     }
     hint.textContent = hintInfo.text;
   }
@@ -1535,10 +1261,8 @@ function openCodePasteModal(error) {
 
   _setContainerSiblingsInert(panel, true);
 
-  // iOS 上需要在用户手势链路内尽快 focus，才能弹出键盘与“粘贴”菜单
   scheduleCodePasteModalTextareaFocus(textarea, panel);
 
-  // ESC 关闭（对齐图片模态框行为）
   installCodePasteModalKeydownHandler();
 }
 
@@ -1576,28 +1300,6 @@ function closeCodePasteModal() {
   focusCodePasteModalRestoreTarget(feedbackTextarea);
 }
 
-/**
- * R244 / Cycle 16 · F-cycle16-modal-self-inert: open dialogs live INSIDE
- * `.container` (HTML L713 + L976), so the naive R240 implementation
- * (which set inert on the container itself) propagated inert to the
- * dialog and silently broke modal interaction — clicks/focus inside the
- * dialog were blocked because the dialog inherited the parent's inert
- * state from the DOM cascade. The bug was undetected for 4 cycles
- * because R240's test was Pattern B (static grep), not Pattern A
- * (runtime DOM behavior).
- *
- * Correct pattern: iterate `.container > *`, set `inert` on every direct
- * child EXCEPT the open dialog. The dialog stays interactive; everything
- * else in `.container` (header, main content, footer, image-modal, the
- * other dialog) becomes inert. The .container itself is NOT inert, so
- * inert does NOT propagate through it to the open dialog's subtree.
- *
- * This matches the recommended HTML5 modal pattern for non-`<dialog>`
- * implementations: https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/inert
- *
- * @param {HTMLElement} openModalEl - the dialog that should stay interactive
- * @param {boolean} value - true to inert siblings, false to clear
- */
 function _setContainerSiblingsInert(openModalEl, value) {
   const container = document.querySelector(".container");
   if (!container) return;
@@ -1657,8 +1359,6 @@ function handleCodePasteModalKeydown(event) {
   _modalFocusTrap(panel, event);
 }
 
-// 首次加载时缓存 submit 按钮的原始 innerHTML（含 SVG + data-i18n span），
-// 之后 finally 用它还原，避免 innerHTML 里硬编码中文（i18n / CI gate 要求）。
 let SUBMIT_BTN_ORIGINAL_HTML = null;
 
 function captureSubmitBtnOriginalHTML() {
@@ -1683,25 +1383,12 @@ function clearSubmittedTaskLocalState(taskId) {
   if (typeof taskImages !== "undefined") {
     delete taskImages[taskId];
   }
-  // TODO#41：提交成功后清除该任务的"是/否"选择并同步按钮样式
+
   if (typeof window.clearYesnoSelection === "function") {
     window.clearYesnoSelection(taskId);
   }
 }
 
-// R289 / cycle-27: 错误消息精细化。把 fetch + DOM 操作的 catch error 分类
-// 成 5 个 i18n key，让用户看到"该重试 / 该刷新 / 该联系运维"而非笼统的
-// "网络错误"。
-//
-// 分类规则按 error.name + error.message 字符串特征：
-//   - AbortError                       → 请求超时（fetchWithTimeout AbortSignal）
-//   - TypeError "Failed to fetch"      → 网络不可达（CORS / DNS / offline）
-//   - SyntaxError                      → JSON 解析失败（5xx 返回 HTML / 服务器异常）
-//   - TypeError (其他)                  → DOM 访问异常 (stale ref 等)
-//   - 其他                              → 通用 networkError 兜底
-//
-// 通过 ``window._classifyFetchError`` 暴露，让 multi_task.js / settings-manager.js
-// 等其他模块也能复用同一套分类逻辑，避免 "网络错误" 重新散落到全代码库。
 function _classifyFetchError(error) {
   if (!error) return "status.networkError";
   const name = error.name || "";
@@ -1727,35 +1414,13 @@ function _classifyFetchError(error) {
 }
 window._classifyFetchError = _classifyFetchError;
 
-// R294 / cycle-28: HTTP response-level 分类 helper（补 R289 _classifyFetchError
-// 不覆盖的 response.ok==false 分支）。fetch() 默认 4xx/5xx 不抛 → 当前
-// "else { showStatus(result.message || t(status.submitFailed)) }" 把所有 HTTP
-// 错误都笼统显示后端 error 字段，但：
-//   - 401/403：用户应"重新登录"，不是看后端 message
-//   - 5xx (502/503/504)：用户应"稍后重试"，不该看到栈跟踪
-//   - 其他：保留后端 message 给上下文
-//
-// _classifyHttpResponse(response, defaultMsg) 返回:
-//   - null  → 调用方按既有逻辑（一般是显示 backend message + defaultMsg 兜底）
-//   - 字符串 → i18n key (e.g. "status.unauthorized")
-//
-// 调用方典型用法:
-//   const key = _classifyHttpResponse(response);
-//   if (key) showStatus(t(key), "error");
-//   else showStatus(result.message || t("status.submitFailed"), "error");
 function _classifyHttpResponse(response) {
   if (!response || typeof response.status !== "number") return null;
   const status = response.status;
   if (status === 401 || status === 403) {
     return "status.unauthorized";
   }
-  // R301 / cycle-30: 5xx 子分类 — 给 502/503/504 三类常见 reverse-proxy
-  // 错误码各自专属 i18n key,因为它们的语义和 user action 都不同：
-  //   - 502 (Bad Gateway): nginx/反代收到上游异常响应,通常上游 crash/启动中
-  //   - 503 (Service Unavailable): 上游主动返回 unavailable,通常 overload/maintenance
-  //   - 504 (Gateway Timeout): 上游处理超时,通常上游 hang/slow query
-  //   - 500/501/505+: fallback 到通用 status.serviceUnavailable
-  // 给用户一个可执行的暗示("稍后重试" vs "联系运维"),而不是看 backend stack trace。
+
   if (status === 502) {
     return "status.badGateway";
   }
@@ -1772,19 +1437,10 @@ function _classifyHttpResponse(response) {
 }
 window._classifyHttpResponse = _classifyHttpResponse;
 
-// 提交反馈
 async function submitFeedback() {
   captureSubmitBtnOriginalHTML();
   let submitTargetTaskId = null;
-  // R280 / cycle-25 entry-side null guard (R268/R279 同 class)：submitFeedback
-  // 可由 Ctrl/Cmd+Enter 键盘快捷键触发（line 1527 keyboard handler），即使
-  // submit-btn DOM 不在视图（任务切换动画中 / 新 SSE 推送替换了页面）。
-  // 旧实现直接 ``getElementById("feedback-text").value.trim()`` 会抛
-  // ``TypeError: Cannot read properties of null (reading 'value')``，被 catch
-  // 翻译成 user-visible "网络错误"——**误导用户排查网络问题，实际是 DOM
-  // stale**。R280 修复：feedback-text 不在 DOM → 视作"用户当前不在反馈视图"
-  // 早返回，不污染网络错误 toast；feedback-text 在 DOM 但 trim() 失败属于
-  // 字段实际问题，让原 catch 处理。
+
   const feedbackTextEl = document.getElementById("feedback-text");
   if (!feedbackTextEl) {
     console.warn(
@@ -1793,9 +1449,7 @@ async function submitFeedback() {
     );
     return;
   }
-  // TODO#41（yesno 补充说明）：yesno 任务点击"是/否"只登记选择，实际
-  // 发送在这里合成——"yes" / "no" 字面量在前（与 agent 端解析约定兼容），
-  // 用户补充说明（可选）用空行分隔跟在后面。
+
   const yesnoSelection =
     typeof window.getActiveYesnoSelection === "function"
       ? window.getActiveYesnoSelection()
@@ -1808,8 +1462,6 @@ async function submitFeedback() {
   }
   const selectedOptions = [];
 
-  // 【修复】直接从 DOM 获取选中的预定义选项
-  // 不再依赖 config.predefined_options，因为在多任务模式下切换任务时 config 可能未同步更新
   const optionsContainer = document.getElementById("options-container");
   if (optionsContainer) {
     const checkboxes = optionsContainer.querySelectorAll(
@@ -1824,7 +1476,7 @@ async function submitFeedback() {
     ) {
       const checkbox = checkboxes[checkboxIndex];
       if (!checkbox) continue;
-      // 使用 checkbox 的 value 属性获取选项文本
+
       if (checkbox.value) {
         selectedOptions.push(checkbox.value);
       }
@@ -1836,16 +1488,13 @@ async function submitFeedback() {
     selectedOptions.length === 0 &&
     selectedImages.length === 0
   ) {
-    // 如果没有任何输入，显示错误信息
+
     showStatus(t("status.submitEmpty"), "error");
     return;
   }
 
   try {
-    // R280 / cycle-25: submit-btn 也可能在 entry 时 stale (Ctrl+Enter 键盘
-    // 触发 + 任务切换并发场景)。null check 兜底——不存在时仍继续 fetch (
-    // 反馈不能因为 UI loading state 缺失就丢失)，UI loading state 是
-    // best-effort，silently 跳过即可。
+
     const submitBtn = document.getElementById("submit-btn");
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -1853,12 +1502,10 @@ async function submitFeedback() {
       submitBtn.innerHTML = t("status.submitting");
     }
 
-    // 使用 FormData 上传文件，避免 base64 编码
     const formData = new FormData();
     formData.append("feedback_text", feedbackText);
     formData.append("selected_options", JSON.stringify(selectedOptions));
 
-    // 添加图片文件（直接使用原始文件，不需要base64）
     const selectedImageCount =
       selectedImages && Number.isFinite(selectedImages.length)
         ? selectedImages.length
@@ -1871,10 +1518,8 @@ async function submitFeedback() {
       }
     }
 
-    // 获取当前活动任务ID（由 multi_task.js 管理）
     submitTargetTaskId = window.activeTaskId;
 
-    // 优先使用多任务提交端点（如果有活动任务）
     const submitUrl = submitTargetTaskId
       ? `/api/tasks/${submitTargetTaskId}/submit`
       : "/api/submit";
@@ -1894,13 +1539,8 @@ async function submitFeedback() {
     if (response.ok) {
       showStatus(result.message, "success");
 
-      // 反馈提交成功，不需要通知（用户要求）
-
       if (isSubmitTargetStillCurrent(submitTargetTaskId)) {
-        // R280 / cycle-25: 清空表单。await 期间 DOM 可能被 multi-task 切换
-        // 替换，再 ``getElementById("feedback-text").value = ""`` 会抛
-        // TypeError 污染 success path。null check 兜底——DOM 已切走时无需
-        // 清空（新视图自己负责状态）。
+
         const fbTextEl = document.getElementById("feedback-text");
         if (fbTextEl) {
           fbTextEl.value = "";
@@ -1930,15 +1570,13 @@ async function submitFeedback() {
         );
       }
 
-      // 清理该任务的缓存（如果是多任务模式）
       clearSubmittedTaskLocalState(submitTargetTaskId);
 
-      // 立即刷新任务列表（由 multi_task.js 处理页面状态切换）
       if (typeof refreshTasksList === "function") {
         console.debug("Invoking refreshTasksList to refresh task list...");
         await refreshTasksList();
       } else {
-        // 兼容旧模式：如果没有多任务支持，显示无内容页面
+
         if (config) {
           config.has_content = false;
           console.debug("Feedback submitted; local state updated to empty");
@@ -1946,9 +1584,7 @@ async function submitFeedback() {
         showNoContentPage();
       }
     } else {
-      // R294 / cycle-28: HTTP 4xx/5xx 不进 catch (fetch 默认不 throw)。
-      // 优先按 status 分类 (401/403 → unauthorized, 5xx → serviceUnavailable)，
-      // 回退到 backend message + submitFailed 兜底。
+
       const httpKey = _classifyHttpResponse(response);
       if (httpKey) {
         showStatus(t(httpKey), "error");
@@ -1958,31 +1594,15 @@ async function submitFeedback() {
     }
   } catch (error) {
     console.error("Submit failed:", error);
-    // R289 / cycle-27: 通用 "网络错误" 在 stale DOM / 5xx / timeout / response
-    // parse 失败等场景都会被显示，误导用户重试网络。改为按 error.name
-    // 分类成更具体的 i18n key，让用户知道是该重试、该刷新、还是该联系运维。
+
     showStatus(t(_classifyFetchError(error)), "error");
   } finally {
-    // R268 / cycle-22 fix: submit 期间任务可能 auto-resubmit timeout →
-    // showNoContentPage 把 #submit-btn 从 DOM 移除；或 SSE 重渲染替换
-    // 节点 → 旧 getElementById 引用作废。原实现 `submitBtn.disabled =
-    // false` 不做 null check，submit-btn 不存在时抛 TypeError 污染
-    // finally 块，吞掉原 error 信息（catch 块 console.error 已记录但
-    // finally 抛错会覆盖 user-visible status.networkError toast）。
-    //
-    // 修复：null check 兜底 — submit-btn 已经不在 DOM 时（用户已被切
-    // 走 / 任务已 timeout），UI 状态无需 reset，silently 跳过 finally
-    // body 即可。
+
     const submitBtn = document.getElementById("submit-btn");
     if (submitBtn) {
-      // R700 修复：提交按钮是跨任务共享的单例 DOM。旧实现仅在
-      // isSubmitTargetStillCurrent 时才还原——如果 await 期间发生了
-      // 任务切换（提交成功后自动激活下一个任务是常态路径！），守卫
-      // 判 false，按钮就永远停留在「提交中…」+ disabled 状态，表现为
-      // "提交按钮一直错误显示提交中"。共享按钮的还原对任何任务都
-      // 安全（新任务视图本来就需要一个可用的提交按钮），故无条件还原。
+
       submitBtn.disabled = false;
-      // 还原为首次渲染时的 innerHTML（含 SVG + <span data-i18n>），然后重新翻译。
+
       if (SUBMIT_BTN_ORIGINAL_HTML !== null) {
         submitBtn.innerHTML = SUBMIT_BTN_ORIGINAL_HTML;
         if (
@@ -1996,12 +1616,10 @@ async function submitFeedback() {
   }
 }
 
-// 关闭界面 - 简化版本，统一刷新逻辑
 async function closeInterface() {
   try {
     showStatus(t("status.closingWebUI"), "info");
 
-    // 停止轮询
     stopContentPolling();
 
     const response = await fetchWithTimeout(
@@ -2017,11 +1635,7 @@ async function closeInterface() {
 
     await response.json();
     if (response.ok) {
-      // R713：关闭成功后**不再刷新**。服务端 0.5s 后 shutdown，此时
-      // reload 只能落到 SW 的 offline.html（「无法连接 + 重试」故障
-      // 语义页，重试按钮永远无效、后台还在空转 ping），无 SW 时更是
-      // 浏览器原生错误页——用户明明是主动关闭，却像出了故障。改为
-      // 前端原地渲染「已关闭」终态卡片，语义正确且零网络依赖。
+
       renderClosedTerminalState();
       return;
     }
@@ -2031,40 +1645,28 @@ async function closeInterface() {
     showStatus(t("status.closeUIFailed"), "error");
   }
 
-  // 失败路径保留刷新兜底：服务可能仍在运行，reload 可恢复任务视图
   setTimeout(() => {
     refreshPageSafely();
   }, 2000);
 }
 
-/**
- * R713：渲染「Web UI 已关闭」终态卡片
- *
- * 复用空态页骨架，但把「等待中」语义整体换成「已关闭」成功语义：
- * - 停掉 SSE（含全部重连定时器）与 Lottie 生命周期——终态页不该
- *   有断线红徽章报警或继续消耗资源；
- * - 图标换成静态对勾（成功绿，内联 SVG 零依赖）；
- * - 文案换 closedTitle / closedHint（摘 data-i18n，防 translateDOM
- *   迟到覆盖——R709 同款教训）；
- * - 隐藏等待进度条、关闭按钮、SSE 徽章与残留状态提示。
- */
 function renderClosedTerminalState() {
   try {
     if (typeof _disconnectSSE === "function") _disconnectSSE();
   } catch (_e) {
-    // 忽略：SSE 清理失败不阻塞终态渲染
+
   }
   try {
     disposeHourglassAnimationLifecycle();
   } catch (_e) {
-    // 忽略
+
   }
 
   showNoContentPage();
 
   const icon = document.getElementById("hourglass-lottie");
   if (icon) {
-    icon.style.filter = "none"; // 清除深色模式 invert，对勾用语义色自绘
+    icon.style.filter = "none";
     icon.innerHTML = `
       <svg width="72" height="72" viewBox="0 0 48 48" fill="none" aria-hidden="true">
         <circle cx="24" cy="24" r="21" stroke="var(--success-500, #22c55e)" stroke-width="3" opacity="0.35"/>
@@ -2078,7 +1680,7 @@ function renderClosedTerminalState() {
     try {
       title.removeAttribute("data-i18n");
     } catch (_e) {
-      // 测试桩元素可能没有 removeAttribute
+
     }
     title.textContent = t("status.closedTitle");
   }
@@ -2089,7 +1691,7 @@ function renderClosedTerminalState() {
     try {
       desc.removeAttribute("data-i18n");
     } catch (_e) {
-      // 忽略
+
     }
     desc.textContent = t("status.closedHint");
   }
@@ -2101,27 +1703,25 @@ function renderClosedTerminalState() {
   setElementDisplayById("no-content-buttons", "none");
   const sseBadge = document.getElementById("sse-status-indicator");
   if (sseBadge) sseBadge.style.display = "none";
-  // 空态页的状态提示（「正在关闭…」info 不会自动消失）与内容页
-  // 状态条一并隐藏，终态卡片上不残留过程性文案
+
   for (const id of ["no-content-status-message", "status-message"]) {
     const statusElement = document.getElementById(id);
     if (statusElement) statusElement.style.display = "none";
   }
 }
 
-// 安全刷新页面函数
 function refreshPageSafely() {
   console.debug("Reloading page…");
   try {
     window.location.reload();
   } catch (reloadError) {
     console.error("Page reload failed:", reloadError);
-    // 如果刷新失败，尝试跳转到根路径
+
     try {
       window.location.href = window.location.origin;
     } catch (redirectError) {
       console.error("Page redirect failed:", redirectError);
-      // 最后的备选方案：跳转到空白页
+
       try {
         window.location.href = "about:blank";
       } catch (blankError) {
@@ -2131,29 +1731,10 @@ function refreshPageSafely() {
   }
 }
 
-// R129：``stopContentPolling`` 是历史遗留 API 的"安全空实现"——
-//   - 内容轮询已迁移到 ``multi_task.js`` 的任务轮询；
-//   - ``closeInterface()`` 仍然在调用本函数，删除会引入 ReferenceError。
-//
-// 因此保留 no-op 函数本体作为"调用合约稳定层"，但把
-// pre-R129 的两段超长 banner 注释（"内容轮询-已停用"+"updatePageContent
-// 已删除"）合并成这条 5 行说明，避免 30+ 行的"墓碑"持续干扰阅读。
 function stopContentPolling() {
   console.debug("[app.js] stopContentPolling called, but polling is disabled");
 }
 
-// NotificationManager 已拆分到 notification-manager.js
-// 全局实例 notificationManager 由该文件创建
-
-// SettingsManager 已拆分到 settings-manager.js
-// 全局实例 settingsManager 由该文件创建
-
-// ========== 图片处理功能已拆分到 image-upload.js ==========
-// 全局函数及变量由该文件创建，包括：
-//   selectedImages, initializeImageFeatures(), startPeriodicCleanup(),
-//   clearAllImages(), removeImage(), openImageModal(), handleFileUpload() 等
-
-// 移动设备检测
 function isMobileDevice() {
   return (
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
@@ -2165,7 +1746,6 @@ function isMobileDevice() {
   );
 }
 
-// 平台检测和快捷键设置
 function detectPlatform() {
   const platform = navigator.platform.toLowerCase();
   const userAgent = navigator.userAgent.toLowerCase();
@@ -2177,11 +1757,11 @@ function detectPlatform() {
   } else if (platform.includes("linux") || userAgent.includes("linux")) {
     return "linux";
   }
-  return "windows"; // 默认为Windows
+  return "windows";
 }
 
 function getShortcutText(platform) {
-  // 从 i18n 表里复用 settings.shortcut*，去掉结尾的冒号后拼装。
+
   const strip = (s) => String(s).replace(/[:：]\s*$/, "");
   const submit = strip(t("settings.shortcutSubmit"));
   const insertCode = strip(t("settings.shortcutInsertCode"));
@@ -2209,7 +1789,7 @@ function getShortcutText(platform) {
 }
 
 function initializeShortcutTooltip() {
-  // 桌面设备显示快捷键信息
+
   if (!isMobileDevice()) {
     const platform = detectPlatform();
     updateShortcutDisplay(platform);
@@ -2344,7 +1924,7 @@ function handleGlobalKeydown(event) {
     event.preventDefault();
     insertCodeFromClipboard();
   } else if (ctrlOrCmd && event.key === "v") {
-    // Ctrl/Cmd+V 粘贴图片 - 浏览器默认处理，我们只在paste事件中处理
+
     console.debug(`Shortcut: ${isMac ? "Cmd" : "Ctrl"}+V paste`);
   } else if (ctrlOrCmd && event.key === "u") {
     event.preventDefault();
@@ -2360,7 +1940,7 @@ function handleGlobalKeydown(event) {
     clearAllImages();
     console.debug("Shortcut: Delete clear all images");
   } else if (ctrlOrCmd && event.shiftKey && event.key === "N") {
-    // Ctrl+Shift+N 测试通知
+
     event.preventDefault();
     testNotification();
     console.debug(
@@ -2419,14 +1999,13 @@ function installAudioUnlockListeners() {
   _audioUnlockListenersWired = true;
 }
 
-// 事件监听器 - 兼容 DOM 已加载完成的情况
 function initializeApp() {
-  // 初始化 Lottie 沙漏动画
+
   initHourglassAnimation();
 
   loadConfig()
     .then(() => {
-      // 配置加载完成
+
       console.debug("Config loaded");
       console.debug("Current config:", {
         has_content: config.has_content,
@@ -2434,11 +2013,6 @@ function initializeApp() {
         prompt_length: config.prompt ? config.prompt.length : 0,
       });
 
-      // R129：本路径只调用 ``initMultiTaskSupport``——legacy 的
-      // ``app.js`` 内容轮询已迁移到 ``multi_task.js``；保留 catch
-      // 兜底是为了配置加载失败时仍能初始化任务面板（用 setTimeout
-      // 给浏览器留出 console.error 渲染窗口，让用户先看到错误再看
-      // 到面板，避免错误瞬间被覆盖）。
       if (typeof initMultiTaskSupport === "function") {
         initMultiTaskSupport();
       }
@@ -2453,16 +2027,12 @@ function initializeApp() {
       }, 3000);
     });
 
-  // 初始化图片功能
   initializeImageFeatures();
 
-  // 启动 URL 对象定期清理
   startPeriodicCleanup();
 
-  // 初始化快捷键提示
   initializeShortcutTooltip();
 
-  // 初始化设置管理器并在其配置就绪后再启动通知管理器
   settingsManager
     .init()
     .then(() => {
@@ -2476,7 +2046,6 @@ function initializeApp() {
       console.warn("Settings or notification manager init failed:", error);
     });
 
-  // 按钮事件
   bindOptionalClick("insert-code-btn", insertCodeFromClipboard, {
     wireFlag: "aiiaInsertCodeClickWired",
   });
@@ -2487,33 +2056,16 @@ function initializeApp() {
     wireFlag: "aiiaCloseClickWired",
   });
 
-  // 代码粘贴模态框按钮事件
   bindCodePasteModalControls();
 
-  // 键盘快捷键 - 支持跨平台。页面级长生命周期 listener，由 R338 invariant
-  // 通过稳定 handler 名审计；它不是 modal 临时 listener，不需要 remove。
   installGlobalKeydownHandler();
 
-  // 用户首次交互时启用音频上下文
-  //
-  // 为什么要在 click/keydown/touchstart 上都挂监听：
-  //   Chrome 的 Autoplay Policy 会让 AudioContext 初始化时停留在 'suspended'
-  //   状态，直到用户产生「user gesture」才能 resume()。三类事件覆盖了桌面
-  //   点击、键盘操作、移动端触屏的全部首次交互路径。
-  //
-  // 为什么需要互卸载（P7-Step-23）：
-  //   如果只用 { once: true }，第一个触发的事件会自动移除「自己」，但另外
-  //   两个监听依然挂在 document 上。用户整个会话期间它们都不会再触发——只
-  //   是白白占用事件分发开销、并阻止 document 的监听器集合被 GC 回收。
-  //   改为统一的 "when any fires, remove all three" 之后，document 的事件
-  //   分发开销在首次交互后立即归零。
   installAudioUnlockListeners();
 }
 
-// 兼容 DOM 已加载和未加载两种情况
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initializeApp);
 } else {
-  // DOM 已加载完成，立即执行
+
   initializeApp();
 }

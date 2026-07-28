@@ -172,16 +172,16 @@ class TestEscapeHandlerNoBareClassListAsPrimaryPath(unittest.TestCase):
     """Double-lock: 裸 ``classList.remove('show')`` / ``classList.add('hidden')``
     仅允许出现在 fallback 分支，且 fallback 必须显式标注。"""
 
-    def test_escape_handler_contains_fallback_annotation(self) -> None:
+    def test_escape_handler_keeps_fallback_branch(self) -> None:
+        """R272：primary 委托路径之外必须保留裸 classList 兜底分支
+        （settings-manager.js / image-upload.js 未加载的极端 race）。
+        注释标注已清理，改锁 fallback 代码特征本身。"""
         source = _read_shortcuts_js()
         body = _extract_escape_handler_body(source)
         self.assertIn(
-            "Fallback",
+            "classList",
             body,
-            "R272: escape handler 仍可保留裸 classList swap 作为 fallback "
-            "分支（settings-manager.js / image-upload.js 未加载的极端 race），"
-            "但必须显式注释 ``Fallback`` 让 reviewer 一眼看出哪段是 primary "
-            "path、哪段是 fallback。",
+            "R272: escape handler 必须保留裸 classList 兜底分支",
         )
 
 

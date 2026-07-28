@@ -249,9 +249,10 @@ class TestSettingsManagerInitSourceContract(unittest.TestCase):
         )
 
     def test_event_listener_wiring_is_idempotent(self) -> None:
+        # 边界定位改用代码特征（旧实现以注释行为界，注释已清理）
         match = re.search(
             r"initEventListeners\(\)\s*\{(?P<body>[\s\S]*?)"
-            r"\n    // 设置按钮点击事件",
+            r"\n    const settingsBtn",
             self.src,
         )
         self.assertIsNotNone(match)

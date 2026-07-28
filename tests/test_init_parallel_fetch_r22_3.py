@@ -198,10 +198,12 @@ class TestSourceInvariants(unittest.TestCase):
         self.assertIn("async function initMultiTaskSupport()", self.source)
 
     def test_init_body_contains_promise_all(self) -> None:
-        self.assertIn(
-            "Promise.all(",
+        # BUG5 之后实际代码是 Promise.allSettled；旧断言 "Promise.all(" 是
+        # 靠注释里的字面示例碰巧通过的（注释清理后暴露），改为族匹配。
+        self.assertRegex(
             self.init_body,
-            "initMultiTaskSupport 必须使用 Promise.all 并行两个独立 fetch",
+            r"Promise\.(?:all|allSettled)\s*\(",
+            "initMultiTaskSupport 必须使用 Promise.all/allSettled 并行两个独立 fetch",
         )
 
     def test_promise_all_includes_both_targets(self) -> None:
@@ -297,26 +299,18 @@ class TestSourceInvariants(unittest.TestCase):
 
 
 class TestDocstringContract(unittest.TestCase):
-    """函数附近的注释 / docstring 必须解释 R22.3 的并行化理由。"""
+    """R22.3 溯源改由本测试文件承载（源码注释已按维护者决策清理）。
+    并行化契约由 TestSourceInvariants 的代码级断言锁定。"""
 
     @classmethod
     def setUpClass(cls) -> None:
         cls.init_body = _extract_init_function(_read_source())
 
-    def test_init_body_mentions_r22_3(self) -> None:
-        self.assertIn(
-            "R22.3",
+    def test_init_body_parallelizes_fetches(self) -> None:
+        """代码级契约：并行族调用存在（替代旧的注释关键词检查）。"""
+        self.assertRegex(
             self.init_body,
-            "initMultiTaskSupport 内必须出现 R22.3 标记，便于 git grep 回溯",
-        )
-
-    def test_init_body_explains_parallel_intent(self) -> None:
-        """注释里至少出现一次 ``并行`` / ``parallel`` / ``Promise.all`` 之类的词。"""
-        keywords = ("并行", "parallel", "Promise.all", "RTT")
-        hits = [k for k in keywords if k in self.init_body]
-        self.assertTrue(
-            hits,
-            "initMultiTaskSupport 注释应说明并行化动机（包含: 并行 / parallel / Promise.all / RTT 任一）",
+            r"Promise\.(?:all|allSettled)\s*\(",
         )
 
 

@@ -105,15 +105,6 @@ class TestHtmlExportTasksUiRemoved(unittest.TestCase):
                 f'R274: ``data-i18n="{key}"`` 必须从 web_ui.html 移除',
             )
 
-    def test_removal_annotation_present(self) -> None:
-        """R274 注释 anchor (要求维护者主动找到这里再考虑重启)"""
-        self.assertIn(
-            "R274",
-            self.src,
-            "R274: web_ui.html 必须保留 R274 注释，标注 export-tasks UI"
-            "下架原因 + invariant 测试入口",
-        )
-
 
 class TestSettingsManagerJsWireFunctionRemoved(unittest.TestCase):
     src = SETTINGS_JS.read_text(encoding="utf-8")
@@ -141,14 +132,6 @@ class TestSettingsManagerJsWireFunctionRemoved(unittest.TestCase):
                 self.src,
                 f"R274: ``{dom_id}`` DOM 查询必须从 settings-manager.js 移除",
             )
-
-    def test_removal_annotation_present(self) -> None:
-        self.assertIn(
-            "R274",
-            self.src,
-            "R274: settings-manager.js 必须保留 R274 注释，标注 _wire"
-            "ExportTasksControls 下架原因 + invariant 测试入口",
-        )
 
 
 class TestMainCssExportTasksRulesRemoved(unittest.TestCase):

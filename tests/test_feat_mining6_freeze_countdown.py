@@ -238,7 +238,9 @@ class TestCssClass(unittest.TestCase):
         兜底——保持 timer 存活并跳过提交，直到用户停止输入。
         """
         js = JS_PATH.read_text(encoding="utf-8")
-        idx = js.find("// 倒计时结束")
+        # 定位改用代码特征（旧实现以注释行为锚，注释已清理）：
+        # tick 归零分支 `if (entry.remaining <= 0) {` 后 800 字符内必须有守卫
+        idx = js.find("if (entry.remaining <= 0) {")
         self.assertGreater(idx, 0)
         snippet = js[idx : idx + 800]
         self.assertIn(

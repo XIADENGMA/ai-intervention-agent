@@ -1,35 +1,3 @@
-/*!
- * ai-intervention-agent · Tri-state panel bootstrap (Web UI)
- *
- * Role: classic <script defer> bridge between:
- *   - `tri-state-panel-loader.js` (ES module graph that resolves the bare
- *     specifier `@aiia/tri-state-panel` via Import Maps), and
- *   - the existing classic-script runtime (app.js / state.js / i18n.js).
- *
- * Behavior:
- *   1. Creates a dedicated `content` state machine instance via
- *      `window.AIIAState.createMachine('content', 'ready')` and exposes it
- *      as `window.AIIA_CONTENT_SM` so future consumers (C10d / S2 / BM-2)
- *      can drive `loading/empty/error/ready` without inventing another
- *      source of truth.
- *   2. Waits for the ES module graph to resolve
- *      (`aiia:tri-state-panel-ready`) and instantiates the
- *      TriStatePanelController on `#aiia-tri-state-panel`, wiring
- *      `onAction` to delegate to `window.AIIA_TRI_STATE_PANEL_ACTIONS` if
- *      present (set by C10d).
- *   3. Re-runs `window.AIIA_I18N.translateDOM(rootEl)` once so the 13 newly
- *      injected `data-i18n="aiia.state.*"` strings become localized text.
- *   4. Debug / QA hatch: when `?aiia_tri_state=<state>[&aiia_tri_state_error=...
- *      &aiia_tri_state_empty=...]` is present, the bootstrap transitions
- *      the controller to the requested state. This lets E2E harnesses
- *      exercise every branch without needing real backend failures.
- *
- * Non-goals:
- *   - Does NOT replace the legacy `#no-content-container` flow (kept as-is,
- *     per §T1 v3 "additive rollout"). C10d will migrate callers.
- *   - Does NOT catch errors from the existing app.js; the panel is opt-in.
- */
-
 ;(function () {
   'use strict'
 
@@ -87,7 +55,7 @@
       try {
         i18n.translateDOM(rootEl)
       } catch (_e) {
-        /* noop */
+
       }
     }
   }
@@ -150,7 +118,7 @@
       try {
         sm.reset(debug.state)
       } catch (_e) {
-        /* noop */
+
       }
     }
 
@@ -191,12 +159,7 @@
       mountController(window.AIIA_TRI_STATE_PANEL)
       return
     }
-    // Symmetric guard to the success path above: if the loader already
-    // rejected (module script evaluated + import() microtask settled
-    // BEFORE our DOMContentLoaded handler fired), the READY/FAILED
-    // events are already gone. Reading the flag keeps us from wiring
-    // a permanently-dead listener and leaving the panel stuck at the
-    // SSR "ready" initial state (CSS hides the panel entirely).
+
     if (window.AIIA_TRI_STATE_PANEL_FAILURE) {
       if (typeof console !== 'undefined' && console.error) {
         console.error(

@@ -1,29 +1,3 @@
-/**
- * R137 — Feedback textarea 高度持久化
- *
- * 背景
- * ----
- * ``.feedback-textarea`` 已经支持 CSS ``resize: vertical``，用户可以拖拽
- * 调整高度。但每次刷新 / 新会话后高度都会重置回 ``min-height: 180px``
- * 默认值——熟练用户每次都得手动调一遍，是低频但持续的小痛点。
- * ``mcp-feedback-enhanced`` v2.4.3 把 "Input Height Memory" 列入版本
- * highlight 是因为这是「键盘党 + 长输入用户」体感差异最大的一项。
- *
- * 设计原则
- * --------
- * - ``localStorage`` 持久化，per-domain（loopback http://127.0.0.1:8888 共
- *   享一份），不引入服务端状态。
- * - schema_version envelope（``aiia.<feature>.v<schema>`` 约定），让
- *   未来 v2 可以加 migrator 而不破坏 v1 用户。
- * - clamp 到 ``[MIN_HEIGHT_PX, MAX_HEIGHT_PX]`` 防止用户误拖到极端值
- *   （0 / 全屏）导致 UX 异常。
- * - 优先 ``ResizeObserver``（现代浏览器），fallback ``mouseup``（旧
- *   浏览器、Touch 设备）。
- * - 写盘 debounce 150ms，避免拖动过程中高频 setItem 占 main thread。
- * - localStorage 失败（private browsing / quota）静默跳过，不影响主
- *   功能。
- */
-
 (function () {
   "use strict";
 

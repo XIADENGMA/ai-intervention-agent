@@ -73,51 +73,32 @@ def _read(p: Path) -> str:
 
 
 class TestServiceWorkerDocumentationContract(unittest.TestCase):
-    """Layer 2: SW 顶部契约注释必须与长期驻留的 fetch 行为一致。"""
+    """Layer 2（R312 教训："注释谎报行为"）：SW 注释已按维护者决策全部
+    清理，"注释与行为漂移"的风险源随之消失；这里改锁 navigation
+    offline fallback 的**代码特征**，防实现本身被误删。"""
 
     @classmethod
     def setUpClass(cls) -> None:
         cls.src = _read(SW_JS)
-        m = re.match(r"/\*[\s\S]*?\*/", cls.src)
-        assert m is not None, "R312-L2: SW 顶部必须保留行为契约注释"
-        cls.header = m.group(0)
 
-    def test_header_mentions_navigation_offline_fallback(self) -> None:
-        """R312-L2: 顶部契约必须写明 navigation network-first + offline fallback。"""
-        self.assertIn(
-            "一个文件承担三件事",
-            self.header,
-            "R312-L2: SW 顶部契约应列出通知、静态缓存、导航离线兜底三类职责",
-        )
-        self.assertIn(
-            "导航离线兜底",
-            self.header,
-            "R312-L2: SW 已实现 navigation offline fallback，顶部契约必须明示",
-        )
+    def test_navigation_offline_fallback_implemented(self) -> None:
+        """R312-L2: SW 必须保留 navigation 请求的离线兜底实现。"""
         self.assertIn(
             "request.mode === 'navigate'",
-            self.header,
-            "R312-L2: SW 顶部契约应说明 offline fallback 只作用于 navigation 请求",
-        )
-        self.assertIn(
-            "network-first",
-            self.header,
-            "R312-L2: SW 顶部契约应说明 HTML navigation 是 network-first",
+            self.src,
+            "R312-L2: SW 必须按 navigation 请求分流做 offline fallback",
         )
 
-    def test_header_does_not_claim_offline_fallback_is_absent(self) -> None:
-        """R312-L2: 禁止注释继续声称离线兜底不存在。"""
+    def test_navigation_fallback_serves_offline_page(self) -> None:
+        """R312-L2: navigation 兜底必须回落到缓存的离线页面。"""
         stale_claims = [
-            "一个文件承担两件事",
-            "当前不需要 PWA 离线场景",
-            "offline page fallback）—— 当前不需要",
-            "离线页面**（offline page fallback）—— 当前不需要",
+            "OFFLINE_FALLBACK",
         ]
         for claim in stale_claims:
-            self.assertNotIn(
+            self.assertIn(
                 claim,
-                self.header,
-                f"R312-L2: SW 顶部契约含过期说法: {claim!r}",
+                self.src,
+                f"R312-L2: SW 缺少离线兜底实现特征: {claim!r}",
             )
 
 

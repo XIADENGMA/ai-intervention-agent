@@ -1,55 +1,10 @@
-/**
- * R248 / mining-8 Track A — iOS Safari "Add to Home Screen" 提示
- *
- * 背景
- * ----
- * R247 (mining-7 Track A) 在 Chrome/Edge/Brave/Samsung Internet
- * 等支持 ``beforeinstallprompt`` 事件的浏览器上为 PWA 安装提供了
- * 显式按钮 —— 但 **iOS Safari**（包括 iPad / iPhone）至今**不**
- * 实现 ``beforeinstallprompt``。iOS 用户想把 web 应用安装为桌面
- * 应用必须走 **Share → Add to Home Screen** 流程，而这个入口对
- * 大多数用户来说**完全不可发现**。
- *
- * R248 在符合条件的 iOS Safari 环境检测出来后，弹一个**底部一次
- * 性 banner** 引导用户找到 Share 菜单的 Add to Home Screen 选项。
- * banner 是非阻塞、可永久 dismiss 的，确保不会变成噪声。
- *
- * 触发条件（全部满足才显示）
- * --------------------------
- * - **iOS UA**：``iPhone|iPad|iPod`` in ``navigator.userAgent``
- *   或 iPad Pro 11+ 的 ``navigator.platform === 'MacIntel' &&
- *   navigator.maxTouchPoints > 1``（"desktop class Safari" 默认
- *   返回 macOS UA，需要靠 maxTouchPoints 区分）
- * - **Safari**：UA 含 ``Safari`` 且**不**含 ``CriOS|FxiOS|EdgiOS``
- *   （这些是 Chrome / Firefox / Edge for iOS，它们用 WebKit 但
- *   不能调用 Add to Home Screen）
- * - **非 standalone**：``window.navigator.standalone !== true``
- *   且 ``window.matchMedia('(display-mode: standalone)').matches``
- *   不为 true（已安装就不再提示）
- * - **未 dismiss**：localStorage ``aiia.iosA2hsDismissed.v1`` 不
- *   存在或 ≥ 永久 dismiss 时间戳
- *
- * 设计原则
- * --------
- * - **永久 dismiss**：与 R247 PWA install 按钮 30 天 dismiss
- *   不同，iOS A2HS 是一次性引导（用户已经知道流程了），dismiss
- *   后**永久**不再显示（除非用户主动 clear localStorage）。
- * - **零侵入既有 UI**：用 ``position: fixed`` bottom banner，不
- *   占据 layout 空间；shadow + backdrop 让它视觉上独立于 web_ui
- *   主体。
- * - **i18n + a11y**：banner 用 ``role="dialog"`` + ``aria-label
- *   ledby``；图标 SVG 标注 ``aria-hidden``；按钮全 i18n-key 驱动。
- * - **不阻断主流程**：banner 只显示一次，关掉后用户继续正常使
- *   用；不出现在主任务流之间。
- */
-
 (function () {
   "use strict";
 
   const STORAGE_KEY = "aiia.iosA2hsDismissed.v1";
   const BANNER_ID = "ios-a2hs-hint-banner";
   const DISMISS_BTN_ID = "ios-a2hs-hint-dismiss";
-  const SHOW_DELAY_MS = 1500; // 页面 ready 1.5s 后才弹（避开首屏渲染高峰）
+  const SHOW_DELAY_MS = 1500;
 
   function _isStorageAvailable() {
     try {
@@ -63,14 +18,11 @@
   }
 
   function _isDismissed() {
-    // R707：优先读服务端注入的持久化状态。快捷指令「显示网页」
-    // （SFSafariViewController）的 localStorage 与 Safari 不共享且
-    // 跨会话不持久——纯本地 dismiss 在该环境每次都会丢，横幅反复
-    // 出现。服务端记忆（config.toml）跨设备/跨会话一次生效。
+
     try {
       if (window.AIIA_IOS_A2HS_DISMISSED === true) return true;
     } catch (_e) {
-      // 注入缺失（旧模板/测试桩）→ 继续走 localStorage
+
     }
     if (!_isStorageAvailable()) return false;
     try {
@@ -84,18 +36,16 @@
   }
 
   function _persistDismissToServer() {
-    // R707：fire-and-forget——失败静默（localStorage 仍是本地兜底，
-    // 且下次真 Safari 会话还有机会再写）。keepalive 让请求在 banner
-    // 移除 / 页面即将关闭时也尽量送达。
+
     try {
       fetch("/api/system/ios-a2hs-dismiss", {
         method: "POST",
         keepalive: true,
       }).catch(function () {
-        /* 网络失败静默 */
+
       });
     } catch (_e) {
-      // fetch 不可用（极老 WebView）→ 仅本地持久化
+
     }
   }
 
@@ -103,7 +53,7 @@
     try {
       window.AIIA_IOS_A2HS_DISMISSED = true;
     } catch (_e) {
-      // window 只读代理等极端环境，忽略
+
     }
     _persistDismissToServer();
     if (!_isStorageAvailable()) return;
@@ -117,7 +67,7 @@
         }),
       );
     } catch (_e) {
-      // silent — quota 满 / cookie 禁用等 fallback to no-persistence
+
     }
   }
 
@@ -130,7 +80,7 @@
       platform === "MacIntel" && maxTouch > 1 && !/iphone|ipad|ipod/.test(ua);
     const isIos = isIosUa || isIpadDesktopMode;
     if (!isIos) return false;
-    // 排除 iOS 上的 Chrome / Firefox / Edge（都用 WebKit 但不能调 A2HS）
+
     const isInAppBrowser = /crios|fxios|edgios|opios/.test(ua);
     if (isInAppBrowser) return false;
     return /safari/.test(ua);
@@ -146,7 +96,7 @@
         return true;
       }
     } catch (_e) {
-      // matchMedia 不可用 fallback
+
     }
     return false;
   }
@@ -161,7 +111,7 @@
         apis.push(window.AIIA_I18N);
       }
     } catch (_e) {
-      // i18n namespace unavailable — try legacy fallback below
+
     }
     try {
       if (
@@ -172,7 +122,7 @@
         apis.push(window.i18n);
       }
     } catch (_e) {
-      // legacy i18n namespace unavailable
+
     }
     return apis;
   }
@@ -185,7 +135,7 @@
         if (typeof v === "string" && v && v !== key) return v;
       }
     } catch (_e) {
-      // i18n 未就绪 fallback
+
     }
     return fallback;
   }
@@ -217,7 +167,6 @@
     banner.setAttribute("aria-modal", "false");
     banner.setAttribute("aria-labelledby", "ios-a2hs-title");
 
-    // 图标 + 文案区
     const content = document.createElement("div");
     content.className = "ios-a2hs-banner__content";
 
@@ -254,7 +203,6 @@
     content.appendChild(icon);
     content.appendChild(text);
 
-    // dismiss 叉
     const dismissBtn = document.createElement("button");
     dismissBtn.id = DISMISS_BTN_ID;
     dismissBtn.type = "button";
@@ -291,14 +239,13 @@
     if (!_isIosSafari()) return;
 
     setTimeout(() => {
-      // 二次检查 — 防止 dismiss 与 show 之间的 race（用户在
-      // SHOW_DELAY_MS 期间手动改了 localStorage / 切换 standalone）
+
       if (_isDismissed() || _isAlreadyStandalone()) return;
       const existing = document.getElementById(BANNER_ID);
       if (existing) return;
       const banner = _buildBanner();
       document.body.appendChild(banner);
-      // 上滑入场动画
+
       _nextFrame(() => {
         banner.classList.add("ios-a2hs-banner--visible");
       });
@@ -311,7 +258,6 @@
     _maybeShow();
   }
 
-  // 暴露测试 hook
   if (typeof window !== "undefined") {
     window.__iosA2hsInternal = {
       _isIosSafari,

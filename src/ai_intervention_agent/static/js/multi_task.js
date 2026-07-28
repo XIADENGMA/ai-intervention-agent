@@ -1,129 +1,52 @@
-/**
- * 多任务管理模块
- *
- * 提供完整的多任务并发管理功能，支持任务的创建、切换、轮询、倒计时和关闭。
- *
- * ## 核心功能
- *
- * 1. **任务轮询**：定期从服务器获取任务列表和统计信息
- * 2. **任务列表管理**：动态更新任务列表，检测新增/删除的任务
- * 3. **标签页渲染**：渲染任务标签页UI，支持拖拽和视觉反馈
- * 4. **任务切换**：支持手动切换活动任务，更新UI状态
- * 5. **任务倒计时**：为每个任务独立管理倒计时，支持自动提交
- * 6. **任务关闭**：支持关闭单个任务，清理相关资源
- * 7. **视觉提示**：新任务通知、倒计时环、状态标记
- *
- * ## 状态管理
- *
- * - `currentTasks`: 当前所有任务列表
- * - `activeTaskId`: 当前活动任务ID
- * - `taskCountdowns`: 任务倒计时字典
- * - `taskTextareaContents`: 任务输入框内容缓存
- * - `taskOptionsStates`: 任务选项状态缓存
- * - `taskImages`: 任务图片缓存
- * - `isManualSwitching`: 手动切换标志（防止冲突）
- *
- * ## 轮询机制
- *
- * - 轮询间隔：2秒
- * - 轮询端点：`/api/tasks`
- * - 自动检测新增/删除的任务
- * - 支持启动/停止轮询
- *
- * ## 并发控制
- *
- * - 使用 `isManualSwitching` 标志防止手动切换与轮询冲突
- * - 使用 `manualSwitchingTimer` 管理切换标志的生命周期
- * - 任务切换时清除旧的定时器，避免竞态条件
- *
- * ## 资源清理
- *
- * - 任务删除时自动清理倒计时
- * - 任务关闭时清理输入缓存、选项状态、图片缓存
- * - 页面卸载时停止轮询和倒计时
- *
- * ## 注意事项
- *
- * - 任务切换是异步操作，需要等待服务器响应
- * - 倒计时是独立的，每个任务有自己的计时器
- * - 手动切换期间会暂停轮询更新，避免UI闪烁
- * - 新任务会自动启动倒计时（包括 pending 状态）
- *
- * ## 依赖关系
- *
- * - 依赖 `dom-security.js` 中的 `DOMSecurityHelper`
- * - 全局变量已在此文件中定义（如未存在则创建）
- */
-
-// ==================== 全局变量定义 ====================
-// 使用 window 对象确保变量在全局作用域中可用
 if (typeof window.currentTasks === "undefined") {
-  window.currentTasks = []; // 所有任务列表
+  window.currentTasks = [];
 }
 if (typeof window.activeTaskId === "undefined") {
-  window.activeTaskId = null; // 当前活动任务ID
+  window.activeTaskId = null;
 }
 if (typeof window.taskCountdowns === "undefined") {
-  window.taskCountdowns = {}; // 每个任务的独立倒计时
+  window.taskCountdowns = {};
 }
 if (typeof window.tasksCountdownTickerTimer === "undefined") {
-  window.tasksCountdownTickerTimer = null; // 所有任务倒计时共享的 1Hz ticker
+  window.tasksCountdownTickerTimer = null;
 }
 if (typeof window.tasksPollingTimer === "undefined") {
-  window.tasksPollingTimer = null; // 任务轮询定时器
+  window.tasksPollingTimer = null;
 }
 if (typeof window.taskTextareaContents === "undefined") {
-  window.taskTextareaContents = {}; // 存储每个任务的 textarea 内容
+  window.taskTextareaContents = {};
 }
 if (typeof window.taskOptionsStates === "undefined") {
-  window.taskOptionsStates = {}; // 存储每个任务的选项勾选状态
+  window.taskOptionsStates = {};
 }
-// TODO#41（yesno 补充说明）：每个 yesno 任务的"是/否"选中态。
-// 值域 'yes' | 'no'；未选择时无条目。点击是/否按钮只登记选择
-// （可再次点击取消、点另一按钮切换），实际发送发生在用户点
-// 「提交反馈」时——提交文本 = 选中字面量 + 可选补充说明。
+
 if (typeof window.taskYesnoSelections === "undefined") {
   window.taskYesnoSelections = {};
 }
 if (typeof window.taskImages === "undefined") {
-  window.taskImages = {}; // 存储每个任务的图片列表
+  window.taskImages = {};
 }
-// 新任务通知合并机制 - 防止频繁弹出多个通知
+
 if (typeof window.pendingNewTaskCount === "undefined") {
-  window.pendingNewTaskCount = 0; // 待显示的新任务数量
+  window.pendingNewTaskCount = 0;
 }
 if (typeof window.newTaskHintTimer === "undefined") {
-  window.newTaskHintTimer = null; // 通知合并定时器
+  window.newTaskHintTimer = null;
 }
-// R123：健康检查 interval 句柄。``initMultiTaskSupport`` 历史上无脑
-// ``setInterval(..., 30000)`` 但不保存 id，导致：
-// (a) 永远无法 ``clearInterval``，``stopTasksPolling`` 也无从清理；
-// (b) 一旦未来出现"reconnect 后重新 init"或"测试 reset 后重启"等
-//     场景，会创建第二/第三个并行的 30s 健康检查 interval，每个
-//     都自带独立的 startTasksPolling / _connectSSE 触发逻辑——逻辑
-//     正确但浪费 CPU/网络配额，且彼此竞态。
-// 把句柄挂到 window，让 ``startTasksHealthCheck`` 可以幂等启动、
-// ``stopTasksHealthCheck`` 可以显式清理（visibility hidden /
-// beforeunload 路径都需要）。
+
 if (typeof window.tasksHealthCheckTimer === "undefined") {
   window.tasksHealthCheckTimer = null;
 }
 if (typeof window.hasLoadedTaskSnapshot === "undefined") {
-  window.hasLoadedTaskSnapshot = false; // 首次任务快照仅用于建立基线，不触发系统通知
+  window.hasLoadedTaskSnapshot = false;
 }
-// R705 (TODO#38)：最近一次**成功渲染**过详情（prompt/选项全量数据）的
-// 任务 ID。``/api/tasks`` 列表不含 predefined_options（prompt 也截断到
-// 100 字符），完整渲染只能靠 ``loadTaskDetails``；此前该请求失败后，
-// pending 任务场景（serverActiveTask 不存在）的轮询条件永不成立，
-// 选项区停留在初始 hidden 态——"只显示主体内容，多选选项不显示"。
-// 记录成功水位后，轮询发现 activeTaskId 尚未成功加载过详情就重试，
-// 网络恢复即自愈。
+
 if (typeof window.lastLoadedDetailsTaskId === "undefined") {
   window.lastLoadedDetailsTaskId = null;
 }
-// 【优化】服务器时间同步机制 - 解决切换标签页后倒计时不准的问题
+
 if (typeof window.serverTimeOffset === "undefined") {
-  window.serverTimeOffset = 0; // 服务器时间与本地时间的偏移量（秒）
+  window.serverTimeOffset = 0;
 }
 function _t(key, params) {
   try {
@@ -131,7 +54,7 @@ function _t(key, params) {
       return window.AIIA_I18N.t(key, params);
     }
   } catch (_e) {
-    /* noop */
+
   }
   return key;
 }
@@ -151,7 +74,7 @@ function _debugLog() {
   try {
     console.debug.apply(console, arguments);
   } catch (_e) {
-    /* noop */
+
   }
 }
 
@@ -167,7 +90,7 @@ function _debugSseTaskChanged(data) {
       detail.new_status,
     );
   } catch (_) {
-    /* noop */
+
   }
 }
 
@@ -176,39 +99,25 @@ function _debugSseDetail(label, data) {
   try {
     _debugLog(label, JSON.parse(data || "{}"));
   } catch (_) {
-    /* noop */
+
   }
 }
 
 if (typeof window.taskDeadlines === "undefined") {
-  window.taskDeadlines = {}; // 存储每个任务的截止时间戳（服务器时间）
+  window.taskDeadlines = {};
 }
-// feedback 提示语（从服务端配置热更新获取）
-// 说明：后端 server_config.py 是唯一真源；这里的字段只是占位，实际值通过
-// /api/get-feedback-prompts 拉取。置空字符串避免前端携带硬编码中文，遇到请求失败时
-// 调用方（见 autoSubmitFeedback）会自行提示用户。
+
 if (typeof window.feedbackPrompts === "undefined") {
   window.feedbackPrompts = {
     resubmit_prompt: "",
     prompt_suffix: "",
   };
 }
-// 自动提交退避：避免“超时 + 提交失败/429”导致的重复提交风暴
+
 if (typeof window.autoSubmitAttempted === "undefined") {
-  window.autoSubmitAttempted = {}; // task_id -> lastAttemptAt(ms)
+  window.autoSubmitAttempted = {};
 }
 
-// ============================================================
-// R689 (TODO#13) — 输入活跃保持倒计时 + 归零自动提交已输入内容
-// ============================================================
-// 设计：
-// 1. textarea 每次 input 事件刷新 ``lastFeedbackTypingAtMs``；
-// 2. 1Hz ticker 里发现 active 任务剩余 ≤ TYPING_HOLD_TRIGGER_S 且用户
-//    在 TYPING_HOLD_IDLE_MS 内输入过 → 自动调用既有 extend endpoint
-//    （+60s，复用 extends_max 配额，服务端可见，MCP backend 的 R689
-//    探测循环会跟随延长，避免 ghost-close）；
-// 3. 倒计时真正归零（extend 配额耗尽或用户已停止输入）→ autoSubmitTask
-//    优先提交用户已输入的文本 / 已勾选选项，而不是 resubmit_prompt。
 if (typeof window.lastFeedbackTypingAtMs === "undefined") {
   window.lastFeedbackTypingAtMs = 0;
 }
@@ -218,20 +127,6 @@ if (typeof window.__aiiaTypingAutoExtendInFlight === "undefined") {
 var TYPING_HOLD_IDLE_MS = 10 * 1000;
 var TYPING_HOLD_TRIGGER_S = 15;
 
-// ============================================================
-// mining-cycle-2 §3.4 — Task ID one-click copy helper
-// ============================================================
-/**
- * 内部低阶 clipboard writer（dual path），不做 i18n / toast。
- *
- * 双 path：
- * - 现代浏览器 + secure context: ``navigator.clipboard.writeText`` (async)
- * - 旧浏览器 / http loopback / iOS Safari old: ``document.execCommand
- *   ("copy")`` fallback (sync, 已被 W3C deprecate 但实战仍可用)
- *
- * @param {string} text 待复制的字符串
- * @returns {Promise<boolean>} 成功与否
- */
 async function _writeToClipboard(text) {
   const s = String(text || "");
   if (!s) return false;
@@ -245,7 +140,7 @@ async function _writeToClipboard(text) {
       return true;
     }
   } catch (_e) {
-    // fall through to legacy path
+
   }
   try {
     const ta = document.createElement("textarea");
@@ -264,18 +159,6 @@ async function _writeToClipboard(text) {
   }
 }
 
-/**
- * mining-cycle-2 §3.2 — 为某个 task 构造 deep-link URL。
- *
- * 走 ``URL`` API 让我们正确处理：
- * - 已有 query string（pres/erve & override task_id key）
- * - hash fragment（保留）
- * - origin + pathname（不要带其他敏感 query 入 URL）
- *
- * @param {string} taskId
- * @param {Location | URL | string} [base] 默认 ``window.location``
- * @returns {string} 完整 URL
- */
 function buildTaskDeepLink(taskId, base) {
   const id = String(taskId || "");
   if (!id) return "";
@@ -296,15 +179,6 @@ function buildTaskDeepLink(taskId, base) {
   }
 }
 
-/**
- * 把任务 ID 复制到剪贴板。
- *
- * UX：调 ``showStatus(t("status.copied" | "status.copyFailed"), ...)`` 复用
- * 项目已有的 toast 系统；不引入新 i18n key。
- *
- * @param {string} taskId 完整 task_id
- * @returns {Promise<boolean>} 成功与否
- */
 async function copyTaskIdToClipboard(taskId) {
   const ok = await _writeToClipboard(taskId);
   _flashCopyOnSourceElement(taskId, ok);
@@ -316,22 +190,11 @@ async function copyTaskIdToClipboard(taskId) {
       );
     }
   } catch (_e) {
-    // showStatus / t 不可用时不报错
+
   }
   return ok;
 }
 
-/**
- * cr34 §8 #1 fix — 复制时给来源 textSpan 加 600ms 视觉反馈。
- *
- * 走 ``data-copyable-task-id`` 属性查找来源元素（每个 task tab 上的
- * textSpan 都已有该属性，cycle-2 §3.4 ship）。
- *
- * 为什么用 ``classList`` 而不是 inline style：让 CSS 决定具体动画
- * （flash、check icon、bg color 等）；当前实现仅添加 class，CSS
- * fallback 在 main.css 内一行 transition + bg。respect ``prefers-
- * reduced-motion`` (CSS 侧 media query 兜底，JS 层不感知)。
- */
 function _flashCopyOnSourceElement(taskId, ok) {
   try {
     const elements = document.querySelectorAll(
@@ -343,31 +206,22 @@ function _flashCopyOnSourceElement(taskId, ok) {
       if (!el) continue;
       const cls = ok ? "copy-flash-ok" : "copy-flash-err";
       el.classList.remove("copy-flash-ok", "copy-flash-err");
-      // 强制 reflow 让 transition 重新触发
+
       void el.offsetWidth;
       el.classList.add(cls);
       setTimeout(() => {
         try {
           el.classList.remove(cls);
         } catch (_e) {
-          // ignore
+
         }
       }, 600);
     }
   } catch (_e) {
-    // CSS.escape 不可用 / querySelector 异常时静默；不影响主功能
+
   }
 }
 
-/**
- * mining-cycle-2 §3.2 — 把 task deep-link URL 复制到剪贴板。
- *
- * 使用场景：与同事 IM 分享某个 task；切到另一个浏览器 / 设备打开同一
- * task 继续看 feedback。
- *
- * @param {string} taskId 完整 task_id
- * @returns {Promise<boolean>} 成功与否
- */
 async function copyTaskLinkToClipboard(taskId) {
   const url = buildTaskDeepLink(taskId);
   if (!url) {
@@ -377,7 +231,7 @@ async function copyTaskLinkToClipboard(taskId) {
         showStatus(t("status.copyFailed"), "error");
       }
     } catch (_e) {
-      // ignore
+
     }
     return false;
   }
@@ -391,22 +245,17 @@ async function copyTaskLinkToClipboard(taskId) {
       );
     }
   } catch (_e) {
-    // ignore
+
   }
   return ok;
 }
 
-// 暴露给测试 / 外部调用
 if (typeof window !== "undefined") {
   window.copyTaskIdToClipboard = copyTaskIdToClipboard;
   window.copyTaskLinkToClipboard = copyTaskLinkToClipboard;
   window.buildTaskDeepLink = buildTaskDeepLink;
 }
 
-// ==================== marked.js 安全配置 ====================
-// 多任务模块可能会在 app.js 之前触发 Markdown 渲染，因此需要在此处提前完成安全配置：
-// - 禁用 Markdown 原生 HTML 渲染（避免 <style>/<iframe> 等注入造成 UI 污染）
-// - 关闭 mangle/headerIds，减少不必要的 DOM 变化
 if (typeof window.__aiiaMarkedSecurityConfigured === "undefined") {
   window.__aiiaMarkedSecurityConfigured = false;
 }
@@ -430,13 +279,12 @@ function configureMarkedSecurityOnce() {
     }
     window.__aiiaMarkedSecurityConfigured = true;
   } catch (e) {
-    // 忽略：配置失败不应影响主流程
+
   }
 }
 
 configureMarkedSecurityOnce();
 
-// 创建本地引用以便在函数中使用
 var currentTasks = window.currentTasks;
 var activeTaskId = window.activeTaskId;
 var taskCountdowns = window.taskCountdowns;
@@ -659,25 +507,11 @@ function clearTaskLocalState(taskId) {
   }
 }
 
-/**
- * 从 URL 查询参数读取待跳转任务 ID。
- *
- * Bark / PWA 点击链接通常形如 `/?task_id=...`。这里保持宽松兼容：
- * - `task_id`: 后端 bark_url_template 默认推荐字段
- * - `taskId`: 前端/JS 常见 camelCase 写法
- * - `tid`: 短链场景下的备用字段
- *
- * R63a：识别 `aiia_test=1` sentinel —— 后端 `/api/test-bark` 渲染出来
- * 的 URL 上会强制带这个 query，命中时跳过 deep-link 并给用户一个 toast，
- * 避免 `pendingDeepLinkedTaskId` 永久挂着虚假的 `test-task-id` 让每轮轮询
- * 都扫描一次 current task 列表。
- */
 function getDeepLinkedTaskIdFromUrl() {
   try {
     if (!window.location || !window.location.search) return "";
     const params = new URLSearchParams(window.location.search);
 
-    // R63a：Bark 测试通知 sentinel —— 命中时不参与 deep-link 路径。
     const aiiaTest = (params.get("aiia_test") || "").trim().toLowerCase();
     if (aiiaTest === "1" || aiiaTest === "true" || aiiaTest === "yes") {
       try {
@@ -685,7 +519,7 @@ function getDeepLinkedTaskIdFromUrl() {
           _showToast("Bark test notification opened — UI is working.");
         }
       } catch (_) {
-        /* noop：toast 失败不应阻塞主流程 */
+
       }
       return "";
     }
@@ -693,7 +527,7 @@ function getDeepLinkedTaskIdFromUrl() {
     const raw =
       params.get("task_id") || params.get("taskId") || params.get("tid") || "";
     const taskId = String(raw).trim();
-    // 仅做长度保护，不限制字符集；task_id 可能包含项目名、UUID、短横线等。
+
     return taskId.length <= 200 ? taskId : "";
   } catch (_e) {
     return "";
@@ -707,7 +541,7 @@ function tryApplyDeepLinkedTask(tasks) {
 
   const target = findOpenTaskById(tasks, pendingDeepLinkedTaskId);
   if (!target) {
-    // 任务可能还没从后端快照恢复出来，保留 pending，下一轮轮询继续尝试。
+
     return false;
   }
 
@@ -728,12 +562,6 @@ function tryApplyDeepLinkedTask(tasks) {
   return true;
 }
 
-/**
- * 从服务端获取最新的反馈提示语配置（支持运行中热更新）
- * - 使用 /api/get-feedback-prompts
- * - 成功：更新 window.feedbackPrompts
- * - 失败：保留本地默认值
- */
 async function fetchFeedbackPromptsFresh() {
   try {
     const resp = await fetchWithTimeout(
@@ -747,23 +575,6 @@ async function fetchFeedbackPromptsFresh() {
       window.feedbackPrompts = data.config;
       feedbackPrompts = window.feedbackPrompts;
 
-      // 同步“当前实际使用的配置文件路径”到设置面板（如果存在对应DOM）
-      //
-      // BUG6 修复：必须在写入真实路径**同时**移除 ``data-i18n-value``。
-      // why：``<input id="config-file-path" value="Loading…"
-      // data-i18n-value="page.loading">`` 的设计是首屏占位文案能跟着
-      // i18n 翻译（中文显示"加载中…"）。但 ``i18n.js`` 的 init 链路是：
-      //
-      //   1. ``await loadLocale(currentLang)`` → translateDOM()
-      //      —— 此时输入框可能已经被 fetchFeedbackPromptsFresh 写入真实路径
-      //   2. ``ensureDefaultLocale()`` (fire-and-forget) 完成 → translateDOM()
-      //      —— 再次扫描所有 ``data-i18n-value``，把 ``el.value`` **覆盖**
-      //      回 ``t("page.loading")`` 的翻译值，吞掉真实路径。
-      //
-      // 用户表现："Web 设置页`当前配置文件路径`显示为空但点击按钮可打开"
-      // ——按钮能打开是因为后端用自己的 config_file 路径，与前端输入框
-      // 显示无关；显示为空（或"加载中…"）是因为 i18n 异步 retranslate
-      // 覆盖了真实值。移除 ``data-i18n-value`` 一次性切断这条覆盖链。
       if (data.meta && data.meta.config_file) {
         const el = document.getElementById("config-file-path");
         if (el) {
@@ -782,7 +593,6 @@ async function fetchFeedbackPromptsFresh() {
   return window.feedbackPrompts;
 }
 
-// 倒计时相关全局变量
 if (typeof window.remainingSeconds === "undefined") {
   window.remainingSeconds = 0;
 }
@@ -792,10 +602,6 @@ if (typeof window.countdownTimer === "undefined") {
 var remainingSeconds = window.remainingSeconds;
 var countdownTimer = window.countdownTimer;
 
-/**
- * 更新倒计时显示（如果函数未定义则提供默认实现）
- * @param {number} seconds - 剩余秒数（可选）
- */
 if (typeof window.updateCountdownDisplay !== "function") {
   window.updateCountdownDisplay = function (seconds) {
     const countdownContainer = document.getElementById("countdown-container");
@@ -818,33 +624,21 @@ if (typeof window.updateCountdownDisplay !== "function") {
 }
 var updateCountdownDisplay = window.updateCountdownDisplay;
 
-// ==================== SSE + 轮询混合模式 ====================
-//
-// 策略：优先使用 SSE（/api/events）实时推送，收到 task_changed 事件后
-// 立即拉取 /api/tasks 获取最新数据。SSE 不可用时自动降级为短间隔轮询。
-// SSE 连接期间仍保留一个低频保底轮询（30s），防止事件丢失。
-
 var TASKS_POLL_BASE_MS = 2000;
 var TASKS_POLL_MAX_MS = 30000;
 var TASKS_POLL_SSE_FALLBACK_MS = 30000;
-// 单次 /api/tasks 请求的硬超时；超时后 abort，避免半开连接 hang 住整个轮询机制。
-// 与 packages/vscode/webview-ui.js 的 POLL_TASKS_TIMEOUT_MS 对齐（6s）。
+
 var TASKS_POLL_TIMEOUT_MS = 6000;
 var tasksPollBackoffMs = TASKS_POLL_BASE_MS;
 var tasksPollAbortController = null;
 var tasksPollVisibilityHandlerInstalled = false;
 
-// SSE 连接状态
 var _sseSource = null;
 var _sseConnected = false;
 var _sseReconnectTimer = null;
 var _sseReconnectDelay = 1000;
 var _sseDebounceTimer = null;
-// R452: 同源多标签共享 SSE。MDN 记录 HTTP/1.x 下 EventSource 每浏览器 /
-// 每域名连接数通常只有 6 条，heavy user 同时打开多个 Web UI 标签页时很容易
-// 把自己顶到上限。BroadcastChannel 可用时，只让一个可见标签页成为 leader
-// 打开 /api/events；其它标签页从 channel 接收同一批事件并保持低频轮询兜底。
-// 不可用时保持旧的单标签直连路径。
+
 var SSE_SHARED_CHANNEL_NAME = "aiia:sse:v1";
 var SSE_SHARED_ELECTION_DELAY_MS = 160;
 var SSE_SHARED_LEADER_STALE_MS = 5000;
@@ -858,41 +652,12 @@ var _sseSharedElectionTimer = null;
 var _sseSharedWatchdogTimer = null;
 var _sseSharedLeaderHeartbeatTimer = null;
 
-// feat-sse-status-indicator (§3.1)：把 ``_sseConnected`` 的内部 boolean
-// 翻译成 3 态语义（connected / reconnecting / disconnected），并写入
-// ``#sse-status-indicator`` 的 ``data-sse-state`` 属性。CSS 根据属性
-// 切换可见性 + 颜色 + 动画；JS 端不直接操纵任何样式。
-//
-// 状态语义：
-//   - ``connected``：SSE 当前已建立（``_sseSource.readyState === OPEN``
-//     且 ``_sseConnected === true``）。UI 完全隐藏。
-//   - ``reconnecting``：SSE 刚断 + ``_sseReconnectTimer`` 已 scheduled，
-//     用户感知到的是"短暂闪断"。UI 显示黄色胶囊 + 呼吸动画。
-//   - ``disconnected``：SSE 持续无法连接（``_sseReconnectDelay`` 已退到
-//     最大值 30s，或 >= 3 次重连仍失败）。UI 显示红色胶囊。
-//
-// 设计：纯 hook，不引入新计时器。状态切换由 ``_setSseStatus`` 在
-// ``onopen`` / ``onerror`` / 重连 setTimeout 内调用即可。
 var SSE_STATUS_CONNECTED = "connected";
 var SSE_STATUS_RECONNECTING = "reconnecting";
 var SSE_STATUS_DISCONNECTED = "disconnected";
-// 当 reconnect delay 退到此阈值 (=30s 上限)，认为已进入"持续断开"语义。
-// 该值与 _sseReconnectDelay 的上限 (Math.min(30000, ...) ) 一致，
-// 任何下调上限都需要同步该常量。
+
 var SSE_STATUS_DISCONNECTED_DELAY_MS = 30000;
 
-// i18n 静态分析器只识别 ``_t`` / ``t`` / ``tl`` / ``_tl`` / ``hostT`` /
-// ``__vuT`` / ``__domSecT`` / ``__ncT`` 这几个 wrapper 名 —— 直接调
-// ``window.AIIA_I18N.t(...)`` 会被 negative lookbehind 排除，导致动态
-// 拼接的 sse status key 被误判为 orphan。
-//
-// 本模块**已经**有一个 ``_t(key, params)`` 函数（line 108）做 ICU 插值，
-// 复用它即可让 3 个 literal key 被扫描器识别 + 翻译路径与既有 i18n 一致。
-// 注意 ``_t`` 在 i18n 不可用时返回 key 自身（truthy），所以必须显式
-// 比较 ``=== key`` 才能 fallback 到英文兜底。
-// feat-countdown-extend (§3.2): +60s 按钮逻辑。同 _resolveSseStatusLabel
-// 的 i18n key-equality 模式 —— ``_t`` 在 i18n 不可用时返回 key 自身，
-// 必须显式 ``=== key`` 比较才能 fallback 英文。
 function _resolveExtendCountdownLabel(state) {
   var key;
   var fallback;
@@ -927,9 +692,6 @@ function _resolveExtendCountdownLabel(state) {
   return typeof v === "string" && v.length > 0 && v !== key ? v : fallback;
 }
 
-// 同步 +60s 按钮的可见性 + disabled 状态。task 参数取自最新
-// /api/tasks 响应；缺字段时按 backward-compat 路径处理（旧 backend 不
-// 返回 extends_used → 按钮保持隐藏，避免 UI 出现但点击 404）。
 function updateCountdownExtendButton(task) {
   if (typeof document === "undefined") return;
   var btn = document.getElementById("countdown-extend-btn");
@@ -960,8 +722,6 @@ function updateCountdownExtendButton(task) {
   }
 }
 
-// 点击 +60s 按钮的 handler：POST → 拿到 new_remaining_time + extends_used →
-// 更新本地 deadline 缓存让圆环立刻 jump 而不是等下次 polling。
 function handleExtendCountdownClick() {
   if (typeof document === "undefined" || typeof fetch === "undefined") return;
   var btn = document.getElementById("countdown-extend-btn");
@@ -991,10 +751,10 @@ function handleExtendCountdownClick() {
                 "error",
               );
             } catch (_e) {
-              /* ignore: toast helper failed, console warn already covers it */
+
             }
           }
-          // 即便失败也要重新计算 disabled 状态（可能是上限触发的 422）
+
           if (res.data && typeof res.data.extends_used === "number") {
             var task = findTaskById(window.currentTasks || [], taskId);
             if (task) {
@@ -1007,19 +767,17 @@ function handleExtendCountdownClick() {
           }
           return;
         }
-        // 成功路径：用响应里的 new_remaining_time + new_auto_resubmit_timeout
-        // 立刻更新前端 deadline 缓存，让圆环数字 jump 而不必等下次轮询。
+
         var data = res.data;
         var newRemaining = data.new_remaining_time;
         var newTimeout = data.new_auto_resubmit_timeout;
-        // 更新 deadline（taskDeadlines 是单调时间基线 + auto_resubmit_timeout 的
-        // 衍生量；同 startTaskCountdown 路径，用 server_time_offset 算回 deadline）。
+
         var adjustedNow =
           Date.now() / 1000 + (window.serverTimeOffset || 0);
         if (typeof window.taskDeadlines === "object" && window.taskDeadlines) {
           window.taskDeadlines[taskId] = adjustedNow + newRemaining;
         }
-        // 更新 taskCountdowns 内的 remaining + timeout，让下一 tick 渲染正确数字。
+
         if (typeof window.taskCountdowns === "object" && window.taskCountdowns) {
           var cd = window.taskCountdowns[taskId];
           if (cd) {
@@ -1027,7 +785,7 @@ function handleExtendCountdownClick() {
             cd.timeout = newTimeout;
           }
         }
-        // 同步 currentTasks 数据让 updateCountdownExtendButton 立即生效。
+
         var task = findTaskById(window.currentTasks || [], taskId);
         if (task) {
           task.extends_used = data.extends_used;
@@ -1035,13 +793,12 @@ function handleExtendCountdownClick() {
           task.auto_resubmit_timeout = newTimeout;
           task.remaining_time = newRemaining;
           updateCountdownExtendButton(task);
-          // mining-6 Track A：extend 后保持 freeze 按钮 visible（task 仍
-          // 有 active timeout > 0），让用户在 extend 后仍可一键 freeze。
+
           if (typeof updateFreezeCountdownButton === "function") {
             updateFreezeCountdownButton(task);
           }
         }
-        // 立刻刷新主倒计时 UI（圆环 + 数字）
+
         if (typeof window.updateCountdownDisplay === "function") {
           window.updateCountdownDisplay(newRemaining);
         }
@@ -1056,7 +813,6 @@ function handleExtendCountdownClick() {
   }
 }
 
-// 模块加载时一次性绑定 click handler（idempotent：重复加载也不会重复绑）。
 if (
   typeof document !== "undefined" &&
   !window.__aiiaExtendBtnBound
@@ -1068,7 +824,7 @@ if (
       btn.addEventListener("click", handleExtendCountdownClick);
     }
   });
-  // 兼容已 DOMContentLoaded 后才加载本脚本的场景（test fixture / 慢解析）。
+
   if (
     document.readyState === "interactive" ||
     document.readyState === "complete"
@@ -1081,8 +837,6 @@ if (
   }
 }
 
-// mining-6 Track A: freeze countdown button (cycle-5 §3.6 derivative).
-// 复用 ``_resolveExtendCountdownLabel`` 的 i18n key-equality fallback 模式。
 function _resolveFreezeCountdownLabel(state) {
   var key;
   var fallback;
@@ -1117,10 +871,6 @@ function _resolveFreezeCountdownLabel(state) {
   return typeof v === "string" && v.length > 0 && v !== key ? v : fallback;
 }
 
-// 同步 freeze 按钮的可见性 + disabled 状态。规则：
-// - 仅当 task 有 active auto-resubmit（``auto_resubmit_timeout > 0``）时显示
-// - 已 frozen（``<=0``）或 completed 时隐藏（无需再 freeze）
-// - 旧 backend 无 ``auto_resubmit_timeout`` 字段时按 hidden 处理（backward-compat）
 function updateFreezeCountdownButton(task) {
   if (typeof document === "undefined") return;
   var btn = document.getElementById("countdown-freeze-btn");
@@ -1141,8 +891,6 @@ function updateFreezeCountdownButton(task) {
   btn.setAttribute("aria-label", _resolveFreezeCountdownLabel("ariaLabel"));
 }
 
-// 点击 freeze 按钮的 handler：POST → 成功后立即把 deadline/countdown
-// 缓存清掉让圆环消失，避免等到下次 polling 才反应。
 function handleFreezeCountdownClick() {
   if (typeof document === "undefined" || typeof fetch === "undefined") return;
   var btn = document.getElementById("countdown-freeze-btn");
@@ -1173,32 +921,28 @@ function handleFreezeCountdownClick() {
                 "warning",
               );
             } catch (_e) {
-              /* ignore: toast helper failed, console warn already covers it */
+
             }
           }
           btn.disabled = false;
           return;
         }
-        // 成功路径：把 task 的本地 cache + UI 同步成 frozen 状态
+
         var task = findTaskById(window.currentTasks || [], taskId);
         if (task) {
           task.auto_resubmit_timeout = 0;
           task.remaining_time = 0;
           updateFreezeCountdownButton(task);
-          // 同时让 extend 按钮也隐藏（因为 task 已无 timeout）
+
           if (typeof updateCountdownExtendButton === "function") {
             updateCountdownExtendButton(task);
           }
         }
-        // 清掉 deadline / countdown 缓存让圆环立刻消失
+
         if (typeof window.taskDeadlines === "object" && window.taskDeadlines) {
           delete window.taskDeadlines[taskId];
         }
-        // R695：必须整体移除 countdown 条目并从共享 ticker 注销。
-        // 此前只把 remaining/timeout 置 0 但保留条目，下一个 1Hz tick
-        // 看到 remaining <= 0 会触发 autoSubmitTask —— 冻结反而立即
-        // 自动提交任务，与冻结语义相反（与 VS Code 端 stopCountdown()
-        // 行为对齐）。
+
         _clearTaskCountdown(taskId);
         if (typeof window.updateCountdownDisplay === "function") {
           window.updateCountdownDisplay(0);
@@ -1214,7 +958,6 @@ function handleFreezeCountdownClick() {
   }
 }
 
-// 模块加载时一次性绑定 freeze click handler。
 if (
   typeof document !== "undefined" &&
   !window.__aiiaFreezeBtnBound
@@ -1267,14 +1010,11 @@ function _setSseStatus(state) {
   var el = document.getElementById("sse-status-indicator");
   if (!el) return;
   el.setAttribute("data-sse-state", state);
-  // 同步 title / aria-label，让 hover tooltip + 屏幕阅读器报当前状态。
+
   var label = _resolveSseStatusLabel(state);
   el.setAttribute("title", label);
   el.setAttribute("aria-label", label);
-  // R709：把 data-i18n-title / data-i18n-aria-label 同步到**当前状态**
-  // 的 key。模板初始值是 connected；若断线期间发生语言切换，
-  // translateDOM 会按旧属性把 title 覆盖回「已连接」——与真实状态
-  // （reconnecting/disconnected）矛盾。
+
   var stateKey =
     state === SSE_STATUS_CONNECTED
       ? "page.sseStatus.connected"
@@ -1285,30 +1025,6 @@ function _setSseStatus(state) {
   el.setAttribute("data-i18n-aria-label", stateKey);
 }
 
-// BUG1：本地保存回响静音窗口（local-save echo suppression window）
-//
-// 设计动机：当用户通过 Web UI 主动保存配置（feedback / notification /
-// language 等）时，后端会写 config.toml → file watcher 检测到 mtime
-// 变化 → 通过 ``_emit_config_changed_to_sse_bus`` 广播 ``config_changed``
-// SSE 事件给所有 client（包括发起者自己）。这会让发起者同时看到：
-//   1. API 200 OK → ``showStatus("反馈配置已保存", "success")`` 一条 toast
-//   2. SSE config_changed → ``_showToast("Configuration file changed...")``
-//      又一条 toast（覆盖第一条，UX 表现为"两条通知闪过"）
-//
-// 第 2 条对发起者是冗余且误导的：用户被告诉"reload 页面"，但保存的
-// 字段已通过 hot-reload 即时生效，无需 reload。
-//
-// 解决方式：settings-manager.js 等模块在主动写配置 fetch **之前** 调用
-// ``window.suppressLocalConfigChangedEcho(ms)``，将一个未来时间戳写入
-// 本变量；SSE handler 收到 ``config_changed`` 时若当前时间仍在窗口内，
-// 仅记 debug log，不显示 toast。窗口外（外部 CLI / IDE 编辑 config.toml）
-// 的事件继续正常 toast 提示。
-//
-// 边界场景：
-// - 多个 client 同时改同一份配置：窗口内的本地 client 会"漏看"别人改
-//   的提示（一次 toast），但配置仍会被 hot-reload 真实生效，影响很小。
-// - 窗口取 5s 是经验值，覆盖 R50-B 的 250ms debounce + 网络/调度抖动。
-// - 模块在 reset / page reload 时窗口自然失效（变量回到 0）。
 var _suppressConfigChangedToastUntilMs = 0;
 
 function _isConfigChangedToastSuppressed() {
@@ -1322,11 +1038,6 @@ function _isConfigChangedToastSuppressed() {
   return Date.now() < _suppressConfigChangedToastUntilMs;
 }
 
-// 暴露给 settings-manager.js / 测试用：调用方在"主动写配置"fetch 前调用，
-// 设置一个 ``ms`` 毫秒长度的静音窗口（默认 5000ms）。多次调用以最大窗口
-// 为准（``Math.max``），不会缩短已设置的窗口。
-//
-// 返回新的截止时间戳（毫秒），便于测试断言；不可用环境下返回 0。
 if (typeof window !== "undefined") {
   window.suppressLocalConfigChangedEcho = function (ms) {
     if (typeof Date === "undefined" || typeof Date.now !== "function") return 0;
@@ -1338,17 +1049,11 @@ if (typeof window !== "undefined") {
     return _suppressConfigChangedToastUntilMs;
   };
 
-  // 内部 helper：测试 / 复位用。生产代码不需要直接调用。
   window.__aiiaResetConfigChangedSuppression = function () {
     _suppressConfigChangedToastUntilMs = 0;
   };
 }
-// R40-S2：客户端持有的最后已收 event id（来自 SSE ``id:`` 行）。
-// 浏览器 EventSource 自动填 ``e.lastEventId``，但因为我们的 onerror →
-// close → new EventSource 走主动重连路径（不是浏览器 retry），自带的
-// ``Last-Event-ID`` header 不会注入；通过 URL ``?last_event_id=`` query
-// 让服务端从 history ring buffer 里补发缺失事件。
-// gap_warning (id=-1) 不会进这里：服务端只为正整数 id 输出 ``id:`` 行。
+
 var _lastEventId = null;
 
 function _connectDirectSSE(sharedLeaderMode) {
@@ -1357,14 +1062,11 @@ function _connectDirectSSE(sharedLeaderMode) {
     try {
       _sseSource.close();
     } catch (_) {
-      /* noop */
+
     }
     _sseSource = null;
   }
 
-  // R40-S2：拼 last_event_id 让 server 走 history resume 路径。
-  // 同 packages/vscode/webview-ui.js 的同名逻辑，原因相同（手动 reconnect
-  // 不触发浏览器自动 Last-Event-ID header）。
   var sseUrl = "/api/events";
   if (_lastEventId) {
     var sep = sseUrl.indexOf("?") >= 0 ? "&" : "?";
@@ -1383,7 +1085,7 @@ function _connectDirectSSE(sharedLeaderMode) {
       clearTimeout(tasksPollingTimer);
       scheduleNextTasksPoll(TASKS_POLL_SSE_FALLBACK_MS);
     }
-    // feat-sse-status-indicator: 连接成功 → 隐藏 UI 胶囊
+
     _setSseStatus(SSE_STATUS_CONNECTED);
     if (sharedLeaderMode) {
       _postSseSharedMessage({ kind: "open", leaderId: _sseSharedClientId });
@@ -1392,13 +1094,12 @@ function _connectDirectSSE(sharedLeaderMode) {
 
   source.addEventListener("task_changed", function (e) {
     if (_sseSource !== source) return;
-    // R40-S2：先存 lastEventId 再 debounce poll。空字符串视为没拿到（旧 server）。
+
     if (e && typeof e.lastEventId === "string" && e.lastEventId !== "") {
       _lastEventId = e.lastEventId;
     }
     _debugSseTaskChanged(e && typeof e.data === "string" ? e.data : "{}");
-    // 与 follower 路径共用 helper：前台 80ms debounce，hidden 时直通
-    // （TODO#8-A，规避后台 timer 节流拖慢系统通知）。
+
     _scheduleSharedSseFetch("sse", 80);
     if (sharedLeaderMode) {
       _postSseSharedMessage({
@@ -1411,8 +1112,6 @@ function _connectDirectSSE(sharedLeaderMode) {
     }
   });
 
-  // R40-S2：history evict 警告 → 立即 fetch 全量。这条事件不更新 _lastEventId
-  // （id=-1 不会被浏览器自动填），不当 resume 锚点，避免死循环。
   source.addEventListener("gap_warning", function (e) {
     if (_sseSource !== source) return;
     _debugLog("SSE gap_warning received, fetching tasks for full resync");
@@ -1430,25 +1129,10 @@ function _connectDirectSSE(sharedLeaderMode) {
     }
   });
 
-  // R48：服务端检测到 config.toml 文件变更时（mtime 改变）会广播 ``config_changed``
-  // SSE 事件。前端不强制 reload —— 已经热更新的字段（feedback / network_security）
-  // 是无感生效的；其它字段的影响只能等下次 server 重启，reload 页面也无济于事。
-  // 我们这里只做一行 toast 提示，让用户知道 "你的修改被服务端看到了"。
-  //
-  // BUG1 修复：当 toast 由"当前客户端自己主动保存配置"触发时（在线编辑反馈/
-  // 通知/语言配置），用户已经能看到 API 成功提示（如"反馈配置已保存"），
-  // 再额外弹一条通用提示是冗余且误导的（用户被告诉"reload 页面"，但其实
-  // 已经热更新生效且无需 reload）。settings-manager.js 在主动写配置 fetch
-  // 前会调用 ``window.suppressLocalConfigChangedEcho(ms)`` 设置短期静音窗口，
-  // 窗口内的 SSE config_changed 事件仅 debug log，不显示 toast；窗口外
-  // （外部 CLI / IDE 编辑 config.toml）行为不受影响。
   source.addEventListener("config_changed", function (e) {
     if (_sseSource !== source) return;
     _debugLog("SSE config_changed received");
-    // BUG2 修复：服务端在 SSE detail 里硬编码英文 hint（i18n 上下文是
-    // per-client 的，后端无法替每个 client 选语言）。前端优先用
-    // ``status.configChangedReload`` 的本地化文案；缺失时回退到 detail.hint
-    // （兜底，老 backend 兼容）；再缺失时回退到英文硬编码。
+
     var fallbackHint =
       "Configuration file changed. Reload the page to see the latest values.";
     var hint = _t("status.configChangedReload");
@@ -1458,8 +1142,7 @@ function _connectDirectSSE(sharedLeaderMode) {
     try {
       var detail = JSON.parse(e && e.data ? e.data : "{}");
       _debugLog("SSE config_changed detail:", detail);
-      // 仅当前端 i18n 也拿不到本地化文案（仍是 fallback）时，才采纳后端 hint。
-      // 这样既能给出本地化体验，又不会丢失老 backend 的兜底能力。
+
       if (
         hint === fallbackHint &&
         detail &&
@@ -1469,7 +1152,7 @@ function _connectDirectSSE(sharedLeaderMode) {
         hint = detail.hint;
       }
     } catch (_) {
-      /* noop：detail 解析失败 → 用 fallback hint */
+
     }
     if (_isConfigChangedToastSuppressed()) {
       _debugLog(
@@ -1477,21 +1160,18 @@ function _connectDirectSSE(sharedLeaderMode) {
       );
       return;
     }
-    // 用项目内既有的 ``_showToast`` helper（``static/js/app.js``）。它把消息渲染为
-    // 顶部居中、带过渡动画的非阻塞 toast，自动 1.8s 消失，符合"提示但不打断"
-    // 的 UX 诉求。VSCode Webview / 测试 stub 等场景里 helper 可能不存在，此时
-    // 默默吞掉提示也比抛 ReferenceError 强 —— 主流程（task 列表更新）不会受影响。
+
     if (typeof _showToast === "function") {
       try {
         _showToast(hint);
       } catch (_) {
-        /* noop */
+
       }
     } else if (typeof console !== "undefined" && console && console.info) {
       try {
         console.info("[aiia] config_changed:", hint);
       } catch (_) {
-        /* noop */
+
       }
     }
     if (sharedLeaderMode) {
@@ -1503,9 +1183,6 @@ function _connectDirectSSE(sharedLeaderMode) {
     }
   });
 
-  // R51-B：监听 named-event heartbeat。服务端每 25 s 发一帧，data 里带 ts_unix。
-  // 默认只 debug log（避免污染主控制台），但暴露这条 listener 让上层 / 测试 / 调试
-  // 工具可以基于它估算 RTT、检测连接健康。
   source.addEventListener("heartbeat", function (e) {
     if (_sseSource !== source) return;
     _debugSseDetail(
@@ -1527,7 +1204,7 @@ function _connectDirectSSE(sharedLeaderMode) {
     try {
       source.close();
     } catch (_) {
-      /* noop */
+
     }
     _sseSource = null;
     _debugLog(
@@ -1552,11 +1229,7 @@ function _connectDirectSSE(sharedLeaderMode) {
         reconnectInMs: _sseReconnectDelay,
       });
     }
-    // feat-sse-status-indicator: 区分"短暂闪断"vs"持续断开"
-    //   - 当 _sseReconnectDelay 还未退到 30s 上限 → reconnecting
-    //     （用户视为"网络正常但暂时丢连接，正在重试"）
-    //   - 已退到 30s（说明 >= 5 次失败 = 2^5 * 1000ms 已超过 30s）
-    //     → disconnected（用户视为"真的断了"）
+
     _setSseStatus(
       _sseReconnectDelay >= SSE_STATUS_DISCONNECTED_DELAY_MS
         ? SSE_STATUS_DISCONNECTED
@@ -1578,7 +1251,7 @@ function _makeSseSharedClientId() {
   try {
     randomPart = Math.random().toString(36).slice(2, 10);
   } catch (_) {
-    /* noop */
+
   }
   return "tab-" + _sseNowMs().toString(36) + "-" + randomPart;
 }
@@ -1593,7 +1266,7 @@ function _getBroadcastChannelCtor() {
     }
     if (typeof BroadcastChannel === "function") return BroadcastChannel;
   } catch (_) {
-    /* noop */
+
   }
   return null;
 }
@@ -1608,7 +1281,7 @@ function _postSseSharedMessage(message) {
     if (_lastEventId) message.lastEventId = _lastEventId;
     _sseSharedChannel.postMessage(message);
   } catch (_) {
-    /* BroadcastChannel failure should never break local SSE/polling. */
+
   }
 }
 
@@ -1617,7 +1290,7 @@ function _closeSseSource() {
     try {
       _sseSource.close();
     } catch (_) {
-      /* noop */
+
     }
     _sseSource = null;
   }
@@ -1649,11 +1322,7 @@ function _updateSharedLastEventId(lastEventId) {
 
 function _scheduleSharedSseFetch(reason, delayMs) {
   if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
-  // TODO#8-A：页面 hidden 时跳过 debounce timer 直接拉取。后台标签页的
-  // setTimeout 被 Chrome 节流（普通 ~1s，intensive throttling 下最长
-  // 1 分钟），会把"新任务 → 系统桌面通知"整条链路拖到分钟级；而
-  // fetch/promise 微任务不受节流。后台 SSE 事件本就稀少，没有需要
-  // debounce 合并的高频场景，直接执行是安全的。
+
   if (typeof document !== "undefined" && document.hidden) {
     fetchAndApplyTasks(reason);
     return;
@@ -1685,8 +1354,7 @@ function _consumeSharedSseEvent(message) {
     _debugSseDetail("SSE gap_warning detail:", data);
     _scheduleSharedSseFetch("sse-gap", 0);
   } else if (eventType === "config_changed") {
-    // Reuse a tiny synthetic EventSource path by temporarily calling the
-    // existing listener-equivalent logic: parsing + suppression + toast.
+
     var fallbackHint =
       "Configuration file changed. Reload the page to see the latest values.";
     var hint = _t("status.configChangedReload");
@@ -1703,20 +1371,20 @@ function _consumeSharedSseEvent(message) {
         hint = cfgDetail.hint;
       }
     } catch (_) {
-      /* noop */
+
     }
     if (!_isConfigChangedToastSuppressed()) {
       if (typeof _showToast === "function") {
         try {
           _showToast(hint);
         } catch (_) {
-          /* noop */
+
         }
       } else if (typeof console !== "undefined" && console && console.info) {
         try {
           console.info("[aiia] config_changed:", hint);
         } catch (_) {
-          /* noop */
+
         }
       }
     }
@@ -1790,8 +1458,7 @@ function _handleSseLeaderMessage(message) {
   );
 
   if (_sseSharedIsLeader) {
-    // Deterministic split-brain resolver: lexicographically smaller client id
-    // wins if two visible tabs become leader at the same time.
+
     if (leaderId < _sseSharedClientId) {
       _stepDownFromSseLeader(leaderId);
     } else {
@@ -1926,16 +1593,13 @@ function _disconnectSSE() {
     try {
       _sseSharedChannel.close();
     } catch (_) {
-      /* noop */
+
     }
     _sseSharedChannel = null;
   }
   _closeSseSource();
   _sseConnected = false;
-  // feat-sse-status-indicator: 主动关闭（页面 hidden / unload）→ 恢复
-  // 到 "connected"（即隐藏 UI）。等到重新 connect 才会进入异常态。
-  // 不写 disconnected 的原因：disconnected 是"想连但连不上"的语义，
-  // 主动 disconnect 没有那种焦虑。
+
   _setSseStatus(SSE_STATUS_CONNECTED);
 }
 
@@ -1946,21 +1610,16 @@ function getNextBackoffMs(currentMs) {
 }
 
 async function fetchAndApplyTasks(reason) {
-  // 页面不可见：默认不发请求（由 visibilitychange 负责 stop，这里兜底
-  // 拦截 stray timer）。例外（TODO#8-A）：SSE 推送的任务变更必须放行——
-  // 后台弹系统桌面通知依赖它感知新任务；hidden 时轮询已全停，SSE 驱动
-  // 的拉取频率完全由服务端事件决定，不构成后台流量压力。
+
   var sseDriven = reason === "sse" || reason === "sse-gap";
   if (typeof document !== "undefined" && document.hidden && !sseDriven) {
     return false;
   }
 
-  // 手动切换期间：尽量少扰动 UI（不主动拉取）
   if (isManualSwitching) {
     return false;
   }
 
-  // AbortController：保证同时最多 1 个 in-flight 的 /api/tasks 请求
   try {
     if (
       tasksPollAbortController &&
@@ -1969,7 +1628,7 @@ async function fetchAndApplyTasks(reason) {
       tasksPollAbortController.abort();
     }
   } catch (e) {
-    // 忽略：部分浏览器/环境下 abort 可能抛异常
+
   }
 
   let currentTasksPollController = null;
@@ -1987,10 +1646,6 @@ async function fetchAndApplyTasks(reason) {
     fetchOptions.signal = currentTasksPollController.signal;
   }
 
-  // 硬超时护栏：服务端半开连接 / 网络黑洞会导致 fetch 永不返回，
-  // 进而冻结 scheduleNextTasksPoll → 整个轮询机制失效（健康检查也无法识别，
-  // 因为 tasksPollingTimer 仍为已 fired 的非 null ID）。
-  // 6s 内未返回则强制 abort，让上层 backoff/重试逻辑接管。
   let tasksTimeoutId = null;
   if (currentTasksPollController) {
     tasksTimeoutId = setTimeout(() => {
@@ -1999,7 +1654,7 @@ async function fetchAndApplyTasks(reason) {
           currentTasksPollController.abort();
         }
       } catch (e) {
-        // 忽略：abort 可能因状态已变而抛异常
+
       }
     }, TASKS_POLL_TIMEOUT_MS);
   }
@@ -2012,11 +1667,11 @@ async function fetchAndApplyTasks(reason) {
     const data = await response.json();
 
     if (data.success) {
-      // 【优化】更新服务器时间偏移量，解决切换标签页后倒计时不准的问题
+
       if (data.server_time) {
         const localTime = Date.now() / 1000;
         window.serverTimeOffset = data.server_time - localTime;
-        // 仅在偏移量较大时记录日志（避免日志刷屏）
+
         if (Math.abs(window.serverTimeOffset) > 1) {
           _debugLog(
             `Server time offset: ${window.serverTimeOffset.toFixed(2)}s`,
@@ -2024,7 +1679,6 @@ async function fetchAndApplyTasks(reason) {
         }
       }
 
-      // 【优化】保存每个任务的 deadline
       if (data.tasks) {
         const taskCount = data.tasks.length;
         for (let index = 0; index < taskCount; index += 1) {
@@ -2033,16 +1687,14 @@ async function fetchAndApplyTasks(reason) {
           if (task.deadline) {
             window.taskDeadlines[task.task_id] = task.deadline;
           }
-          // 【热更新】当后端同步更新 auto_resubmit_timeout 时，前端倒计时也要实时跟随
-          // - deadline 已在上面更新，remaining 计算会随之变化
-          // - 这里额外同步 total(timeout) 以保证圆环进度正确
+
           if (
             taskCountdowns &&
             taskCountdowns[task.task_id] &&
             task.status !== "completed"
           ) {
             if (typeof task.auto_resubmit_timeout === "number") {
-              // <=0 语义：禁用自动提交（清理倒计时）
+
               if (task.auto_resubmit_timeout <= 0) {
                 _clearTaskCountdown(task.task_id);
                 delete window.taskDeadlines[task.task_id];
@@ -2071,23 +1723,23 @@ async function fetchAndApplyTasks(reason) {
 
     return false;
   } catch (error) {
-    // AbortError：正常的“防重叠”或“硬超时”路径，不计为错误
+
     if (error && (error.name === "AbortError" || error.code === 20)) {
       return false;
     }
     console.error("Failed to fetch task list:", error);
     return false;
   } finally {
-    // 清理硬超时定时器（成功路径与异常路径都需要）
+
     if (tasksTimeoutId !== null) {
       try {
         clearTimeout(tasksTimeoutId);
       } catch (e) {
-        // 忽略
+
       }
       tasksTimeoutId = null;
     }
-    // 只有当前请求仍拥有全局 handle 时才释放；旧请求可能在新请求之后完成。
+
     if (tasksPollAbortController === currentTasksPollController) {
       tasksPollAbortController = null;
     }
@@ -2113,37 +1765,6 @@ function scheduleNextTasksPoll(delayMs) {
   );
 }
 
-/**
- * 启动任务列表轮询
- *
- * 定期从服务器获取任务列表和统计信息，并更新UI。
- *
- * ## 功能说明
- *
- * - 清除已存在的轮询定时器（避免重复轮询）
- * - 创建新的定时器，每2秒轮询一次
- * - 请求 `/api/tasks` 端点获取任务数据
- * - 成功时更新任务列表和统计信息
- * - 失败时记录错误日志
- *
- * ## 轮询数据
- *
- * - `data.tasks`: 任务列表数组
- * - `data.stats`: 统计信息对象
- * - `data.success`: 请求是否成功
- *
- * ## 调用时机
- *
- * - 页面加载时自动调用
- * - 用户手动刷新任务列表时
- * - 任务切换完成后重新启动
- *
- * ## 注意事项
- *
- * - 轮询间隔不应过短（避免服务器压力）
- * - 轮询失败不会中断定时器（继续尝试）
- * - 页面卸载时应调用 `stopTasksPolling` 停止轮询
- */
 function startTasksPolling() {
   if (typeof document !== "undefined" && document.hidden) {
     _debugLog("Page hidden; skip starting task polling");
@@ -2163,12 +1784,7 @@ function startTasksPolling() {
     tasksPollVisibilityHandlerInstalled = true;
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
-        // R123：visibility 隐藏时同步停健康检查，让后台 30s tick
-        // 完全静止；可见时重新拉起（``startTasksHealthCheck`` 幂等）。
-        // TODO#8-A：keepSse —— SSE 连接在后台保留，收到 task_changed
-        // 时仍能拉取任务并发系统桌面通知（notifyNewTasks 的 pageAway
-        // 分支）。历史行为是 hidden 全断链，导致后台永远无法感知新
-        // 任务、桌面通知形同虚设。
+
         stopTasksPolling({ keepSse: true });
         stopTasksHealthCheck();
       } else {
@@ -2178,24 +1794,10 @@ function startTasksPolling() {
     });
     window.addEventListener("beforeunload", function () {
       stopTasksPolling();
-      // R123：unload 路径同样回收健康检查 timer（避免 testing 环境
-      // 复用 window 时残留 timer ref 跨页面 leak）。
+
       stopTasksHealthCheck();
     });
-    // BUG5 鲁棒性修复：监听浏览器 ``online`` 事件，网络从离线变在线时
-    // 立即触发一次重连，不必等下一个 30s 健康检查 tick。
-    //
-    // 触发场景：
-    //   - 笔记本休眠唤醒后重新连网；
-    //   - WiFi 切换 / 移动数据切换；
-    //   - 后端服务从外部断电恢复后重连。
-    //
-    // VSCode webview-ui.js 已有同样监听（``packages/vscode/webview-ui.js``
-    // 第 715 行附近），web 端补齐以保持双端 UX 一致：网络恢复后无需
-    // 用户手动刷新页面就能看到任务列表。
-    //
-    // 兜底：window.addEventListener('online', ...) 在某些极简浏览器 stub
-    // / 测试环境下可能抛错，整段包在 try/catch 内确保 init 主流程不破。
+
     try {
       if (typeof window !== "undefined" && window.addEventListener) {
         window.addEventListener("online", function () {
@@ -2208,25 +1810,9 @@ function startTasksPolling() {
         });
       }
     } catch (_e) {
-      /* 忽略：online 事件监听失败不应阻塞 init */
+
     }
 
-    // perf-bfcache 修复：监听 ``pageshow`` 事件，处理 BFCache 恢复。
-    //
-    // 背景：Safari (iOS) 默认启用 BFCache；Chrome 96+ / Firefox 也默认启用。
-    // 用户从其他 tab / 页面 / 前后退 navigation 返回本页时，JS 状态
-    // 整体被冻结再解冻 —— 但既不会触发 ``online`` 事件，也可能
-    // 不会触发 ``visibilitychange``（取决于浏览器实现）。
-    //
-    // 这是 BUG5 的姊妹症状：BUG5 修"网络从离线恢复"，本修补修
-    // "页面从 BFCache 恢复"。两者都让用户看到的是过期数据 + 静止 timer
-    // 链，只能 ``Cmd+R`` 硬刷新。
-    //
-    // 触发条件：``event.persisted === true`` 表示页面是从 BFCache
-    // 还原而不是新加载；非持久化的 navigation（普通刷新 / 首次访问）
-    // 不进入此分支，让 init 路径自己处理。
-    //
-    // 兜底：同 ``online`` 监听，包 try/catch 确保 init 主流程不破。
     try {
       if (typeof window !== "undefined" && window.addEventListener) {
         window.addEventListener("pageshow", function (e) {
@@ -2240,40 +1826,13 @@ function startTasksPolling() {
         });
       }
     } catch (_e) {
-      /* 忽略：pageshow 事件监听失败不应阻塞 init */
+
     }
   }
 
   _debugLog("Task polling started (SSE preferred + polling safety-net)");
 }
 
-/**
- * 停止任务列表轮询
- *
- * 清除轮询定时器，停止定期获取任务列表。
- *
- * ## 功能说明
- *
- * - 检查定时器是否存在
- * - 清除定时器并设置为 null
- * - 输出停止日志
- *
- * ## 调用时机
- *
- * - 页面卸载时（防止内存泄漏）
- * - 用户明确停止轮询时
- * - 切换到单任务模式时
- *
- * ## 注意事项
- *
- * - 多次调用是安全的（会检查定时器是否存在）
- * - 停止后需要手动调用 `startTasksPolling` 重新启动
- * - `options.keepSse === true` 时只停轮询 timer / in-flight 请求，
- *   保留 SSE 连接（TODO#8-A：页面 hidden 期间仍需感知新任务以发
- *   系统桌面通知；SSE 是服务端推送的挂起连接，无 timer、不受后台
- *   节流，维持成本可忽略）。unload / 显式停止路径不传该选项，
- *   维持"全部断开"的既有语义。
- */
 function stopTasksPolling(options) {
   if (tasksPollingTimer) {
     clearTimeout(tasksPollingTimer);
@@ -2288,7 +1847,7 @@ function stopTasksPolling(options) {
       tasksPollAbortController.abort();
     }
   } catch (e) {
-    // noop
+
   } finally {
     tasksPollAbortController = null;
   }
@@ -2298,19 +1857,13 @@ function stopTasksPolling(options) {
   }
 }
 
-// R123：tasks polling 的健康检查（独立于轮询本身，30s 兜底重启）。
-// pre-R123 的 ``setInterval(..., 30000)`` 调用没保存 id，永远无法
-// ``clearInterval``——本对实现把启动/停止解耦成幂等函数，让
-// ``visibilitychange`` 隐藏与 ``beforeunload`` 路径都能彻底回收。
 function startTasksHealthCheck() {
-  // 幂等：已有 timer 不再创建第二个，避免"页面 visibility 切换或
-  // 测试 reset 触发重复 init"导致并行 30s tick 两组逻辑。
+
   if (window.tasksHealthCheckTimer) {
     return;
   }
   window.tasksHealthCheckTimer = setInterval(function () {
-    // 页面隐藏时直接 return，让 visibilitychange handler 在隐藏路径
-    // 显式 stop 以彻底回收 CPU/调度配额；这里只是兜底避免 race。
+
     if (typeof document !== "undefined" && document.hidden) return;
     if (!tasksPollingTimer) {
       console.warn("Task polling stopped; auto-restarting");
@@ -2329,14 +1882,9 @@ function stopTasksHealthCheck() {
   }
 }
 
-// ==================== 任务列表更新 ====================
-
-// 防止轮询与手动切换冲突的标志
-// 同时暴露到 window 以便其他模块的内容轮询可以检查
 let isManualSwitching = false;
 let manualSwitchingTimer = null;
 
-// 将标志同步到 window 对象，供跨模块通信
 Object.defineProperty(window, "isManualSwitching", {
   get: () => isManualSwitching,
   set: (val) => {
@@ -2345,70 +1893,19 @@ Object.defineProperty(window, "isManualSwitching", {
   configurable: true,
 });
 
-/**
- * 更新任务列表
- *
- * 检测任务变化（新增/删除），更新任务列表，并渲染标签页。
- *
- * ## 功能说明
- *
- * 1. **检测新任务**
- *    - 比较新旧任务ID列表
- *    - 显示新任务数量提示
- *    - 为新任务启动倒计时（包括 pending 状态）
- *    - 显示视觉提示（如果当前有活动任务）
- *
- * 2. **检测已删除任务**
- *    - 清理已删除任务的倒计时
- *    - 清理输入框内容缓存
- *    - 清理选项状态缓存
- *    - 清理图片缓存
- *    - 防止内存泄漏
- *
- * 3. **更新任务列表**
- *    - 更新全局 `currentTasks` 变量
- *    - 渲染任务标签页
- *    - 输出日志记录
- *
- * @param {Array} tasks - 任务列表数组
- *
- * ## 任务对象结构
- *
- * - `task_id`: 任务唯一ID
- * - `status`: 任务状态（pending/active/completed）
- * - `prompt`: 任务提示信息
- * - `predefined_options`: 预定义选项数组
- * - `auto_resubmit_timeout`: 自动重调倒计时（秒）
- *
- * ## 并发控制
- *
- * - 使用 `isManualSwitching` 标志避免冲突
- * - 手动切换期间不更新活动任务
- * - 自动倒计时不会被手动切换打断
- *
- * ## 注意事项
- *
- * - 新任务会自动启动倒计时（包括 pending 状态）
- * - 已删除任务的资源会立即清理
- * - 更新操作是同步的（不会阻塞UI）
- * - 倒计时是独立的，每个任务有自己的计时器
- */
 function updateTasksList(tasks) {
   const taskDiff = _buildTaskListDiff(currentTasks, tasks);
   const isInitialTaskSnapshot = !hasLoadedTaskSnapshot;
 
-  // 检测新任务
   const addedTasks = taskDiff.addedTaskIds;
   if (addedTasks.length > 0) {
     _debugLog(`Detected ${addedTasks.length} new task(s)`);
 
     if (!isInitialTaskSnapshot) {
-      // 页面 hidden 时跳过 150ms 合并 timer 直接通知（TODO#8-A）：
-      // 后台 setTimeout 被 Chrome 节流（intensive throttling 下最长
-      // 1 分钟），会拖慢系统桌面通知；后台事件稀少无合并压力。
+
       const pageHidden =
         typeof document !== "undefined" && document.hidden === true;
-      // 如果当前有活动任务，使用合并机制避免短时间内频繁弹出多个通知
+
       if (activeTaskId && !pageHidden) {
         pendingNewTaskCount += addedTasks.length;
         window.pendingNewTaskCount = pendingNewTaskCount;
@@ -2432,16 +1929,11 @@ function updateTasksList(tasks) {
       }
     }
 
-    // 为所有新任务启动倒计时（包括pending任务）
-    // 使用服务器返回的 remaining_time（剩余时间），而非固定的 auto_resubmit_timeout
-    // 这样刷新页面后倒计时不会重置
     const addedTaskCount = taskDiff.addedTasks.length;
     for (let index = 0; index < addedTaskCount; index += 1) {
       if (!(index in taskDiff.addedTasks)) continue;
       const task = taskDiff.addedTasks[index];
-      // R695：auto_resubmit_timeout 显式 <= 0 表示禁用/已冻结，绝不能启动
-      // 倒计时——否则 remaining=0 的条目会在下一 tick 触发 autoSubmitTask。
-      // 字段缺失（旧后端）时仍走 240 默认值兜底。
+
       const addedTimeoutDisabled =
         typeof task.auto_resubmit_timeout === "number" &&
         task.auto_resubmit_timeout <= 0;
@@ -2450,9 +1942,7 @@ function updateTasksList(tasks) {
         !taskCountdowns[task.task_id] &&
         !addedTimeoutDisabled
       ) {
-        // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout；
-        // 末位 fallback 用 server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240)，
-        // 不是旧 MAX (250)。
+
         const timeout = task.remaining_time ?? task.auto_resubmit_timeout ?? 240;
         startTaskCountdown(
           task.task_id,
@@ -2466,7 +1956,6 @@ function updateTasksList(tasks) {
     }
   }
 
-  // 检测已删除的任务并清理倒计时
   const removedTasks = taskDiff.removedTaskIds;
   if (removedTasks.length > 0) {
     _debugLog(`Detected ${removedTasks.length} removed task(s)`);
@@ -2487,7 +1976,6 @@ function updateTasksList(tasks) {
     clearTaskLocalState(taskId);
   }
 
-  // 检测当前页面状态和任务状态
   const hasActiveTasks = taskRefreshState.hasActiveTasks;
 
   currentTasks = tasks;
@@ -2495,34 +1983,31 @@ function updateTasksList(tasks) {
   hasLoadedTaskSnapshot = true;
   window.hasLoadedTaskSnapshot = true;
 
-  // 【热更新兜底】确保所有未完成任务都有倒计时
-  // 场景：配置变更将 auto_resubmit_timeout 从 0（禁用）切回 >0（启用）
   const taskCount = tasks.length;
   for (let index = 0; index < taskCount; index += 1) {
     if (!(index in tasks)) continue;
     const task = tasks[index];
     if (task.status === "completed") continue;
-    // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240).
+
     const total =
       typeof task.auto_resubmit_timeout === "number"
         ? task.auto_resubmit_timeout
         : 240;
     if (total <= 0) {
-      // 禁用：确保不启动倒计时
+
       if (taskCountdowns[task.task_id]) {
         _clearTaskCountdown(task.task_id);
       }
       continue;
     }
     const existingCountdown = taskCountdowns[task.task_id];
-    // 关键：如果任务已变为 active，但其倒计时 timer 之前因“pending 超时被暂停”而停止，需要兜底恢复
-    // 否则会出现：任务 remaining_time=0 且 status=active，但自动提交不会再次触发，导致 0s 任务堆积
+
     const shouldEnsure =
       !existingCountdown ||
       (task.status === "active" && !existingCountdown.timer);
     if (shouldEnsure) {
       const remaining = task.remaining_time ?? total;
-      // active 任务已超时：直接触发自动提交（内部带退避/去重），避免依赖“重启倒计时再 tick”造成抖动/重复
+
       if (
         task.status === "active" &&
         typeof remaining === "number" &&
@@ -2535,8 +2020,6 @@ function updateTasksList(tasks) {
     }
   }
 
-  // 从任务列表快照中同步 activeTaskId。Server-side active 任务优先；
-  // 否则保留当前 open task，最后退到第一个 open task。
   const activeTask = taskRefreshState.serverActiveTask;
   const oldActiveTaskId = activeTaskId;
   const nextActiveTaskId = taskRefreshState.nextActiveTaskId;
@@ -2553,15 +2036,9 @@ function updateTasksList(tasks) {
       _debugLog("All tasks completed; not setting activeTaskId");
     }
 
-    // 更新圆环颜色
     updateCountdownRingColors(oldActiveTaskId, activeTaskId);
   }
 
-  // feat-countdown-extend (§3.2) + mining-6 Track A freeze: 每次任务列表
-  // 更新（轮询 / SSE / 手动 fetch）都让 +60s + freeze 按钮根据 active
-  // task 的最新 extends_used / extends_max / status /
-  // auto_resubmit_timeout 同步可见性与可点击状态。**不**专门 hook
-  // task_changed SSE 事件，因为 SSE 接收路径下游也走 updateTasksList。
   if (typeof updateCountdownExtendButton === "function") {
     var _activeTask = taskRefreshState.activeTaskForControls;
     updateCountdownExtendButton(_activeTask);
@@ -2570,16 +2047,13 @@ function updateTasksList(tasks) {
     }
   }
 
-  // 确保页面状态与任务状态一致
-  // - 有未完成任务时，显示内容页面
-  // - 无未完成任务时，显示无内容页面
   const contentContainer = document.getElementById("content-container");
   const noContentContainer = document.getElementById("no-content-container");
   const isShowingNoContent =
     noContentContainer && noContentContainer.style.display === "flex";
 
   if (hasActiveTasks && isShowingNoContent) {
-    // 有任务但显示的是无内容页面，切换到内容页面
+
     _debugLog(
       "Tasks present but showing no-content page; switching to content page",
     );
@@ -2591,7 +2065,7 @@ function updateTasksList(tasks) {
     contentContainer &&
     contentContainer.style.display === "block"
   ) {
-    // 无任务但显示的是内容页面，切换到无内容页面
+
     _debugLog(
       "No tasks but showing content page; switching to no-content page",
     );
@@ -2600,27 +2074,16 @@ function updateTasksList(tasks) {
     }
   }
 
-  // 更新标签页UI
   renderTaskTabs();
 
-  // 如果正在手动切换，跳过自动加载
   if (isManualSwitching) {
     return;
   }
 
-  // Bark/PWA 深链接：首次打开 `/?task_id=...` 时自动切换到目标任务。
   if (tryApplyDeepLinkedTask(tasks)) {
     return;
   }
 
-  // 如果activeTaskId刚刚被同步更新，加载其详情
-  // （activeTask已在上面定义，不重复声明）
-  //
-  // R705 (TODO#38)：追加 ``lastLoadedDetailsTaskId !== activeTaskId``
-  // 重试条件——activeTaskId 从未成功加载过详情（首次 loadTaskDetails
-  // 因网络抖动/超时失败）时，每轮轮询都重试，直到成功渲染出完整
-  // prompt + 选项。旧条件在 pending 任务场景（serverActiveTask 不存在
-  // 且 activeTaskChanged 已回落 false）下永不重试，选项永久不可见。
   if (
     activeTaskId &&
     (activeTaskChanged ||
@@ -2631,35 +2094,10 @@ function updateTasksList(tasks) {
   }
 }
 
-/**
- * 更新任务统计信息
- *
- * 保留的函数，用于向后兼容。任务计数徽章已从UI中移除。
- *
- * ## 功能说明
- *
- * - 此函数当前为空实现
- * - 保留是为了避免破坏现有调用
- * - 未来可能会移除或重新实现
- *
- * @param {Object} stats - 统计信息对象（未使用）
- *
- * ## 注意事项
- *
- * - 不执行任何操作
- * - 可以安全调用
- * - 不影响性能
- */
 function updateTasksStats(_stats) {
-  // BUG4 修复：彻底清理 task-count-badge 残留。
-  // 历史：徽章曾用红色 +1/+N 数字 + pulse 动画提示新任务，但 UX 评估后
-  // 移除（视觉噪声 + 与 task tabs 列表重复）。此函数保留作为兼容 stub，
-  // 防止上游 ``fetchAndApplyTasks`` 等调用方挂掉，未来若彻底确认无调用
-  // 方可安全删除。参数 ``_stats`` 加下划线前缀表示"已知未使用"。
+
   return;
 }
-
-// ==================== 标签页渲染 ====================
 
 function _buildTaskTabRenderState(tasks, tabsContainer) {
   const incompleteTasks = [];
@@ -2729,60 +2167,10 @@ function _buildTaskTabRenderState(tasks, tabsContainer) {
   };
 }
 
-/**
- * 渲染任务标签页
- *
- * 动态渲染所有任务的标签页UI，支持增量更新，避免全量重渲染。
- *
- * ## 功能说明
- *
- * - 获取标签页容器元素
- * - 构建已存在标签的ID映射
- * - 遍历当前任务列表，创建/更新标签页
- * - 删除不再存在的标签页
- * - 用 Set-backed diff 判断新增/删除/顺序变化
- *
- * ## 优化策略
- *
- * - **增量更新**：只更新变化的部分，不重新渲染整个列表
- * - **线性 diff**：用 Set.has 避免任务数增长时的 nested includes 扫描
- * - **标签复用**：保留已存在的标签，只更新内容
- * - **删除清理**：移除不再需要的标签
- *
- * ## 渲染逻辑
- *
- * 1. 检查容器是否存在
- * 2. 构建当前DOM中标签的映射
- * 3. 遍历任务列表：
- *    - 标签已存在：跳过（复用）
- *    - 标签不存在：创建新标签并添加到容器
- * 4. 增量添加或按需重建标签
- * 5. 删除不再存在的标签
- *
- * ## 标签顺序
- *
- * - 按任务添加顺序排列
- * - Active 任务会高亮显示
- * - 新任务添加到末尾
- *
- * ## 性能考虑
- *
- * - 避免全量DOM重建（使用增量更新）
- * - 使用 Set-backed membership 减少重复线性扫描
- * - 标签复用避免重复创建
- * - 适合频繁更新的场景
- *
- * ## 注意事项
- *
- * - 容器不存在时会记录警告
- * - 标签创建由 `createTaskTab` 函数完成
- * - 删除标签时会触发过渡动画
- */
 function renderTaskTabs() {
   const tabsContainer = document.getElementById("task-tabs");
   const container = document.getElementById("task-tabs-container");
 
-  // DOM未加载时延迟重试
   if (!container || !tabsContainer) {
     console.warn(
       "Tab bar container not found; DOM may not be ready yet, retrying in 100ms",
@@ -2895,28 +2283,14 @@ function renderTaskTabs() {
   _updateTabsOverflowHint();
 }
 
-/**
- * R712：tab 条溢出渐隐提示
- *
- * 任务多到超出 tab 条宽度时，右缘（以及左滚后左缘）此前是硬裁切，
- * 用户没有任何「后面还有 tab、可以横滑」的视觉暗示。本函数检测
- * ``.task-tabs`` 的滚动位置，把结果写到容器的 ``data-overflow-left`` /
- * ``data-overflow-right`` 属性上，CSS 据此显隐两侧渐隐遮罩
- * （``.task-tabs-container::before/::after``）。
- *
- * 触发时机：每次 renderTaskTabs 收尾 + tab 条横向滚动 + 窗口 resize
- * （后两者由 _installTabsOverflowHintListeners 一次性安装）。
- */
 function _updateTabsOverflowHint() {
-  // try/catch + dataset 存在性检查：R607-R611 的循环守卫在 Node vm
-  // 里用极简 DOM 桩执行 renderTaskTabs，桩元素没有 dataset/scrollLeft；
-  // 提示层是纯视觉增强，任何环境缺口都直接静默跳过。
+
   try {
     const tabs = document.getElementById("task-tabs");
     const container = document.getElementById("task-tabs-container");
     if (!tabs || !container || !container.dataset) return;
     _installTabsOverflowHintListeners(tabs);
-    // -1 容差：亚像素滚动位置（DPR 缩放）会让等值比较抖动
+
     const scrollLeft = tabs.scrollLeft || 0;
     const clientWidth = tabs.clientWidth || 0;
     const scrollWidth = tabs.scrollWidth || 0;
@@ -2925,7 +2299,7 @@ function _updateTabsOverflowHint() {
     container.dataset.overflowRight = overflowRight ? "true" : "false";
     container.dataset.overflowLeft = overflowLeft ? "true" : "false";
   } catch (_e) {
-    // 忽略：溢出提示失败不影响 tab 功能
+
   }
 }
 
@@ -2942,48 +2316,10 @@ function _installTabsOverflowHintListeners(tabs) {
       passive: true,
     });
   } catch (_e) {
-    // 忽略：提示层是纯增强，监听安装失败不影响 tab 功能
+
   }
 }
 
-/**
- * 创建单个任务标签
- *
- * 为指定任务创建标签页UI元素，包含任务ID、状态标记、倒计时环和关闭按钮。
- *
- * @param {Object} task - 任务对象
- * @returns {HTMLElement} 标签页DOM元素
- *
- * ## 标签结构
- *
- * - 外层容器：task-tab类
- * - 倒计时环：SVG圆环进度指示器
- * - 任务ID文本：显示任务ID
- * - 状态标记：active标记
- * - 关闭按钮：点击关闭任务
- *
- * ## 状态类
- *
- * - `active`：当前活动任务
- * - `data-task-id`：任务ID属性
- *
- * ## 事件处理
- *
- * - 点击标签：切换任务
- * - 点击关闭按钮：关闭任务（阻止冒泡）
- *
- * ## 安全性
- *
- * - 使用 `DOMSecurityHelper.createElement` 创建元素
- * - 使用 `DOMSecurityHelper.setTextContent` 设置文本
- * - 防止XSS攻击
- *
- * ## 注意事项
- *
- * - 标签ID格式：`task-tab-{task_id}`
- * - 关闭按钮ID格式：`close-btn-{task_id}`
- * - 倒计时环ID格式：`countdown-ring-{task_id}`
- */
 function createTaskTab(task) {
   const tab = document.createElement("div");
   tab.className = "task-tab";
@@ -2998,13 +2334,9 @@ function createTaskTab(task) {
   }
   tab.dataset.taskId = task.task_id;
 
-  // 任务名称
   const textSpan = document.createElement("span");
   textSpan.className = "task-tab-text";
 
-  // R700 优雅审计 #2：优先显示人类可读的 header_label（如「效果演示」），
-  // 机器味的任务 ID 只在没有 label 时兜底展示；完整 ID 始终可通过
-  // tooltip / 双击复制获得，信息不丢失。
   let displayName;
   if (
     typeof task.header_label === "string" &&
@@ -3012,14 +2344,13 @@ function createTaskTab(task) {
   ) {
     displayName = task.header_label.trim().slice(0, 16);
   } else {
-    // 兜底：前缀截断 + 完整数字
-    // 例如: "ai-intervention-agent-2822" → "ai-interven... 2822"
+
     const taskParts = task.task_id.split("-");
-    const lastPart = taskParts[taskParts.length - 1]; // 最后的数字
-    const prefixParts = taskParts.slice(0, -1).join("-"); // 前面部分
+    const lastPart = taskParts[taskParts.length - 1];
+    const prefixParts = taskParts.slice(0, -1).join("-");
 
     if (prefixParts.length > 12) {
-      // 前缀过长，截断
+
       displayName = `${prefixParts.substring(0, 11)}... ${lastPart}`;
     } else {
       displayName = `${prefixParts} ${lastPart}`;
@@ -3027,9 +2358,7 @@ function createTaskTab(task) {
   }
 
   textSpan.textContent = displayName;
-  // cr35 §8 #1 fix — 把"双击复制 ID / Shift+双击复制深链"两条 modifier
-  // 提示一并写到 native ``title`` tooltip，让 keyboard-savvy 用户不需要
-  // 翻文档就能发现 Shift modifier。
+
   const tooltipSuffix =
     (typeof window !== "undefined" &&
       window.AIIA_I18N &&
@@ -3038,11 +2367,7 @@ function createTaskTab(task) {
     "Double-click to copy ID · Shift+double-click to copy link";
   textSpan.title = `${task.task_id}\n${tooltipSuffix}`;
   textSpan.setAttribute("data-copy-hint-suffix", tooltipSuffix);
-  // mining-cycle-2 §3.4: dblclick → 复制完整 task_id.
-  // mining-cycle-2 §3.2: Shift+dblclick → 复制 task deep-link URL.
-  // why dblclick：单击保留给 "切换任务"（现有交互）；shift modifier
-  // 是通用 "alternate variant" idiom（IDE 中 shift-click 多选、文本编辑
-  // shift-arrow 扩选区等）。
+
   textSpan.style.cursor = "pointer";
   textSpan.setAttribute("data-copyable-task-id", task.task_id);
   textSpan.addEventListener("dblclick", function (e) {
@@ -3055,12 +2380,8 @@ function createTaskTab(task) {
     }
   });
 
-  // 先添加文本（左边）
   tab.appendChild(textSpan);
 
-  // Loop 工程 P2：iteration_label 轮次徽标（如 "iter-3"）。
-  // 放在任务名右侧，让用户扫一眼 tab 栏就能看出每个任务处于
-  // loop 的第几轮；非 loop 任务（无该字段）不渲染任何额外 DOM。
   if (
     typeof task.iteration_label === "string" &&
     task.iteration_label.trim() !== ""
@@ -3072,33 +2393,27 @@ function createTaskTab(task) {
     tab.appendChild(iterBadge);
   }
 
-  // SVG圆环倒计时（总是显示，在右边）
   if (task.status !== "completed") {
     const countdownRing = document.createElement("div");
     countdownRing.className = "countdown-ring";
     countdownRing.id = `countdown-${task.task_id}`;
 
-    // 使用已有的倒计时数据或服务器返回的剩余时间
     let remaining, total;
     if (taskCountdowns[task.task_id]) {
       remaining = taskCountdowns[task.task_id].remaining;
-      // Fallback uses server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240),
-      // not the historical MAX (250 / 290).
+
       total = taskCountdowns[task.task_id].timeout || 240;
     } else {
-      // 倒计时还未启动，优先使用服务器返回的 remaining_time
-      // 这样刷新页面后圆环显示正确的剩余时间
+
       remaining = task.remaining_time ?? task.auto_resubmit_timeout ?? 240;
       total = task.auto_resubmit_timeout || 240;
     }
 
-    // SVG圆环实现
-    const radius = 9; // 圆环半径
-    const circumference = 2 * Math.PI * radius; // 圆周长
-    const progress = remaining / total; // 进度（0-1）
-    const offset = circumference * (1 - progress); // dash-offset
+    const radius = 9;
+    const circumference = 2 * Math.PI * radius;
+    const progress = remaining / total;
+    const offset = circumference * (1 - progress);
 
-    // 使用activeTaskId判断是否active，而不是task.status
     const isActive = task.task_id === activeTaskId;
     const strokeColor = isActive
       ? "rgba(255, 255, 255, 0.9)"
@@ -3120,59 +2435,16 @@ function createTaskTab(task) {
     `;
     countdownRing.title = _t("page.countdown", { seconds: remaining });
 
-    tab.appendChild(countdownRing); // 在textSpan之后
+    tab.appendChild(countdownRing);
   }
 
-  // 点击标签切换任务
   tab.onclick = () => switchTask(task.task_id);
 
   return tab;
 }
 
-// ==================== 任务切换 ====================
-
-/**
- * 切换到指定任务
- *
- * 手动切换当前活动任务，更新服务器状态和UI显示。
- *
- * @param {string} taskId - 目标任务ID
- *
- * ## 功能说明
- *
- * 1. **状态保存**：保存当前任务的输入内容、选项状态
- * 2. **设置切换标志**：防止轮询冲突
- * 3. **发送切换请求**：POST `/api/tasks/{taskId}/activate`
- * 4. **更新UI**：切换活动标签、更新倒计时环颜色
- * 5. **加载新任务**：获取并显示新任务详情
- * 6. **重启轮询**：恢复任务列表轮询
- *
- * ## 并发控制
- *
- * - 设置 `isManualSwitching = true`（防止轮询更新）
- * - 清除旧的切换定时器（防止竞态条件）
- * - 5秒后自动清除切换标志
- *
- * ## 状态恢复
- *
- * - 恢复目标任务的输入框内容
- * - 恢复目标任务的选项选中状态
- * - 恢复目标任务的图片列表
- *
- * ## 错误处理
- *
- * - 请求失败时恢复原活动任务
- * - 显示错误提示
- * - 记录错误日志
- *
- * ## 注意事项
- *
- * - 切换是异步操作
- * - 切换期间暂停轮询更新
- * - 切换失败会回滚状态
- */
 async function switchTask(taskId) {
-  // 保存当前任务的textarea内容、选项勾选状态和图片列表
+
   if (activeTaskId) {
     const textarea = document.getElementById("feedback-text");
     if (textarea) {
@@ -3180,7 +2452,6 @@ async function switchTask(taskId) {
       _debugLog(`Saved textarea content for task ${activeTaskId}`);
     }
 
-    // 保存选项勾选状态
     const optionsContainer = document.getElementById("options-container");
     if (optionsContainer) {
       const checkboxes = optionsContainer.querySelectorAll(
@@ -3197,37 +2468,28 @@ async function switchTask(taskId) {
       _debugLog(`Saved option selection state for task ${activeTaskId}`);
     }
 
-    // 保存图片列表（深拷贝，避免引用问题）
-    // 注意：不能简单浅拷贝，因为图片对象包含 blob URL，需要独立管理
-    // 保留所有字段，包括 blob URL（每个任务独立管理）
     taskImages[activeTaskId] = cloneTaskImagesForState(selectedImages);
     _debugLog(
       `Saved image list for task ${activeTaskId} (${selectedImages.length} images)`,
     );
   }
 
-  // 设置手动切换标志，防止轮询干扰
   isManualSwitching = true;
 
-  // 分发事件通知其他模块暂停轮询
   window.dispatchEvent(
     new CustomEvent("taskSwitchStart", { detail: { taskId } }),
   );
 
-  // 立即更新UI，提升响应速度
   const oldActiveTaskId = activeTaskId;
   setActiveTaskId(taskId);
-  renderTaskTabs(); // 立即更新标签高亮
+  renderTaskTabs();
 
-  // 立即更新圆环颜色，不等待DOM重建
   updateCountdownRingColors(oldActiveTaskId, taskId);
 
-  // 立即从 currentTasks 获取任务信息并更新内容（不等待 API）
   const cachedTask = findTaskById(currentTasks, taskId);
   if (cachedTask && cachedTask.prompt) {
     _debugLog(`Updating UI from cached task info immediately: ${taskId}`);
 
-    // 内联 updateTaskIdDisplay 逻辑（避免函数未定义错误）
     const taskIdContainer = document.getElementById("task-id-container");
     const taskIdText = document.getElementById("task-id-text");
     if (taskIdContainer && taskIdText) {
@@ -3239,7 +2501,6 @@ async function switchTask(taskId) {
       }
     }
 
-    // 更新描述和选项
     updateDescriptionDisplay(cachedTask.prompt);
     if (cachedTask.predefined_options) {
       updateOptionsDisplay(
@@ -3247,21 +2508,18 @@ async function switchTask(taskId) {
         cachedTask.predefined_options_defaults,
       );
     }
-    // mining-cycle-3 §2.1 borrow #3 (gemini-cli placeholder):
-    // 切换任务时立即应用 task-specific placeholder
+
     updateFeedbackPlaceholder(cachedTask.feedback_placeholder);
-    // mining-cycle-3 §2.1 borrow #2 (gemini-cli yesno):
-    // 切换任务时立即应用 question_type 决定 textarea / yesno UI
+
     updateYesnoButtonGroup(cachedTask.question_type);
-    // mining-cycle-3 §2.1 borrow #1 (gemini-cli header chip):
-    // 切换任务时立即应用 header_label
+
     updateHeaderChip(cachedTask.header_label);
-    // Loop 工程 P2：切换任务时立即应用 loop 上下文条
+
     updateLoopContext(cachedTask);
   }
 
   try {
-    // 后台执行激活请求（不阻塞 UI）
+
     fetchWithTimeout(`/api/tasks/${taskId}/activate`, { method: "POST" }, 10000)
       .then((res) => res.json())
       .then((data) => {
@@ -3273,7 +2531,6 @@ async function switchTask(taskId) {
       })
       .catch((err) => console.error("Activate task failed:", err));
 
-    // 后台异步加载完整详情（用于获取最新选项等）
     loadTaskDetails(taskId).catch((err) => {
       console.warn(
         "Load task details failed, but UI was updated from cache:",
@@ -3283,14 +2540,14 @@ async function switchTask(taskId) {
   } catch (error) {
     console.error("Switch task failed:", error);
   } finally {
-    // 清除旧计时器并重新设置200ms后解除标志
+
     if (manualSwitchingTimer) {
       clearTimeout(manualSwitchingTimer);
     }
     manualSwitchingTimer = setTimeout(() => {
       isManualSwitching = false;
       manualSwitchingTimer = null;
-      // 分发事件通知其他模块恢复轮询
+
       window.dispatchEvent(
         new CustomEvent("taskSwitchComplete", { detail: { taskId } }),
       );
@@ -3299,31 +2556,8 @@ async function switchTask(taskId) {
   }
 }
 
-/**
- * 更新圆环颜色
- *
- * 切换任务时更新倒计时圆环的颜色（active任务使用主题色）。
- *
- * @param {string|null} oldActiveTaskId - 原活动任务ID
- * @param {string|null} newActiveTaskId - 新活动任务ID
- *
- * ## 功能说明
- *
- * - 重置旧任务的圆环颜色为灰色
- * - 设置新任务的圆环颜色为主题色
- *
- * ## 颜色规则
- *
- * - Active任务：主题色（橙色）
- * - Pending任务：灰色
- *
- * ## 注意事项
- *
- * - 元素不存在时会跳过
- * - 颜色值取自CSS变量
- */
 function updateCountdownRingColors(oldActiveTaskId, newActiveTaskId) {
-  // 将旧active任务的圆环改为紫色
+
   if (oldActiveTaskId) {
     const oldRing = document.getElementById(`countdown-${oldActiveTaskId}`);
     if (oldRing) {
@@ -3334,7 +2568,6 @@ function updateCountdownRingColors(oldActiveTaskId, newActiveTaskId) {
     }
   }
 
-  // 将新active任务的圆环改为白色
   if (newActiveTaskId) {
     const newRing = document.getElementById(`countdown-${newActiveTaskId}`);
     if (newRing) {
@@ -3346,38 +2579,6 @@ function updateCountdownRingColors(oldActiveTaskId, newActiveTaskId) {
   }
 }
 
-/**
- * 加载任务详情
- *
- * 从服务器获取任务详情并更新UI显示。
- *
- * @param {string} taskId - 任务ID
- *
- * ## 功能说明
- *
- * 1. **防止过期请求**：检查任务ID是否仍是活动任务
- * 2. **请求任务详情**：GET `/api/tasks/{taskId}`
- * 3. **更新UI**：描述、选项、图片、倒计时
- * 4. **恢复状态**：输入框内容、选项选中状态、图片列表
- *
- * ## 竞态条件处理
- *
- * - 请求前检查活动任务ID
- * - 响应后再次检查（防止期间切换任务）
- * - 不匹配时跳过更新
- *
- * ## 错误处理
- *
- * - 任务不存在：显示错误提示
- * - 网络错误：记录错误日志
- * - 响应失败：显示失败消息
- *
- * ## 注意事项
- *
- * - 异步操作，可能存在竞态条件
- * - 使用活动任务ID检查避免更新错误任务
- * - 请求失败不影响其他功能
- */
 async function loadTaskDetails(taskId) {
   try {
     const response = await fetchWithTimeout(
@@ -3387,7 +2588,6 @@ async function loadTaskDetails(taskId) {
     );
     const data = await response.json();
 
-    // 检查任务是否仍然是当前活动任务
     if (taskId !== activeTaskId) {
       _debugLog(
         `Skipping stale task details: ${taskId} (active: ${activeTaskId})`,
@@ -3398,8 +2598,6 @@ async function loadTaskDetails(taskId) {
     if (data.success) {
       const task = data.task;
 
-      // 更新页面内容
-      // 内联 updateTaskIdDisplay 逻辑（避免函数未定义错误）
       const taskIdContainer = document.getElementById("task-id-container");
       const taskIdText = document.getElementById("task-id-text");
       if (taskIdContainer && taskIdText) {
@@ -3416,33 +2614,27 @@ async function loadTaskDetails(taskId) {
         task.predefined_options,
         task.predefined_options_defaults,
       );
-      // R705 (TODO#38)：详情成功渲染，推进成功水位——轮询侧据此判断
-      // 是否需要为"从未成功加载过详情"的任务重试 loadTaskDetails。
+
       window.lastLoadedDetailsTaskId = taskId;
-      // mining-cycle-3 §2.1 borrow #3 (gemini-cli placeholder):
-      // 异步详情回来后再次同步（cache 路径可能取到旧 placeholder）
+
       updateFeedbackPlaceholder(task.feedback_placeholder);
-      // mining-cycle-3 §2.1 borrow #2 (gemini-cli yesno):
+
       updateYesnoButtonGroup(task.question_type);
-      // mining-cycle-3 §2.1 borrow #1 (gemini-cli header chip):
+
       updateHeaderChip(task.header_label);
-      // Loop 工程 P2：异步详情回来后再次同步 loop 上下文
-      // （cache 路径可能取到旧字段）
+
       updateLoopContext(task);
 
-      // 恢复该任务之前保存的textarea内容
       const textarea = document.getElementById("feedback-text");
       if (textarea && taskTextareaContents[taskId] !== undefined) {
         textarea.value = taskTextareaContents[taskId];
         _debugLog(`Restored textarea content for task ${taskId}`);
       }
-      // 如果之前没有保存过内容，保持当前值（避免在用户正在输入时被轮询调用清空）
 
-      // 恢复该任务之前保存的图片列表
       if (taskImages[taskId] && taskImages[taskId].length > 0) {
-        // 深拷贝图片对象，避免引用问题
+
         selectedImages = cloneTaskImagesForState(taskImages[taskId]);
-        // 重新渲染图片预览
+
         const previewContainer = document.getElementById("image-previews");
         if (previewContainer) {
           previewContainer.innerHTML = "";
@@ -3463,18 +2655,12 @@ async function loadTaskDetails(taskId) {
           `Restored image list for task ${taskId} (${selectedImages.length} images)`,
         );
       }
-      // 如果之前没有保存过图片，保持当前值（避免在用户正在添加图片时被轮询调用清空）
 
-      // 只在倒计时不存在时启动，避免切换标签时重置倒计时。
-      // R695：auto_resubmit_timeout 显式 <= 0（禁用/已冻结）时绝不能重建
-      // 倒计时——否则冻结后的下一次任务详情轮询会以 remaining=0 重建
-      // 条目，下一 tick 即触发 autoSubmitTask，冻结瞬间变成自动提交。
       const detailsTimeoutDisabled =
         typeof task.auto_resubmit_timeout === "number" &&
         task.auto_resubmit_timeout <= 0;
       if (!taskCountdowns[task.task_id] && !detailsTimeoutDisabled) {
-        // 使用服务器返回的 remaining_time（剩余时间），而非固定的 auto_resubmit_timeout
-        // 这样刷新页面后倒计时不会重置
+
         const remaining = task.remaining_time ?? task.auto_resubmit_timeout;
         const total = task.auto_resubmit_timeout;
         startTaskCountdown(task.task_id, remaining, total);
@@ -3485,7 +2671,6 @@ async function loadTaskDetails(taskId) {
         _debugLog(`Countdown already exists; not resetting: ${taskId}`);
       }
 
-      // R692 (TODO#6-1)：任务详情渲染完成后消费待处理的聚焦请求
       maybeApplyPendingInputFocus();
 
       _debugLog(`Task details loaded: ${taskId}`);
@@ -3497,41 +2682,10 @@ async function loadTaskDetails(taskId) {
   }
 }
 
-/**
- * 更新描述显示
- *
- * 渲染任务描述（Markdown格式）并更新DOM。
- *
- * @param {string} prompt - Markdown格式的任务描述
- *
- * ## 功能说明
- *
- * - 使用 marked.js 同步渲染 Markdown
- * - 更新描述容器的 HTML 内容
- * - 处理代码块语法高亮
- * - 按需加载并渲染 MathJax 数学公式
- *
- * ## 安全性
- *
- * - 禁用 marked 原生 HTML 渲染（见 configureMarkedSecurityOnce）
- * - 结合 Web UI 的 CSP（script-src nonce），降低脚本注入风险
- *
- * ## 注意事项
- *
- * - 异步函数，等待渲染完成
- * - 容器不存在时会跳过
- */
 async function updateDescriptionDisplay(prompt) {
   const descriptionElement = document.getElementById("description");
   if (!descriptionElement) return;
 
-  // R687 (TODO#1 渲染抽搐修复)：2s 轮询 / SSE 刷新路径会以相同 prompt 反复
-  // 调用本函数（updateTasksList → loadTaskDetails → 这里）。每次
-  // innerHTML 整体替换 + Prism 重高亮 + MathJax 重排都会引发可见闪烁
-  // （原始 TeX → 渲染态来回切换）、布局抖动、用户文本选区丢失。
-  // 内容未变化时幂等短路——dataset 签名挂在容器节点上；容器被外部清空
-  // （childNodes 为空）时即使 prompt 相同也必须重渲染。
-  // dataset 兜底：Node 测试桩的假元素可能没有 dataset 属性
   const descriptionDataset = descriptionElement.dataset || null;
   if (
     descriptionDataset &&
@@ -3544,24 +2698,18 @@ async function updateDescriptionDisplay(prompt) {
   }
 
   try {
-    // R709：写入真实 prompt 前摘掉 data-i18n（初始
-    // ``data-i18n="page.loading"``）。否则语言切换 / 慢网络下
-    // ``translateDOM()`` 会把已渲染的任务内容整体覆盖成「加载中…」，
-    // 且 R687 签名仍匹配导致后续轮询短路、破坏永久化。
+
     try {
       descriptionElement.removeAttribute("data-i18n");
     } catch (_e) {
-      // 测试桩元素可能没有 removeAttribute
+
     }
 
-    // 同步渲染（立即显示，不使用 requestAnimationFrame）
     let htmlContent = prompt;
 
-    // 使用 marked.js 解析 Markdown
     if (typeof marked !== "undefined") {
       try {
-        // R712：与 app.js renderMarkdownContent 同构——LaTeX 风格数学
-        // 定界符渲染前保护、渲染后回填（详见 mathjax-loader.js）。
+
         const mathGuard = window.protectMathDelimiters
           ? window.protectMathDelimiters(prompt)
           : { text: prompt, segments: [] };
@@ -3577,37 +2725,31 @@ async function updateDescriptionDisplay(prompt) {
       }
     }
 
-    // 直接更新 DOM（同步）
     descriptionElement.innerHTML = htmlContent;
-    // R687：渲染成功后记录签名，供幂等短路比较
+
     if (descriptionDataset) {
       descriptionDataset.renderedPrompt = prompt;
     }
 
-    // Prism.js 代码高亮（同步）
     if (typeof Prism !== "undefined") {
       Prism.highlightAllUnder(descriptionElement);
     }
 
-    // 处理代码块（同步）
     if (typeof processCodeBlocks === "function") {
       processCodeBlocks(descriptionElement);
     }
 
-    // 处理删除线（同步）
     if (typeof processStrikethrough === "function") {
       processStrikethrough(descriptionElement);
     }
 
     _debugLog("Synchronous Markdown render complete");
 
-    // MathJax 数学公式渲染（按需加载，不阻塞）
-    // 注意：不能只在 MathJax 已加载时 typeset，否则“首次出现公式”的内容会一直不渲染
     const textContent = descriptionElement.textContent || "";
     if (window.loadMathJaxIfNeeded) {
       window.loadMathJaxIfNeeded(descriptionElement, textContent);
     } else if (window.MathJax && window.MathJax.typesetPromise) {
-      // 回退：如果 MathJax 已加载但 loadMathJaxIfNeeded 不可用，直接渲染
+
       window.MathJax.typesetPromise([descriptionElement]).catch((err) => {
         console.warn("MathJax render failed:", err);
       });
@@ -3615,59 +2757,13 @@ async function updateDescriptionDisplay(prompt) {
   } catch (error) {
     console.error("Update description failed:", error);
     descriptionElement.textContent = prompt;
-    // R687：降级渲染也记录签名，避免每个轮询周期重复降级重渲染造成闪烁
+
     if (descriptionDataset) {
       descriptionDataset.renderedPrompt = prompt;
     }
   }
 }
 
-/**
- * 更新选项显示
- *
- * 动态创建任务选项的复选框列表。
- *
- * @param {Array<string>} options - 选项文本数组
- *
- * ## 功能说明
- *
- * - 清空选项容器
- * - 为每个选项创建复选框
- * - 恢复之前保存的选中状态
- * - 使用安全的DOM操作
- *
- * ## 复选框属性
- *
- * - type: checkbox
- * - value: 选项文本
- * - class: feedback-option
- *
- * ## 状态恢复
- *
- * - 从 `taskOptionsStates[activeTaskId]` 恢复选中状态
- * - 保持用户之前的选择
- *
- * ## 安全性
- *
- * - 使用 `DOMSecurityHelper` 创建元素
- * - 防止XSS攻击
- *
- * ## 注意事项
- *
- * - 容器不存在时会跳过
- * - 选项数组为空时显示空列表
- */
-/**
- * mining-cycle-3 §2.1 borrow #1 (gemini-cli ``ask_user.header``) —
- * 在 task pane prompt 之上渲染一个短标签 chip (≤16 chars)。
- *
- * 行为：
- *   - 非空 string → 显示 chip，textContent = label
- *   - None/empty → 移除 chip（如果有）
- *
- * 渲染锚点：``#task-header-chip``，由 HTML 模板预留位置。如果模板
- * 不包含该 anchor，helper silent no-op（不抛错）。
- */
 function updateHeaderChip(label) {
   var chip = document.getElementById("task-header-chip");
   if (!chip) return;
@@ -3682,24 +2778,6 @@ function updateHeaderChip(label) {
   }
 }
 
-/**
- * Loop 工程 P2 —— 活动任务的 loop 上下文条。
- *
- * 数据源：task 上的 5 个可选 loop 字段（loop_id / loop_phase /
- * iteration_label / loop_objective / success_criteria），由
- * ``interactive_feedback`` 的同名可选参数写入，服务端已 strip + clamp。
- *
- * 行为：
- *   - 任一字段非空 → 显示 ``#task-loop-context``，逐字段填充；
- *     空字段各自隐藏（chips 行 / objective 行 / criteria 行独立显隐）
- *   - 全部为空（普通非 loop 任务）→ 整条隐藏，UI 与之前逐字节一致
- *
- * 安全：全部走 textContent 赋值，不解析 HTML；值本身在服务端已按
- * task_constants 的 LOOP_*_MAX_LENGTH 截断，这里不再二次 clamp。
- *
- * 渲染锚点：``#task-loop-context``（web_ui.html 预留）。模板缺 anchor
- * 时 silent no-op，与 updateHeaderChip 同一容错约定。
- */
 function updateLoopContext(task) {
   var container = document.getElementById("task-loop-context");
   if (!container) return;
@@ -3715,9 +2793,6 @@ function updateLoopContext(task) {
   var objective = _clean(task && task.loop_objective);
   var criteria = _clean(task && task.success_criteria);
 
-  // Loop 视图：记录当前 loop_id 供历史轮次面板拉取；loop 变化时收起
-  // 已展开的旧面板（跨 loop 残留时间线会误导）。typeof 守卫：部分
-  // 单测 harness 只提取本函数体独立运行（与 webview updateUI 同约定）。
   if (
     typeof window !== "undefined" &&
     typeof updateLoopHistoryToggle === "function"
@@ -3767,17 +2842,6 @@ function updateLoopContext(task) {
   container.style.display = "";
 }
 
-/**
- * Loop 视图 —— 历史轮次折叠面板（设计笔记 §3.3 分组折叠的初版实现）。
- *
- * 交互：loop 任务的上下文条内显示「历史轮次」toggle；点击展开时拉取
- * ``GET /api/loops``，按当前 loop_id 渲染已完成轮次时间线（最近在前）：
- * 轮次标签 + 阶段 + 完成时间 + verdict 摘要（服务端已截断 200 字符、
- * 图片只记数量）。再次点击收起。任务/loop 切换时自动收起，防止旧
- * loop 的时间线残留误导。
- *
- * 安全：全部 textContent 填充；无任何 innerHTML 拼接。
- */
 function updateLoopHistoryToggle(loopId) {
   var toggle = document.getElementById("loop-history-toggle");
   if (!toggle) return;
@@ -3862,7 +2926,6 @@ async function toggleLoopHistory() {
     return;
   }
 
-  // 用户可能在 await 期间切换了任务 → 面板已被 collapse，丢弃过期渲染
   if (window.__aiiaCurrentLoopId !== loopId) return;
   if (toggle.getAttribute("aria-expanded") !== "true") return;
 
@@ -3878,7 +2941,6 @@ async function toggleLoopHistory() {
     return;
   }
 
-  // 最近轮次在前（台账按完成顺序 append，故倒序渲染）
   for (var r = rounds.length - 1; r >= 0; r--) {
     var round = rounds[r];
     if (!round || typeof round !== "object") continue;
@@ -3948,28 +3010,6 @@ function buildLoopHistoryRow(round) {
   return row;
 }
 
-/**
- * mining-cycle-3 §2.1 borrow #2 (gemini-cli ``ask_user.yesno``) —
- * 根据 ``task.question_type`` 在 textarea 主体上方渲染一行 Yes/No
- * button group。
- *
- * 行为（TODO#41 重设计——"点按即发送"改为"选择 + 可补充说明"）：
- *   - question_type === "yesno" → 渲染 button group；textarea **保持
- *     可见**并把占位符换成"可补充说明（可选）"提示。点击是/否只把
- *     选择登记进 ``taskYesnoSelections[activeTaskId]``（再点同一按钮
- *     取消、点另一按钮切换），实际发送发生在用户点「提交反馈」时，
- *     由 ``app.js`` 的 ``submitFeedback`` 读取
- *     ``window.getActiveYesnoSelection()`` 拼出
- *     ``"yes"`` / ``"yes\n\n<补充说明>"`` 提交。
- *   - 其他值 → 移除 button group（如果有）。
- *
- * 为什么不替换 textarea 而是复用：user 切换任务时如果新任务
- * 不是 yesno 类型，textarea 必须秒回。重建 DOM 慢且会丢失任何
- * task-scope textarea 内容（taskTextareaContents 映射）。
- *
- * i18n: ``page.yesnoYes`` / ``page.yesnoNo`` /
- * ``page.yesnoSupplementPlaceholder`` + 英文 fallback。
- */
 function updateYesnoButtonGroup(questionType) {
   var feedbackTextarea = document.getElementById("feedback-text");
   var existingGroup = document.getElementById("yesno-button-group");
@@ -3985,9 +3025,7 @@ function updateYesnoButtonGroup(questionType) {
   if (questionType !== "yesno") {
     if (existingGroup) existingGroup.remove();
     if (feedbackTextarea) {
-      // 历史遗留：旧实现会在 yesno 模式下隐藏 textarea（display:none +
-      // aria-hidden）。新实现不再隐藏，但仍在非 yesno 分支做一次恢复，
-      // 防御从旧版热更新过来的残留内联样式。
+
       feedbackTextarea.style.display = "";
       feedbackTextarea.removeAttribute("aria-hidden");
       feedbackTextarea.removeAttribute("tabindex");
@@ -3996,13 +3034,11 @@ function updateYesnoButtonGroup(questionType) {
   }
 
   if (feedbackTextarea) {
-    // TODO#41：textarea 保持可见，供用户补充说明（可选）。
+
     feedbackTextarea.style.display = "";
     feedbackTextarea.removeAttribute("aria-hidden");
     feedbackTextarea.removeAttribute("tabindex");
-    // 占位符提示"可补充说明"。仅当任务没有自定义 feedback_placeholder
-    // 时才覆盖（调用顺序保证 updateFeedbackPlaceholder 先跑：自定义
-    // placeholder 会摘掉 data-i18n-placeholder，此处据此判定）。
+
     try {
       if (feedbackTextarea.hasAttribute("data-i18n-placeholder")) {
         var supplementHint =
@@ -4015,12 +3051,12 @@ function updateYesnoButtonGroup(questionType) {
         feedbackTextarea.setAttribute("placeholder", supplementHint);
       }
     } catch (_e) {
-      // 测试桩元素可能缺 hasAttribute；占位符是增强，不阻塞渲染
+
     }
   }
 
   if (existingGroup) {
-    // 组已存在（同任务轮询/语言切换重入）：只需同步选中态样式。
+
     syncYesnoSelectedStyles();
     return;
   }
@@ -4035,8 +3071,7 @@ function updateYesnoButtonGroup(questionType) {
 
   var yesBtn = document.createElement("button");
   yesBtn.type = "button";
-  // TODO#41：两个按钮默认同为中性 secondary，选中态通过 .selected 高亮
-  //（旧版 yes=primary/no=secondary 的主次暗示与"点击=选择"语义冲突）。
+
   yesBtn.className = "btn btn-secondary yesno-btn yesno-btn-yes";
   yesBtn.textContent = yesLabel;
   yesBtn.setAttribute("data-yesno-value", "yes");
@@ -4059,18 +3094,10 @@ function updateYesnoButtonGroup(questionType) {
   group.appendChild(yesBtn);
   group.appendChild(noBtn);
   feedbackTextarea.parentNode.insertBefore(group, feedbackTextarea);
-  // 任务切换后从 taskYesnoSelections 恢复该任务此前的选择
+
   syncYesnoSelectedStyles();
 }
 
-/**
- * TODO#41：登记/切换当前任务的是否选择（不发送）。
- *
- * - 再次点击已选中的按钮 → 取消选择；
- * - 点击另一按钮 → 切换选择；
- * - 状态存 ``taskYesnoSelections[activeTaskId]``，任务切换/提交成功
- *   /任务关闭时由相应路径恢复或清理。
- */
 function toggleYesnoSelection(value) {
   var taskId = normalizeTaskIdValue(activeTaskId);
   if (!taskId) return;
@@ -4082,11 +3109,6 @@ function toggleYesnoSelection(value) {
   syncYesnoSelectedStyles();
 }
 
-/**
- * TODO#41：把 ``taskYesnoSelections[activeTaskId]`` 同步到按钮组的
- * ``.selected`` class 与 ``aria-pressed``。幂等，可在渲染/切换/提交
- * 后任意时机调用。
- */
 function syncYesnoSelectedStyles() {
   var group = document.getElementById("yesno-button-group");
   if (!group || typeof group.querySelectorAll !== "function") return;
@@ -4108,11 +3130,6 @@ function syncYesnoSelectedStyles() {
   }
 }
 
-/**
- * TODO#41：暴露给 ``app.js`` 的 getter——当前活动任务的是否选择。
- *
- * @returns {"yes"|"no"|null} 未选择（或活动任务不是 yesno）时返回 null
- */
 window.getActiveYesnoSelection = function () {
   var taskId = normalizeTaskIdValue(activeTaskId);
   if (!taskId) return null;
@@ -4120,10 +3137,6 @@ window.getActiveYesnoSelection = function () {
   return selection === "yes" || selection === "no" ? selection : null;
 };
 
-/**
- * TODO#41：清除指定任务的是否选择（提交成功后由 ``app.js`` 调用；
- * 传空则清当前活动任务）。同时刷新按钮样式。
- */
 window.clearYesnoSelection = function (taskId) {
   var normalized = normalizeTaskIdValue(taskId || activeTaskId);
   if (normalized && taskYesnoSelections[normalized] !== undefined) {
@@ -4132,47 +3145,28 @@ window.clearYesnoSelection = function (taskId) {
   syncYesnoSelectedStyles();
 };
 
-/**
- * mining-cycle-3 §2.1 borrow #3 (gemini-cli `placeholder`) —
- * 把 per-task ``feedback_placeholder`` 同步到 ``#feedback-text``。
- *
- * 行为：
- *   - 传入 truthy 字符串 → 设为 textarea 的 ``placeholder``
- *   - 传入 null/undefined/空 → 走 i18n 默认占位（即把 placeholder
- *     交还给 i18n.js 由 ``data-i18n-placeholder`` 重新设置）
- *
- * Why "交还给 i18n.js"：textarea 上同时挂着 ``data-i18n-placeholder=
- * "page.feedbackPlaceholder"``。如果直接 setAttribute('placeholder',
- * '')，下一次 ``setLang`` 会立刻被覆盖回 i18n 默认值，看起来没 bug；
- * 但若直接清掉 ``data-i18n-placeholder``，再切回无 placeholder 的
- * task 时就丢了默认占位。所以我们只动 ``placeholder`` 而不动
- * ``data-i18n-placeholder``，让两者各管各的：i18n 管 fallback、本
- * 函数管 task 覆盖。
- */
 function updateFeedbackPlaceholder(placeholder) {
   var textarea = document.getElementById("feedback-text");
   if (!textarea) return;
   if (typeof placeholder === "string" && placeholder.trim() !== "") {
-    // R709：任务自定义 placeholder 生效期间摘掉 data-i18n-placeholder，
-    // 否则语言切换触发的 translateDOM 会把它覆盖回默认翻译。
+
     try {
       textarea.removeAttribute("data-i18n-placeholder");
     } catch (_e) {
-      // 测试桩元素可能没有 removeAttribute
+
     }
     textarea.setAttribute("placeholder", placeholder);
   } else if (typeof window !== "undefined" && window.AIIA_I18N && typeof window.AIIA_I18N.t === "function") {
     var defaultText = window.AIIA_I18N.t("page.feedbackPlaceholder");
     if (typeof defaultText === "string" && defaultText) {
-      // R709：回到默认文案时恢复 data-i18n-placeholder，让默认
-      // placeholder 继续跟随语言切换。
+
       try {
         textarea.setAttribute(
           "data-i18n-placeholder",
           "page.feedbackPlaceholder",
         );
       } catch (_e) {
-        // 忽略
+
       }
       textarea.setAttribute("placeholder", defaultText);
     }
@@ -4183,11 +3177,6 @@ function updateOptionsDisplay(options, optionDefaults) {
   const optionsContainer = document.getElementById("options-container");
   if (!optionsContainer) return;
 
-  // R687 (TODO#1 渲染抽搐修复)：轮询路径以相同 options 反复调用时短路。
-  // 每次重建 checkbox 都会丢失 hover / focus / 键盘导航状态，即使勾选
-  // 状态能从 taskOptionsStates 恢复，也会造成每 2 秒一次的可感知抖动。
-  // 签名 = 当前任务 + 选项文案 + 默认勾选位图；三者都未变则跳过重建。
-  // dataset 兜底：Node 测试桩的假元素可能没有 dataset 属性
   const optionsDataset = optionsContainer.dataset || null;
   const renderSignature =
     String(activeTaskId) +
@@ -4208,10 +3197,6 @@ function updateOptionsDisplay(options, optionDefaults) {
     optionsDataset.renderedSignature = renderSignature;
   }
 
-  // 优先使用该任务之前保存的勾选状态（支持新格式：{id: checked} 和旧格式：[index: checked]）
-  // 注意：这里需要区分"用户从未交互过"与"用户已显式取消默认值"——
-  //   - 已经为该 task 保存过 selection state 的，按用户的最新意图渲染（包括"取消默认勾选"）
-  //   - 没有保存过的，使用后端 predefined_options_defaults 的"默认勾选"作为初始值
   let selectedStates = {};
   let hasUserInteraction = false;
   if (activeTaskId && taskOptionsStates[activeTaskId]) {
@@ -4219,7 +3204,7 @@ function updateOptionsDisplay(options, optionDefaults) {
     hasUserInteraction = true;
     _debugLog(`Restored option selection state for task ${activeTaskId}`);
   } else {
-    // 如果没有保存的状态，尝试保存当前状态（用于同一任务内的更新）
+
     const existingCheckboxes = optionsContainer.querySelectorAll(
       'input[type="checkbox"]',
     );
@@ -4229,14 +3214,12 @@ function updateOptionsDisplay(options, optionDefaults) {
       const checkbox = existingCheckboxes[index];
       selectedStates[checkbox.id] = checkbox.checked;
     }
-    // existingCheckboxes 可能来自上一次渲染（task 切换后场景）；
-    // 这里用 length>0 近似判断为"已经存在 UI 状态"，避免被默认值覆盖
+
     if (existingCheckboxes.length > 0) {
       hasUserInteraction = true;
     }
   }
 
-  // 清空现有选项
   optionsContainer.innerHTML = "";
 
   if (options && options.length > 0) {
@@ -4253,8 +3236,6 @@ function updateOptionsDisplay(options, optionDefaults) {
       checkbox.id = `option-${index}`;
       checkbox.value = option;
 
-      // 恢复选中状态（支持新格式：{id: checked} 和旧格式：[index: checked]）
-      // 优先级：已保存的用户交互 > 后端 default > 未选中
       const checkboxId = `option-${index}`;
       if (hasUserInteraction) {
         if (selectedStates[checkboxId] || selectedStates[index]) {
@@ -4315,45 +3296,6 @@ function removeTaskFromCurrentTasks(tasks, taskId) {
   return keptTasks === null ? tasks : keptTasks;
 }
 
-/**
- * 关闭任务
- *
- * 删除指定任务，清理相关资源并更新UI。
- *
- * @param {string} taskId - 要关闭的任务ID
- *
- * ## 功能说明
- *
- * 1. **确认操作**：显示确认对话框
- * 2. **发送删除请求**：DELETE `/api/tasks/{taskId}`
- * 3. **清理资源**：倒计时、缓存、UI元素
- * 4. **切换任务**：如果关闭的是活动任务，切换到下一个
- * 5. **刷新列表**：更新任务列表显示
- *
- * ## 资源清理
- *
- * - 停止并删除倒计时
- * - 清除输入框内容缓存
- * - 清除选项状态缓存
- * - 清除图片缓存
- * - 移除标签页DOM元素
- *
- * ## 任务切换逻辑
- *
- * - 关闭活动任务：自动切换到第一个pending任务
- * - 关闭非活动任务：不影响当前活动任务
- *
- * ## 错误处理
- *
- * - 删除失败：显示错误提示
- * - 记录错误日志
- *
- * ## 注意事项
- *
- * - 需要用户确认才执行
- * - 异步操作
- * - 删除后无法恢复
- */
 async function closeTask(taskId) {
   if (!confirm(_t("status.confirmCloseTask", { taskId }))) {
     return;
@@ -4370,9 +3312,7 @@ async function closeTask(taskId) {
     if (!response.ok || !data.success) {
       console.error("Server-side close task failed:", data.error);
       if (typeof showStatus === "function") {
-        // R294 / cycle-28: 4xx/5xx 优先按 HTTP status 分类 (复用 app.js
-        // _classifyHttpResponse helper)，让 close-task 失败也能看到具体
-        // 原因 (401/403 不该登录 / 5xx 该稍后重试)。
+
         const classifyHttp =
           typeof window._classifyHttpResponse === "function"
             ? window._classifyHttpResponse
@@ -4387,7 +3327,6 @@ async function closeTask(taskId) {
       return;
     }
 
-    // 服务端已移除，清理前端状态
     if (taskCountdowns[taskId]) {
       _clearTaskCountdown(taskId);
     }
@@ -4408,7 +3347,7 @@ async function closeTask(taskId) {
     if (activeTaskId === taskId) {
       const nextTask = findFirstOpenTask(currentTasks);
       if (nextTask) {
-        // R692 (TODO#6-1)：关闭当前任务切到下一个时同样自动聚焦输入框
+
         requestFeedbackInputFocus();
         switchTask(nextTask.task_id);
       } else {
@@ -4423,8 +3362,7 @@ async function closeTask(taskId) {
   } catch (error) {
     console.error("Close task failed:", error);
     if (typeof showStatus === "function") {
-      // R289 / cycle-27: 复用 app.js 的错误分类 helper（如已加载），让 close
-      // task 失败也能看到具体原因（timeout / offline / 5xx / DOM stale）。
+
       const classify =
         typeof window._classifyFetchError === "function"
           ? window._classifyFetchError
@@ -4435,29 +3373,6 @@ async function closeTask(taskId) {
   }
 }
 
-// ==================== 独立倒计时管理 ====================
-
-/**
- * R128 helper：visibility 切回 visible 时，立即强制同步所有活跃倒计时
- * 的 UI（SVG 圆环 + 数字 + 主倒计时）。
- *
- * 由 ``startTaskCountdown`` 注册的 ``installCountdownVisibilitySyncHandlerOnce``
- * 触发；hidden 期间 tick 跳过 DOM 写入，所以可见瞬间需要立即"补一帧"，
- * 否则用户会看到"上次离开时残留的数字"停留 0-1s。
- */
-// R266 / cycle-22 perf: countdown DOM cache helper —— `startTaskCountdown` +
-// `forceUpdateAllTaskCountdowns` 是 1Hz × N 个并发 task 的高频路径，
-// 每次 tick 之前为每个 task 都查 1× getElementById + 2× querySelector
-// (.circle / .countdown-number)。N=10 task 时 = 30 次 DOM 查找 / 秒。
-// DOM 查找虽然每次 O(1)，但 layout invalidation 会被这种"反复读"放大；
-// 同时 setAttribute 触发的 reflow 与 querySelector 的 cache miss 累加
-// 会吃掉 frame budget（特别是 user 切到 background tab 后浏览器把
-// setInterval throttle 到 1Hz 但 layout pipeline 仍然要做 work）。
-//
-// Cache 策略：把 DOM refs 挂到 `taskCountdowns[tid]._domCache` 上，
-// `document.contains(cache.ring)` 兜底 stale invalidation（SSE 重渲染
-// 或 incremental rebuild 会替换 .task-tab 节点，旧 cache 就脱离 DOM
-// tree）。命中 cache 直接复用，未命中重查并写回。
 function _getOrCacheCountdownDom(tid, entry) {
   if (!entry) return null;
   let cache = entry._domCache;
@@ -4487,10 +3402,10 @@ function forceUpdateAllTaskCountdowns() {
   for (const tid in taskCountdowns) {
     if (!Object.prototype.hasOwnProperty.call(taskCountdowns, tid)) continue;
     const entry = taskCountdowns[tid];
-    if (!entry || !entry.timer) continue; // 已结束或未启动的不刷
+    if (!entry || !entry.timer) continue;
 
     const remaining = Math.max(0, Math.floor(entry.remaining || 0));
-    const total = entry.timeout || 240; // 与 tickTaskCountdown 同步
+    const total = entry.timeout || 240;
     const progress = total > 0 ? remaining / total : 0;
     const radius = 9;
     const circumference = 2 * Math.PI * radius;
@@ -4507,7 +3422,7 @@ function forceUpdateAllTaskCountdowns() {
       try {
         updateCountdownDisplay(remaining);
       } catch (err) {
-        // updateCountdownDisplay 内部已有兜底；这里只是防御未定义场景。
+
         console.debug("forceUpdateAllTaskCountdowns: skip main display", err);
       }
     }
@@ -4515,25 +3430,10 @@ function forceUpdateAllTaskCountdowns() {
 }
 
 if (typeof window.tasksCountdownVisibilityHandlerInstalled === "undefined") {
-  // 与 ``tasksPollVisibilityHandlerInstalled`` 等其他幂等 flag 对称。
+
   window.tasksCountdownVisibilityHandlerInstalled = false;
 }
 
-/**
- * R128：装一次 visibility-aware countdown sync handler；幂等。
- *
- * 由首次 ``startTaskCountdown`` 调用触发。把 visibility -> visible 的
- * 边沿事件接到 ``forceUpdateAllTaskCountdowns`` 上，让用户切回标签页
- * 时 SVG 圆环 / 数字立刻 sync 到 deadline-derived 真值，避免"切回还
- * 看到旧数字"的 0-1s UI 延迟。
- *
- * 不在 ``startTasksPolling`` 的 visibility handler 里 piggy-back，原
- * 因：
- *  - 倒计时与轮询是不同的语义维度（倒计时即使 polling 暂停也仍要本
- *    地走 deadline），生命周期更长；
- *  - 把两类逻辑解耦能让未来"只关 polling 不关 countdown"或反过来更
- *    干净。
- */
 function installCountdownVisibilitySyncHandlerOnce() {
   if (typeof document === "undefined") return;
   if (window.tasksCountdownVisibilityHandlerInstalled) return;
@@ -4550,11 +3450,11 @@ const TASK_COUNTDOWN_SHARED_TIMER_SENTINEL = "shared-countdown-ticker";
 function calculateTaskCountdownRemaining(taskId, entry) {
   const deadline = window.taskDeadlines[taskId];
   if (deadline) {
-    // 使用服务器时间偏移校正本地时间
+
     const adjustedNow = Date.now() / 1000 + (window.serverTimeOffset || 0);
     return Math.max(0, Math.floor(deadline - adjustedNow));
   }
-  // 没有 deadline 信息，使用递减方式（向后兼容）
+
   return entry.remaining - 1;
 }
 
@@ -4594,7 +3494,6 @@ function _clearTaskCountdown(taskId) {
   stopSharedTaskCountdownTickerIfIdle();
 }
 
-// R689 (TODO#13)：用户是否在 typing-hold 窗口内输入过。
 function isUserActivelyTyping() {
   return (
     typeof window.lastFeedbackTypingAtMs === "number" &&
@@ -4603,17 +3502,6 @@ function isUserActivelyTyping() {
   );
 }
 
-/**
- * R689 (TODO#13)：active 任务剩余时间进入触发窗口且用户正在输入时，
- * 自动调用既有 extend endpoint 延长倒计时（+60s）。
- *
- * 设计要点：
- * - 复用 ``POST /api/tasks/<id>/extend``：服务端可见、受 extends_max
- *   配额约束（默认 3 次），MCP backend 的 R689 探测循环会跟随延长；
- * - ``__aiiaTypingAutoExtendInFlight`` 防止 1Hz ticker 并发重复请求；
- * - 配额耗尽 / 请求失败：静默放行，倒计时自然归零后由
- *   ``autoSubmitTask`` 提交用户已输入的内容（内容不丢失）。
- */
 function maybeAutoExtendCountdownForTyping(taskId, remaining) {
   if (typeof fetch === "undefined") return;
   if (taskId !== activeTaskId) return;
@@ -4645,7 +3533,7 @@ function maybeAutoExtendCountdownForTyping(taskId, remaining) {
     })
     .then(function (res) {
       if (!res.ok || !res.data || !res.data.success) {
-        // 失败（含配额耗尽 422）：同步 extends_used 让按钮态一致，随后放行
+
         if (res.data && typeof res.data.extends_used === "number") {
           var failedTask = findTaskById(window.currentTasks || [], taskId);
           if (failedTask) {
@@ -4707,30 +3595,19 @@ function tickTaskCountdown(taskId) {
   const entry = taskCountdowns[taskId];
   if (!entry || entry.timer !== TASK_COUNTDOWN_SHARED_TIMER_SENTINEL) return;
 
-  // 【优化】使用基于 deadline 的计算方式，而非简单递减
-  // 这样即使标签页被切换（导致 JS 定时器不准确），恢复后也能显示正确的剩余时间
   const newRemaining = calculateTaskCountdownRemaining(taskId, entry);
   entry.remaining = newRemaining;
 
-  // R128/R460：页面隐藏时跳过所有 DOM 写入，但仍保留 deadline 计算 +
-  // autoSubmit 触发逻辑。R460 把原先 N 个 per-task interval 收敛为单个
-  // 共享 1Hz ticker；隐藏页仍然只做每个任务必要的 deadline 检查，避免
-  // N 条 chained timers 争用浏览器后台 timer budget。
   const documentHidden = typeof document !== "undefined" && document.hidden;
 
-  // 更新SVG圆环倒计时
-  // R266 cache: 走 _getOrCacheCountdownDom，避免 1Hz × N task 反复
-  // getElementById + querySelector × 2（详细 rationale 见该 helper 注释）。
   if (!documentHidden) {
     const cache = _getOrCacheCountdownDom(taskId, entry);
     if (cache) {
       const remaining = entry.remaining;
-      // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240); the
-      // historical 250/290 were stale "MAX" values, not "DEFAULT".
-      const total = entry.timeout || 240;
-      const progress = remaining / total; // 进度（0-1）
 
-      // 更新SVG circle的stroke-dashoffset
+      const total = entry.timeout || 240;
+      const progress = remaining / total;
+
       const radius = 9;
       const circumference = 2 * Math.PI * radius;
       const offset = circumference * (1 - progress);
@@ -4745,38 +3622,27 @@ function tickTaskCountdown(taskId) {
       cache.ring.title = _t("page.countdown", { seconds: remaining });
     }
 
-    // 如果是活动任务，也更新主倒计时
     if (taskId === activeTaskId) {
       updateCountdownDisplay(entry.remaining);
     }
   }
 
-  // R689 (TODO#13)：剩余时间进入触发窗口且用户正在输入 → 自动延长倒计时
   maybeAutoExtendCountdownForTyping(taskId, entry.remaining);
 
-  // 倒计时结束
   if (entry.remaining <= 0) {
-    // R699：用户正在输入时绝不结束任务——即使 extend 配额耗尽、倒计时
-    // 已归零，也保持 timer 存活并跳过提交，下一个 1Hz tick 重新检查；
-    // 直到用户停止输入（TYPING_HOLD_IDLE_MS 静默）才走自动提交（届时
-    // autoSubmitTask 会优先提交已输入的内容，R689 零丢失语义不变）。
+
     if (taskId === activeTaskId && isUserActivelyTyping()) {
       return;
     }
-    // 关键：标记该任务的 timer 已停止，便于后续在任务变为 active 时重启倒计时/触发自动提交
+
     entry.timer = null;
     stopSharedTaskCountdownTickerIfIdle();
-    // 智能自动提交逻辑：
-    // 1. 如果是当前激活的任务 → 立即自动提交
-    // 2. 如果不是激活任务，检查是否有其他活动任务在处理
-    //    - 如果没有活动任务（用户无响应），也自动提交当前任务
-    //    - 如果有活动任务，说明用户正在处理其他任务，暂不自动提交
+
     if (taskId === activeTaskId) {
-      // 当前激活任务超时，直接自动提交
+
       autoSubmitTask(taskId);
     } else {
-      // 非激活任务超时：检查是否真的没有用户活动
-      // 如果当前没有任何激活任务，说明用户完全无响应，也自动提交
+
       if (!activeTaskId) {
         _debugLog(
           `Non-active task ${taskId} timed out with no active task; auto-submitting`,
@@ -4799,78 +3665,20 @@ function tickAllTaskCountdowns() {
   stopSharedTaskCountdownTickerIfIdle();
 }
 
-/**
- * 启动任务倒计时
- *
- * 为指定任务注册倒计时，实际 1Hz tick 由页面级共享 ticker 驱动，支持自动提交。
- *
- * @param {string} taskId - 任务ID
- * @param {number} remaining - 剩余倒计时秒数（可能是服务器计算的剩余时间）
- * @param {number} total - 总超时时间（用于计算进度百分比，可选，默认等于 remaining）
- *
- * ## 功能说明
- *
- * 1. **清理旧计时器**：如果已存在则先移除旧 entry
- * 2. **共享计时器**：所有任务复用一个 1Hz ticker
- * 3. **更新UI**：更新圆环进度和倒计时文本
- * 4. **自动提交**：倒计时结束时自动提交任务
- *
- * ## 倒计时数据结构
- *
- * - `remaining`: 剩余秒数
- * - `timeout`: 总秒数（用于计算进度百分比）
- * - `timer`: 运行标记（共享 ticker sentinel）
- *
- * ## UI更新
- *
- * - 圆环进度：SVG stroke-dashoffset（基于 remaining/timeout）
- * - 倒计时文本：格式化时间显示
- * - 主倒计时：如果是活动任务则同步更新
- *
- * ## 自动提交
- *
- * - 倒计时归零时调用 `autoSubmitTask`
- * - 清除计时器
- * - 记录日志
- *
- * ## 页面刷新不重置
- *
- * - 服务器返回 remaining_time（基于任务创建时间计算）
- * - 刷新页面后从服务器获取真实剩余时间
- * - 进度条使用 remaining/timeout 计算，保持视觉一致性
- *
- * ## 注意事项
- *
- * - 每个任务有独立的倒计时状态，但共享一个页面级 ticker
- * - 计时器ID存储在 `taskCountdowns` 对象中
- * - 任务删除时需要清理计时器（防止内存泄漏）
- */
 function startTaskCountdown(taskId, remaining, total = null) {
-  // 如果没有指定 total，使用 remaining 作为 total（向后兼容）
+
   const timeout = total || remaining;
-  // 停止该任务的旧倒计时状态
+
   _clearTaskCountdown(taskId);
 
-  // R128：在第一次启动倒计时时一次性安装 visibility-aware DOM 同步。
-  //
-  // why：tick callback 在 hidden 时跳过 DOM 写入（见下方注释），所以
-  // 用户切回标签页时 SVG 圆环 / 数字显示会停留在"切走那一刻"的状态，
-  // 等下一个 1Hz tick 才更新——肉眼可见的 0-1s 延迟。本 handler 在
-  // visible 分支立刻给所有 alive countdown timer 强制刷新一次 UI，
-  // 让用户切回的瞬间看到正确数字。``calculateTaskCountdownRemaining``
-  // 仍然是 single source of truth，无须额外算账。
   installCountdownVisibilitySyncHandlerOnce();
 
-  // 初始化倒计时数据
-  // remaining: 当前剩余秒数（可能是刷新后从服务器获取的）
-  // timeout: 总超时时间（用于计算进度百分比）
   taskCountdowns[taskId] = {
     remaining: remaining,
-    timeout: timeout, // 总超时时间，用于计算进度百分比
+    timeout: timeout,
     timer: TASK_COUNTDOWN_SHARED_TIMER_SENTINEL,
   };
 
-  // 如果是活动任务，更新主倒计时显示
   if (taskId === activeTaskId) {
     updateCountdownDisplay(remaining);
   }
@@ -4882,26 +3690,6 @@ function startTaskCountdown(taskId, remaining, total = null) {
   );
 }
 
-/**
- * 格式化倒计时显示
- *
- * 将秒数转换为"分:秒"格式。
- *
- * @param {number} seconds - 秒数
- * @returns {string} 格式化的时间字符串（如"05:30"）
- *
- * ## 格式规则
- *
- * - 分钟：补零到2位
- * - 秒钟：补零到2位
- * - 分隔符：冒号
- *
- * ## 示例
- *
- * - 90秒 → "01:30"
- * - 5秒 → "00:05"
- * - 0秒 → "00:00"
- */
 function formatCountdown(seconds) {
   if (seconds > 60) {
     return `${Math.floor(seconds / 60)}m`;
@@ -4909,32 +3697,8 @@ function formatCountdown(seconds) {
   return `${seconds}s`;
 }
 
-/**
- * 自动提交任务
- *
- * 倒计时结束时自动提交任务反馈。
- *
- * @param {string} taskId - 任务ID
- *
- * ## 功能说明
- *
- * - 获取当前输入框内容
- * - 获取已选中的选项
- * - 调用 `submitTaskFeedback` 提交
- *
- * ## 触发时机
- *
- * - 任务倒计时归零时自动触发
- * - 用户未手动提交时生效
- *
- * ## 注意事项
- *
- * - 仅在倒计时归零时调用
- * - 提交空内容也会执行
- * - 异步操作
- */
 async function autoSubmitTask(taskId) {
-  // 自动提交治理：同一 task 做最小退避（可重试但不过载），避免超时+提交失败/429 时刷爆服务端
+
   try {
     const now = Date.now();
     const last = autoSubmitAttempted && autoSubmitAttempted[taskId];
@@ -4950,14 +3714,10 @@ async function autoSubmitTask(taskId) {
       autoSubmitAttempted[taskId] = now;
     }
   } catch (e) {
-    // 忽略：退避记录失败不应阻塞自动提交
+
   }
   _debugLog(`Task ${taskId} countdown ended; auto-submitting`);
 
-  // R689 (TODO#13)：倒计时归零时优先提交用户已输入的内容——
-  // 即使没点发送按钮，输入框文本 / 已勾选选项也不能丢。
-  // TODO#41：yesno 任务已点选但未提交的"是/否"同样不能丢——
-  // 合并规则与手动提交一致（"yes" 或 "yes\n\n<补充>"）。
   const typedText = collectTypedFeedbackForTask(taskId);
   const selectedOpts = collectSelectedOptionsForTask(taskId);
   const yesnoSelection =
@@ -4982,9 +3742,6 @@ async function autoSubmitTask(taskId) {
     return;
   }
 
-  // 无任何用户输入：沿用原路径，提交配置的 resubmit 提示语。
-  // 使用配置的提示语（运行中热更新）：自动提交前实时拉取一次
-  // 若后端未提供（如网络故障），退出而不是发送硬编码字符串，由下一轮轮询/用户手动触发重试
   const prompts = await fetchFeedbackPromptsFresh();
   const defaultMessage =
     prompts && prompts.resubmit_prompt ? String(prompts.resubmit_prompt) : "";
@@ -4997,12 +3754,6 @@ async function autoSubmitTask(taskId) {
   await submitTaskFeedback(taskId, defaultMessage, []);
 }
 
-/**
- * R689 (TODO#13)：收集指定任务的用户已输入文本。
- *
- * 优先级：active 任务的实时 textarea 值 > taskTextareaContents 自动保存值。
- * 收集失败一律返回空串（调用方按"无输入"处理，走 resubmit_prompt 原路径）。
- */
 function collectTypedFeedbackForTask(taskId) {
   try {
     if (taskId === activeTaskId && typeof document !== "undefined") {
@@ -5025,12 +3776,6 @@ function collectTypedFeedbackForTask(taskId) {
   return "";
 }
 
-/**
- * R689 (TODO#13)：收集指定任务已勾选的预定义选项（label 数组）。
- *
- * 优先级：active 任务的实时 checkbox 状态 > taskOptionsStates 自动保存值
- * （"option-N" / N 两种 key 形态都兼容，映射回 predefined_options 文案）。
- */
 function collectSelectedOptionsForTask(taskId) {
   const labels = [];
   try {
@@ -5065,48 +3810,12 @@ function collectSelectedOptionsForTask(taskId) {
   return labels;
 }
 
-/**
- * 提交任务反馈
- *
- * 将用户的反馈内容提交到服务器。
- *
- * @param {string} taskId - 任务ID
- * @param {string} feedbackText - 反馈文本
- * @param {Array<string>} selectedOptions - 选中的选项列表
- *
- * ## 功能说明
- *
- * 1. **构建请求体**：包含反馈文本、选项、图片
- * 2. **发送POST请求**：POST `/api/tasks/{taskId}/feedback`
- * 3. **处理响应**：成功则继续，失败则显示错误
- * 4. **刷新列表**：立即同步任务列表
- * 5. **清理状态**：清除缓存数据
- *
- * ## 请求数据
- *
- * - `user_input`: 用户输入的文本
- * - `selected_options`: 选中的选项数组
- * - `images`: 上传的图片数组
- *
- * ## 错误处理
- *
- * - 网络错误：记录错误日志
- * - 服务器错误：显示错误消息
- * - 请求失败：不清理状态（允许重试）
- *
- * ## 注意事项
- *
- * - 异步操作
- * - 提交后立即刷新任务列表
- * - 失败不影响其他任务
- */
 async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
   try {
     const formData = new FormData();
     formData.append("feedback_text", feedbackText);
     formData.append("selected_options", JSON.stringify(selectedOptions));
 
-    // 添加图片文件
     const selectedImageCount =
       selectedImages && Number.isFinite(selectedImages.length)
         ? selectedImages.length
@@ -5132,14 +3841,13 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
 
     if (data.success) {
       _debugLog(`Task ${taskId} submitted successfully`);
-      // R692 (TODO#6-1)：提交成功后请求把焦点交给下一个任务的输入框，
-      // 让连续回复多任务时省掉一次鼠标点击。
+
       requestFeedbackInputFocus();
-      // 停止该任务的倒计时
+
       if (taskCountdowns[taskId]) {
         _clearTaskCountdown(taskId);
       }
-      // 清除该任务保存的所有状态
+
       if (taskTextareaContents[taskId] !== undefined) {
         delete taskTextareaContents[taskId];
         _debugLog(`Cleared saved textarea content for task ${taskId}`);
@@ -5158,8 +3866,6 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
         _debugLog(`Cleared saved image list for task ${taskId}`);
       }
 
-      // SSE 会在 complete_task 后 ~80ms 内自动触发 fetchAndApplyTasks，
-      // 如果 SSE 不可用则回退轮询也会处理。这里仅做一次兜底刷新。
       if (!_sseConnected) {
         setTimeout(async () => {
           await refreshTasksList();
@@ -5180,50 +3886,19 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
   }
 }
 
-// ==================== 新任务通知 ====================
-
-/**
- * 显示新任务视觉提示
- *
- * 在标签栏旁边显示临时的新任务提示，提醒用户有新任务到达。
- *
- * @param {number} count - 新任务数量
- *
- * ## 功能说明
- *
- * - 创建临时提示元素
- * - 显示新任务数量
- * - 2秒后自动移除
- * - 使用CSS动画
- *
- * ## 视觉效果
- *
- * - 橙色背景
- * - 淡入淡出动画
- * - 位置：标签栏右侧
- *
- * ## 注意事项
- *
- * - 提示会自动消失
- * - 不影响功能
- * - 仅视觉反馈
- */
 function showNewTaskVisualHint(count) {
   const container = document.getElementById("task-tabs-container");
   if (!container) return;
 
-  // 检测当前主题 (light/dark)
   const html = document.documentElement;
   const currentTheme = html.getAttribute("data-theme");
   const isLightTheme = currentTheme === "light";
 
-  // Claude 风格 "Create - 创作" SVG 图标（橙色强调色 #d97757）
   const createSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none" style="flex-shrink: 0; margin-right: 10px;"><path d="M15.5117 1.99707C15.9213 2.0091 16.3438 2.13396 16.6768 2.46679C17.0278 2.81814 17.1209 3.26428 17.0801 3.68261C17.0404 4.08745 16.8765 4.49344 16.6787 4.85058C16.3934 5.36546 15.9941 5.85569 15.6348 6.20898C15.7682 6.41421 15.8912 6.66414 15.9551 6.9453C16.0804 7.4977 15.9714 8.13389 15.4043 8.70116C14.8566 9.24884 13.974 9.54823 13.1943 9.71679C12.7628 9.81003 12.3303 9.86698 11.9473 9.90233C12.0596 10.2558 12.0902 10.7051 11.8779 11.2012L11.8223 11.3203C11.5396 11.8854 11.0275 12.2035 10.4785 12.3965C9.93492 12.5875 9.29028 12.6792 8.65332 12.75C7.99579 12.8231 7.34376 12.8744 6.70117 12.9775C6.14371 13.067 5.63021 13.1903 5.18652 13.3818L5.00585 13.4658C4.53515 14.2245 4.13745 14.9658 3.80957 15.6465C4.43885 15.2764 5.1935 15 5.99999 15C6.27614 15 6.49999 15.2238 6.49999 15.5C6.49999 15.7761 6.27613 16 5.99999 16C5.35538 16 4.71132 16.2477 4.15039 16.6103C3.58861 16.9736 3.14957 17.427 2.91601 17.7773C2.91191 17.7835 2.90568 17.788 2.90136 17.7939C2.88821 17.8119 2.8746 17.8289 2.85937 17.8447C2.85117 17.8533 2.84268 17.8612 2.83398 17.8691C2.81803 17.8835 2.80174 17.897 2.78417 17.9092C2.774 17.9162 2.76353 17.9225 2.75292 17.9287C2.73854 17.9372 2.72412 17.9451 2.70898 17.9521C2.69079 17.9605 2.6723 17.9675 2.65332 17.9736C2.6417 17.9774 2.63005 17.9805 2.61816 17.9834C2.60263 17.9872 2.5871 17.9899 2.57128 17.9922C2.55312 17.9948 2.53511 17.9974 2.5166 17.998C2.50387 17.9985 2.49127 17.9976 2.47851 17.9971C2.45899 17.9962 2.43952 17.9954 2.41992 17.9922C2.40511 17.9898 2.39062 17.9862 2.37597 17.9824C2.36477 17.9795 2.35294 17.9783 2.34179 17.9746C2.33697 17.973 2.33286 17.9695 2.32812 17.9678C2.31042 17.9612 2.29351 17.953 2.27636 17.9443C2.26332 17.9378 2.25053 17.9314 2.23828 17.9238C2.23339 17.9208 2.22747 17.9192 2.22265 17.916C2.21414 17.9103 2.20726 17.9026 2.19921 17.8965C2.18396 17.8849 2.16896 17.8735 2.15527 17.8603C2.14518 17.8507 2.13609 17.8404 2.12695 17.8301C2.11463 17.8161 2.10244 17.8023 2.09179 17.7871C2.08368 17.7756 2.07736 17.7631 2.07031 17.751C2.06168 17.7362 2.05297 17.7216 2.04589 17.706C2.03868 17.6901 2.03283 17.6738 2.02734 17.6572C2.0228 17.6436 2.01801 17.6302 2.01464 17.6162C2.01117 17.6017 2.009 17.587 2.00683 17.5722C2.00411 17.5538 2.00161 17.5354 2.00097 17.5166C2.00054 17.5039 2.00141 17.4912 2.00195 17.4785C2.00279 17.459 2.00364 17.4395 2.00683 17.4199C2.00902 17.4064 2.01327 17.3933 2.0166 17.3799C2.01973 17.3673 2.02123 17.3543 2.02539 17.3418C2.41772 16.1648 3.18163 14.466 4.30468 12.7012C4.31908 12.5557 4.34007 12.3582 4.36914 12.1201C4.43379 11.5907 4.53836 10.8564 4.69921 10.0381C5.0174 8.41955 5.56814 6.39783 6.50585 4.9912L6.73242 4.66894C7.27701 3.93277 7.93079 3.30953 8.61035 2.85156C9.3797 2.33311 10.2221 2 11.001 2C11.7951 2.00025 12.3531 2.35795 12.7012 2.70605C12.7723 2.77723 12.8348 2.84998 12.8896 2.91796C13.2829 2.66884 13.7917 2.39502 14.3174 2.21191C14.6946 2.08056 15.1094 1.98537 15.5117 1.99707ZM17.04 15.5537C17.1486 15.3 17.4425 15.1818 17.6963 15.29C17.95 15.3986 18.0683 15.6925 17.96 15.9463C17.4827 17.0612 16.692 18 15.5 18C14.6309 17.9999 13.9764 17.5003 13.5 16.7978C13.0236 17.5003 12.3691 18 11.5 18C10.6309 17.9999 9.97639 17.5003 9.49999 16.7978C9.02359 17.5003 8.36911 18 7.49999 18C7.22391 17.9999 7 17.7761 6.99999 17.5C6.99999 17.2239 7.22391 17 7.49999 17C8.07039 17 8.6095 16.5593 9.04003 15.5537L9.07421 15.4873C9.16428 15.3412 9.32494 15.25 9.49999 15.25C9.70008 15.25 9.88121 15.3698 9.95996 15.5537L10.042 15.7353C10.4581 16.6125 10.9652 16.9999 11.5 17C12.0704 17 12.6095 16.5593 13.04 15.5537L13.0742 15.4873C13.1643 15.3412 13.3249 15.25 13.5 15.25C13.7001 15.25 13.8812 15.3698 13.96 15.5537L14.042 15.7353C14.4581 16.6125 14.9652 16.9999 15.5 17C16.0704 17 16.6095 16.5593 17.04 15.5537ZM15.4824 2.99707C15.247 2.99022 14.9608 3.04682 14.6465 3.15624C14.0173 3.37541 13.389 3.76516 13.0498 4.01953C12.9277 4.11112 12.7697 4.14131 12.6221 4.10253C12.4745 4.06357 12.3522 3.9591 12.291 3.81933V3.81835C12.2892 3.81468 12.2861 3.80833 12.2822 3.80078C12.272 3.78092 12.2541 3.7485 12.2295 3.70898C12.1794 3.62874 12.1011 3.52019 11.9941 3.41308C11.7831 3.2021 11.4662 3.00024 11.001 2.99999C10.4904 2.99999 9.84173 3.22729 9.16894 3.68066C8.58685 4.07297 8.01568 4.61599 7.5371 5.26269L7.33789 5.54589C6.51634 6.77827 5.99475 8.63369 5.68066 10.2314C5.63363 10.4707 5.5913 10.7025 5.55371 10.9238C7.03031 9.01824 8.94157 7.19047 11.2812 6.05077C11.5295 5.92989 11.8283 6.03301 11.9492 6.28124C12.0701 6.52949 11.967 6.82829 11.7187 6.94921C9.33153 8.11208 7.38648 10.0746 5.91406 12.1103C6.12313 12.0632 6.33385 12.0238 6.54296 11.9902C7.21709 11.8821 7.92723 11.8243 8.54296 11.7558C9.17886 11.6852 9.72123 11.6025 10.1465 11.4531C10.5662 11.3056 10.8063 11.1158 10.9277 10.873L10.9795 10.7549C11.0776 10.487 11.0316 10.2723 10.9609 10.1123C10.918 10.0155 10.8636 9.93595 10.8203 9.88183C10.7996 9.85598 10.7822 9.83638 10.7715 9.82518L10.7607 9.81542L10.7627 9.8164L10.7646 9.81835C10.6114 9.67972 10.5597 9.46044 10.6338 9.26757C10.7082 9.07475 10.8939 8.94726 11.1006 8.94726C11.5282 8.94719 12.26 8.8956 12.9834 8.73925C13.7297 8.5779 14.3654 8.32602 14.6973 7.99413C15.0087 7.68254 15.0327 7.40213 14.9795 7.16698C14.9332 6.96327 14.8204 6.77099 14.707 6.62792L14.5957 6.50195C14.4933 6.39957 14.4401 6.25769 14.4502 6.11327C14.4605 5.96888 14.5327 5.83599 14.6484 5.74902C14.9558 5.51849 15.4742 4.96086 15.8037 4.3662C15.9675 4.07048 16.0637 3.80137 16.085 3.58593C16.1047 3.38427 16.0578 3.26213 15.9697 3.17382C15.8631 3.06726 15.7102 3.00377 15.4824 2.99707Z" fill="#d97757"/></svg>`;
 
-  // 主题适配样式
   const themeStyles = isLightTheme
     ? {
-        // 浅色主题：温暖的米白背景 + 深色文字
+
         background: "linear-gradient(135deg, #faf9f5 0%, #f2f1ec 100%)",
         color: "#131314",
         border: "1px solid rgba(217, 119, 87, 0.4)",
@@ -5231,14 +3906,13 @@ function showNewTaskVisualHint(count) {
           "0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(217, 119, 87, 0.15)",
       }
     : {
-        // 深色主题：与任务标签区域风格一致
+
         background: "rgba(45, 45, 60, 0.95)",
         color: "rgba(245, 245, 247, 0.95)",
         border: "1px solid rgba(255, 255, 255, 0.08)",
         boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
       };
 
-  // 创建提示元素
   const existingHint = document.getElementById("new-task-hint");
   if (existingHint && existingHint.parentNode) {
     if (existingHint.__aiiaRemoveTimer) {
@@ -5282,10 +3956,8 @@ function showNewTaskVisualHint(count) {
     "Received " + count + " new feedback requests";
   hint.appendChild(label);
 
-  // 添加到页面
   document.body.appendChild(hint);
 
-  // 3秒后自动移除
   hint.__aiiaRemoveTimer = setTimeout(() => {
     hint.__aiiaRemoveTimer = null;
     if (hint.parentNode) {
@@ -5296,30 +3968,6 @@ function showNewTaskVisualHint(count) {
   _debugLog(`显示新任务视觉提示: ${count} 个新任务`);
 }
 
-/**
- * 显示新任务通知
- *
- * 保留的函数，用于向后兼容。阶段 B 起统一通过前端“通知中心”入口派发事件。
- *
- * @param {number} count - 新任务数量（未使用）
- * @param {string[]=} taskIds - 可选：新任务 ID 列表（用于更精准的通知文案/去重）
- *
- * ## 功能说明
- *
- * - 优先调用 `notificationManager.dispatchEvent()`（由 `static/js/app.js` 提供）
- * - 桌面端使用视觉提示（Visual Hint）
- * - 移动端在配置允许时优先触发 Bark（由后端端点执行，避免前端直连 Bark）
- *
- * ## 历史说明
- *
- * - 原用途：显示浏览器桌面通知（Web Notification API）
- * - 现方案：收敛为统一事件派发，由通知中心根据环境/配置做路由与降级
- *
- * ## 注意事项
- *
- * - 任何通知失败不应影响轮询主流程
- * - `notificationManager` 不存在时会自动降级为仅显示视觉提示
- */
 function showNewTaskNotification(count, taskIds) {
   try {
     if (
@@ -5335,73 +3983,19 @@ function showNewTaskNotification(count, taskIds) {
       return;
     }
   } catch (e) {
-    // 忽略：通知中心异常不应影响轮询主流程
+
   }
 
-  // 降级：仅展示视觉提示
   try {
     showNewTaskVisualHint(count);
   } catch (e) {
-    // 忽略：视觉提示失败不应影响轮询主流程
+
   }
 }
 
-// ==================== 初始化 ====================
-
-/**
- * 初始化多任务功能
- *
- * 页面加载时初始化多任务管理功能。
- *
- * ## 功能说明
- *
- * - 启动任务列表轮询
- * - 加载初始任务列表
- * - 设置事件监听器
- *
- * ## 调用时机
- *
- * - 页面DOM加载完成时
- * - 多任务模块激活时
- *
- * ## 初始化步骤
- *
- * 1. 启动任务列表轮询（每2秒）
- * 2. 首次加载任务列表
- * 3. 渲染初始UI
- *
- * ## 注意事项
- *
- * - 异步函数
- * - 只应调用一次
- * - 依赖DOM已加载
- */
 async function initMultiTaskSupport() {
   _debugLog("Initializing multi-task support…");
 
-  // R22.3：冷启关键路径并行化。
-  // why：`fetchFeedbackPromptsFresh()` (`GET /api/get-feedback-prompts`) 与
-  // `refreshTasksList()` (`GET /api/tasks`) 在数据流上彼此独立——前者只
-  // 写 `window.feedbackPrompts` + 设置面板的 `config-file-path` 输入框，
-  // 后者只写任务列表 UI，两者没有共享变量也没有时序依赖。串行 await 等
-  // 于把两个独立的网络往返叠加成 2× RTT；改 `Promise.all` 后两个请求在
-  // 同一个事件循环 tick 内并行下发，关键路径压到 max(RTT_a, RTT_b)，
-  // 在典型 LAN/loopback 上节省 ~5-15 ms 的 user-perceived TTI 延迟。
-  //
-  // BUG5 鲁棒性修复：
-  // 历史代码裸 await ``Promise.all([...])`` —— 注释里乐观地写 "两个函数
-  // 都是 swallow-and-fallback 风格，事实上不会 reject"，但任何一处 lazy
-  // import 失败 / unexpected exception 都会让 Promise.all reject → init
-  // 函数提前抛出 → **后续 ``startTasksPolling`` + ``startTasksHealthCheck``
-  // 永远不会被调用** → 页面卡在初始 loading 状态，即便后端恢复也不会
-  // 自动重连（无 polling、无健康检查、无 SSE）。用户表现："后台仍在运行
-  // 但 web 页面无法显示，需要硬刷新"。
-  //
-  // 改用 ``Promise.allSettled`` + try/catch 双层兜底：
-  //   - 任何一个 reject 都不阻塞另一个完成；
-  //   - 整体被 try/catch 包裹，即便 Promise.allSettled 本身因某种环境
-  //     问题失败，仍会进入下面的轮询启动路径。
-  // 这样 init 始终能跑到健康检查启动那一步，保证后端恢复后页面能自愈。
   try {
     await Promise.allSettled([fetchFeedbackPromptsFresh(), refreshTasksList()]);
   } catch (e) {
@@ -5411,19 +4005,10 @@ async function initMultiTaskSupport() {
     );
   }
 
-  // 启动定时轮询
   startTasksPolling();
 
-  // R123：健康检查每 30s 跑一次，确保轮询/SSE 仍在运行。改造为
-  // ``startTasksHealthCheck`` 幂等函数 + ``stopTasksHealthCheck``
-  // 显式清理，让 visibilitychange / beforeunload 路径能彻底关闭
-  // 后台 timer，避免页面隐藏后仍周期性消耗 CPU + 不必要的 SSE
-  // reconnect 触发（pre-R123 的裸 timer 调用永远不被回收）。详见
-  // ``tests/test_tasks_health_check_lifecycle_r123.py``。
   startTasksHealthCheck();
 
-  // 【新增】实时保存 textarea 和选项状态
-  // 监听 input 事件，每次输入都保存，避免轮询导致内容丢失
   const autosaveBindings = setupRealtimeAutosaveListeners();
   if (autosaveBindings.textarea) {
     _debugLog("Enabled real-time textarea autosave");
@@ -5437,40 +4022,6 @@ async function initMultiTaskSupport() {
   );
 }
 
-/**
- * 手动触发任务列表更新
- *
- * 立即从服务器获取最新的任务列表，用于提交反馈后的即时同步。
- *
- * ## 功能说明
- *
- * - 请求 `/api/tasks` 获取最新任务列表
- * - 更新任务列表和统计信息
- * - 处理请求失败
- *
- * ## 调用时机
- *
- * - 提交任务反馈后
- * - 用户点击刷新按钮
- * - 需要立即同步状态时
- *
- * ## 与轮询的区别
- *
- * - 立即执行：不等待轮询间隔
- * - 手动触发：不是定时自动执行
- * - 用途不同：用于即时同步而非定期更新
- *
- * ## 错误处理
- *
- * - 请求失败：记录错误日志
- * - 不影响轮询机制
- *
- * ## 注意事项
- *
- * - 异步函数
- * - 不依赖轮询定时器
- * - 可以与轮询并行运行
- */
 async function refreshTasksList() {
   const ok = await fetchAndApplyTasks("manual");
   if (ok) {
@@ -5478,7 +4029,6 @@ async function refreshTasksList() {
     _debugLog("Task list refreshed manually");
   }
 
-  // 手动刷新后确保轮询处于运行态（页面可见时）
   if (
     !tasksPollingTimer &&
     !(typeof document !== "undefined" && document.hidden)
@@ -5487,14 +4037,6 @@ async function refreshTasksList() {
   }
 }
 
-// ============================================================
-// R692 (TODO#6-1) — 提交/关闭任务后自动聚焦下一个任务的输入框
-// ============================================================
-// 设计：提交成功 / 关闭任务时登记一个带时间戳的聚焦请求；下一次任务详情
-// 渲染完成（loadTaskDetails / switchTask 缓存路径）时消费该请求。
-// - 时间窗 8s：覆盖 SSE（~80ms）与轮询兜底（≤3s）两条切换路径，
-//   过期请求自动作废，避免用户手动操作许久后焦点被"迟到的请求"抢走。
-// - 仅在 textarea 可见（非 yesno 模式）且页面可见时聚焦。
 if (typeof window.__aiiaFocusInputRequestAtMs === "undefined") {
   window.__aiiaFocusInputRequestAtMs = 0;
 }
@@ -5512,7 +4054,7 @@ function maybeApplyPendingInputFocus() {
   if (typeof document === "undefined" || document.hidden) return;
   const textarea = document.getElementById("feedback-text");
   if (!textarea || typeof textarea.focus !== "function") return;
-  // yesno 模式下 textarea 隐藏，不抢焦点（按钮本身可 Tab 到达）
+
   if (textarea.style && textarea.style.display === "none") {
     window.__aiiaFocusInputRequestAtMs = 0;
     return;
@@ -5522,14 +4064,12 @@ function maybeApplyPendingInputFocus() {
     textarea.focus();
     _debugLog("Focused feedback textarea for next task (R692)");
   } catch (e) {
-    // 聚焦失败不影响主流程
+
   }
 }
 
 function handleRealtimeTextareaAutosave(event) {
-  // R689 (TODO#13)：记录输入活跃时间，供倒计时 typing-hold 判定使用。
-  // 放在 activeTaskId 判空之前——即使任务状态短暂不同步，输入活跃信号
-  // 也应生效。
+
   window.lastFeedbackTypingAtMs = Date.now();
   if (!activeTaskId) return;
   const textarea =
@@ -5631,7 +4171,6 @@ function setupRealtimeAutosaveListeners() {
   };
 }
 
-// 导出函数供外部使用
 if (typeof window !== "undefined") {
   window.multiTaskModule = {
     startTasksPolling,
@@ -5640,14 +4179,10 @@ if (typeof window !== "undefined") {
     closeTask,
     initMultiTaskSupport,
     refreshTasksList,
-    // R123：暴露健康检查的启停 API，让 testing / 嵌入场景能显式
-    // 控制后台 timer 生命周期，避免 jsdom 测试 leak、Storybook
-    // hot-reload 残留旧 interval 等问题。
+
     startTasksHealthCheck,
     stopTasksHealthCheck,
-    // R128：暴露 visibility-aware countdown sync 的一对辅助。``forceUpdate``
-    // 让单元测试能直接驱动 UI 同步路径而不必伪造 ``visibilitychange``；
-    // ``installOnce`` 让多任务模式与"轻量初始化模式"都能装一次（幂等）。
+
     forceUpdateAllTaskCountdowns,
     installCountdownVisibilitySyncHandlerOnce,
     get sseConnected() {
@@ -5659,20 +4194,15 @@ if (typeof window !== "undefined") {
     },
   };
 
-  // 直接导出常用函数到 window，方便 app.js 调用
   window.refreshTasksList = refreshTasksList;
 }
 
-// ==================== 轻量初始化（无需进入多任务模式也生效） ====================
-// 目的：
-// - 让「设置 → 配置」里的“当前配置文件路径”能在页面打开后自动填充
-// - 让 feedbackPrompts 在任何模式下都能拿到最新配置（支持热更新）
 if (
   typeof document !== "undefined" &&
   typeof document.addEventListener === "function"
 ) {
   document.addEventListener("DOMContentLoaded", () => {
-    // 不阻塞首屏：异步拉取即可
+
     fetchFeedbackPromptsFresh();
   });
 }

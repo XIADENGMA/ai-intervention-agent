@@ -1,17 +1,3 @@
-/**
- * 设置管理器 - 从 app.js 拆分
- *
- * 管理 Web UI 的本地偏好设置（通知、声音、主题、Bark 等），
- * 支持 localStorage 持久化和后端配置同步。
- *
- * 依赖: notification-manager.js (notificationManager)
- * 暴露: window.settingsManager (SettingsManager 实例)
- */
-
-// 模块内 i18n 帮助函数：调用 window.AIIA_I18N.t() 失败/缺键时回退到内置 fallback。
-// 命名为 `_tl`（i18n 扫描器接受的 wrapper：_t / _tl / t / tl / hostT / __vuT 等），
-// 不复用 multi_task.js 的 `_t`，因为后者的第二个参数是 params 而不是 fallback 字符串，
-// 在 i18n 未加载等边界场景里会向用户暴露原始 key。
 function _tl(key, fallback) {
   try {
     if (window.AIIA_I18N && typeof window.AIIA_I18N.t === "function") {
@@ -19,26 +5,11 @@ function _tl(key, fallback) {
       if (value && value !== key) return value;
     }
   } catch (_e) {
-    // 忽略 i18n 读取失败
+
   }
   return fallback;
 }
 
-// BUG1：主动写配置前，调用 multi_task.js 暴露的 ``suppressLocalConfigChangedEcho``
-// 设置短期静音窗口，避免后端 file watcher 触发的 SSE ``config_changed`` 事件
-// 在当前 client 上再弹一条"Configuration file changed. Reload..." toast。
-// 详细动机见 multi_task.js 中 ``_suppressConfigChangedToastUntilMs`` 注释。
-//
-// 设计取舍：
-// - 把"是否暴露 helper"的判断放在调用方而非 multi_task.js 是因为
-//   settings-manager.js 可能在 multi_task.js 之前加载（理论上 HTML
-//   load order 决定，但保险起见各模块都自我兜底）。
-// - 静音 5000ms 是经验值：覆盖后端 R50-B 的 250ms debounce + Flask
-//   响应延迟 + 网络抖动 + 浏览器调度。窗口越长越不会"漏掉"自己的回响，
-//   但代价是别人在窗口内改配置时本 client 看不到 toast；按使用场景，
-//   多 client 同时改同一份配置概率极低，5s 是合理上限。
-// - 不依赖 multi_task.js 必然存在：若 helper 不可用就静默 noop，保证
-//   主流程（保存配置）不会因此 break。
 function _suppressConfigChangedEchoIfAvailable(ms) {
   try {
     if (
@@ -48,11 +19,10 @@ function _suppressConfigChangedEchoIfAvailable(ms) {
       window.suppressLocalConfigChangedEcho(typeof ms === "number" ? ms : 5000);
     }
   } catch (_e) {
-    // helper 抛错绝不能影响主流程（保存配置）。
+
   }
 }
 
-// 设置管理器
 class SettingsManager {
   constructor() {
     this.storageKey = "ai-intervention-agent-settings";
@@ -89,7 +59,7 @@ class SettingsManager {
     this._languageChangeEpoch = 0;
     this._languagePersistPromise = null;
     this._pendingLanguagePreference = null;
-    // 注意：不在构造函数中调用 init()，由 DOMContentLoaded 触发
+
   }
 
   _setElementPropertyById(id, propertyName, value) {
@@ -126,7 +96,7 @@ class SettingsManager {
         this.initialized = true;
         console.debug("SettingsManager initialized");
       } finally {
-        // R279 audit: state-only cleanup; no DOM access in this finally block.
+
         this._initPromise = null;
       }
     })();
@@ -136,12 +106,12 @@ class SettingsManager {
 
   async loadSettings() {
     try {
-      // 优先从服务器加载配置
+
       const response = await fetch("/api/get-notification-config");
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          // 将服务器配置映射到前端格式
+
           const serverConfig = result.config;
           const settings = {
             enabled: serverConfig.enabled ?? this.defaultSettings.enabled,
@@ -185,7 +155,6 @@ class SettingsManager {
       );
     }
 
-    // 回退到localStorage
     try {
       const stored = localStorage.getItem(this.storageKey);
       if (stored) {
@@ -217,7 +186,7 @@ class SettingsManager {
 
   applySettings(options = {}) {
     const { syncBackend = true } = options;
-    // 更新前端通知管理器配置
+
     if (notificationManager) {
       notificationManager.updateConfig({
         enabled: this.settings.enabled,
@@ -237,7 +206,6 @@ class SettingsManager {
       });
     }
 
-    // 同步配置到后端
     if (syncBackend) {
       this.syncConfigToBackend();
     }
@@ -261,7 +229,7 @@ class SettingsManager {
         await this._postNotificationConfigToBackend(settingsSnapshot);
       }
     } finally {
-      // R279 audit: state-only cleanup; no DOM nodes are touched here.
+
       this._backendSyncPromise = null;
     }
   }
@@ -291,20 +259,6 @@ class SettingsManager {
     }
   }
 
-  // feat-reset-confirm：
-  // 重置设置是破坏性操作（一键覆盖本地 + 同步推回后端），用户曾反馈"误点
-  // 完成只能手工逐项再调一遍"。改为弹原生 ``window.confirm`` 二次确认，
-  // 取消则直接 noop，保留全部既有偏好。
-  //
-  // 选型理由：
-  // - 走原生 confirm 范式，不引入额外 modal 组件，最小变更面 +
-  //   行为一致。
-  // - i18n key ``settings.resetConfirm`` / ``settings.resetCancelled``
-  //   覆盖 en / zh-CN / pseudo；缺 key 时退到内置英文 fallback，与
-  //   其它 ``_tl`` 调用站对齐。
-  // - 在浏览器禁用 ``window.confirm``（极少见，如自动化测试 / 某些
-  //   嵌入场景）的环境下，行为退化为"不再二次确认、直接重置"，
-  //   而不是"重置永远点不动"——后者会让用户更困惑。
   resetSettings() {
     var confirmMsg = _tl(
       "settings.resetConfirm",
@@ -324,20 +278,18 @@ class SettingsManager {
     this.saveSettings();
     this.updateUI();
     this.applySettings();
-    // feat-custom-sound (§3.4): reset 也要清掉自定义音效 localStorage entry
-    // + audioBuffers['custom']，否则 "重置到默认" 的语义就有窟窿（用户期望
-    // reset = "完全回到出厂默认"）。
+
     try {
       notificationManager.clearCustomSound();
-      this._wireCustomSoundControls(); // 刷新 status / disabled 状态
+      this._wireCustomSoundControls();
     } catch (_e) {
-      // 静默：reset 主路径已经完成，custom sound 清理失败不应 gate UX
+
     }
     console.debug("Settings reset to defaults");
   }
 
   updateUI() {
-    // 更新设置面板中的控件状态
+
     this._setElementPropertyById(
       "notification-enabled",
       "checked",
@@ -380,7 +332,6 @@ class SettingsManager {
       this.settings.mobileVibrate,
     );
 
-    // 语言选择器
     const langSelect = document.getElementById("language-select");
     if (langSelect) {
       const currentLang = window.AIIA_I18N
@@ -390,7 +341,6 @@ class SettingsManager {
       langSelect.value = cfgLang !== "auto" ? cfgLang : currentLang || "auto";
     }
 
-    // 更新 Bark 设置
     this._setElementPropertyById(
       "bark-notification-enabled",
       "checked",
@@ -414,46 +364,23 @@ class SettingsManager {
     }
   }
 
-  /**
-   * 获取状态图标 SVG（Claude 风格线条图标）
-   *
-   * 功能说明：
-   *   生成用于设置面板状态显示的 SVG 图标，替代原有的 emoji。
-   *   采用 Claude 官方设计风格：线条图标、适当的 stroke-width。
-   *
-   * 设计规范：
-   *   - 尺寸：16x16px
-   *   - stroke-width: 2（与其他图标一致）
-   *   - stroke-linecap/linejoin: round（圆润的线条端点）
-   *   - 垂直居中：vertical-align: middle
-   *   - 与文字间距：margin-right: 4px
-   *
-   * 颜色方案：
-   *   - success: #4CAF50（绿色）- 表示正常/已启用
-   *   - error: #F44336（红色）- 表示错误/已禁用
-   *   - warning: #FF9800（橙色）- 表示警告/未配置
-   *   - paused: #9E9E9E（灰色）- 表示暂停状态
-   *
-   * @param {string} type - 图标类型：'success' | 'error' | 'warning' | 'paused'
-   * @returns {string} SVG HTML 字符串，可直接插入到 innerHTML
-   */
   getStatusIcon(type) {
     const icons = {
-      // 成功图标（勾号）- 浏览器支持/通知已授权/音频运行中
+
       success: `<svg class="status-icon status-icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #4CAF50;"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
-      // 错误图标（叉号）- 不支持/已拒绝/已关闭
+
       error: `<svg class="status-icon status-icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #F44336;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
-      // 警告图标（感叹号三角形）- 未请求权限/未知状态
+
       warning: `<svg class="status-icon status-icon-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #FF9800;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`,
-      // 暂停图标（双竖线）- 音频已暂停
+
       paused: `<svg class="status-icon status-icon-paused" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #9E9E9E;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`,
     };
-    // 默认返回警告图标，处理未知类型
+
     return icons[type] || icons.warning;
   }
 
   updateStatus() {
-    // 更新状态信息（使用 SVG 图标替代 emoji）
+
     const secureContext =
       typeof window !== "undefined" &&
       typeof window.isSecureContext === "boolean"
@@ -499,7 +426,6 @@ class SettingsManager {
         this.getStatusIcon("warning") + t("env.permNotRequested");
     }
 
-    // 音频状态中文化
     let audioStateHtml =
       this.getStatusIcon("error") + t("env.audioUnavailable");
     if (notificationManager.audioContext) {
@@ -545,7 +471,6 @@ class SettingsManager {
     }
     this._eventListenersInitialized = true;
 
-    // 设置按钮点击事件 - 使用直接绑定确保可靠
     const settingsBtn = document.getElementById("settings-btn");
     const settingsCloseBtn = document.getElementById("settings-close-btn");
     const testNotificationBtn = document.getElementById(
@@ -566,13 +491,6 @@ class SettingsManager {
       settingsCloseBtn.addEventListener("click", () => this.hideSettings());
     }
 
-    // R277 / cycle-24 mining-15: backdrop click 关闭 — 与
-    // ``#image-modal`` (image-upload.js _imageModalBackgroundClickHandler)
-    // 和 ``#code-paste-panel`` (app.js codePastePanel click handler) 对齐。
-    // settings 是 auto-save，无 "dirty form" 概念，点 backdrop 直接关是
-    // 标准 UX (Material Design dismissible dialog / iOS sheet swipe down)。
-    // ``e.target === settingsPanel`` 守卫：只有点 panel 本身（即 backdrop
-    // 区域）才关，点 ``.settings-content`` 内部不冒泡到这里。
     const settingsPanel = document.getElementById("settings-panel");
     if (settingsPanel && !settingsPanel.dataset.aiiaBackdropWired) {
       settingsPanel.addEventListener("click", (e) => {
@@ -614,24 +532,10 @@ class SettingsManager {
     const feedbackPrompt = document.getElementById("feedback-resubmit-prompt");
     const feedbackSuffix = document.getElementById("feedback-prompt-suffix");
 
-    // Debounce + accumulate：800ms 窗口内多个字段的修改必须合并保存。
-    //
-    // 历史 bug：旧实现 ``setTimeout(..., updates)`` 每次都用最新一次调用
-    // 的 ``updates``，clearTimeout 时旧 payload 直接丢弃。重现：
-    //   T=0    改 frontend_countdown=60        → timer(at 800)
-    //   T=300  改 resubmit_prompt="x"          → clearTimeout(旧)，
-    //                                            新 timer(at 1100)
-    //   T=1100 发送 {resubmit_prompt:"x"}      → frontend_countdown=60 永久丢
-    //
-    // 修复：每次调用把 updates 合进实例级 pending，timer 触发时一次性
-    // POST。实例级状态允许 resetFeedbackConfig() 取消尚未发出的旧编辑。
-
     if (feedbackCountdown) {
       feedbackCountdown.addEventListener("change", () => {
         const val = parseInt(feedbackCountdown.value, 10);
-        // Range mirrors server_config.AUTO_RESUBMIT_TIMEOUT_MAX (3600s); 0
-        // remains the "disabled" sentinel. Locked by
-        // tests/test_frontend_input_range_parity.py.
+
         if (!isNaN(val) && val >= 0 && val <= 3600) {
           this._queueFeedbackConfigSaveFromUi({ frontend_countdown: val });
         }
@@ -652,9 +556,6 @@ class SettingsManager {
       });
     }
 
-    // 主题切换按钮点击事件 - 已由 theme.js 处理，此处删除避免重复绑定
-
-    // 语言切换
     const langSelect = document.getElementById("language-select");
     if (langSelect) {
       langSelect.addEventListener("change", () => {
@@ -662,14 +563,12 @@ class SettingsManager {
       });
     }
 
-    // 设置面板背景点击关闭
     document.addEventListener("click", (e) => {
       if (e.target.id === "settings-panel") {
         this.hideSettings();
       }
     });
 
-    // 设置项变更事件
     document.addEventListener("change", (e) => {
       const settingMap = {
         "notification-enabled": "enabled",
@@ -704,28 +603,10 @@ class SettingsManager {
       this.updateStatus();
     });
 
-    // feat-custom-sound (§3.4): 自定义通知音效上传/测试/清除
     this._wireCustomSoundControls();
 
-    // R274 / cycle-24 t24-1: ``_wireExportTasksControls`` 已按用户偏好
-    // 整体下架。后端 ``/api/tasks/export`` 路由保留供 CI / 备份脚本
-    // 独立调用 (R125/R135 用例文档化)。invariant 锚点：
-    // tests/test_feat_remove_export_tasks_ui_r274.py
   }
 
-  /**
-   * feat-custom-sound (§3.4): 把自定义音效相关的 3 个 control 接到
-   * notificationManager 的对应方法上。
-   *
-   * 行为：
-   *   - file picker: ``change`` → saveCustomSoundFromFile → 刷新 status
-   *   - test 按钮: ``click`` → playSound('custom') 显式（无 fallback）
-   *   - clear 按钮: ``click`` → clearCustomSound → 刷新 status
-   *
-   * 错误处理：MIME/size/decode 失败以 i18n 翻译过的字符串显示在 status 行；
-   * 不弹 alert，不写 toast — 用户已经在看着 settings 面板，inline status
-   * 反馈足够。
-   */
   _wireCustomSoundControls() {
     const fileInput = document.getElementById("custom-sound-input");
     const testBtn = document.getElementById("custom-sound-test");
@@ -738,26 +619,18 @@ class SettingsManager {
         ? window.AIIA_I18N.t
         : (k) => k;
 
-    // R265 / cycle-22 follow-up: _wireCustomSoundControls 被 init() **和**
-    // resetSettings() 两处调用 — 旧实现每次都 add 新 listener，从不 remove。
-    // 真 bug 复现路径：reset 一次 → testBtn 上 2 个 click handler，点击播 2 次
-    // audio；reset 两次 → 播 3 次；reset N 次 → 播 N+1 次 + filePicker change
-    // 也线性叠加。Pattern 对齐 R263a image-modal: ``dataset.aiiaWired`` guard
-    // — 第一次绑定，之后只跑 ``refresh()``（refresh 纯 DOM read/write 无副作用，
-    // 重复跑安全且必要：reset 后要刷新 disabled / status 文本）。
     const refresh = () => {
       const meta = notificationManager.getCustomSoundMeta();
       if (meta) {
         const kb = Math.round((meta.size || 0) / 1024);
-        // R709：动态值（用户文件名）生效期间摘掉 data-i18n，否则语言
-        // 切换触发的 translateDOM 会把它覆盖回「未上传」静态文案。
+
         statusEl.removeAttribute("data-i18n");
         statusEl.textContent = `${meta.name} (${kb} KB)`;
         statusEl.setAttribute("data-status", "uploaded");
         testBtn.disabled = false;
         clearBtn.disabled = false;
       } else {
-        // R709：回到静态文案时恢复 data-i18n（跟随语言切换）。
+
         statusEl.setAttribute("data-i18n", "settings.customSound.notUploaded");
         statusEl.textContent = t("settings.customSound.notUploaded");
         statusEl.setAttribute("data-status", "empty");
@@ -771,7 +644,7 @@ class SettingsManager {
       try {
         input.value = "";
       } catch (_e) {
-        // best-effort: file input cleanup must not mask the upload result
+
       }
     };
 
@@ -788,11 +661,11 @@ class SettingsManager {
           const result = await notificationManager.saveCustomSoundFromFile(file);
           if (result.success) {
             refresh();
-            // 立即播放一次让用户听到效果（同时也确认 decode 真的 OK）
+
             try {
               await notificationManager.playSound("custom");
             } catch (_e) {
-              // 静默：上传成功 + decode 成功就够了，自动 play 失败不算 error
+
             }
           } else {
             const code = String(result.error || "unknown");
@@ -803,8 +676,7 @@ class SettingsManager {
             else if (code === "storage_failed") msgKey = "settings.customSound.errors.storageFailed";
             else if (code === "decode_failed") msgKey = "settings.customSound.errors.decodeFailed";
             else if (code === "duration_too_long") msgKey = "settings.customSound.errors.durationTooLong";
-            // R709：错误文案是静态 i18n key——同步 data-i18n 让其跟随
-            // 语言切换。
+
             statusEl.setAttribute("data-i18n", msgKey);
             statusEl.textContent = t(msgKey);
             statusEl.setAttribute("data-status", "error");
@@ -817,7 +689,7 @@ class SettingsManager {
           statusEl.textContent = t("settings.customSound.errors.generic");
           statusEl.setAttribute("data-status", "error");
         } finally {
-          // R452-custom-sound-upload-reset: always allow re-selecting the same file.
+
           resetFileInput(target);
         }
       });
@@ -835,12 +707,6 @@ class SettingsManager {
     refresh();
   }
 
-  // ==================== 配置文件路径：用 IDE 打开按钮（TODO #4） ====================
-  // 设计：先调用 /api/system/open-config-file/info 拿到当前可用的编辑器名，
-  //  - 如果有可用 IDE，启用按钮并把 IDE 名写到 tooltip / 状态文案；
-  //  - 如果只有 system fallback，依然启用，但提示用"系统默认应用"打开；
-  //  - 完全没有可用方式时，禁用按钮并解释原因。
-  // 后端只接受环回请求，所以远程访问的客户端按钮也应保持禁用且显示原因。
   async initOpenConfigFileButton() {
     const btn = document.getElementById("open-config-file-btn");
     const status = document.getElementById("open-config-file-status");
@@ -945,8 +811,7 @@ class SettingsManager {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        // 不传 path：让后端使用它自己读到的当前配置文件路径，避免前端被篡改的输入框
-        // 绕过白名单校验。如果后端有多个候选路径，这里默认使用主路径（primary）。
+
         body: JSON.stringify({}),
       });
       const data = await resp.json().catch(() => ({}));
@@ -960,9 +825,7 @@ class SettingsManager {
         }
         return;
       }
-      // 成功：把后端返回的实际路径回填到输入框（确保前后端视角一致）
-      // BUG6：同时移除 ``data-i18n-value``，否则 i18n re-translate（语言切换或
-      // ensureDefaultLocale 完成）会把真实路径覆盖回 ``page.loading`` 的翻译值。
+
       if (pathInput && data.path) {
         pathInput.value = data.path;
         pathInput.removeAttribute("data-i18n-value");
@@ -986,13 +849,7 @@ class SettingsManager {
         );
       }
     } finally {
-      // R279 / cycle-25 t25-3 (R268 spillover meta-lint): ``btn`` 在 await
-      // fetch 之后可能因 settings 重渲染（SSE config-changed → ``init()``
-      // 重跑会重建 DOM 节点）或 user 切语言/快速 hideSettings 而失效。
-      // 必须重新 query 而不是直接复用 stale closure 引用，否则在 panel
-      // 已关闭/重渲染时 ``btn.disabled = ...`` 会抛 TypeError 污染 finally
-      // 块、吞掉 catch 路径的 user-visible error toast（R268 一模一样的
-      // bug class）。null check 兜底：UI 已不在 DOM，无需重置 disabled。
+
       const btnNow = document.getElementById("open-config-file-btn");
       if (btnNow) {
         btnNow.disabled = originalDisabled;
@@ -1000,13 +857,6 @@ class SettingsManager {
     }
   }
 
-  // ==================== Bark base_url 可达性诊断（TODO #3） ====================
-  // 设计：Bark 通知点击后会让手机浏览器打开 ``bark_url_template`` 渲染出的
-  //   URL；但若 web_ui 监听 loopback（默认 127.0.0.1）且未配 external_base_url，
-  //   渲染出的 url host 会被手机解析到自身，必然打不开。本面板通过
-  //   /api/system/network-base-url-status 拉取后端探测的 effective_base_url
-  //   + LAN IP 推荐 + 修复建议，引导用户改 web_ui.host 或 external_base_url。
-  // 容错：探测失败 / 离线时，整个诊断块隐藏，不打扰用户主流程。
   async initBarkBaseUrlStatus() {
     const item = document.getElementById("bark-base-url-status-item");
     const message = document.getElementById("bark-base-url-status-message");
@@ -1138,7 +988,7 @@ class SettingsManager {
   }
 
   async showSettings() {
-    // 防御性：确保已初始化（极端情况下用户可能在 init() 未完成时快速点击）
+
     if (!this.initialized) {
       try {
         await this.init();
@@ -1153,18 +1003,7 @@ class SettingsManager {
     const panel = document.getElementById("settings-panel");
     if (panel) {
       const wasAlreadyOpen = this._settingsEscHandler !== null;
-      // cycle-22 / cr51 follow-up #1：升级到 capture-activeElement 模式（对齐
-      // image-modal cycle-8 R263a 与 keyboard_shortcut_help cycle-1 R255 的
-      // pattern）。关闭面板时回归到**真正触发打开的元素**，而非 hardcode
-      // 回 `#settings-btn`。常见误闭合场景：
-      //   1. 键盘快捷键打开（Cmd+,）→ 焦点本来在 feedback textarea，
-      //      关闭后跳到 settings-btn 会丢失输入位置；
-      //   2. 从子面板（如 code-paste-modal）触发设置 → 关闭后焦点也
-      //      应回到子面板原触发点；
-      //   3. 一般触摸/移动端打开 → 焦点不在 button 而在 body，
-      //      hardcode 跳到 settings-btn 会触发不必要的 viewport scroll。
-      // ``document.contains(prev)`` 兜底：若原元素已从 DOM 移除（如
-      // 重渲染后），降级到 settings-btn 而非 silent fail。
+
       if (!wasAlreadyOpen) {
         this._previouslyFocusedElement = document.activeElement;
       }
@@ -1192,10 +1031,6 @@ class SettingsManager {
       }
     }
 
-    // 每次打开设置面板都从后端刷新一次配置
-    // 目的：
-    // - 让“外部编辑 config.jsonc”能在不刷新页面的情况下反映到 UI
-    // - 避免打开面板时把旧的本地缓存配置反向写回后端（覆盖外部修改）
     let shouldUpdateSettingsUI = true;
     try {
       shouldUpdateSettingsUI = await this._refreshSettingsForOpen();
@@ -1221,7 +1056,6 @@ class SettingsManager {
   applySettingsTheme() {
     const theme = document.documentElement.getAttribute("data-theme");
 
-    // 动态注入浅色主题样式（解决 CSS 优先级问题）
     if (!document.getElementById("settings-light-theme-styles")) {
       const style = document.createElement("style");
       style.id = "settings-light-theme-styles";
@@ -1305,15 +1139,6 @@ class SettingsManager {
     }
   }
 
-  /**
-   * R244: iterate `.container > *`, set inert on every child except
-   * the open dialog. See app.js `_setContainerSiblingsInert` doc for
-   * the full rationale (R240 was buggy — dialog inside .container
-   * inherited inert and became uninteractive).
-   *
-   * @param {HTMLElement} openModalEl - dialog that stays interactive
-   * @param {boolean} value - true to inert siblings, false to clear
-   */
   _setContainerSiblingsInert(openModalEl, value) {
     const container = document.querySelector(".container");
     if (!container) return;
@@ -1464,10 +1289,6 @@ class SettingsManager {
       this._settingsEscHandler = null;
     }
 
-    // cycle-22 / cr51 follow-up #1：先尝试回到 ``_previouslyFocusedElement``
-    // （捕获于 ``showSettings`` 开头）。如果原元素已脱离 DOM（极端场景：
-    // 重新连接 SSE 时 header 重渲染），fallback 到 ``#settings-btn``，
-    // 与升级前行为对齐避免完全失焦。
     const prev = this._previouslyFocusedElement;
     this._previouslyFocusedElement = null;
     if (prev && document.contains(prev) && this._focusElementWithoutScroll(prev)) {
@@ -1506,10 +1327,8 @@ class SettingsManager {
         return;
       }
 
-      // 显示发送中状态
       showStatus(t("status.sendingBark"), "info");
 
-      // 通过后端API发送Bark通知，避免CORS问题
       const response = await fetch("/api/test-bark", {
         method: "POST",
         headers: {
@@ -1610,8 +1429,7 @@ class SettingsManager {
     try {
       await savePromise;
     } catch (_e) {
-      // The save queue should return error objects, but reset must not be
-      // blocked by a stale autosave rejection if that contract changes.
+
     }
   }
 
@@ -1677,7 +1495,7 @@ class SettingsManager {
         await this._postLanguagePreference(language);
       }
     } finally {
-      // R279 audit: state-only cleanup; no DOM nodes are touched here.
+
       this._languagePersistPromise = null;
     }
   }
@@ -1751,7 +1569,7 @@ class SettingsManager {
         this._showFeedbackConfigSaveResult(finalResult);
       }
     } finally {
-      // R279 audit: state-only cleanup; no DOM nodes are touched here.
+
       this._feedbackConfigSavePromise = null;
     }
   }
@@ -1793,18 +1611,7 @@ class SettingsManager {
   }
 
   async resetFeedbackConfig() {
-    // R275 / cycle-24 t24-3：feedback config 是服务端持久化配置（写
-    // ``config.toml``），重置后**所有协作者的会话**都会受影响（其它
-    // 浏览器会通过 SSE config-changed 收到广播）。破坏性等级 ≥
-    // ``resetSettings``，必须同样走 ``window.confirm`` 二次确认。
-    //
-    // 选型理由：与 ``resetSettings()`` 范式完全一致（同样的 native
-    // confirm + 同样的 typeof guard + 同样的 _tl fallback），最小变更
-    // 面，行为可预测。
-    //
-    // i18n key ``settings.resetFeedbackConfirm`` / ``settings.resetFeedbackCancelled``
-    // 覆盖 en / zh-CN / zh-TW / pseudo；缺 key 时退到内置英文 fallback，
-    // 与 ``resetSettings`` 调用站对齐。
+
     const confirmMsg = _tl(
       "settings.resetFeedbackConfirm",
       "Reset server-stored feedback config (countdown timeout, resubmit prompt, prompt suffix) to defaults? All collaborators on this server will see the change via SSE broadcast.",
@@ -1823,8 +1630,7 @@ class SettingsManager {
       return;
     }
     await this._flushStaleFeedbackConfigSaveBeforeReset();
-    // 真源：调用后端 /api/reset-feedback-config，避免前端硬编码中文默认值。
-    // 若后端不可用，回退到重新读取当前配置；不再吞掉错误，好让用户知道发生了什么。
+
     try {
       _suppressConfigChangedEchoIfAvailable();
       const resp = await fetch("/api/reset-feedback-config", {
@@ -1857,7 +1663,6 @@ class SettingsManager {
   }
 }
 
-// 创建全局设置管理器实例
 const settingsManager = new SettingsManager();
 
 if (typeof module !== "undefined" && module.exports) {

@@ -1,57 +1,13 @@
-/**
- * R139 — Feedback textarea per-task 草稿持久化（autosave）
- *
- * 背景
- * ----
- * 项目内已存在 ``window.taskTextareaContents`` 内存字典（``multi_task.
- * js`` 维护），多任务并发场景下用户切换 task 时会保留 textarea 内容
- * 不丢——但**仅在内存里**。一旦用户刷新页面 / 关闭浏览器 / 进程崩
- * 溃，所有 draft 全部丢失。``mcp-feedback-enhanced`` v2.4.x 把
- * "Auto-save drafts" 列入版本 highlight 是因为长 prompt 用户在拼接
- * 多段 LLM 输出 / 复制粘贴长技术文档时最怕 30 分钟手敲被刷新一键清
- * 零，autosave 让内容不再因刷新 / 崩溃而消失。
- *
- * R139 在不侵入既有 ``multi_task.js`` 的前提下，把 ``taskTextarea
- * Contents`` 状态持久化到 localStorage：
- *
- *   - 启动时一次性 hydrate localStorage → ``window.taskTextareaContents``
- *     （不覆盖既存内存 entry，避免 race）；
- *   - input 事件 debounce 500ms 写盘当前 task 的 draft；
- *   - 周期性（30s）把整个 ``taskTextareaContents`` reconcile 到磁盘
- *     兜底程序赋值 / clear / submit 后清空等非 input 事件路径；
- *   - 页面隐藏 / pagehide 前同步 flush 当前 textarea，随后暂停周期 sync；
- *     回到可见时再恢复，避免后台标签页无意义 wakeup；
- *   - TTL 7 天 + LRU 50 task 双重容量约束，避免 storage 无界增长。
- *
- * 设计原则
- * --------
- * - **不侵入 multi_task.js / app.js** — R139 走外挂监听（textarea input
- *   event + setInterval 周期 sync），既有代码零改动，避免 1300 行
- *   ``switchTask()`` / submit handler 引入回归风险。
- * - **TTL 7 天** — draft 内容可能含敏感信息（API key / 密码 / 私聊
- *   片段），TTL 限定让 stale draft 自动 expire。saved_at 距今超 7 天
- *   时 hydrate 自动跳过。
- * - **LRU 50 task** — saved_at desc 排序后保留最近 50 个 task draft，
- *   超出时 evict 最旧。50 是经验值（典型用户 1-2 周内活跃 task ≤30）。
- * - **graceful failure** — localStorage 不可用（Safari 隐私模式 /
- *   quota 满 / cookie 禁用）时全 try/catch silent no-op，主路径不挂。
- * - **lifecycle-aware** — ``visibilitychange`` 是主生命周期信号；
- *   ``pagehide`` 只做最后一次同步 flush；不安装常驻 ``beforeunload``
- *   listener，避免移动端不可靠信号和 Firefox bfcache 性能回退。
- * - **schema_version envelope** — 与 R137 textarea-height 同款
- *   ``aiia.<feature>.v<schema>`` 命名约定，未来 schema 升级有迁移空间。
- */
-
 (function () {
   "use strict";
 
   const STORAGE_KEY = "aiia.feedbackDrafts.v1";
   const SCHEMA_VERSION = 1;
   const TARGET_ID = "feedback-text";
-  const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 天
+  const TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const MAX_DRAFTS = 50;
   const INPUT_DEBOUNCE_MS = 500;
-  const SYNC_INTERVAL_MS = 30 * 1000; // 30s 周期 reconcile
+  const SYNC_INTERVAL_MS = 30 * 1000;
 
   let inputHandle = null;
   let inputDebounceTimerId = null;
@@ -100,12 +56,11 @@
       );
       return true;
     } catch (_e) {
-      // localStorage 满 / 不可用：silent no-op
+
       return false;
     }
   }
 
-  // 把单条 draft 规范化为 ``{ text, saved_at }``，过滤掉非法 entry
   function _normalizeDraft(entry) {
     if (!entry || typeof entry !== "object") return null;
     const text = entry.text;
@@ -117,8 +72,6 @@
     return { text: text, saved_at: savedAt };
   }
 
-  // 应用 TTL + LRU 两道容量约束。先按 TTL 过滤，再按 saved_at desc
-  // 截前 MAX_DRAFTS 条；返回新字典（不变更入参）。
   function _applyTtlAndLru(drafts) {
     const result = {};
     const fresh = [];
@@ -181,9 +134,6 @@
     }
   }
 
-  // 把 storage 里的 drafts hydrate 到 ``window.taskTextareaContents``
-  // 字典；既存内存项**不覆盖**（避免 race：multi_task.js 可能已经在
-  // 初始化阶段填充了 active task 的内容）。返回 hydrate 的条目数。
   function hydrateMemoryCache() {
     const drafts = loadAllDrafts();
     if (typeof window === "undefined") return 0;
@@ -206,8 +156,6 @@
     return hydrated;
   }
 
-  // 把 ``window.taskTextareaContents`` 内存状态全量写回 storage
-  // （兜底程序赋值 / clear / submit 后清空等非 input 路径）。
   function reconcileMemoryToStorage() {
     if (typeof window === "undefined") return false;
     const memoryDrafts = window.taskTextareaContents;
@@ -216,7 +164,7 @@
     }
     const existing = _readEnvelope() || {};
     const merged = {};
-    // 内存状态优先；text 非空才写盘
+
     for (const taskId in memoryDrafts) {
       if (!Object.prototype.hasOwnProperty.call(memoryDrafts, taskId)) continue;
       const text = memoryDrafts[taskId];
@@ -345,9 +293,7 @@
 
   function init() {
     if (!_isStorageAvailable()) return null;
-    // 先 hydrate 让 multi_task.js 的 switchTask 能命中 storage 里的
-    // 历史 draft；如果 multi_task.js 已经初始化（罕见时序），则
-    // hydrateMemoryCache 跳过既存项不覆盖。
+
     hydrateMemoryCache();
     const input = setupInputListener();
     const isHidden = typeof document !== "undefined" && document.hidden === true;

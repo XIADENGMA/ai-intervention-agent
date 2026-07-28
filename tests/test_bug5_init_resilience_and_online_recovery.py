@@ -268,15 +268,15 @@ class TestOnlineEventRecovery(unittest.TestCase):
 
 
 class TestBug5DocumentationAnchor(unittest.TestCase):
-    """注释中必须有 BUG5 锚点，便于后续维护者追溯。"""
+    """BUG5 溯源改由本测试文件承载（源码注释已按维护者决策清理）；
+    容错并行化契约由同文件的 Promise.allSettled 代码断言锁定。"""
 
-    def test_bug5_documented(self) -> None:
+    def test_bug5_resilient_parallel_init_present(self) -> None:
         source = _read(MULTI_TASK_JS)
         self.assertIn(
-            "BUG5",
+            "Promise.allSettled",
             source,
-            "multi_task.js 应在 initMultiTaskSupport / online listener 附近注释中"
-            "标注 'BUG5' 锚点，方便追溯设计动机",
+            "initMultiTaskSupport 必须保留 BUG5 的 allSettled 容错并行",
         )
 
 

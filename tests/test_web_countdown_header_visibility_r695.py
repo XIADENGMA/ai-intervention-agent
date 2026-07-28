@@ -121,8 +121,9 @@ class TestStartCountdownGuardsDisabledTimeout(unittest.TestCase):
         self.assertIn("!detailsTimeoutDisabled", self.js)
 
     def test_hot_reload_fallback_still_clears_disabled(self) -> None:
-        """热更新兜底路径保留「禁用则清理倒计时」分支。"""
-        idx = self.js.find("// 禁用：确保不启动倒计时")
+        """热更新兜底路径保留「禁用则清理倒计时」分支。
+        定位改用代码特征（旧实现以注释行为锚，注释已清理）。"""
+        idx = self.js.find("if (total <= 0) {")
         self.assertGreater(idx, 0)
         snippet = self.js[idx : idx + 200]
         self.assertIn("_clearTaskCountdown(task.task_id)", snippet)

@@ -40,16 +40,13 @@ function publish(pkg) {
   try {
     document.dispatchEvent(new CustomEvent(READY_EVENT, { detail: pkg }))
   } catch (_e) {
-    /* CustomEvent unavailable in extremely old engines; skip */
+
   }
 }
 
 function publishError(err) {
   const globalNamespace = typeof window !== 'undefined' ? window : globalThis
-  // Persist FIRST so any late-registered listener (the classic bootstrap
-  // registers its DOMContentLoaded handler AFTER this microtask in the
-  // import()-rejects-synchronously path) can still observe the failure
-  // via a flag read — mirrors the success path's AIIA_TRI_STATE_PANEL.
+
   globalNamespace.AIIA_TRI_STATE_PANEL_FAILURE =
     err instanceof Error ? err : new Error(String(err && err.message ? err.message : err || 'unknown loader failure'))
   if (typeof console !== 'undefined' && console.error) {
@@ -58,7 +55,7 @@ function publishError(err) {
   try {
     document.dispatchEvent(new CustomEvent(FAILED_EVENT, { detail: { error: err } }))
   } catch (_e) {
-    /* noop */
+
   }
 }
 

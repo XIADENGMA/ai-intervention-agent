@@ -248,15 +248,16 @@ class TestFrontendDeepLinkSkipsAiiaTestSentinel(unittest.TestCase):
             "sentinel 命中分支必须 toast 提示，不应静默；用户期望「点了通知有反馈」",
         )
 
-    def test_documentation_mentions_aiia_test(self) -> None:
-        """函数 JSDoc 必须说明 aiia_test 来源 + 用途，便于后续改动者理解契约。"""
+    def test_deep_link_reads_aiia_test_sentinel(self) -> None:
+        """getDeepLinkedTaskIdFromUrl 必须读取 aiia_test sentinel
+        （JSDoc 契约说明已随注释清理，改锁代码特征本身）。"""
         idx = self.multi_task.index("function getDeepLinkedTaskIdFromUrl")
-        # JSDoc 在函数定义之前——往前抓 800 字符
-        head = self.multi_task[max(0, idx - 800) : idx]
+        body = self.multi_task[idx : idx + 1500]
         self.assertIn(
-            "aiia_test",
-            head,
-            "JSDoc 必须解释 aiia_test sentinel 的设计意图，否则后续重构容易丢",
+            'params.get("aiia_test")',
+            body,
+            "deep-link 解析必须继续识别 aiia_test sentinel，否则测试通知会"
+            "被当成真实任务 deep-link",
         )
 
 

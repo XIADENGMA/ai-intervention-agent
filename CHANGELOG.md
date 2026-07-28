@@ -9,6 +9,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- Repository-wide comment cleanup (maintainer decision: comments are
+  removed unless load-bearing): all narrative R-number archaeology,
+  textbook-style blocks, and section banners are stripped from the
+  web CSS/JS assets — `main.css` alone drops 42% of its lines.
+  Rule/code neutrality is proven by byte-identical minified outputs
+  before and after each batch. Functional comments survive (the
+  `AIIA-XSS-SAFE` security audit markers, `aiia:i18n-allow-cjk`
+  exemptions, eslint directives). Invariant tests that asserted
+  comment *text* (anchor tags, JSDoc mentions, comment-boundary
+  extractors, the finally-block meta-lint whitelist) now lock the
+  equivalent code features instead.
+
 ## [1.8.9] - 2026-07-28
 
 ### Changed

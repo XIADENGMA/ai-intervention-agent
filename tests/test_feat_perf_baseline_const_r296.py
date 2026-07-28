@@ -138,14 +138,6 @@ class TestSseHeartbeatTimeout25s(unittest.TestCase):
             "task.py 必须保留 heartbeat_total metric（client 监控 RTT 用）",
         )
 
-    def test_js_documents_25s_interval(self) -> None:
-        """JS 注释必须 anchor 25s 频率（client 端 awareness）。"""
-        self.assertRegex(
-            self.js,
-            r"\b25\s*s\b",
-            "multi_task.js 注释必须 anchor '25 s' 频率",
-        )
-
     def test_js_heartbeat_event_listener_present(self) -> None:
         """JS 必须有 addEventListener('heartbeat', ...) 否则心跳无意义。"""
         self.assertRegex(

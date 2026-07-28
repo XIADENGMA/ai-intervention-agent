@@ -415,10 +415,11 @@ class TestDesignAnchors(unittest.TestCase):
         )
 
     def test_js_has_feat_anchor_comment(self) -> None:
+        # 注释锚点已清理，改锁指示器的核心更新函数
         self.assertIn(
-            "feat-sse-status-indicator",
+            "sse-status-indicator",
             MULTI_TASK_JS.read_text(encoding="utf-8"),
-            "JS 应有 feat-sse-status-indicator 锚点",
+            "multi_task.js 必须引用 sse-status-indicator 元素",
         )
 
 

@@ -187,13 +187,6 @@ class TestLoadConfigNullChecksR285(unittest.TestCase):
             "(``if (!optionsContainer || !separator)``) 跳过 options 渲染",
         )
 
-    def test_r285_anchor_present(self) -> None:
-        self.assertIn(
-            "R285",
-            self.body,
-            "R285: ``loadConfig()`` 函数体必须有 ``R285`` anchor 注释",
-        )
-
 
 class TestCopyCodeToClipboardNullChecksR285(unittest.TestCase):
     """R285 #2: ``copyCodeToClipboard()`` 必须入口 null check +
@@ -230,22 +223,14 @@ class TestCopyCodeToClipboardNullChecksR285(unittest.TestCase):
             f"success setTimeout + catch + catch setTimeout)。当前 {len(matches)} 处",
         )
 
-    def test_r285_anchor_present(self) -> None:
-        self.assertIn(
-            "R285",
-            self.body,
-            "R285: ``copyCodeToClipboard()`` 函数体必须有 ``R285`` anchor",
-        )
-
 
 class TestR268R279R280PreservedR285(unittest.TestCase):
     """R285 sanity: cycle-22 R268 / cycle-25 R279 / cycle-25 R280 修复
-    都仍然在。"""
+    都仍然在（锚点注释已清理，改锁代码特征本身）。"""
 
     app_src = APP_JS.read_text(encoding="utf-8")
 
     def test_r268_finally_null_check_preserved(self) -> None:
-        self.assertIn("R268", self.app_src)
         self.assertRegex(
             self.app_src,
             r"finally\s*\{[\s\S]{0,800}?if\s*\(\s*submitBtn\s*\)",
@@ -253,7 +238,6 @@ class TestR268R279R280PreservedR285(unittest.TestCase):
         )
 
     def test_r280_submit_entry_preserved(self) -> None:
-        self.assertIn("R280", self.app_src)
         self.assertRegex(
             self.app_src,
             r"feedbackTextEl\s*=\s*document\.getElementById\(\s*[\'\"]feedback-text[\'\"]\s*\)",
@@ -269,7 +253,11 @@ class TestR268R279R280PreservedR285(unittest.TestCase):
             / "js"
             / "settings-manager.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("R279", sm, "R285 sanity: R279 settings-manager 修复仍在")
+        self.assertRegex(
+            sm,
+            r"finally\s*\{[\s\S]{0,800}?getElementById\(",
+            "R285 sanity: R279 settings-manager finally null-check 仍在",
+        )
 
 
 if __name__ == "__main__":

@@ -1,19 +1,3 @@
-/**
- * ValidationUtils - 统一验证工具类
- *
- * 提供前端统一的验证功能，包括：
- * - 文件验证（类型、大小、文件名）
- * - 输入验证（长度、格式）
- * - 安全检查（XSS、特殊字符）
- *
- * @module ValidationUtils
- * @version 1.0.0
- */
-
-/**
- * 本地 i18n 辅助函数（i18n 未加载时回退到 key）。
- * 错误消息使用 validation.* / status.* 命名空间。
- */
 function __vuT(key, params) {
   try {
     if (
@@ -24,20 +8,13 @@ function __vuT(key, params) {
       return window.AIIA_I18N.t(key, params);
     }
   } catch (_e) {
-    /* noop */
+
   }
   return key;
 }
 
 class ValidationUtils {
-  // ========================================
-  // 静态配置常量
-  // ========================================
 
-  /** 支持的图片MIME类型（R122：与 image-upload.js / webview-ui.js / 后端
-   *  file_validator.py 三端对齐。SVG 因可携带 <script>/onload 而被三端统一
-   *  拒绝；jpg 与 jpeg 同义但少数浏览器/上传组件报 image/jpg，故同时收两
-   *  个 MIME，后端 magic-byte 仍按 image/jpeg 一种实际格式识别）。 */
   static SUPPORTED_IMAGE_TYPES = [
     "image/jpeg",
     "image/jpg",
@@ -47,16 +24,12 @@ class ValidationUtils {
     "image/bmp",
   ];
 
-  /** 最小文件大小（100字节） */
   static MIN_FILE_SIZE = 100;
 
-  /** 最大文件大小（10MB） */
   static MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-  /** 最大文件名长度 */
   static MAX_FILENAME_LENGTH = 255;
 
-  /** 可疑文件扩展名（安全黑名单） */
   static SUSPICIOUS_EXTENSIONS = [
     ".exe",
     ".bat",
@@ -72,10 +45,8 @@ class ValidationUtils {
     ".ps1",
   ];
 
-  /** 文件名中禁止的字符 */
   static FORBIDDEN_FILENAME_CHARS = /[<>:"/\\|?*\x00-\x1f]/g;
 
-  /** XSS危险字符模式 */
   static XSS_PATTERNS = [
     /<script\b[^>]*>/gi,
     /javascript:/gi,
@@ -83,26 +54,9 @@ class ValidationUtils {
     /data:\s*text\/html/gi,
   ];
 
-  // ========================================
-  // 文件验证方法
-  // ========================================
-
-  /**
-   * 验证图片文件
-   *
-   * @param {File} file - 要验证的文件对象
-   * @returns {Object} 验证结果 { valid: boolean, errors: string[] }
-   *
-   * @example
-   * const result = ValidationUtils.validateImageFile(file);
-   * if (!result.valid) {
-   *   console.error(result.errors);
-   * }
-   */
   static validateImageFile(file) {
     const errors = [];
 
-    // 基础检查
     if (!file) {
       errors.push(__vuT("validation.invalidFile"));
       return { valid: false, errors };
@@ -113,12 +67,10 @@ class ValidationUtils {
       return { valid: false, errors };
     }
 
-    // 类型验证
     if (!this.SUPPORTED_IMAGE_TYPES.includes(file.type)) {
       errors.push(__vuT("validation.unsupportedFormat", { type: file.type }));
     }
 
-    // 大小验证
     if (file.size < this.MIN_FILE_SIZE) {
       errors.push(__vuT("validation.fileTooSmall", { size: file.size }));
     }
@@ -134,11 +86,9 @@ class ValidationUtils {
       );
     }
 
-    // 文件名验证
     const filenameErrors = this.validateFilename(file.name);
     errors.push(...filenameErrors);
 
-    // 安全检查
     const securityErrors = this.checkFileSecurity(file);
     errors.push(...securityErrors);
 
@@ -148,12 +98,6 @@ class ValidationUtils {
     };
   }
 
-  /**
-   * 验证文件名
-   *
-   * @param {string} filename - 文件名
-   * @returns {string[]} 错误信息数组
-   */
   static validateFilename(filename) {
     const errors = [];
 
@@ -162,7 +106,6 @@ class ValidationUtils {
       return errors;
     }
 
-    // 长度检查
     if (filename.length > this.MAX_FILENAME_LENGTH) {
       errors.push(
         __vuT("validation.fileNameTooLong") +
@@ -170,13 +113,11 @@ class ValidationUtils {
       );
     }
 
-    // 危险字符检查（重置 lastIndex 以防 /g 标志累积状态）
     this.FORBIDDEN_FILENAME_CHARS.lastIndex = 0;
     if (this.FORBIDDEN_FILENAME_CHARS.test(filename)) {
       errors.push(__vuT("validation.filenameIllegalChars"));
     }
 
-    // 路径遍历检查
     if (
       filename.includes("..") ||
       filename.includes("/") ||
@@ -188,17 +129,10 @@ class ValidationUtils {
     return errors;
   }
 
-  /**
-   * 文件安全检查
-   *
-   * @param {File} file - 文件对象
-   * @returns {string[]} 安全警告数组
-   */
   static checkFileSecurity(file) {
     const errors = [];
     const filename = file.name?.toLowerCase() || "";
 
-    // 可疑扩展名检查
     for (const ext of this.SUSPICIOUS_EXTENSIONS) {
       if (filename.endsWith(ext)) {
         errors.push(__vuT("validation.suspiciousExt", { ext }));
@@ -206,7 +140,6 @@ class ValidationUtils {
       }
     }
 
-    // 双扩展名检查（如 image.jpg.exe）
     const parts = filename.split(".");
     if (parts.length > 2) {
       const lastExt = "." + parts[parts.length - 1];
@@ -218,21 +151,6 @@ class ValidationUtils {
     return errors;
   }
 
-  // ========================================
-  // 输入验证方法
-  // ========================================
-
-  /**
-   * 验证文本输入
-   *
-   * @param {string} text - 输入文本
-   * @param {Object} options - 验证选项
-   * @param {number} [options.minLength=0] - 最小长度
-   * @param {number} [options.maxLength=10000] - 最大长度
-   * @param {boolean} [options.allowEmpty=true] - 是否允许空值
-   * @param {boolean} [options.sanitize=true] - 是否进行XSS清理
-   * @returns {Object} { valid: boolean, errors: string[], sanitized: string }
-   */
   static validateTextInput(text, options = {}) {
     const {
       minLength = 0,
@@ -244,7 +162,6 @@ class ValidationUtils {
     const errors = [];
     let sanitized = text || "";
 
-    // 空值检查
     if (!text || text.trim() === "") {
       if (!allowEmpty) {
         errors.push(__vuT("validation.emptyField"));
@@ -252,7 +169,6 @@ class ValidationUtils {
       return { valid: allowEmpty, errors, sanitized: "" };
     }
 
-    // 长度检查
     if (text.length < minLength) {
       errors.push(
         __vuT("validation.inputTooShort", {
@@ -272,7 +188,6 @@ class ValidationUtils {
       sanitized = text.substring(0, maxLength);
     }
 
-    // XSS清理
     if (sanitize) {
       sanitized = this.sanitizeText(sanitized);
     }
@@ -284,23 +199,15 @@ class ValidationUtils {
     };
   }
 
-  /**
-   * 清理文本中的XSS危险内容
-   *
-   * @param {string} text - 原始文本
-   * @returns {string} 清理后的文本
-   */
   static sanitizeText(text) {
     if (!text) return "";
 
     let sanitized = text;
 
-    // 移除XSS危险模式
     for (const pattern of this.XSS_PATTERNS) {
       sanitized = sanitized.replace(pattern, "");
     }
 
-    // HTML实体编码
     sanitized = sanitized
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -311,37 +218,17 @@ class ValidationUtils {
     return sanitized;
   }
 
-  /**
-   * 安全的文件名清理
-   *
-   * @param {string} filename - 原始文件名
-   * @param {number} [maxLength=100] - 最大长度
-   * @returns {string} 清理后的安全文件名
-   */
   static sanitizeFilename(filename, maxLength = 100) {
     if (!filename) return "";
 
     return filename
       .replace(this.FORBIDDEN_FILENAME_CHARS, "")
       .replace(/\s+/g, "_")
-      .replace(/\.{2,}/g, ".") // 移除连续点
+      .replace(/\.{2,}/g, ".")
       .trim()
       .substring(0, maxLength);
   }
 
-  // ========================================
-  // 数值验证方法
-  // ========================================
-
-  /**
-   * 验证数值范围
-   *
-   * @param {number} value - 要验证的数值
-   * @param {number} min - 最小值
-   * @param {number} max - 最大值
-   * @param {string} [fieldName] - 字段名称（用于错误消息）。默认取 i18n 的 validation.defaultFieldName
-   * @returns {Object} { valid: boolean, value: number, error: string }
-   */
   static validateNumberRange(value, min, max, fieldName) {
     const num = Number(value);
     const name = fieldName || __vuT("validation.defaultFieldName");
@@ -377,29 +264,12 @@ class ValidationUtils {
     };
   }
 
-  /**
-   * 限制数值在范围内（不返回错误，直接调整）
-   *
-   * @param {number} value - 要限制的数值
-   * @param {number} min - 最小值
-   * @param {number} max - 最大值
-   * @returns {number} 限制后的数值
-   */
   static clampValue(value, min, max) {
     const num = Number(value);
     if (isNaN(num)) return min;
     return Math.max(min, Math.min(max, num));
   }
 }
-
-/**
- * APICache - API 响应缓存类
- *
- * 提供简单的 API 响应缓存功能，减少重复请求
- *
- * @module APICache
- * @version 1.0.0
- */
 
 const API_CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -409,30 +279,17 @@ class APICache {
     cleanupIntervalMs = API_CACHE_CLEANUP_INTERVAL_MS,
   ) {
     this.cache = new Map();
-    this.defaultTTL = defaultTTL; // 默认缓存时间（毫秒）
+    this.defaultTTL = defaultTTL;
     this.cleanupIntervalMs = cleanupIntervalMs;
     this._cleanupTimerId = null;
     this._lifecycleListenersInstalled = false;
   }
 
-  /**
-   * 获取缓存
-   *
-   * @param {string} key - 缓存键
-   * @returns {*} 缓存的值，不存在或已过期返回 null
-   */
   get(key) {
     const entry = this._getFreshEntry(key);
     return entry ? entry.value : null;
   }
 
-  /**
-   * 设置缓存
-   *
-   * @param {string} key - 缓存键
-   * @param {*} value - 缓存值
-   * @param {number} [ttl] - 过期时间（毫秒），默认使用 defaultTTL
-   */
   set(key, value, ttl = this.defaultTTL) {
     this.cache.set(key, {
       value,
@@ -441,28 +298,17 @@ class APICache {
     this._ensureCleanupTimer();
   }
 
-  /**
-   * 删除缓存
-   *
-   * @param {string} key - 缓存键
-   */
   delete(key) {
     const deleted = this.cache.delete(key);
     this._stopCleanupTimerIfIdle();
     return deleted;
   }
 
-  /**
-   * 清空所有缓存
-   */
   clear() {
     this.cache.clear();
     this.stopCleanupTimer();
   }
 
-  /**
-   * 清理过期缓存
-   */
   cleanup() {
     const now = Date.now();
     let removed = 0;
@@ -522,28 +368,10 @@ class APICache {
     return entry;
   }
 
-  /**
-   * 获取缓存大小
-   *
-   * @returns {number} 缓存条目数
-   */
   get size() {
     return this.cache.size;
   }
 
-  /**
-   * 带缓存的 fetch 请求
-   *
-   * 安全策略：
-   *   - 仅缓存 GET 请求（POST/PUT/DELETE 等视为写操作，绕过缓存）
-   *   - 仅当响应 Content-Type 为 application/json 时才尝试 JSON 解析；
-   *     其余情况抛出明确错误，避免静默解析 HTML/纯文本导致下游崩溃
-   *
-   * @param {string} url - 请求URL
-   * @param {Object} [options] - fetch 选项
-   * @param {number} [cacheTTL] - 缓存时间（毫秒）
-   * @returns {Promise<*>} 响应数据
-   */
   async fetchWithCache(url, options = {}, cacheTTL = this.defaultTTL) {
     const parseJsonOrThrow = async (response) => {
       const contentType = (
@@ -557,25 +385,21 @@ class APICache {
       return response.json();
     };
 
-    // 只缓存 GET 请求
     const method = options.method?.toUpperCase() || "GET";
     if (method !== "GET") {
       const response = await fetch(url, options);
       return parseJsonOrThrow(response);
     }
 
-    // 检查缓存
     const cacheKey = `${method}:${url}`;
     const cachedEntry = this._getFreshEntry(cacheKey);
     if (cachedEntry !== null) {
       return cachedEntry.value;
     }
 
-    // 发起请求
     const response = await fetch(url, options);
     const data = await parseJsonOrThrow(response);
 
-    // 存入缓存
     if (response.ok) {
       this.set(cacheKey, data, cacheTTL);
     }
@@ -584,8 +408,7 @@ class APICache {
   }
 }
 
-// 创建全局缓存实例
-const apiCache = new APICache(30000); // 30秒默认缓存
+const apiCache = new APICache(30000);
 
 function setupApiCacheLifecycle(cache) {
   if (!cache || cache._lifecycleListenersInstalled) return false;
@@ -620,27 +443,6 @@ function setupApiCacheLifecycle(cache) {
 
 setupApiCacheLifecycle(apiCache);
 
-// ========================================
-// 性能优化工具：去抖动与节流
-// ========================================
-
-/**
- * 去抖动函数 (Debounce)
- *
- * 功能说明：
- *   延迟执行函数，直到最后一次调用后的指定时间内没有新调用。
- *   适用于：搜索输入、窗口调整、配置保存等高频触发场景。
- *
- * @param {Function} func - 要去抖动的函数
- * @param {number} [wait=300] - 等待时间（毫秒）
- * @param {boolean} [immediate=false] - 是否立即执行（首次调用时）
- * @returns {Function} 去抖动后的函数
- *   返回函数附带 cancel() 和 flush()；flush() 会使用最后一次调用的参数。
- *
- * @example
- * const debouncedSave = debounce(() => saveConfig(), 500);
- * input.addEventListener('input', debouncedSave);
- */
 function debounce(func, wait = 300, immediate = false) {
   let timeout = null;
   let result = null;
@@ -665,7 +467,6 @@ function debounce(func, wait = 300, immediate = false) {
     lastThis = this;
     const callNow = immediate && !timeout;
 
-    // 清除之前的定时器
     if (timeout) {
       clearTimeout(timeout);
     }
@@ -679,7 +480,6 @@ function debounce(func, wait = 300, immediate = false) {
       }
     }, wait);
 
-    // 立即执行模式
     if (callNow) {
       result = func.apply(lastThis, lastArgs);
     }
@@ -687,7 +487,6 @@ function debounce(func, wait = 300, immediate = false) {
     return result;
   };
 
-  // 取消去抖动
   debounced.cancel = function () {
     if (timeout) {
       clearTimeout(timeout);
@@ -696,7 +495,6 @@ function debounce(func, wait = 300, immediate = false) {
     clearLastCall();
   };
 
-  // 立即执行
   debounced.flush = function () {
     if (!timeout) {
       return result;
@@ -716,24 +514,6 @@ function debounce(func, wait = 300, immediate = false) {
   return debounced;
 }
 
-/**
- * 节流函数 (Throttle)
- *
- * 功能说明：
- *   限制函数在指定时间内只能执行一次。
- *   适用于：滚动事件、拖拽事件、动画帧等需要限制频率的场景。
- *
- * @param {Function} func - 要节流的函数
- * @param {number} [wait=200] - 节流间隔（毫秒）
- * @param {Object} [options] - 配置选项
- * @param {boolean} [options.leading=true] - 是否在开始时执行
- * @param {boolean} [options.trailing=true] - 是否在结束时执行
- * @returns {Function} 节流后的函数
- *
- * @example
- * const throttledScroll = throttle(() => handleScroll(), 100);
- * window.addEventListener('scroll', throttledScroll);
- */
 function throttle(func, wait = 200, options = {}) {
   let timeout = null;
   let previous = 0;
@@ -743,7 +523,6 @@ function throttle(func, wait = 200, options = {}) {
     const context = this;
     const now = Date.now();
 
-    // 首次调用时，如果不允许 leading，设置 previous 为当前时间
     if (!previous && !leading) {
       previous = now;
     }
@@ -751,7 +530,7 @@ function throttle(func, wait = 200, options = {}) {
     const remaining = wait - (now - previous);
 
     if (remaining <= 0 || remaining > wait) {
-      // 到达执行时间
+
       if (timeout) {
         clearTimeout(timeout);
         timeout = null;
@@ -759,7 +538,7 @@ function throttle(func, wait = 200, options = {}) {
       previous = now;
       func.apply(context, args);
     } else if (!timeout && trailing) {
-      // 设置尾部执行定时器
+
       timeout = setTimeout(() => {
         previous = leading ? Date.now() : 0;
         timeout = null;
@@ -768,7 +547,6 @@ function throttle(func, wait = 200, options = {}) {
     }
   };
 
-  // 取消节流
   throttled.cancel = function () {
     if (timeout) {
       clearTimeout(timeout);
@@ -780,35 +558,18 @@ function throttle(func, wait = 200, options = {}) {
   return throttled;
 }
 
-/**
- * 请求去重器
- *
- * 功能说明：
- *   防止同一请求在短时间内被重复发送。
- *   适用于：防止表单重复提交、防止按钮连点等场景。
- *
- * @class RequestDeduplicator
- */
 class RequestDeduplicator {
   constructor() {
     this.pendingRequests = new Map();
   }
 
-  /**
-   * 执行去重的异步操作
-   *
-   * @param {string} key - 请求标识符
-   * @param {Function} asyncFn - 异步函数
-   * @returns {Promise<*>} 请求结果
-   */
   async dedupe(key, asyncFn) {
-    // 如果已有相同请求在进行中，返回该请求的 Promise
+
     if (this.pendingRequests.has(key)) {
       console.debug(`[RequestDeduplicator] deduped request: ${key}`);
       return this.pendingRequests.get(key);
     }
 
-    // 创建新请求
     const promise = asyncFn().finally(() => {
       this.pendingRequests.delete(key);
     });
@@ -817,68 +578,31 @@ class RequestDeduplicator {
     return promise;
   }
 
-  /**
-   * 检查是否有待处理的请求
-   *
-   * @param {string} key - 请求标识符
-   * @returns {boolean}
-   */
   isPending(key) {
     return this.pendingRequests.has(key);
   }
 
-  /**
-   * 清除所有待处理请求
-   */
   clear() {
     this.pendingRequests.clear();
   }
 }
 
-// 创建全局请求去重器实例
 const requestDeduplicator = new RequestDeduplicator();
 
-// ========================================
-// 性能优化工具：图片懒加载
-// ========================================
-
-/**
- * 图片懒加载器
- *
- * 功能说明：
- *   使用 Intersection Observer API 实现图片懒加载，
- *   仅当图片进入视口时才开始加载，减少首屏加载时间。
- *
- * 使用方法：
- *   1. 图片使用 data-src 属性存储真实 URL，src 设置为占位图
- *   2. 添加 .lazy-image 类标记需要懒加载的图片
- *   3. 调用 LazyLoader.init() 初始化
- *
- * @class LazyLoader
- */
 class LazyLoader {
-  /**
-   * 配置选项
-   */
+
   static defaultOptions = {
-    rootMargin: "50px 0px", // 提前 50px 开始加载
-    threshold: 0.01, // 1% 可见即触发
+    rootMargin: "50px 0px",
+    threshold: 0.01,
     loadingClass: "lazy-loading",
     loadedClass: "lazy-loaded",
     errorClass: "lazy-error",
   };
 
-  /**
-   * 初始化懒加载
-   *
-   * @param {string} [selector='.lazy-image'] - 图片选择器
-   * @param {Object} [options] - 配置选项
-   */
   static init(selector = ".lazy-image", options = {}) {
     const config = { ...this.defaultOptions, ...options };
     this.disconnect();
 
-    // 检查浏览器支持
     if (!("IntersectionObserver" in window)) {
       console.warn(
         "IntersectionObserver not supported, falling back to eager load",
@@ -887,7 +611,6 @@ class LazyLoader {
       return;
     }
 
-    // 创建观察器
     const observer = new IntersectionObserver(
       (entries, obs) => {
         const entryCount =
@@ -907,7 +630,6 @@ class LazyLoader {
       },
     );
 
-    // 观察所有懒加载图片
     const images = document.querySelectorAll(selector);
     const imageCount =
       images && Number.isFinite(images.length) ? images.length : 0;
@@ -918,27 +640,18 @@ class LazyLoader {
       }
     }
 
-    // 保存观察器引用
     this._observer = observer;
     console.debug(
       `Lazy loader initialized, watching ${imageCount} images`,
     );
   }
 
-  /**
-   * 加载单张图片
-   *
-   * @param {HTMLImageElement} img - 图片元素
-   * @param {Object} config - 配置选项
-   */
   static loadImage(img, config = this.defaultOptions) {
     const src = img.dataset.src;
     if (!src) return;
 
-    // 添加加载中状态
     img.classList.add(config.loadingClass);
 
-    // 预加载图片
     const tempImg = new Image();
 
     tempImg.onload = () => {
@@ -957,11 +670,6 @@ class LazyLoader {
     tempImg.src = src;
   }
 
-  /**
-   * 降级方案：立即加载所有图片
-   *
-   * @param {string} selector - 图片选择器
-   */
   static loadAllImages(selector) {
     const images = document.querySelectorAll(selector);
     const imageCount =
@@ -974,11 +682,6 @@ class LazyLoader {
     }
   }
 
-  /**
-   * 手动触发特定图片加载
-   *
-   * @param {HTMLImageElement|string} target - 图片元素或选择器
-   */
   static load(target) {
     const img =
       typeof target === "string" ? document.querySelector(target) : target;
@@ -988,20 +691,12 @@ class LazyLoader {
     }
   }
 
-  /**
-   * 观察新添加的图片
-   *
-   * @param {HTMLImageElement} img - 新图片元素
-   */
   static observe(img) {
     if (this._observer && img) {
       this._observer.observe(img);
     }
   }
 
-  /**
-   * 停止观察
-   */
   static disconnect() {
     if (this._observer) {
       this._observer.disconnect();
@@ -1010,24 +705,8 @@ class LazyLoader {
   }
 }
 
-// ========================================
-// 性能优化工具：虚拟滚动（长列表优化）
-// ========================================
-
-/**
- * 简易虚拟滚动实现
- *
- * 功能说明：
- *   只渲染可视区域内的列表项，减少 DOM 节点数量，
- *   适用于任务列表、日志列表等长列表场景。
- *
- * @class VirtualScroller
- */
 class VirtualScroller {
-  /**
-   * @param {HTMLElement} container - 滚动容器
-   * @param {Object} options - 配置选项
-   */
+
   constructor(container, options = {}) {
     this.container = container;
     this.itemHeight = options.itemHeight || 50;
@@ -1035,7 +714,7 @@ class VirtualScroller {
     this.items = [];
     this._scrollHandler = null;
     this._destroyed = false;
-    // 默认渲染：对 item 做最小 XSS 清理后再拼接 HTML（避免误用导致注入）
+
     this.renderItem =
       options.renderItem ||
       ((item) =>
@@ -1045,7 +724,7 @@ class VirtualScroller {
   }
 
   init() {
-    // 创建内部结构
+
     this.wrapper = document.createElement("div");
     this.wrapper.className = "virtual-scroll-wrapper";
     this.wrapper.style.position = "relative";
@@ -1056,28 +735,19 @@ class VirtualScroller {
 
     this.container.appendChild(this.wrapper);
 
-    // 绑定滚动事件（使用节流）
     this._scrollHandler =
       typeof throttle !== "undefined"
-        ? throttle(() => this.render(), 16) // ~60fps
+        ? throttle(() => this.render(), 16)
         : () => this.render();
     this.container.addEventListener("scroll", this._scrollHandler);
   }
 
-  /**
-   * 设置数据
-   *
-   * @param {Array} items - 列表数据
-   */
   setItems(items) {
     this.items = items;
     this.wrapper.style.height = `${items.length * this.itemHeight}px`;
     this.render();
   }
 
-  /**
-   * 渲染可见项
-   */
   render() {
     const scrollTop = this.container.scrollTop;
     const containerHeight = this.container.clientHeight;
@@ -1103,18 +773,10 @@ class VirtualScroller {
     this.content.innerHTML = html;
   }
 
-  /**
-   * 滚动到指定项
-   *
-   * @param {number} index - 项索引
-   */
   scrollToIndex(index) {
     this.container.scrollTop = index * this.itemHeight;
   }
 
-  /**
-   * 销毁
-   */
   destroy() {
     if (this._destroyed) return;
     this._destroyed = true;
@@ -1128,7 +790,6 @@ class VirtualScroller {
   }
 }
 
-// 导出（兼容不同的模块系统）
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     API_CACHE_CLEANUP_INTERVAL_MS,

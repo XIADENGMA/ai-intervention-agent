@@ -174,17 +174,11 @@ class TestR216BannerCommentPresent(unittest.TestCase):
     def setUp(self) -> None:
         self.source = NOTIF_JS.read_text(encoding="utf-8")
 
-    def test_banner_contains_r216_keyword(self) -> None:
-        """文件头 ``/** ... */`` block 注释必须含 'R216'。"""
-        # 取前 80 行作为 banner 范围
-        banner = "\n".join(self.source.splitlines()[:80])
-        self.assertIn(
-            "R216",
-            banner,
-            "notification-manager.js 文件头 banner 注释必须含 'R216' 关键字, "
-            "让 contributor 看到 console.debug 用法时能 grep 到约定来源, "
-            "而不是误以为是 console.log 的笔误。",
-        )
+    def test_console_debug_convention_in_effect(self) -> None:
+        """R216 约定溯源改由本测试承载（源码 banner 注释已清理）；
+        这里锁约定的代码效果：console.debug 在用、console.log 绝迹。"""
+        self.assertIn("console.debug", self.source)
+        self.assertNotIn("console.log(", self.source)
 
     def test_banner_explains_console_demote(self) -> None:
         """banner 必须含 ``console`` + ``demote`` (或 ``debug``) 关键词。"""

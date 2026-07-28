@@ -65,8 +65,8 @@ class TestKshelpFocusManagement(unittest.TestCase):
             "应有模块作用域变量记忆 opener element",
         )
 
-    def test_previously_focused_element_has_r255_doc(self) -> None:
-        self.assertIn("a11y-audit-cycle-1 Track A (R255)", self.js)
+    def test_previously_focused_element_state_present(self) -> None:
+        """R255 溯源改由本测试承载（源码注释已清理）；锁焦点还原状态本身。"""
         self.assertIn("_previouslyFocusedElement", self.js)
 
     # ------------------------------------------------------------------

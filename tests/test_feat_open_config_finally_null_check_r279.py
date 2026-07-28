@@ -194,19 +194,6 @@ class TestOpenConfigFinallyNullCheckR279(unittest.TestCase):
             "null check (DOM 已不在时静默跳过)",
         )
 
-    def test_r279_anchor_comment_present(self) -> None:
-        """finally 块附近必须有 ``R279`` anchor 注释，让未来 refactor 看
-        到时知道为什么 re-query 而不是直接复用 ``btn``。"""
-        body = _extract_function_body(
-            self.src, r"async\s+openConfigFileInIde\s*\(\s*\)\s*"
-        )
-        self.assertIn(
-            "R279",
-            body,
-            "R279: ``openConfigFileInIde()`` 函数体必须有 ``R279`` anchor "
-            "注释（让 grep R279 能直接定位修复点）",
-        )
-
 
 class TestR268AppJsStillFixed(unittest.TestCase):
     """R268 sanity check: ``app.js::submitFeedback()`` 的 finally 块仍然
@@ -217,11 +204,6 @@ class TestR268AppJsStillFixed(unittest.TestCase):
     def test_app_js_submit_finally_still_has_null_check(self) -> None:
         """``submitFeedback`` 的 finally 块必须仍有 ``if (submitBtn)`` 兜底
         (R268 修复点)。"""
-        self.assertIn(
-            "R268",
-            self.src,
-            "R279 sanity: ``app.js`` 必须仍有 ``R268`` anchor 注释",
-        )
         self.assertRegex(
             self.src,
             r"const\s+submitBtn\s*=\s*document\.getElementById\(\s*\"submit-btn\"\s*\)\s*;\s*if\s*\(\s*submitBtn\s*\)",
@@ -253,18 +235,26 @@ class TestFinallyBlockMetaLint(unittest.TestCase):
         提示作者评估是否需要 R268/R279 同款 null check。
         """
         js_dir = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
-        # 白名单：(file_name, signature) 表示已知 safe 或已修复
+        # 白名单：(file_name, signature) 表示已知 safe 或已修复。
+        # marker 一律用 finally 块内的**代码特征**（注释锚点已按维护者
+        # 决策清理，不再可用作标识）。
         whitelist = {
             "settings-manager.js": [
-                "R279",
+                "this._initPromise = null",
+                "this._backendSyncPromise = null",
+                "resetFileInput(target)",
+                "if (btnNow)",  # R279 修复点
                 "removeChild(ta)",
-                "R452-custom-sound-upload-reset",
-            ],  # R279 fixed + local-sync ta + custom sound file-input cleanup
-            "app.js": ["R268"],  # R268 fixed
+                "this._languagePersistPromise = null",
+                "this._feedbackConfigSavePromise = null",
+            ],
+            "app.js": [
+                "if (submitBtn)",  # R268 修复点
+                "COPY_BUTTON_RESTORE_TIMER_PROP",  # copy button 定时器清理
+            ],
             "i18n.js": ["seen.delete", "delete _pendingLoads"],  # safe (no DOM)
             "multi_task.js": ["clearTimeout", "tasksPollAbortController", "setTimeout"],
             "notification-manager.js": ["permissionRequestPromise"],  # safe (state)
-            "quick_phrases.js": ["R452-export-cleanup"],  # safe (download cleanup)
         }
 
         # 扫所有 .js (排除 .min.js 和 vendor 第三方库)

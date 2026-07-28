@@ -202,28 +202,15 @@ class TestSubmitFeedbackEntryNullCheckR280(unittest.TestCase):
             "(反馈不能因 UI 缺失就丢失)",
         )
 
-    def test_r280_anchor_comment_present(self) -> None:
-        """函数体必须有 ``R280`` anchor 注释。"""
-        self.assertIn(
-            "R280",
-            self.body,
-            "R280: ``submitFeedback()`` 函数体必须有 ``R280`` anchor 注释 "
-            "(让 grep R280 能直接定位修复点)",
-        )
-
 
 class TestR268R279PreservedR280(unittest.TestCase):
-    """R280 sanity: R268 (finally) 与 R279 (settings-manager) 修复都还在。"""
+    """R280 sanity: R268 (finally) 与 R279 (settings-manager) 修复都还在
+    （锚点注释已清理，改锁代码特征本身）。"""
 
     app_src = APP_JS.read_text(encoding="utf-8")
 
     def test_app_js_r268_finally_still_null_checked(self) -> None:
         """R268 finally 块的 ``if (submitBtn)`` 兜底仍在。"""
-        self.assertIn(
-            "R268",
-            self.app_src,
-            "R280 sanity: app.js R268 anchor 仍在",
-        )
         self.assertRegex(
             self.app_src,
             r"finally\s*\{[\s\S]{0,800}?if\s*\(\s*submitBtn\s*\)",
@@ -232,7 +219,7 @@ class TestR268R279PreservedR280(unittest.TestCase):
         )
 
     def test_settings_manager_r279_still_present(self) -> None:
-        """settings-manager.js R279 修复仍在。"""
+        """settings-manager.js R279 finally null-check 修复仍在。"""
         sm_path = (
             REPO_ROOT
             / "src"
@@ -242,10 +229,10 @@ class TestR268R279PreservedR280(unittest.TestCase):
             / "settings-manager.js"
         )
         sm_src = sm_path.read_text(encoding="utf-8")
-        self.assertIn(
-            "R279",
+        self.assertRegex(
             sm_src,
-            "R280 sanity: settings-manager.js R279 anchor 仍在",
+            r"finally\s*\{[\s\S]{0,800}?getElementById\(",
+            "R280 sanity: settings-manager.js finally null-check 仍在",
         )
 
 

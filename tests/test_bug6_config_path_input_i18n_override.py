@@ -185,23 +185,5 @@ class TestSettingsManagerRemovesI18nValueAfterWrite(unittest.TestCase):
         )
 
 
-class TestBug6DocumentationAnchor(unittest.TestCase):
-    """注释中必须有 BUG6 锚点便于追溯。"""
-
-    def test_multi_task_documents_bug6(self) -> None:
-        self.assertIn(
-            "BUG6",
-            _read(MULTI_TASK_JS),
-            "multi_task.js 应在 fetchFeedbackPromptsFresh 附近注释中标注 'BUG6' 锚点",
-        )
-
-    def test_settings_manager_documents_bug6(self) -> None:
-        self.assertIn(
-            "BUG6",
-            _read(SETTINGS_MANAGER_JS),
-            "settings-manager.js 应在 openConfigFileInIde 附近注释中标注 'BUG6' 锚点",
-        )
-
-
 if __name__ == "__main__":
     unittest.main()

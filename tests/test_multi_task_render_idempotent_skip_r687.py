@@ -62,7 +62,6 @@ def test_app_js_render_markdown_content_has_r687_idempotent_guard() -> None:
     """
     app_js = (MULTI_TASK_JS.parent / "app.js").read_text(encoding="utf-8")
     body = _extract_function_body(app_js, "renderMarkdownContent")
-    assert "R687" in body, "renderMarkdownContent 必须带 R687 幂等短路注释标记"
     assert "renderedContent" in body, "必须用 dataset.renderedContent 做签名比较"
 
 

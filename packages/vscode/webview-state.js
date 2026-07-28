@@ -1,22 +1,3 @@
-/*!
- * ai-intervention-agent · 统一状态机（Web UI 端）
- *
- * 设计：
- *   - Python 源头：state_machine.py（ConnectionStatus / ContentStatus / InteractionPhase）
- *   - 本文件以 IIFE 形式挂到 window.AIIAState，常量名与字符串值保持完全一致
- *   - 常量同步由 tests/test_state_machine.py 正则抓取回归护栏
- *
- * 使用：
- *   var conn = window.AIIAState.createMachine('connection', 'idle')
- *   conn.onChange(function(prev, next){ console.debug(prev, '->', next) })
- *   conn.transition('connecting')
- *   conn.is('connected')       // boolean
- *   conn.status                // 当前状态字符串
- *
- * 注意：
- *   - 非法迁移会抛 InvalidTransition 异常；调用方应 try/catch 或先用 canTransition() 判断
- *   - 状态字符串是契约的一部分，不要直接拼接 UI 文案，用 i18n key 映射
- */
 ;(function (global) {
   'use strict'
 
@@ -44,7 +25,6 @@
     COOLDOWN: 'cooldown'
   })
 
-  // 合法迁移表（必须与 state_machine.py 的 TRANSITIONS 保持一致）
   var TRANSITIONS = Object.freeze({
     connection: Object.freeze({
       idle: ['connecting', 'closed'],
@@ -103,7 +83,7 @@
       var previous = status
       status = target
       for (var i = 0; i < listeners.length; i++) {
-        try { listeners[i](previous, status) } catch (_) { /* noop */ }
+        try { listeners[i](previous, status) } catch (_) { }
       }
     }
 

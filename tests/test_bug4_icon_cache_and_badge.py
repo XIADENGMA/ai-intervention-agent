@@ -145,13 +145,6 @@ class TestServiceWorkerOfflineResilient(unittest.TestCase):
             "离线兜底 Response 应带 X-AIIA-SW-Offline 诊断 header",
         )
 
-    def test_documents_bug4(self) -> None:
-        self.assertIn(
-            "BUG4",
-            self.source,
-            "SW 中应有 BUG4 锚点注释，便于后续维护者追溯设计动机",
-        )
-
 
 class TestHtmlIconCacheBusting(unittest.TestCase):
     """所有 ``/icons/...`` link 必须带 ``?v={{ version }}`` query。"""
@@ -212,13 +205,6 @@ class TestNotificationManagerNoDefaultBadge(unittest.TestCase):
             r"if\s*\(\s*typeof\s+badge\s*===\s*['\"]string['\"]\s*&&\s*badge\s*\)",
             "badge 应通过 ``if (typeof badge === 'string' && badge)`` 守卫"
             "条件写入，避免默认值污染",
-        )
-
-    def test_documents_bug4(self) -> None:
-        self.assertIn(
-            "BUG4",
-            self.source,
-            "notification-manager.js 应有 BUG4 注释锚点说明 badge 移除原因",
         )
 
 

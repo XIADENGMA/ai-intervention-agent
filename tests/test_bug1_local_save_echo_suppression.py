@@ -178,27 +178,5 @@ class TestSettingsManagerSuppressionInvocations(unittest.TestCase):
         self._assert_suppression_before_endpoint("/api/update-language")
 
 
-class TestSuppressionDocsAndIntent(unittest.TestCase):
-    """文档化注释必须明确说明 BUG1 的修复意图，便于后续维护者快速理解。"""
-
-    def test_multi_task_documents_bug1(self) -> None:
-        source = _read(MULTI_TASK_JS)
-        self.assertIn(
-            "BUG1",
-            source,
-            "multi_task.js 应在 _suppressConfigChangedToastUntilMs 附近注释中"
-            "标注 'BUG1' 锚点，让后续阅读者能追溯设计动机",
-        )
-
-    def test_settings_manager_documents_bug1(self) -> None:
-        source = _read(SETTINGS_MANAGER_JS)
-        self.assertIn(
-            "BUG1",
-            source,
-            "settings-manager.js 应在 _suppressConfigChangedEchoIfAvailable 附近"
-            "注释中标注 'BUG1' 锚点",
-        )
-
-
 if __name__ == "__main__":
     unittest.main()

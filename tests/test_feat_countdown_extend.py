@@ -585,10 +585,11 @@ class TestDesignAnchors(unittest.TestCase):
         )
 
     def test_js_has_anchor(self) -> None:
+        # 注释锚点已清理，改锁功能的核心 DOM id 引用
         self.assertIn(
-            "feat-countdown-extend",
+            "countdown-extend-btn",
             MULTI_TASK_JS.read_text(encoding="utf-8"),
-            "multi_task.js 必须有 feat-countdown-extend 锚点",
+            "multi_task.js 必须引用 countdown-extend-btn",
         )
 
 

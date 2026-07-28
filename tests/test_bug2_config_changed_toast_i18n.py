@@ -187,15 +187,6 @@ class TestMultiTaskUsesI18nForHint(unittest.TestCase):
             "i18n 查找必须出现在 detail.hint 兜底之前（否则英文 hint 会覆盖中文）",
         )
 
-    def test_fallback_chain_documented(self) -> None:
-        """注释中必须提到 BUG2 锚点，便于后续维护者追溯。"""
-        # 整个文件级别有 BUG2 注释即可（避免限制注释具体位置）。
-        self.assertIn(
-            "BUG2",
-            self.source,
-            "multi_task.js 应在 config_changed handler 附近注释中标注 'BUG2' 锚点",
-        )
-
     def test_english_fallback_string_still_present(self) -> None:
         """硬编码英文 fallback 必须保留，覆盖 i18n / detail.hint 都缺失的极端情况。"""
         body = self._extract_config_changed_handler()
