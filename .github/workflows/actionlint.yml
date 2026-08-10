@@ -37,7 +37,7 @@ jobs:
     steps:
       # 审计模式下 harden-runner 仅记录 egress，不 block；样本够了再切 block
       - name: Harden runner（audit）
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: 运行 actionlint（含 shellcheck）
-        uses: reviewdog/action-actionlint@50842263c20a7c46bd0065b9e624d3c569db061e # v1.73.0
+        uses: reviewdog/action-actionlint@d63ba7532e0942965320cd8d73cbae4c7b3c5283 # v1.73.1
         with:
           # 直接失败阻塞合并，而不是把问题折叠进 PR review
           reporter: github-check
