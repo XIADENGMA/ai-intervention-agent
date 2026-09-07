@@ -27,7 +27,6 @@ R302 锁定 `/api/tasks` GET endpoint 的 cross-language schema:
 | ── extends_used           | `task.extends_used`             |
 | ── extends_max            | `task.extends_max`              |
 | ── feedback_placeholder   | `task.feedback_placeholder`     |
-| ── question_type          | `task.question_type`            |
 | ── header_label           | `task.header_label`             |
 ================================================================
 
@@ -116,7 +115,6 @@ _PER_TASK_FIELDS = (
     "extends_used",
     "extends_max",
     "feedback_placeholder",
-    "question_type",
     "header_label",
 )
 # JS 端使用频率高的关键字段 (cross-language reach 必须覆盖)
@@ -259,9 +257,6 @@ class TestPerTaskFieldsAreSeparateTests(unittest.TestCase):
 
     def test_feedback_placeholder(self) -> None:
         self.assertIn('"feedback_placeholder":', self.body)
-
-    def test_question_type(self) -> None:
-        self.assertIn('"question_type":', self.body)
 
     def test_header_label(self) -> None:
         self.assertIn('"header_label":', self.body)

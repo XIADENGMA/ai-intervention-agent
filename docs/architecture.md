@@ -84,7 +84,7 @@ sequenceDiagram
     participant UI as Web UI / VS Code
     participant Human as Human reviewer
 
-    Agent->>MCP: interactive_feedback(message,<br/>header_label, question_type, ...)
+    Agent->>MCP: interactive_feedback(message,<br/>header_label, predefined_options, ...)
     MCP->>AIIA: POST /api/tasks
     AIIA->>UI: SSE task.created
     UI->>Human: Browser/system notification<br/>+ countdown timer
@@ -139,7 +139,7 @@ sequenceDiagram
 | Parameter | Purpose | Max | Source |
 |---|---|---|---|
 | `header_label` | One-word context chip in task pane (`Auth`, `DB`, `i18n`) | 16 chars | gemini-cli `ask_user.header` |
-| `question_type='yesno'` | Hide textarea + render 2-button binary decision | — | gemini-cli `ask_user` |
+| `predefined_options` | Multi-select checkboxes with optional defaults | list[str\|dict] | AIIA native |
 | `feedback_placeholder` | Per-task textarea hint (overrides global i18n) | 200 chars | gemini-cli `ask_user` |
 | `auto_resubmit_timeout` | Per-task countdown override (0 = disable) | `[0, 3600]` sec | AIIA native |
 | `predefined_options` | Multi-select chips with optional `default: true` recommendation | 10000 chars/each | AIIA + upstream parity |

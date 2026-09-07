@@ -933,46 +933,6 @@ body.vscode-light .no-content-progress-bar {
   flex-shrink: 0;
 }
 
-.yesno-button-group {
-  display: flex;
-  gap: 8px;
-  padding: 4px 0 8px;
-}
-
-.yesno-btn {
-  flex: 1;
-  padding: 6px 0;
-  font-size: 13px;
-  background: transparent;
-  color: var(--vscode-foreground);
-  border: 1px solid
-    var(--vscode-button-secondaryBackground, var(--vscode-panel-border));
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.yesno-btn:hover:not(:disabled):not(.selected) {
-  background: var(
-    --vscode-button-secondaryHoverBackground,
-    var(--vscode-list-hoverBackground)
-  );
-}
-
-.yesno-btn.selected {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border-color: var(--vscode-button-background);
-}
-
-.yesno-btn.selected:hover:not(:disabled) {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.yesno-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .countdown-controls {
   display: none;
   justify-content: flex-end;

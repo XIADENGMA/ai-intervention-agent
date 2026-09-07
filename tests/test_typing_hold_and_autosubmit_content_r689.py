@@ -105,6 +105,7 @@ class TestWebRuntimeBehavior(unittest.TestCase):
               { task_id: 't-typed', predefined_options: ['A', 'B'] },
             ];
             taskOptionsStates['t-typed'] = { 'option-1': true };
+            taskUserOptionInteracted['t-typed'] = true;
 
             await autoSubmitTask('t-typed');
 

@@ -121,9 +121,6 @@ export type I18nKey =
   | "ui.form.placeholder"
   | "ui.form.submit"
   | "ui.form.uploadImage"
-  | "ui.form.yesnoNo"
-  | "ui.form.yesnoSupplementPlaceholder"
-  | "ui.form.yesnoYes"
   | "ui.image.decodeFailed"
   | "ui.image.invalid"
   | "ui.image.processingFailedReason"
@@ -290,9 +287,6 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "ui.form.placeholder",
   "ui.form.submit",
   "ui.form.uploadImage",
-  "ui.form.yesnoNo",
-  "ui.form.yesnoSupplementPlaceholder",
-  "ui.form.yesnoYes",
   "ui.image.decodeFailed",
   "ui.image.invalid",
   "ui.image.processingFailedReason",

@@ -186,7 +186,7 @@ Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
 - **Web UI** — Markdown, code highlighting, and math rendering out of the box
 - **Multi-task tabs** — concurrent requests with independent countdowns, per-task draft autosave, and auto re-submit that keeps long sessions alive (your typed text and checked options are submitted at zero, never an empty prompt)
 - **Typing-hold** — the countdown auto-extends while you type and never fires mid-input (web page and VS Code extension alike)
-- **Agent-loop ergonomics** — per-task `header_label` context chips, `question_type='yesno'` one-click decisions, and `feedback_placeholder` hints
+- **Agent-loop ergonomics** — per-task `header_label` context chips, `feedback_placeholder` hints, and loop engineering metadata (`loop_id`, `loop_phase`, `success_criteria`)
 - **Notifications** — web / sound / system / Bark (iOS push), plus custom notification sound upload
 - **SSH / LAN friendly** — works behind port forwarding; mDNS publishes a `<host>.local` URL when supported
 - **i18n** — Web UI + VS Code extension shipped in `en` / `zh-CN` / `zh-TW`

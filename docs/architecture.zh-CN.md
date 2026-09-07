@@ -79,7 +79,7 @@ sequenceDiagram
     participant UI as Web UI / VS Code
     participant Human as 人类审阅者
 
-    Agent->>MCP: interactive_feedback(message,<br/>header_label, question_type, ...)
+    Agent->>MCP: interactive_feedback(message,<br/>header_label, predefined_options, ...)
     MCP->>AIIA: POST /api/tasks
     AIIA->>UI: SSE task.created
     UI->>Human: 浏览器/系统通知<br/>+ 倒计时
@@ -133,7 +133,7 @@ sequenceDiagram
 | 参数 | 作用 | 上限 | 来源 |
 |---|---|---|---|
 | `header_label` | 任务面板上方的 1 词上下文 chip（`Auth`、`DB`、`i18n`） | 16 字符 | gemini-cli `ask_user.header` |
-| `question_type='yesno'` | 隐藏文本框 + 渲染 2 按钮二元决策 | — | gemini-cli `ask_user` |
+| `predefined_options` | 多选 checkbox，支持默认选中 | list[str\|dict] | AIIA 原生 |
 | `feedback_placeholder` | 每任务文本框 placeholder（覆盖全局 i18n） | 200 字符 | gemini-cli `ask_user` |
 | `auto_resubmit_timeout` | 每任务倒计时覆盖（0 = 禁用） | `[0, 3600]` 秒 | AIIA 原生 |
 | `predefined_options` | 多选 chip，可选 `default: true` 标记推荐项 | 10000 字符/条 | AIIA + 上游 parity |

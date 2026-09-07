@@ -1273,9 +1273,8 @@
 
   let taskTextareaContents = {}
   let taskOptionsStates = {}
+  let taskUserOptionInteracted = {}
   let taskImages = {}
-
-  let taskYesnoSelections = {}
 
   const UI_STATE_VERSION = 1
   const UI_STATE_SAVE_DEBOUNCE_MS = 250
@@ -1338,8 +1337,8 @@
       if (s.taskOptionsStates && typeof s.taskOptionsStates === 'object') {
         taskOptionsStates = { ...s.taskOptionsStates }
       }
-      if (s.taskYesnoSelections && typeof s.taskYesnoSelections === 'object') {
-        taskYesnoSelections = { ...s.taskYesnoSelections }
+      if (s.taskUserOptionInteracted && typeof s.taskUserOptionInteracted === 'object') {
+        taskUserOptionInteracted = { ...s.taskUserOptionInteracted }
       }
       if (typeof s.activeTaskId === 'string') {
         activeTaskId = s.activeTaskId || null
@@ -1362,7 +1361,7 @@
         activeTaskId: activeTaskId || '',
         taskTextareaContents: trimTextareaContents(taskTextareaContents),
         taskOptionsStates: taskOptionsStates || {},
-        taskYesnoSelections: taskYesnoSelections || {},
+        taskUserOptionInteracted: taskUserOptionInteracted || {},
 
         textareaManualRows:
           typeof textareaManualRows === 'number' && Number.isFinite(textareaManualRows)
@@ -2014,15 +2013,6 @@
         countdownFreezeBtn.addEventListener('click', handleCountdownFreezeClick)
       }
 
-      const yesnoYesBtn = document.getElementById('yesnoYesBtn')
-      if (yesnoYesBtn) {
-        yesnoYesBtn.addEventListener('click', () => handleYesnoToggleClick('yes'))
-      }
-      const yesnoNoBtn = document.getElementById('yesnoNoBtn')
-      if (yesnoNoBtn) {
-        yesnoNoBtn.addEventListener('click', () => handleYesnoToggleClick('no'))
-      }
-
       const uploadBtn = document.getElementById('uploadBtn')
       const imageInput = document.getElementById('imageInput')
 
@@ -2066,6 +2056,7 @@
       if (optionsContainerEl) {
         optionsContainerEl.addEventListener('change', e => {
           if (!activeTaskId) return
+          taskUserOptionInteracted[activeTaskId] = true
           const checkboxes = optionsContainerEl.querySelectorAll('input[type="checkbox"]')
           const states = {}
           checkboxes.forEach((cb, index) => {
@@ -2492,7 +2483,7 @@
       taskDeadlines = {}
       taskTextareaContents = {}
       taskOptionsStates = {}
-      taskYesnoSelections = {}
+      taskUserOptionInteracted = {}
       taskImages = {}
       pendingImageUploadCounts = {}
       schedulePersistUiState()
@@ -2800,7 +2791,9 @@
     rememberTaskIds(taskDeadlines)
     rememberTaskIds(taskTextareaContents)
     rememberTaskIds(taskOptionsStates)
+    rememberTaskIds(taskUserOptionInteracted)
     rememberTaskIds(taskImages)
+    rememberTaskIds(autoSubmitAttempted)
     try {
       if (pendingImageUploadCounts) {
         for (const key in pendingImageUploadCounts) {
@@ -2830,7 +2823,8 @@
       delete taskDeadlines[existingId]
       delete taskTextareaContents[existingId]
       delete taskOptionsStates[existingId]
-      delete taskYesnoSelections[existingId]
+      delete taskUserOptionInteracted[existingId]
+      delete autoSubmitAttempted[existingId]
       delete taskImages[existingId]
       delete pendingImageUploadCounts[getPendingImageUploadKey(existingId)]
     })
@@ -3465,7 +3459,6 @@
 
         header_label: t.header_label,
         feedback_placeholder: t.feedback_placeholder,
-        question_type: t.question_type,
 
         loop_id: t.loop_id,
         loop_objective: t.loop_objective,
@@ -3822,9 +3815,6 @@
     if (typeof updateFeedbackPlaceholder === 'function') {
       updateFeedbackPlaceholder(config.feedback_placeholder)
     }
-    if (typeof updateYesnoButtonGroup === 'function') {
-      updateYesnoButtonGroup(config.question_type)
-    }
 
     if (typeof updateLoopContext === 'function') {
       updateLoopContext(config)
@@ -3839,17 +3829,15 @@
         Date.now() - pendingInputFocusAtMs <= PENDING_FOCUS_FRESH_MS
       ) {
         pendingInputFocusAtMs = 0
-        if (config.question_type !== 'yesno') {
-          try {
-            const focusTarget = document.getElementById('feedbackText')
-            if (focusTarget && typeof focusTarget.focus === 'function') {
-              focusTarget.focus()
-              log('Focused feedback textarea for next task (R692)')
-            }
-          } catch (e) {
+        try {
+          const focusTarget = document.getElementById('feedbackText')
+          if (focusTarget && typeof focusTarget.focus === 'function') {
+            focusTarget.focus()
+            log('Focused feedback textarea for next task (R692)')
+          }
+        } catch (e) {
 
           }
-        }
       }
     } else if (config.task_id) {
 
@@ -4571,77 +4559,6 @@
     }
   }
 
-  function updateYesnoButtonGroup(questionType) {
-    const group = document.getElementById('yesnoButtonGroup')
-    const wrapper = document.querySelector('.textarea-wrapper')
-    if (!group) return
-    if (questionType === 'yesno') {
-      group.classList.remove('hidden')
-
-      if (wrapper && wrapper.classList) wrapper.classList.remove('hidden')
-
-      try {
-        const textarea = document.getElementById('feedbackText')
-        const taskPlaceholder =
-          currentConfig && typeof currentConfig.feedback_placeholder === 'string'
-            ? currentConfig.feedback_placeholder.trim()
-            : ''
-        if (textarea && !taskPlaceholder) {
-          const hint = t('ui.form.yesnoSupplementPlaceholder')
-          if (typeof hint === 'string' && hint) {
-            textarea.setAttribute('placeholder', hint)
-          }
-        }
-      } catch (e) {
-
-      }
-      syncYesnoSelectedStyles()
-    } else {
-      group.classList.add('hidden')
-      if (wrapper && wrapper.classList) wrapper.classList.remove('hidden')
-    }
-  }
-
-  function handleYesnoToggleClick(value) {
-    const taskId =
-      activeTaskId || (currentConfig && currentConfig.task_id) || null
-    if (!taskId) return
-    if (taskYesnoSelections[taskId] === value) {
-      delete taskYesnoSelections[taskId]
-    } else {
-      taskYesnoSelections[taskId] = value
-    }
-    syncYesnoSelectedStyles()
-    schedulePersistUiState()
-  }
-
-  function syncYesnoSelectedStyles() {
-    const group = document.getElementById('yesnoButtonGroup')
-    if (!group) return
-    const taskId =
-      activeTaskId || (currentConfig && currentConfig.task_id) || null
-    const selection = taskId ? taskYesnoSelections[taskId] : undefined
-    const pairs = [
-      ['yesnoYesBtn', 'yes'],
-      ['yesnoNoBtn', 'no']
-    ]
-    for (const [btnId, value] of pairs) {
-      const btn = document.getElementById(btnId)
-      if (!btn) continue
-      const isSelected = selection === value
-      btn.classList.toggle('selected', isSelected)
-      btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false')
-    }
-  }
-
-  function getActiveYesnoSelection() {
-    const taskId =
-      activeTaskId || (currentConfig && currentConfig.task_id) || null
-    if (!taskId) return null
-    const selection = taskYesnoSelections[taskId]
-    return selection === 'yes' || selection === 'no' ? selection : null
-  }
-
   function findActiveTaskFromAllTasks() {
     try {
       if (!Array.isArray(allTasks)) return null
@@ -4917,7 +4834,11 @@
     }
 
     const typedText = collectTypedFeedbackForAutoSubmit(taskId)
-    const typedOptions = collectSelectedOptionsForAutoSubmit()
+    const userDidInteractOptions =
+      taskId && taskUserOptionInteracted[taskId] === true
+    const typedOptions = userDidInteractOptions
+      ? collectSelectedOptionsForAutoSubmit()
+      : []
     if ((typedText && typedText.trim()) || typedOptions.length > 0) {
       log(
         'Auto-submitting user-typed content for ' +
@@ -4926,7 +4847,9 @@
           (typedText || '').length +
           ' chars, ' +
           typedOptions.length +
-          ' options)'
+          ' options, interacted=' +
+          userDidInteractOptions +
+          ')'
       )
       const okTyped = await submitWithData(typedText || '', typedOptions, taskId)
       if (okTyped === null && taskId) {
@@ -5036,13 +4959,7 @@
       return
     }
 
-    const yesnoSelection = getActiveYesnoSelection()
     let feedbackText = feedbackTextEl.value.trim()
-    if (yesnoSelection) {
-      feedbackText = feedbackText
-        ? yesnoSelection + '\n\n' + feedbackText
-        : yesnoSelection
-    }
 
     const selected = []
     if (currentConfig && currentConfig.predefined_options) {
@@ -5279,9 +5196,8 @@
           if (taskOptionsStates[taskIdToSubmit] !== undefined) {
             delete taskOptionsStates[taskIdToSubmit]
           }
-          if (taskYesnoSelections[taskIdToSubmit] !== undefined) {
-            delete taskYesnoSelections[taskIdToSubmit]
-            syncYesnoSelectedStyles()
+          if (taskUserOptionInteracted[taskIdToSubmit] !== undefined) {
+            delete taskUserOptionInteracted[taskIdToSubmit]
           }
           if (taskImages[taskIdToSubmit] !== undefined) {
             delete taskImages[taskIdToSubmit]

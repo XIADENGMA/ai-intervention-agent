@@ -2019,16 +2019,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     </div>
                     <div class="uploaded-images" id="uploadedImages"></div>
 
-                    <!-- R691 (TODO#5 cross-client parity) + TODO#41: when
-                         question_type="yesno", render a Yes/No button row above
-                         the textarea. Clicking registers the choice (.selected +
-                         aria-pressed); the user may add an optional note in the
-                         textarea, then presses Send to submit "yes"/"yes\n\n<note>". -->
-                    <div class="yesno-button-group hidden" id="yesnoButtonGroup">
-                        <button type="button" class="yesno-btn yesno-btn-yes" id="yesnoYesBtn" aria-pressed="false" data-i18n="ui.form.yesnoYes">${tl("ui.form.yesnoYes")}</button>
-                        <button type="button" class="yesno-btn yesno-btn-no" id="yesnoNoBtn" aria-pressed="false" data-i18n="ui.form.yesnoNo">${tl("ui.form.yesnoNo")}</button>
-                    </div>
-
                     <div class="textarea-wrapper">
                         <div class="textarea-resize-handle" id="resizeHandle"></div>
                         <textarea

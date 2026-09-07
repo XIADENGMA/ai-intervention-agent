@@ -315,7 +315,6 @@ def test_switch_task_uses_cached_task_without_array_find() -> None:
         updateDescriptionDisplay = (prompt) => { updatedPrompt = prompt; };
         updateOptionsDisplay = (options) => { updatedOptions = options; };
         updateFeedbackPlaceholder = () => {};
-        updateYesnoButtonGroup = () => {};
         updateHeaderChip = () => {};
         loadTaskDetails = async (taskId) => { loadedTask = taskId; };
 

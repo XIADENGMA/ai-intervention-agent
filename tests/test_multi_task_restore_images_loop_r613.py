@@ -62,7 +62,6 @@ def test_load_task_details_restores_images_without_array_foreach() -> None:
         updateDescriptionDisplay = function stubUpdateDescriptionDisplay() {};
         updateOptionsDisplay = function stubUpdateOptionsDisplay() {};
         updateFeedbackPlaceholder = function stubUpdateFeedbackPlaceholder() {};
-        updateYesnoButtonGroup = function stubUpdateYesnoButtonGroup() {};
         updateHeaderChip = function stubUpdateHeaderChip() {};
         startTaskCountdown = function stubStartTaskCountdown() {};
         renderImagePreview = function stubRenderImagePreview(imageItem, allowRemove) {

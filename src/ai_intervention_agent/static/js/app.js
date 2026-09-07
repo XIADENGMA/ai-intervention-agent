@@ -1383,10 +1383,6 @@ function clearSubmittedTaskLocalState(taskId) {
   if (typeof taskImages !== "undefined") {
     delete taskImages[taskId];
   }
-
-  if (typeof window.clearYesnoSelection === "function") {
-    window.clearYesnoSelection(taskId);
-  }
 }
 
 function _classifyFetchError(error) {
@@ -1450,16 +1446,7 @@ async function submitFeedback() {
     return;
   }
 
-  const yesnoSelection =
-    typeof window.getActiveYesnoSelection === "function"
-      ? window.getActiveYesnoSelection()
-      : null;
   let feedbackText = feedbackTextEl.value.trim();
-  if (yesnoSelection) {
-    feedbackText = feedbackText
-      ? `${yesnoSelection}\n\n${feedbackText}`
-      : yesnoSelection;
-  }
   const selectedOptions = [];
 
   const optionsContainer = document.getElementById("options-container");

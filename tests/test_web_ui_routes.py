@@ -1155,8 +1155,6 @@ class TestGetTasks(_RouteTestBase):
             task.extends_used = 0
             # mining-cycle-3 §2.1 borrow #3: feedback_placeholder 同理
             task.feedback_placeholder = None
-            # mining-cycle-3 §2.1 borrow #2: question_type 同理
-            task.question_type = None
             # mining-cycle-3 §2.1 borrow #1: header_label 同理
             task.header_label = None
             # loop 工程 P1：5 个 loop 字段同理
@@ -1588,8 +1586,6 @@ class TestGetTaskDetail(_RouteTestBase):
         task.get_remaining_time.return_value = 77
         # mining-cycle-3 §2.1 borrow #3: jsonify 需要这个字段
         task.feedback_placeholder = None
-        # mining-cycle-3 §2.1 borrow #2: jsonify 需要这个字段
-        task.question_type = None
         # mining-cycle-3 §2.1 borrow #1: jsonify 需要这个字段
         task.header_label = None
         # loop 工程 P1：jsonify 需要 5 个 loop 字段

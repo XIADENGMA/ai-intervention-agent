@@ -106,10 +106,7 @@
       "placeholder": "Enter feedback (paste images supported)…",
       "insertCode": "Insert code (from clipboard)",
       "uploadImage": "Upload image",
-      "submit": "Submit feedback",
-      "yesnoYes": "Yes",
-      "yesnoNo": "No",
-      "yesnoSupplementPlaceholder": "Optional note — press Send to submit it with your Yes/No choice"
+      "submit": "Submit feedback"
     },
     "toast": {
       "configFallback": "Config load failed, using task detail fallback",

@@ -1,5 +1,5 @@
 """R287 invariant: ``docs/mcp_tools.md`` 与 ``docs/mcp_tools.zh-CN.md`` 必须
-完整文档化 4 个 Agent-mode 参数 (`header_label` / `question_type` /
+完整文档化 3 个 Agent-mode 参数 (`header_label` /
 `feedback_placeholder` / `auto_resubmit_timeout`) + 1 个 Agent-mode 综合
 调用示例。
 
@@ -8,10 +8,9 @@
 LLM 调用 MCP 工具时通过 ``tools/list`` JSON-Schema description 拿到
 完整参数描述（server_feedback.py 已写齐）。但 ``docs/mcp_tools.{md,
 zh-CN.md}`` 只文档化了 ``message`` + ``predefined_options``，
-另外 4 个 Agent-mode optional 参数完全没提：
+另外 3 个 Agent-mode optional 参数完全没提：
 
 - ``header_label`` (上下文 chip，≤16 chars，借鉴 gemini-cli ask_user)
-- ``question_type='yesno'`` (二元按钮 UI，借鉴 gemini-cli)
 - ``feedback_placeholder`` (textarea per-task 提示，≤200 chars)
 - ``auto_resubmit_timeout`` (per-task 倒计时覆盖)
 
@@ -21,12 +20,12 @@ zh-CN.md}`` 只文档化了 ``message`` + ``predefined_options``，
 R287 在两份 docs 都加上：
 
 1. 新 ``#### Agent-mode parameters`` / ``#### Agent 模式专用参数`` 小节
-   逐字段文档化 4 个参数（max 长度、推荐值、典型用例）。
+   逐字段文档化 3 个参数（max 长度、推荐值、典型用例）。
 2. 新 ``#### Agent-mode example`` / ``#### Agent 模式示例`` 小节
-   提供一个完整调用，组合所有 4 个参数（``header_label`` + ``feedback_placeholder``
-   + ``question_type='yesno'`` + ``auto_resubmit_timeout``）。
+   提供一个完整调用，组合所有 3 个参数（``header_label`` + ``feedback_placeholder``
+   + ``auto_resubmit_timeout``）。
 
-本测试静态扫描两份 docs 锁住：4 个参数名 + 1 个完整示例 + 双语
+本测试静态扫描两份 docs 锁住：3 个参数名 + 1 个完整示例 + 双语
 section anchor 必须存在。
 """
 
@@ -40,10 +39,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_EN = REPO_ROOT / "docs" / "mcp_tools.md"
 DOCS_ZH = REPO_ROOT / "docs" / "mcp_tools.zh-CN.md"
 
-# 4 个 Agent-mode 参数（必须在 docs 中文档化）
+# 3 个 Agent-mode 参数（必须在 docs 中文档化）
 AGENT_MODE_PARAMS = [
     "header_label",
-    "question_type",
     "feedback_placeholder",
     "auto_resubmit_timeout",
 ]
@@ -54,7 +52,7 @@ def _read(p: Path) -> str:
 
 
 class TestEnDocAgentModeParams(unittest.TestCase):
-    """``docs/mcp_tools.md`` 必须有 Agent-mode section + 4 个参数 + 示例。"""
+    """``docs/mcp_tools.md`` 必须有 Agent-mode section + 3 个参数 + 示例。"""
 
     def setUp(self) -> None:
         self.source = _read(DOCS_EN)
@@ -65,9 +63,8 @@ class TestEnDocAgentModeParams(unittest.TestCase):
             self.source,
             r"####\s+Agent-mode parameters",
             "docs/mcp_tools.md must contain a `#### Agent-mode parameters` "
-            "h4 section to document the 4 Agent-mode optional parameters "
-            "(header_label, question_type, feedback_placeholder, "
-            "auto_resubmit_timeout)",
+            "h4 section to document the 3 Agent-mode optional parameters "
+            "(header_label, feedback_placeholder, auto_resubmit_timeout)",
         )
 
     def test_all_4_agent_mode_params_documented(self) -> None:
@@ -129,8 +126,8 @@ class TestEnDocAgentModeParams(unittest.TestCase):
             "gemini-cli",
             self.source,
             "docs/mcp_tools.md should credit `gemini-cli ask_user` schema "
-            "as the borrow source for 3 of the 4 Agent-mode params "
-            "(header_label, question_type, feedback_placeholder); preserves "
+            "as the borrow source for Agent-mode params "
+            "(header_label, feedback_placeholder); preserves "
             "the mining-cycle-3 §2.1 attribution chain",
         )
 
@@ -246,13 +243,6 @@ class TestBilingualDocsParity(unittest.TestCase):
         self.assertEqual(en_p[0], zh_p[0])
         self.assertEqual(
             int(en_p[0]), 200, "feedback_placeholder max length must be 200"
-        )
-
-    def test_both_docs_show_yesno_value(self) -> None:
-        """``question_type='yesno'`` 的字面量必须在两份 docs 都出现。"""
-        self.assertIn('"yesno"', self.en, 'docs/mcp_tools.md must mention `"yesno"`')
-        self.assertIn(
-            '"yesno"', self.zh, 'docs/mcp_tools.zh-CN.md must mention `"yesno"`'
         )
 
 

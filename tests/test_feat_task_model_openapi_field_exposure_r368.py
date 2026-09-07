@@ -71,7 +71,6 @@ USER_VISIBLE_FIELDS: frozenset[str] = frozenset(
         "completed_at",
         "extends_used",
         "feedback_placeholder",
-        "question_type",
         "header_label",
         # Loop engineering P1 — loop 上下文 5 字段（前端按 loop_id 聚合
         # 多轮任务 / 显示轮次标签；export 携带以支持 audit 回放）

@@ -37,10 +37,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 README_EN = REPO_ROOT / "docs" / "architecture.md"
 README_ZH = REPO_ROOT / "docs" / "architecture.zh-CN.md"
 
-# 5 个 Agent-mode 关键参数（必须在表格中）
+# 4 个 Agent-mode 关键参数（必须在表格中）
 AGENT_MODE_PARAMS_FOR_TABLE = [
     "header_label",
-    "question_type",
     "feedback_placeholder",
     "auto_resubmit_timeout",
     "predefined_options",
@@ -139,10 +138,8 @@ class TestEnReadmeAgentGlassSection(unittest.TestCase):
                 f"shows the full hop chain that Agent-mode interactions follow",
             )
 
-    def test_all_5_agent_params_in_table(self) -> None:
+    def test_all_agent_params_in_table(self) -> None:
         body = self._extract_section_body()
-        # 表格里 ``question_type`` 以 ``question_type='yesno'`` 形式出现
-        # (backtick 包了整个表达式)，所以 substring 匹配即可。
         for param in AGENT_MODE_PARAMS_FOR_TABLE:
             self.assertIn(
                 param,

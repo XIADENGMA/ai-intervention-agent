@@ -857,9 +857,6 @@ class WebFeedbackUI(
                             "feedback_placeholder": getattr(
                                 active_task, "feedback_placeholder", None
                             ),
-                            "question_type": getattr(
-                                active_task, "question_type", None
-                            ),
                             "header_label": getattr(active_task, "header_label", None),
                             "loop_id": getattr(active_task, "loop_id", None),
                             "loop_objective": getattr(
@@ -903,9 +900,6 @@ class WebFeedbackUI(
                                 "initial_empty": False,
                                 "feedback_placeholder": getattr(
                                     first_task, "feedback_placeholder", None
-                                ),
-                                "question_type": getattr(
-                                    first_task, "question_type", None
                                 ),
                                 "header_label": getattr(
                                     first_task, "header_label", None

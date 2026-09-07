@@ -234,8 +234,6 @@ class Task(BaseModel):
 
     feedback_placeholder: str | None = None
 
-    question_type: str | None = None
-
     header_label: str | None = None
 
     loop_id: str | None = None
@@ -372,7 +370,6 @@ class TaskQueue:
         auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
         predefined_options_defaults: list[bool] | None = None,
         feedback_placeholder: str | None = None,
-        question_type: str | None = None,
         header_label: str | None = None,
         auto_resubmit_timeout_explicit: bool = False,
         loop_id: str | None = None,
@@ -427,10 +424,6 @@ class TaskQueue:
                 if s:
                     normalized_placeholder = s[:PLACEHOLDER_MAX_LENGTH]
 
-            normalized_question_type: str | None = None
-            if isinstance(question_type, str) and question_type.strip() == "yesno":
-                normalized_question_type = "yesno"
-
             normalized_header_label: str | None = None
             if isinstance(header_label, str):
                 s = header_label.strip()
@@ -445,7 +438,6 @@ class TaskQueue:
                 auto_resubmit_timeout=auto_resubmit_timeout,
                 auto_resubmit_timeout_explicit=auto_resubmit_timeout_explicit,
                 feedback_placeholder=normalized_placeholder,
-                question_type=normalized_question_type,
                 header_label=normalized_header_label,
                 loop_id=_normalize_optional_text(loop_id, LOOP_ID_MAX_LENGTH),
                 loop_objective=_normalize_optional_text(
@@ -1029,7 +1021,6 @@ class TaskQueue:
                             "created_at": task.created_at.isoformat(),
                             "status": task.status,
                             "feedback_placeholder": task.feedback_placeholder,
-                            "question_type": task.question_type,
                             "header_label": task.header_label,
                             "loop_id": task.loop_id,
                             "loop_objective": task.loop_objective,
@@ -1139,12 +1130,6 @@ class TaskQueue:
                     else:
                         restored_placeholder = None
 
-                    restored_qt = item.get("question_type")
-                    if isinstance(restored_qt, str) and restored_qt.strip() == "yesno":
-                        restored_qt = "yesno"
-                    else:
-                        restored_qt = None
-
                     restored_header = item.get("header_label")
                     if isinstance(restored_header, str):
                         s = restored_header.strip()
@@ -1169,7 +1154,6 @@ class TaskQueue:
                         created_at_monotonic=time.monotonic() - age_since_creation,
                         status=TaskStatus.PENDING,
                         feedback_placeholder=restored_placeholder,
-                        question_type=restored_qt,
                         header_label=restored_header,
                         loop_id=_normalize_optional_text(
                             item.get("loop_id"), LOOP_ID_MAX_LENGTH

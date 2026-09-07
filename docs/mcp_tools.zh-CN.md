@@ -114,14 +114,6 @@ agent 能按任务预先调整 UI，让用户在 5 秒内完成审阅决策，�
   - 推荐 1 个词，能不带空格就不带空格。超长服务端会自动 clamp；
     省略或传空字符串 → 标签页回退显示任务 ID。
 
-- `question_type`（string，可选，目前只支持 `"yesno"`）
-  - 当传 `"yesno"` 时，前端**隐藏文本框**，只渲染一行 Yes / No 按钮
-    对。用户点击直接提交字面字符串 `"yes"` 或 `"no"`——省掉
-    typing + Submit 两步动作，适合二元决策（批准 / 拒绝、proceed /
-    abort、确认删除）。未知值会静默当 `None` 处理，前向兼容未来的
-    `"choice"` / `"rating"` 等新类型。借鉴自 `gemini-cli` 的
-    `ask_user` schema。
-
 - `feedback_placeholder`（string，可选，**最长 200 字符**）
   - 每任务级别的 textarea placeholder 提示（覆盖全局 i18n
     `page.feedbackPlaceholder` 字符串）。示例：`"粘贴错误堆栈"`、
@@ -137,10 +129,9 @@ agent 能按任务预先调整 UI，让用户在 5 秒内完成审阅决策，�
     （不影响全局配置）。范围跟随服务端配置（`[0, 3600]`），越界值
     静默 clamp 而非报错。
 
-这 4 个参数可组合使用：典型 Agent 模式调用 = `header_label`（上下文）
-+ `feedback_placeholder`（提示） + 二选一：`predefined_options`（多选
-chip）或 `question_type='yesno'`（二元按钮）。下方有完整 Agent 模式
-调用示例。
+这 3 个参数可组合使用：典型 Agent 模式调用 = `header_label`（上下文）
++ `feedback_placeholder`（提示） + `predefined_options`（多选 checkbox）。
+下方有完整 Agent 模式调用示例。
 
 #### Loop 工程参数（长程自主循环）
 
@@ -259,16 +250,19 @@ interactive_feedback(
     "**是否同意运行 auth 集成测试套件？**"
   ),
   header_label="Auth",                      # 1 个词 chip 显示在 prompt 上方
+  predefined_options=[                      # 多选 checkbox
+    {"label": "同意跑测试", "default": True},
+    {"label": "回滚变更"},
+  ],
   feedback_placeholder=                     # 用户回复文本框提示
     "回复 'ok' 跑测试，或 'no' + 原因 回滚",
-  question_type="yesno",                    # 二元 → 显示 2 个按钮
   auto_resubmit_timeout=120,                # 单任务 2 分钟代替默认 4 分钟
 )
 ```
 
-UX 效果：用户看到 `Auth` chip + 1 段清晰摘要 + Yes/No 按钮，一键提
-交无需打字。若用户超过 2 分钟未响应，agent 会拿到 resubmit prompt
-（而非被卡满 4 分钟）。`header_label` / `question_type` /
+UX 效果：用户看到 `Auth` chip + 1 段清晰摘要 + 预选 checkbox +
+自由文本框。若用户超过 2 分钟未响应，agent 会拿到 resubmit prompt
+（而非被卡满 4 分钟）。`header_label` /
 `feedback_placeholder` / `auto_resubmit_timeout` 完整语义见上方
 [Agent 模式专用参数](#agent-模式专用参数cursor--composer--cline--augment--trae)
 小节。

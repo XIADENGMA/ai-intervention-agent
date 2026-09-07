@@ -79,9 +79,12 @@ def test_prune_task_local_state_uses_all_task_local_cache_keys() -> None:
           active: {{ 0: true }},
           done: {{ 1: true }},
         }};
-        let taskYesnoSelections = {{
-          active: 'yes',
-          done: 'no',
+        let taskUserOptionInteracted = {{
+          active: true,
+          done: true,
+        }};
+        let autoSubmitAttempted = {{
+          done: 1234567890,
         }};
         let taskImages = {{
           active: [{{ name: 'keep.png', data: 'data:image/png;base64,AAEC' }}],
@@ -109,7 +112,8 @@ def test_prune_task_local_state_uses_all_task_local_cache_keys() -> None:
           taskDeadlines,
           taskTextareaContents,
           taskOptionsStates,
-          taskYesnoSelections,
+          taskUserOptionInteracted,
+          autoSubmitAttempted,
           taskImages,
           pendingImageUploadCounts,
         }}));
@@ -124,7 +128,8 @@ def test_prune_task_local_state_uses_all_task_local_cache_keys() -> None:
         "taskDeadlines": {"active": 111},
         "taskTextareaContents": {"active": "keep"},
         "taskOptionsStates": {"active": {"0": True}},
-        "taskYesnoSelections": {"active": "yes"},
+        "taskUserOptionInteracted": {"active": True},
+        "autoSubmitAttempted": {},
         "taskImages": {
             "active": [{"name": "keep.png", "data": "data:image/png;base64,AAEC"}]
         },
@@ -146,7 +151,8 @@ def test_prune_task_local_state_returns_false_when_nothing_changed() -> None:
         let taskDeadlines = {{ active: 111 }};
         let taskTextareaContents = {{ active: 'keep' }};
         let taskOptionsStates = {{ active: {{ 0: true }} }};
-        let taskYesnoSelections = {{ active: 'yes' }};
+        let taskUserOptionInteracted = {{ active: true }};
+        let autoSubmitAttempted = {{ active: 1234567890 }};
         let taskImages = {{
           active: [{{ name: 'keep.png', data: 'data:image/png;base64,AAEC' }}],
         }};

@@ -3904,43 +3904,6 @@ code,
   transition: all 0.2s;
 }
 
-.yesno-button-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 12px 0;
-}
-.yesno-btn {
-  flex: 1 1 140px;
-  min-height: 44px;
-  font-weight: 600;
-}
-.btn.yesno-btn {
-  background: transparent;
-  border: 1.5px solid var(--border-primary);
-  color: var(--text-primary);
-  box-shadow: none;
-}
-
-.btn.yesno-btn::before,
-.btn.yesno-btn::after {
-  display: none;
-}
-.btn.yesno-btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-hover);
-  box-shadow: none;
-}
-.btn.yesno-btn.selected {
-  background: #b35730;
-  border-color: #b35730;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(217, 119, 87, 0.35);
-}
-.btn.yesno-btn.selected:hover {
-  background: #9a4929;
-  border-color: #9a4929;
-}
 
 .task-header-chip {
   display: inline-block;
@@ -5072,28 +5035,6 @@ code,
 [data-theme="light"] .btn-secondary:hover {
   background: #8a4525;
   border-color: #8a4525;
-}
-
-[data-theme="light"] .btn.yesno-btn {
-  background: transparent;
-  border-color: var(--border-primary);
-  color: var(--text-primary);
-  box-shadow: none;
-}
-[data-theme="light"] .btn.yesno-btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-hover);
-  box-shadow: none;
-}
-[data-theme="light"] .btn.yesno-btn.selected {
-  background: #b35730;
-  border-color: #b35730;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(217, 119, 87, 0.35);
-}
-[data-theme="light"] .btn.yesno-btn.selected:hover {
-  background: #9a4929;
-  border-color: #9a4929;
 }
 
 [data-theme="light"] .btn-primary {

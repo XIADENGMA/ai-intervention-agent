@@ -4,8 +4,7 @@
 
 1. **提交后自动聚焦**（web + 插件）：提交成功登记一个带时间戳的聚焦请求，
    下一个任务渲染完成时消费——连续回复多任务省掉一次鼠标点击。
-   时间窗过期自动作废，避免焦点被"迟到的请求"抢走；yesno 模式（textarea
-   隐藏）跳过。
+   时间窗过期自动作废，避免焦点被"迟到的请求"抢走。
 2. **插件通知直达任务**：webview 隐藏期间派发新任务通知时记录首个
    task_id；用户点状态栏/通知回到面板（webview 变为可见）时，在 120s
    时间窗内向前端发送 ``switchToTask`` 消息直接切换到该任务。
@@ -77,7 +76,7 @@ class TestWebSubmitFocus(unittest.TestCase):
         self.assertIn(
             'display === "none"',
             body,
-            "R692: yesno 模式（textarea 隐藏）必须跳过聚焦",
+            "R692: textarea 隐藏时必须跳过聚焦",
         )
 
 
@@ -101,21 +100,8 @@ class TestVscodeSubmitFocus(unittest.TestCase):
 
     def test_update_ui_consumes_pending_focus_on_task_change(self) -> None:
         self.assertIn("PENDING_FOCUS_FRESH_MS", self.source)
-        match = re.search(
-            r"if \(!isSameTask && config\.task_id\) \{.*?\n    \}",
-            self.source,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match, "未找到 updateUI 任务切换分支")
-        assert match is not None
-        body = match.group(0)
-        self.assertIn("pendingInputFocusAtMs", body)
-        self.assertIn("focusTarget.focus()", body)
-        self.assertIn(
-            "question_type !== 'yesno'",
-            body,
-            "R692: yesno 任务不得抢按钮焦点",
-        )
+        self.assertIn("pendingInputFocusAtMs", self.source)
+        self.assertIn("focusTarget.focus()", self.source)
 
 
 class TestVscodeNotifyDeepLink(unittest.TestCase):

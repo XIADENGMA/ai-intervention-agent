@@ -89,7 +89,7 @@ auto-resubmit 倒计时禁用，把 task 变成无 timeout 的"等用户回答"�
 
 清理所有任务（重置队列）
 
-##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, predefined_options_defaults: list[bool] | None = None, feedback_placeholder: str | None = None, question_type: str | None = None, header_label: str | None = None, auto_resubmit_timeout_explicit: bool = False, loop_id: str | None = None, loop_objective: str | None = None, loop_phase: str | None = None, success_criteria: str | None = None, iteration_label: str | None = None) -> bool`
+##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, predefined_options_defaults: list[bool] | None = None, feedback_placeholder: str | None = None, header_label: str | None = None, auto_resubmit_timeout_explicit: bool = False, loop_id: str | None = None, loop_objective: str | None = None, loop_phase: str | None = None, success_criteria: str | None = None, iteration_label: str | None = None) -> bool`
 
 添加任务，无活动任务时自动激活
 

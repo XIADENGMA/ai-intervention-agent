@@ -186,7 +186,7 @@ pip install ai-intervention-agent
 - **Web UI** —— Markdown / 代码高亮 / 数学公式开箱即用
 - **多任务标签页** —— 并发请求各自独立倒计时、每任务草稿自动保存；自动重调保持长会话不断开（归零时优先提交已输入的文本与勾选项，绝不发空提示）
 - **输入即延长（typing-hold）** —— 正在输入时倒计时自动延长、归零也绝不打断（Web 页面与 VS Code 插件语义一致）
-- **Agent 循环友好** —— 每任务 `header_label` 上下文短标签、`question_type='yesno'` 一键二元决策、`feedback_placeholder` 自定义占位提示
+- **Agent 循环友好** —— 每任务 `header_label` 上下文短标签、`feedback_placeholder` 自定义占位提示、循环工程元数据（`loop_id`、`loop_phase`、`success_criteria`）
 - **通知** —— Web UI / 声音 / 系统通知 / Bark（iOS 推送），支持上传自定义通知音效
 - **SSH / 局域网友好** —— 适配 SSH 端口转发；本地网络支持时通过 mDNS 发布 `<host>.local` 入口
 - **i18n** —— Web UI + VS Code 插件原生支持 `en` / `zh-CN` / `zh-TW` 三语

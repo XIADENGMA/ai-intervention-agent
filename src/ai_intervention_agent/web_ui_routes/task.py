@@ -932,11 +932,6 @@ class TaskRoutesMixin:
                             type: string
                             nullable: true
                             description: 每任务可选 textarea placeholder, null = 走 i18n 默认值
-                          question_type:
-                            type: string
-                            nullable: true
-                            enum: [yesno]
-                            description: 二元决策时为 "yesno", 否则保留默认 textarea 主体
                           header_label:
                             type: string
                             nullable: true
@@ -1019,7 +1014,6 @@ class TaskRoutesMixin:
                             "extends_used": task.extends_used,
                             "extends_max": COUNTDOWN_EXTENDS_MAX,
                             "feedback_placeholder": task.feedback_placeholder,
-                            "question_type": task.question_type,
                             "header_label": task.header_label,
                             "loop_id": task.loop_id,
                             "loop_objective": task.loop_objective,
@@ -1306,7 +1300,6 @@ class TaskRoutesMixin:
                             "extends_used": task.extends_used,
                             "extends_max": COUNTDOWN_EXTENDS_MAX,
                             "feedback_placeholder": task.feedback_placeholder,
-                            "question_type": task.question_type,
                             "header_label": task.header_label,
                             "loop_id": task.loop_id,
                             "loop_objective": task.loop_objective,
@@ -1557,9 +1550,6 @@ class TaskRoutesMixin:
                 placeholder_raw if isinstance(placeholder_raw, str) else None
             )
 
-            qt_raw = data.get("question_type")
-            question_type: str | None = qt_raw if isinstance(qt_raw, str) else None
-
             hl_raw = data.get("header_label")
             header_label: str | None = hl_raw if isinstance(hl_raw, str) else None
 
@@ -1702,7 +1692,6 @@ class TaskRoutesMixin:
                     auto_resubmit_timeout=auto_resubmit_timeout,
                     auto_resubmit_timeout_explicit=timeout_explicit,
                     feedback_placeholder=feedback_placeholder,
-                    question_type=question_type,
                     header_label=header_label,
                     loop_id=loop_fields["loop_id"],
                     loop_objective=loop_fields["loop_objective"],
@@ -1857,7 +1846,6 @@ class TaskRoutesMixin:
                             "deadline": server_time + remaining,
                             "result": task.result,
                             "feedback_placeholder": task.feedback_placeholder,
-                            "question_type": task.question_type,
                             "header_label": task.header_label,
                             "loop_id": task.loop_id,
                             "loop_objective": task.loop_objective,

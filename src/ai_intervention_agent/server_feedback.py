@@ -785,25 +785,6 @@ async def interactive_feedback(
             "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user`` schema.)"
         ),
     ),
-    question_type: str | None = Field(
-        default=None,
-        description=(
-            "Optional UI mode hint: when ``'yesno'``, the frontend renders a "
-            "single-row Yes/No button pair above the free-text textarea. "
-            "Clicking Yes/No marks the choice (click again to unselect, click "
-            "the other button to switch); the user may optionally type a "
-            "supplementary note, then presses Submit. The feedback result is "
-            "the literal string 'yes' or 'no', optionally followed by a blank "
-            "line and the user's note (e.g. ``'yes\\n\\nbut only after the "
-            "tests pass'``) — parse the first line for the binary decision "
-            "(approve/reject, proceed/abort, etc.). "
-            "Allowed values: ``'yesno'`` (current) or ``None`` (default: keep "
-            "textarea + optional ``predefined_options`` checkboxes). Unknown "
-            "values silently treated as None (forward-compat for future types "
-            "like ``'choice'`` / ``'rating'`` once the frontend supports them). "
-            "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user`` schema.)"
-        ),
-    ),
     header_label: str | None = Field(
         default=None,
         description=(
@@ -1067,7 +1048,6 @@ async def interactive_feedback(
                     "predefined_options": predefined_options_list,
                     "predefined_options_defaults": predefined_options_defaults,
                     "feedback_placeholder": feedback_placeholder,
-                    "question_type": question_type,
                     "header_label": header_label,
                     "loop_id": loop_id,
                     "loop_objective": loop_objective,

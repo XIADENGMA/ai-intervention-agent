@@ -133,15 +133,6 @@ description; this doc section is the human-readable reference.
     clamped server-side; omit or empty string → the tab falls back to
     the task ID.
 
-- `question_type` (string, optional, currently only `"yesno"`)
-  - When `"yesno"`, the frontend **hides the free-text textarea** and
-    renders a single-row Yes / No button pair. User's click submits
-    the literal string `"yes"` or `"no"` — saves the typing + Submit
-    click for binary decisions (approve / reject, proceed / abort,
-    confirm-deletion). Unknown values silently treated as `None` for
-    forward-compat with future types (`"choice"` / `"rating"`).
-    Borrowed from `gemini-cli`'s `ask_user` schema.
-
 - `feedback_placeholder` (string, optional, max **200** chars)
   - Per-task textarea placeholder hint shown to the user (overrides the
     global `page.feedbackPlaceholder` i18n string). Examples:
@@ -160,10 +151,10 @@ description; this doc section is the human-readable reference.
     Range follows server config (`[0, 3600]`); out-of-range values are
     silently clamped, not rejected.
 
-These four parameters compose: a typical Agent-mode call combines
-`header_label` (context) + `feedback_placeholder` (hint) + either
-`predefined_options` (multi-select) or `question_type='yesno'`
-(binary). See the full Agent-mode example below.
+These three parameters compose: a typical Agent-mode call combines
+`header_label` (context) + `feedback_placeholder` (hint) +
+`predefined_options` (multi-select checkboxes). See the full
+Agent-mode example below.
 
 #### Loop-engineering parameters (long autonomous runs)
 
@@ -292,18 +283,21 @@ interactive_feedback(
     "**Shall I proceed to run the auth integration suite?**"
   ),
   header_label="Auth",                      # 1-word chip in task pane
+  predefined_options=[                      # multi-select checkboxes
+    {"label": "Proceed with tests", "default": True},
+    {"label": "Roll back changes"},
+  ],
   feedback_placeholder=                     # textarea hint for free-form
     "Reply 'ok' to run tests, or 'no' + reason to roll back",
-  question_type="yesno",                    # binary → 2-button UI
   auto_resubmit_timeout=120,                # 2 min instead of default 4
 )
 ```
 
 UX result: the user sees an `Auth` chip + a clear 1-paragraph summary
-+ Yes/No buttons. One click submits — no typing required. If the
++ pre-checked option checkboxes + a free-text area. If the
 user steps away for >2 minutes, the agent gets a resubmit-prompt
 back automatically (instead of blocking the agent for the full 4
-minutes). For a list of all `header_label` / `question_type` /
+minutes). For a list of all `header_label` /
 `feedback_placeholder` / `auto_resubmit_timeout` semantics see the
 [Agent-mode parameters](#agent-mode-parameters-cursor--composer--cline--augment--trae)
 section above.

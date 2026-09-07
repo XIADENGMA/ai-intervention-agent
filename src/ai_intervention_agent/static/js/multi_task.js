@@ -19,10 +19,10 @@ if (typeof window.taskTextareaContents === "undefined") {
 if (typeof window.taskOptionsStates === "undefined") {
   window.taskOptionsStates = {};
 }
-
-if (typeof window.taskYesnoSelections === "undefined") {
-  window.taskYesnoSelections = {};
+if (typeof window.taskUserOptionInteracted === "undefined") {
+  window.taskUserOptionInteracted = {};
 }
+
 if (typeof window.taskImages === "undefined") {
   window.taskImages = {};
 }
@@ -292,7 +292,7 @@ var tasksCountdownTickerTimer = window.tasksCountdownTickerTimer;
 var tasksPollingTimer = window.tasksPollingTimer;
 var taskTextareaContents = window.taskTextareaContents;
 var taskOptionsStates = window.taskOptionsStates;
-var taskYesnoSelections = window.taskYesnoSelections;
+var taskUserOptionInteracted = window.taskUserOptionInteracted;
 var taskImages = window.taskImages;
 var pendingNewTaskCount = window.pendingNewTaskCount;
 var newTaskHintTimer = window.newTaskHintTimer;
@@ -493,8 +493,8 @@ function clearTaskLocalState(taskId) {
   if (taskOptionsStates[normalizedTaskId] !== undefined) {
     delete taskOptionsStates[normalizedTaskId];
   }
-  if (taskYesnoSelections[normalizedTaskId] !== undefined) {
-    delete taskYesnoSelections[normalizedTaskId];
+  if (taskUserOptionInteracted[normalizedTaskId] !== undefined) {
+    delete taskUserOptionInteracted[normalizedTaskId];
   }
   if (taskImages[normalizedTaskId] !== undefined) {
     delete taskImages[normalizedTaskId];
@@ -596,11 +596,6 @@ async function fetchFeedbackPromptsFresh() {
 if (typeof window.remainingSeconds === "undefined") {
   window.remainingSeconds = 0;
 }
-if (typeof window.countdownTimer === "undefined") {
-  window.countdownTimer = null;
-}
-var remainingSeconds = window.remainingSeconds;
-var countdownTimer = window.countdownTimer;
 
 if (typeof window.updateCountdownDisplay !== "function") {
   window.updateCountdownDisplay = function (seconds) {
@@ -2511,8 +2506,6 @@ async function switchTask(taskId) {
 
     updateFeedbackPlaceholder(cachedTask.feedback_placeholder);
 
-    updateYesnoButtonGroup(cachedTask.question_type);
-
     updateHeaderChip(cachedTask.header_label);
 
     updateLoopContext(cachedTask);
@@ -2618,8 +2611,6 @@ async function loadTaskDetails(taskId) {
       window.lastLoadedDetailsTaskId = taskId;
 
       updateFeedbackPlaceholder(task.feedback_placeholder);
-
-      updateYesnoButtonGroup(task.question_type);
 
       updateHeaderChip(task.header_label);
 
@@ -3009,141 +3000,6 @@ function buildLoopHistoryRow(round) {
   }
   return row;
 }
-
-function updateYesnoButtonGroup(questionType) {
-  var feedbackTextarea = document.getElementById("feedback-text");
-  var existingGroup = document.getElementById("yesno-button-group");
-  var t =
-    typeof window !== "undefined" &&
-    window.AIIA_I18N &&
-    typeof window.AIIA_I18N.t === "function"
-      ? window.AIIA_I18N.t.bind(window.AIIA_I18N)
-      : function () {
-          return null;
-        };
-
-  if (questionType !== "yesno") {
-    if (existingGroup) existingGroup.remove();
-    if (feedbackTextarea) {
-
-      feedbackTextarea.style.display = "";
-      feedbackTextarea.removeAttribute("aria-hidden");
-      feedbackTextarea.removeAttribute("tabindex");
-    }
-    return;
-  }
-
-  if (feedbackTextarea) {
-
-    feedbackTextarea.style.display = "";
-    feedbackTextarea.removeAttribute("aria-hidden");
-    feedbackTextarea.removeAttribute("tabindex");
-
-    try {
-      if (feedbackTextarea.hasAttribute("data-i18n-placeholder")) {
-        var supplementHint =
-          t("page.yesnoSupplementPlaceholder") ||
-          "Optional note — click Submit to send it with your Yes/No choice";
-        feedbackTextarea.setAttribute(
-          "data-i18n-placeholder",
-          "page.yesnoSupplementPlaceholder",
-        );
-        feedbackTextarea.setAttribute("placeholder", supplementHint);
-      }
-    } catch (_e) {
-
-    }
-  }
-
-  if (existingGroup) {
-
-    syncYesnoSelectedStyles();
-    return;
-  }
-  if (!feedbackTextarea || !feedbackTextarea.parentNode) return;
-
-  var group = document.createElement("div");
-  group.id = "yesno-button-group";
-  group.className = "yesno-button-group";
-
-  var yesLabel = t("page.yesnoYes") || "Yes";
-  var noLabel = t("page.yesnoNo") || "No";
-
-  var yesBtn = document.createElement("button");
-  yesBtn.type = "button";
-
-  yesBtn.className = "btn btn-secondary yesno-btn yesno-btn-yes";
-  yesBtn.textContent = yesLabel;
-  yesBtn.setAttribute("data-yesno-value", "yes");
-  yesBtn.setAttribute("aria-pressed", "false");
-
-  var noBtn = document.createElement("button");
-  noBtn.type = "button";
-  noBtn.className = "btn btn-secondary yesno-btn yesno-btn-no";
-  noBtn.textContent = noLabel;
-  noBtn.setAttribute("data-yesno-value", "no");
-  noBtn.setAttribute("aria-pressed", "false");
-
-  yesBtn.addEventListener("click", function () {
-    toggleYesnoSelection("yes");
-  });
-  noBtn.addEventListener("click", function () {
-    toggleYesnoSelection("no");
-  });
-
-  group.appendChild(yesBtn);
-  group.appendChild(noBtn);
-  feedbackTextarea.parentNode.insertBefore(group, feedbackTextarea);
-
-  syncYesnoSelectedStyles();
-}
-
-function toggleYesnoSelection(value) {
-  var taskId = normalizeTaskIdValue(activeTaskId);
-  if (!taskId) return;
-  if (taskYesnoSelections[taskId] === value) {
-    delete taskYesnoSelections[taskId];
-  } else {
-    taskYesnoSelections[taskId] = value;
-  }
-  syncYesnoSelectedStyles();
-}
-
-function syncYesnoSelectedStyles() {
-  var group = document.getElementById("yesno-button-group");
-  if (!group || typeof group.querySelectorAll !== "function") return;
-  var taskId = normalizeTaskIdValue(activeTaskId);
-  var selection = taskId ? taskYesnoSelections[taskId] : undefined;
-  var buttons = group.querySelectorAll("[data-yesno-value]");
-  var buttonCount =
-    buttons && Number.isFinite(buttons.length) ? buttons.length : 0;
-  for (var i = 0; i < buttonCount; i += 1) {
-    if (!(i in buttons)) continue;
-    var btn = buttons[i];
-    var isSelected = btn.getAttribute("data-yesno-value") === selection;
-    if (isSelected) {
-      btn.classList.add("selected");
-    } else {
-      btn.classList.remove("selected");
-    }
-    btn.setAttribute("aria-pressed", isSelected ? "true" : "false");
-  }
-}
-
-window.getActiveYesnoSelection = function () {
-  var taskId = normalizeTaskIdValue(activeTaskId);
-  if (!taskId) return null;
-  var selection = taskYesnoSelections[taskId];
-  return selection === "yes" || selection === "no" ? selection : null;
-};
-
-window.clearYesnoSelection = function (taskId) {
-  var normalized = normalizeTaskIdValue(taskId || activeTaskId);
-  if (normalized && taskYesnoSelections[normalized] !== undefined) {
-    delete taskYesnoSelections[normalized];
-  }
-  syncYesnoSelectedStyles();
-};
 
 function updateFeedbackPlaceholder(placeholder) {
   var textarea = document.getElementById("feedback-text");
@@ -3719,24 +3575,18 @@ async function autoSubmitTask(taskId) {
   _debugLog(`Task ${taskId} countdown ended; auto-submitting`);
 
   const typedText = collectTypedFeedbackForTask(taskId);
-  const selectedOpts = collectSelectedOptionsForTask(taskId);
-  const yesnoSelection =
-    taskYesnoSelections && taskYesnoSelections[taskId] === "yes"
-      ? "yes"
-      : taskYesnoSelections && taskYesnoSelections[taskId] === "no"
-        ? "no"
-        : null;
   let combinedText = typedText || "";
-  if (yesnoSelection) {
-    combinedText =
-      combinedText && combinedText.trim()
-        ? yesnoSelection + "\n\n" + combinedText
-        : yesnoSelection;
-  }
+
+  const userDidInteractOptions =
+    taskUserOptionInteracted[taskId] === true;
+  const selectedOpts = userDidInteractOptions
+    ? collectSelectedOptionsForTask(taskId)
+    : [];
+
   if ((combinedText && combinedText.trim()) || selectedOpts.length > 0) {
     _debugLog(
       `Auto-submitting user-typed content for ${taskId} ` +
-        `(${(combinedText || "").length} chars, ${selectedOpts.length} options)`,
+        `(${(combinedText || "").length} chars, ${selectedOpts.length} options, interacted=${userDidInteractOptions})`,
     );
     await submitTaskFeedback(taskId, combinedText || "", selectedOpts);
     return;
@@ -3856,10 +3706,8 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
         delete taskOptionsStates[taskId];
         _debugLog(`Cleared saved option selection state for task ${taskId}`);
       }
-      if (taskYesnoSelections[taskId] !== undefined) {
-        delete taskYesnoSelections[taskId];
-        syncYesnoSelectedStyles();
-        _debugLog(`Cleared yes/no selection for task ${taskId}`);
+      if (taskUserOptionInteracted[taskId] !== undefined) {
+        delete taskUserOptionInteracted[taskId];
       }
       if (taskImages[taskId] !== undefined) {
         delete taskImages[taskId];
@@ -4083,6 +3931,7 @@ function handleRealtimeTextareaAutosave(event) {
 function handleRealtimeOptionsAutosave(event) {
   if (!activeTaskId) return;
   if (!event || !event.target || event.target.type !== "checkbox") return;
+  taskUserOptionInteracted[activeTaskId] = true;
   const optionsContainer =
     event && event.currentTarget
       ? event.currentTarget

@@ -111,10 +111,7 @@
       "placeholder": "請輸入回饋內容（支援貼上圖片）…",
       "insertCode": "插入程式碼（從剪貼簿）",
       "uploadImage": "上傳圖片",
-      "submit": "提交回饋",
-      "yesnoYes": "是",
-      "yesnoNo": "否",
-      "yesnoSupplementPlaceholder": "可補充說明（可選），點擊發送按鈕提交"
+      "submit": "提交回饋"
     },
     "toast": {
       "configFallback": "設定載入失敗，已使用任務详情兜底",
