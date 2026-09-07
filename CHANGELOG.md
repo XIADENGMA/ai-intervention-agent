@@ -31,6 +31,53 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   equivalent code features (selectors, DOM ids, call sites, code
   regexes) instead.
 
+## [1.8.11] - 2026-09-07
+
+### Security
+
+- Upgrade `cryptography` 49.0.0 → 50.0.1 (fixes CVE-2026-69247 /
+  PYSEC-2026-3552: Bleichenbacher oracle in PKCS#7 EnvelopedData
+  decryption).
+- Upgrade `brace-expansion` 5.0.8 → 5.0.9 and 2.1.2 → 2.1.4 (fixes
+  GHSA-rgw5-rvv9-x895: DoS via unbounded intermediate arrays).
+- Upgrade `eslint` 9.39.5 → 10.9.1 (removes vulnerable 1.x
+  `brace-expansion` copies from the ESLint dependency tree entirely).
+
+### Fixed
+
+- Add missing CHANGELOG entry for v1.8.10 (caused
+  `test_changelog_freshness_invariant` CI failure).
+
+## [1.8.10] - 2026-09-07
+
+### Removed
+
+- **Complete removal of the `yesno` / `question_type` feature** from
+  all layers: Python backend (`server_feedback.py`, `task_queue.py`,
+  `web_ui.py`, `task.py routes`), JavaScript frontend
+  (`multi_task.js`, `app.js`, `webview-ui.js`), CSS, HTML templates,
+  all four locale files (en/zh-CN/zh-TW/pseudo), i18n TypeScript
+  types, and 6 test files. The `question_type` parameter is still
+  accepted for backward compatibility but silently ignored.
+
+### Changed
+
+- Deep code quality audit (E1–E3): logic correctness audit, 12-dimension
+  thermo-nuclear code quality audit, and deprecated code cleanup — all passed
+  with zero issues found.
+- Documentation update (E4): README×2, `docs/mcp_tools`×2,
+  `docs/architecture`×2, and all 8 API reference docs regenerated to
+  reflect the `yesno` removal and current parameter semantics.
+
+### Fixed
+
+- `taskUserOptionInteracted` state now correctly cleaned up on successful
+  task submission (minor memory leak).
+- `handleRealtimeOptionsAutosave` now has a defensive null check for
+  `taskUserOptionInteracted`.
+- `pruneTaskLocalState` in `webview-ui.js` now also prunes
+  `autoSubmitAttempted` entries.
+
 ## [1.8.9] - 2026-07-28
 
 ### Changed

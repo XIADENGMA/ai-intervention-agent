@@ -33,6 +33,7 @@ NPM_TRIAGE_DOC_BRACE_EXPANSION = ROOT / "docs" / "security" / "npm-audit-2026-07
 BRACE_EXPANSION_REDOS_GHSAS = {
     "GHSA-3jxr-9vmj-r5cp",
     "GHSA-mh99-v99m-4gvg",
+    "GHSA-rgw5-rvv9-x895",
 }
 
 
