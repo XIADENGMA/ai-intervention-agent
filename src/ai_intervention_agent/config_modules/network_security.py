@@ -342,10 +342,10 @@ class NetworkSecurityMixin:
         validated = self._validate_network_security_config(config)
         if save:
             self._save_network_security_config_immediate(validated)
+        self.invalidate_all_caches()
         with self._lock:
             self._network_security_cache = validated
             self._network_security_cache_time = time.monotonic()
-        self.invalidate_all_caches()
         if trigger_callbacks:
             try:
                 self._trigger_config_change_callbacks()
@@ -381,11 +381,11 @@ class NetworkSecurityMixin:
         if save:
             self._save_network_security_config_immediate(validated)
 
+        self.invalidate_all_caches()
         with self._lock:
             self._network_security_cache = validated
             self._network_security_cache_time = time.monotonic()
 
-        self.invalidate_all_caches()
         if trigger_callbacks:
             try:
                 self._trigger_config_change_callbacks()

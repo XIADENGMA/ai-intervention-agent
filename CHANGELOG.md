@@ -31,6 +31,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   equivalent code features (selectors, DOM ids, call sites, code
   regexes) instead.
 
+## [1.8.12] - 2026-09-07
+
+### Fixed
+
+- `set_network_security_config` / `update_network_security_config`:
+  the in-memory cache was set *before* `invalidate_all_caches()`,
+  causing the cache to be immediately cleared. On Python 3.13 CI
+  runners this manifested as `get_network_security_config()` reading
+  stale default values from disk instead of the just-saved value.
+  Fix: invalidate first, then populate cache.
+
 ## [1.8.11] - 2026-09-07
 
 ### Security
