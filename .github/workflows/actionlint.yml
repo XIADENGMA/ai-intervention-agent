@@ -42,7 +42,7 @@ jobs:
           egress-policy: audit
 
       - name: 检出代码
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: 运行 actionlint（含 shellcheck）
         uses: reviewdog/action-actionlint@d63ba7532e0942965320cd8d73cbae4c7b3c5283 # v1.73.1
