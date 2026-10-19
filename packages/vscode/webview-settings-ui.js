@@ -142,6 +142,17 @@
 
   }
 
+  function rerenderSettingsDynamicText() {
+    if (typeof rerenderBarkBaseUrlStatus === "function") {
+      rerenderBarkBaseUrlStatus();
+    }
+  }
+  try {
+    globalThis.__AIIA_rerenderSettingsDynamicText = rerenderSettingsDynamicText;
+  } catch (e) {
+
+  }
+
   function getNotifyCore() {
     try {
       return globalThis && globalThis.AIIAWebviewNotifyCore
@@ -174,6 +185,8 @@
   let isPopulatingSettingsForm = false;
   let lastNotificationSettingsHash = "";
   let settingsHintClearTimer = null;
+  let lastBarkBaseUrlStatus = null;
+  let rerenderBarkBaseUrlStatus = null;
 
   const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 500;
   const SETTINGS_AUTO_SAVE_TIMEOUT_MS = 3500;
@@ -674,6 +687,48 @@
     const recheckBtn = document.getElementById("settingsBarkBaseUrlRecheckBtn");
     if (!item || !message || !suggestion) return;
 
+    const renderData = (data) => {
+      const isLoopback = data.is_loopback === true;
+      const effective = String(data.effective_base_url || "");
+      const suggested = String(data.suggested_lan_base_url || "");
+      const recommendation = String(data.recommendation || "ok");
+
+      if (recommendation === "ok") {
+
+        message.textContent = String(
+          t("settings.bark.baseUrlStatusOk") || "",
+        ).replace("{url}", effective);
+        suggestion.textContent = "";
+        if (copyBtn) copyBtn.hidden = true;
+        item.hidden = false;
+        return;
+      }
+
+      item.hidden = false;
+      message.textContent =
+        isLoopback && effective
+          ? String(t("settings.bark.baseUrlStatusLoopback") || "").replace(
+              "{url}",
+              effective,
+            )
+          : t("settings.bark.baseUrlStatusUnreachable");
+
+      if (suggested) {
+        suggestion.textContent = t("settings.bark.baseUrlSuggestLan");
+        if (copyBtn) {
+          copyBtn.hidden = false;
+          copyBtn.dataset.lanUrl = suggested;
+          copyBtn.title = suggested;
+        }
+      } else {
+        suggestion.textContent = t("settings.bark.baseUrlSuggestNoLan");
+        if (copyBtn) {
+          copyBtn.hidden = true;
+          copyBtn.dataset.lanUrl = "";
+        }
+      }
+    };
+
     const renderStatus = async () => {
       if (!SERVER_URL) {
         item.hidden = true;
@@ -697,47 +752,19 @@
           return;
         }
 
-        const isLoopback = data.is_loopback === true;
-        const effective = String(data.effective_base_url || "");
-        const suggested = String(data.suggested_lan_base_url || "");
-        const recommendation = String(data.recommendation || "ok");
-
-        if (recommendation === "ok") {
-
-          message.textContent = String(
-            t("settings.bark.baseUrlStatusOk") || "",
-          ).replace("{url}", effective);
-          suggestion.textContent = "";
-          if (copyBtn) copyBtn.hidden = true;
-          item.hidden = false;
-          return;
-        }
-
-        item.hidden = false;
-        message.textContent =
-          isLoopback && effective
-            ? String(t("settings.bark.baseUrlStatusLoopback") || "").replace(
-                "{url}",
-                effective,
-              )
-            : t("settings.bark.baseUrlStatusUnreachable");
-
-        if (suggested) {
-          suggestion.textContent = t("settings.bark.baseUrlSuggestLan");
-          if (copyBtn) {
-            copyBtn.hidden = false;
-            copyBtn.dataset.lanUrl = suggested;
-            copyBtn.title = suggested;
-          }
-        } else {
-          suggestion.textContent = t("settings.bark.baseUrlSuggestNoLan");
-          if (copyBtn) {
-            copyBtn.hidden = true;
-            copyBtn.dataset.lanUrl = "";
-          }
-        }
+        lastBarkBaseUrlStatus = data;
+        renderData(data);
       } catch (_e) {
         item.hidden = true;
+      }
+    };
+
+    rerenderBarkBaseUrlStatus = () => {
+      if (!lastBarkBaseUrlStatus || item.hidden) return;
+      try {
+        renderData(lastBarkBaseUrlStatus);
+      } catch (_e) {
+
       }
     };
 

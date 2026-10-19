@@ -64,7 +64,6 @@ def test_prune_task_local_state_ignores_inherited_cache_keys() -> None:
         let taskDeadlines = {{}};
         let taskTextareaContents = {{}};
         let taskOptionsStates = {{}};
-        let taskUserOptionInteracted = {{}};
         let autoSubmitAttempted = {{}};
         let taskImages = {{}};
         let pendingImageUploadCounts = Object.create(pendingProto);

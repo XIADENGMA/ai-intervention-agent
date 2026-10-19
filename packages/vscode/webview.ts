@@ -3,6 +3,8 @@ import * as fs from "fs";
 import * as crypto from "crypto";
 import { createLogger } from "./logger";
 import type { Logger } from "./logger";
+import { normalizeUiLang, resolveUiLang } from "./lang";
+import { discardResponseBody } from "./net-utils";
 import { AppleScriptExecutor } from "./applescript-executor";
 import { NotificationCenter } from "./notification-center";
 import { NotificationType } from "./notification-models";
@@ -304,9 +306,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private _prefetchServerLanguage(): Promise<void> {
+  syncServerLanguage(): Promise<void> {
+    this._abortPrefetchServerLanguage();
+    return this._prefetchServerLanguage(true);
+  }
 
-    if (this._cachedServerLang) {
+  private _prefetchServerLanguage(force = false): Promise<void> {
+
+    if (!force && this._cachedServerLang) {
       return Promise.resolve();
     }
 
@@ -341,6 +348,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           timer = null;
         }
         if (this._serverUrl !== requestServerUrl) {
+          discardResponseBody(resp);
           return;
         }
         if (resp.ok) {
@@ -369,6 +377,16 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             }
             return;
           }
+          if (data.language === "auto") {
+            this._cachedServerLang = null;
+            if (this._onLanguageChanged) {
+              try {
+                this._onLanguageChanged("auto");
+              } catch {
+
+              }
+            }
+          }
           this._log(
             vscode.l10n.t(
               "[i18n] Server returned language=auto or empty, using vscode.env.language",
@@ -376,6 +394,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           );
           return;
         }
+        discardResponseBody(resp);
         this._log(
           vscode.l10n.t(
             "[i18n] Server non-200 response: {0}",
@@ -1020,7 +1039,22 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             typeof (message as Record<string, unknown>).language === "string"
               ? String((message as Record<string, unknown>).language)
               : "";
-          if (lang && lang !== "auto" && lang !== this._cachedServerLang) {
+          if (lang === "auto") {
+            this._cachedServerLang = null;
+            this._log(
+              vscode.l10n.t(
+                "[i18n] Client detected language: {0}",
+                String(lang),
+              ),
+            );
+            if (this._onLanguageChanged) {
+              try {
+                this._onLanguageChanged(lang);
+              } catch {
+
+              }
+            }
+          } else if (lang && lang !== this._cachedServerLang) {
             this._cachedServerLang = lang;
             this._log(
               vscode.l10n.t(
@@ -1418,7 +1452,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
-        if (!resp.ok) return this._notificationConfig;
+        if (!resp.ok) {
+          discardResponseBody(resp);
+          return this._notificationConfig;
+        }
         const data = (await resp.json()) as Record<string, unknown>;
         const config = data.config as Record<string, unknown> | undefined;
         if (this._serverUrl !== requestServerUrl) {
@@ -1685,20 +1722,18 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       pseudoLocaleEnabled = false;
     }
 
+    let vsLang = "";
+    try {
+      vsLang = vscode.env.language || "";
+    } catch {
+      vsLang = "";
+    }
+    const autoLang = normalizeUiLang(vsLang);
+
     if (pseudoLocaleEnabled) {
       i18nLang = "pseudo";
-    } else if (this._cachedServerLang) {
-      i18nLang =
-        this._cachedServerLang.toLowerCase().indexOf("zh") === 0
-          ? "zh-CN"
-          : "en";
     } else {
-      try {
-        const vsLang = vscode.env.language || "";
-        i18nLang = vsLang.toLowerCase().indexOf("zh") === 0 ? "zh-CN" : "en";
-      } catch {
-        i18nLang = "en";
-      }
+      i18nLang = resolveUiLang(this._cachedServerLang, vsLang);
     }
     let i18nLocaleData: Record<string, unknown> | null =
       this._cachedLocales[i18nLang] || null;
@@ -1801,6 +1836,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       ? safeJsonForInlineScript(i18nLocaleData)
       : "null";
     const inlineI18nLangLiteral = safeStringForInlineScript(i18nLang);
+    const inlineAutoLangLiteral = safeStringForInlineScript(autoLang);
 
     const tl = (
       key: string,
@@ -1822,12 +1858,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       );
     };
 
-    const htmlLang =
-      i18nLang === "pseudo"
-        ? "en-x-pseudo"
-        : i18nLang === "zh-CN"
-          ? "zh-CN"
-          : "en";
+    const htmlLang = i18nLang === "pseudo" ? "en-x-pseudo" : i18nLang;
 
     const rtlPrefixes = [
       "ar",
@@ -1855,9 +1886,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl} ${cspSource} 'self'; style-src ${cspSource}; script-src 'nonce-${nonce}'; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl} ${cspSource} 'self'; style-src ${cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
     <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-no-content-fallback-svg-url="${activityIconUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}" data-notify-core-js-url="${webviewNotifyCoreUri}" data-settings-ui-js-url="${webviewSettingsUiUri}">
-    <script nonce="${nonce}">window.__AIIA_NO_CONTENT_FALLBACK_SVG=${inlineNoContentFallbackSvgLiteral};window.__AIIA_NO_CONTENT_LOTTIE_DATA=${inlineNoContentLottieDataLiteral};window.__AIIA_I18N_LANG=${inlineI18nLangLiteral};window.__AIIA_I18N_LOCALE=${inlineI18nLocaleLiteral};window.__AIIA_I18N_ALL_LOCALES=${inlineAllLocalesLiteral};</script>
+    <script nonce="${nonce}">window.__AIIA_NO_CONTENT_FALLBACK_SVG=${inlineNoContentFallbackSvgLiteral};window.__AIIA_NO_CONTENT_LOTTIE_DATA=${inlineNoContentLottieDataLiteral};window.__AIIA_I18N_LANG=${inlineI18nLangLiteral};window.__AIIA_I18N_AUTO_LANG=${inlineAutoLangLiteral};window.__AIIA_I18N_LOCALE=${inlineI18nLocaleLiteral};window.__AIIA_I18N_ALL_LOCALES=${inlineAllLocalesLiteral};</script>
     <title>AI Intervention Agent</title>
     <link rel="stylesheet" href="${prismCssUri}">
     <link rel="stylesheet" href="${webviewCssUri}">
@@ -1885,7 +1916,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             <div class="status-indicator">
                 <div class="breathing-light" id="statusLight" title="${tl("ui.status.serverStatus")}" data-i18n-title="ui.status.serverStatus"></div>
             </div>
-            <button class="settings-btn" id="settingsBtn" title="${tl("ui.settingsBtn")}" aria-label="${tl("ui.settingsBtn")}" data-i18n-title="ui.settingsBtn">
+            <button class="settings-btn" id="settingsBtn" title="${tl("ui.settingsBtn")}" aria-label="${tl("ui.settingsBtn")}" data-i18n-title="ui.settingsBtn" data-i18n-aria-label="ui.settingsBtn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                     <circle cx="12" cy="12" r="3"></circle>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -1944,7 +1975,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             </div>
 
             <div class="no-content" id="noContentState">
-                <button class="settings-btn no-content-settings-btn" id="settingsBtnNoContent" title="${tl("ui.settingsBtn")}" aria-label="${tl("ui.settingsBtn")}" data-i18n-title="ui.settingsBtn">
+                <button class="settings-btn no-content-settings-btn" id="settingsBtnNoContent" title="${tl("ui.settingsBtn")}" aria-label="${tl("ui.settingsBtn")}" data-i18n-title="ui.settingsBtn" data-i18n-aria-label="ui.settingsBtn">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -2010,10 +2041,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                          仅当 active 任务 auto_resubmit_timeout > 0 时显示；
                          +60s 受服务端 extends_max 配额约束（达到上限置灰）。 -->
                     <div class="countdown-controls hidden" id="countdownControls">
-                        <button type="button" class="countdown-ctrl-btn" id="countdownExtendBtn" title="${tl("ui.countdown.extendTitle")}" aria-label="${tl("ui.countdown.extendAriaLabel")}" data-i18n-title="ui.countdown.extendTitle">
+                        <button type="button" class="countdown-ctrl-btn" id="countdownExtendBtn" title="${tl("ui.countdown.extendTitle")}" aria-label="${tl("ui.countdown.extendAriaLabel")}" data-i18n-title="ui.countdown.extendTitle" data-i18n-aria-label="ui.countdown.extendAriaLabel">
                             <span data-i18n="ui.countdown.extendLabel">${tl("ui.countdown.extendLabel")}</span>
                         </button>
-                        <button type="button" class="countdown-ctrl-btn" id="countdownFreezeBtn" title="${tl("ui.countdown.freezeTitle")}" aria-label="${tl("ui.countdown.freezeAriaLabel")}" data-i18n-title="ui.countdown.freezeTitle">
+                        <button type="button" class="countdown-ctrl-btn" id="countdownFreezeBtn" title="${tl("ui.countdown.freezeTitle")}" aria-label="${tl("ui.countdown.freezeAriaLabel")}" data-i18n-title="ui.countdown.freezeTitle" data-i18n-aria-label="ui.countdown.freezeAriaLabel">
                             <span data-i18n="ui.countdown.freezeLabel">${tl("ui.countdown.freezeLabel")}</span>
                         </button>
                     </div>
@@ -2031,19 +2062,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                         <input type="file" id="imageInput" accept="image/*" multiple class="hidden">
 
                         <div class="input-buttons">
-                            <button type="button" class="insert-code-btn" id="insertCodeBtn" title="${tl("ui.form.insertCode")}" aria-label="${tl("ui.form.insertCode")}" data-i18n-title="ui.form.insertCode">
+                            <button type="button" class="insert-code-btn" id="insertCodeBtn" title="${tl("ui.form.insertCode")}" aria-label="${tl("ui.form.insertCode")}" data-i18n-title="ui.form.insertCode" data-i18n-aria-label="ui.form.insertCode">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                                     <polyline points="16 18 22 12 16 6"></polyline>
                                     <polyline points="8 6 2 12 8 18"></polyline>
                                     <line x1="14" y1="4" x2="10" y2="20"></line>
                                 </svg>
                             </button>
-                            <button type="button" class="upload-btn" id="uploadBtn" title="${tl("ui.form.uploadImage")}" aria-label="${tl("ui.form.uploadImage")}" data-i18n-title="ui.form.uploadImage">
+                            <button type="button" class="upload-btn" id="uploadBtn" title="${tl("ui.form.uploadImage")}" aria-label="${tl("ui.form.uploadImage")}" data-i18n-title="ui.form.uploadImage" data-i18n-aria-label="ui.form.uploadImage">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
                                     <path fill-rule="evenodd" clip-rule="evenodd" d="M3 4.5C3 3.67157 3.67157 3 4.5 3H15.5C16.3284 3 17 3.67157 17 4.5V15.5C17 16.3284 16.3284 17 15.5 17H4.5C3.67157 17 3 16.3284 3 15.5V4.5ZM4.5 4C4.22386 4 4 4.22386 4 4.5V12.2929L6.64645 9.64645C6.84171 9.45118 7.15829 9.45118 7.35355 9.64645L10 12.2929L13.1464 9.14645C13.3417 8.95118 13.6583 8.95118 13.8536 9.14645L16 11.2929V4.5C16 4.22386 15.7761 4 15.5 4H4.5ZM16 12.7071L13.5 10.2071L10.3536 13.3536C10.1583 13.5488 9.84171 13.5488 9.64645 13.3536L7 10.7071L4 13.7071V15.5C4 15.7761 4.22386 16 4.5 16H15.5C15.7761 16 16 15.7761 16 15.5V12.7071ZM7 7.5C7 6.94772 7.44772 6.5 8 6.5C8.55228 6.5 9 6.94772 9 7.5C9 8.05228 8.55228 8.5 8 8.5C7.44772 8.5 7 8.05228 7 7.5Z" fill="currentColor" />
                                 </svg>
                             </button>
-                            <button type="button" class="submit-btn-embedded" id="submitBtn" title="${tl("ui.form.submit")}" aria-label="${tl("ui.form.submit")}" data-i18n-title="ui.form.submit">
+                            <button type="button" class="submit-btn-embedded" id="submitBtn" title="${tl("ui.form.submit")}" aria-label="${tl("ui.form.submit")}" data-i18n-title="ui.form.submit" data-i18n-aria-label="ui.form.submit">
                                 <svg class="btn-icon submit-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
                                     <path d="M19.26 9.77C19.91 9.08 20.92 8.91 21.73 9.32L21.89 9.40L21.94 9.43L22.19 9.63C22.20 9.64 22.22 9.65 22.23 9.66L44.63 30.46C45.05 30.86 45.30 31.42 45.30 32.00C45.30 32.44 45.16 32.86 44.91 33.21C44.90 33.23 44.89 33.24 44.88 33.26L44.66 33.50C44.65 33.52 44.64 33.53 44.63 33.54L22.23 54.34C21.38 55.13 20.05 55.08 19.26 54.23C18.47 53.38 18.52 52.05 19.37 51.26L40.12 32.00L19.37 12.74C19.36 12.73 19.35 12.72 19.34 12.70L19.12 12.46C19.11 12.45 19.10 12.43 19.09 12.42C18.52 11.62 18.57 10.52 19.26 9.77Z" fill="currentColor" />
                                 </svg>
@@ -2061,7 +2092,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true">
             <div class="settings-header">
                 <div class="settings-title" data-i18n="settings.title">${tl("settings.title")}</div>
-                <button class="settings-close" id="settingsClose" title="${tl("settings.close")}" aria-label="${tl("settings.close")}" data-i18n-title="settings.close">
+                <button class="settings-close" id="settingsClose" title="${tl("settings.close")}" aria-label="${tl("settings.close")}" data-i18n-title="settings.close" data-i18n-aria-label="settings.close">
                     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                         <path d="M5 5L15 15"></path>
                         <path d="M15 5L5 15"></path>
@@ -2113,7 +2144,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     <span class="settings-label" data-i18n="settings.bark.baseUrlStatusTitle">${tl("settings.bark.baseUrlStatusTitle")}</span>
                     <span class="settings-field-hint" id="settingsBarkBaseUrlMessage"></span>
                     <span class="settings-field-hint" id="settingsBarkBaseUrlSuggestion"></span>
-                    <div class="settings-bark-base-url-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+                    <div class="settings-bark-base-url-actions">
                         <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlCopyBtn" hidden data-i18n="settings.bark.baseUrlCopyLan">${tl("settings.bark.baseUrlCopyLan")}</button>
                         <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlRecheckBtn" data-i18n="settings.bark.baseUrlRecheck">${tl("settings.bark.baseUrlRecheck")}</button>
                     </div>
@@ -2124,7 +2155,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 <div class="settings-section-title" data-i18n="settings.feedback.title">${tl("settings.feedback.title")}</div>
                 <label class="settings-field">
                     <span class="settings-label" data-i18n="settings.feedback.countdown">${tl("settings.feedback.countdown")}</span>
-                    <input type="number" id="feedbackCountdown" min="0" max="3600" step="10" value="240" style="max-width:100px">
+                    <input type="number" id="feedbackCountdown" min="0" max="3600" step="10" value="240">
                     <span class="settings-field-hint" data-i18n="settings.feedback.countdownHint">${tl("settings.feedback.countdownHint")}</span>
                 </label>
                 <label class="settings-field">

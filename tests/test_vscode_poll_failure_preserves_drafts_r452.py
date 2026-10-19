@@ -206,6 +206,7 @@ def test_empty_successful_tasks_payload_still_clears_task_drafts() -> None:
         function clearAllTabCountdowns() {{ calls.push('clearCountdowns'); }}
         function schedulePersistUiState() {{ calls.push('persist'); }}
         function renderTaskTabs() {{ calls.push('renderTabs'); }}
+        function syncServerLanguage() {{ calls.push('syncLanguage'); }}
         async function pollConfig() {{
           calls.push('pollConfig');
           return true;
@@ -256,5 +257,6 @@ def test_empty_successful_tasks_payload_still_clears_task_drafts() -> None:
             "persist",
             "hideTabs",
             "showNoContent",
+            "syncLanguage",
         ],
     }

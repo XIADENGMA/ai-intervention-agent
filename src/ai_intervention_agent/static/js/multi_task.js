@@ -19,9 +19,6 @@ if (typeof window.taskTextareaContents === "undefined") {
 if (typeof window.taskOptionsStates === "undefined") {
   window.taskOptionsStates = {};
 }
-if (typeof window.taskUserOptionInteracted === "undefined") {
-  window.taskUserOptionInteracted = {};
-}
 
 if (typeof window.taskImages === "undefined") {
   window.taskImages = {};
@@ -292,7 +289,6 @@ var tasksCountdownTickerTimer = window.tasksCountdownTickerTimer;
 var tasksPollingTimer = window.tasksPollingTimer;
 var taskTextareaContents = window.taskTextareaContents;
 var taskOptionsStates = window.taskOptionsStates;
-var taskUserOptionInteracted = window.taskUserOptionInteracted;
 var taskImages = window.taskImages;
 var pendingNewTaskCount = window.pendingNewTaskCount;
 var newTaskHintTimer = window.newTaskHintTimer;
@@ -492,9 +488,6 @@ function clearTaskLocalState(taskId) {
   }
   if (taskOptionsStates[normalizedTaskId] !== undefined) {
     delete taskOptionsStates[normalizedTaskId];
-  }
-  if (taskUserOptionInteracted[normalizedTaskId] !== undefined) {
-    delete taskUserOptionInteracted[normalizedTaskId];
   }
   if (taskImages[normalizedTaskId] !== undefined) {
     delete taskImages[normalizedTaskId];
@@ -3053,13 +3046,21 @@ function updateOptionsDisplay(options, optionDefaults) {
     optionsDataset.renderedSignature = renderSignature;
   }
 
+  const currentTaskKey = activeTaskId ? String(activeTaskId) : "";
+  const renderedTaskKey = optionsDataset
+    ? optionsDataset.renderedTaskId || ""
+    : "";
+  if (optionsDataset) {
+    optionsDataset.renderedTaskId = currentTaskKey;
+  }
+
   let selectedStates = {};
-  let hasUserInteraction = false;
+  let keepSelection = false;
   if (activeTaskId && taskOptionsStates[activeTaskId]) {
     selectedStates = taskOptionsStates[activeTaskId];
-    hasUserInteraction = true;
+    keepSelection = true;
     _debugLog(`Restored option selection state for task ${activeTaskId}`);
-  } else {
+  } else if (currentTaskKey && currentTaskKey === renderedTaskKey) {
 
     const existingCheckboxes = optionsContainer.querySelectorAll(
       'input[type="checkbox"]',
@@ -3072,7 +3073,7 @@ function updateOptionsDisplay(options, optionDefaults) {
     }
 
     if (existingCheckboxes.length > 0) {
-      hasUserInteraction = true;
+      keepSelection = true;
     }
   }
 
@@ -3093,7 +3094,7 @@ function updateOptionsDisplay(options, optionDefaults) {
       checkbox.value = option;
 
       const checkboxId = `option-${index}`;
-      if (hasUserInteraction) {
+      if (keepSelection) {
         if (selectedStates[checkboxId] || selectedStates[index]) {
           checkbox.checked = true;
         }
@@ -3575,18 +3576,13 @@ async function autoSubmitTask(taskId) {
   _debugLog(`Task ${taskId} countdown ended; auto-submitting`);
 
   const typedText = collectTypedFeedbackForTask(taskId);
-  let combinedText = typedText || "";
-
-  const userDidInteractOptions =
-    taskUserOptionInteracted[taskId] === true;
-  const selectedOpts = userDidInteractOptions
-    ? collectSelectedOptionsForTask(taskId)
-    : [];
+  const combinedText = typedText || "";
+  const selectedOpts = collectSelectedOptionsForTask(taskId);
 
   if ((combinedText && combinedText.trim()) || selectedOpts.length > 0) {
     _debugLog(
-      `Auto-submitting user-typed content for ${taskId} ` +
-        `(${(combinedText || "").length} chars, ${selectedOpts.length} options, interacted=${userDidInteractOptions})`,
+      `Auto-submitting current content for ${taskId} ` +
+        `(${combinedText.length} chars, ${selectedOpts.length} options)`,
     );
     await submitTaskFeedback(taskId, combinedText || "", selectedOpts);
     return;
@@ -3631,25 +3627,38 @@ function collectSelectedOptionsForTask(taskId) {
   try {
     if (taskId === activeTaskId && typeof document !== "undefined") {
       const container = document.getElementById("options-container");
-      if (container && typeof container.querySelectorAll === "function") {
+      if (
+        container &&
+        typeof container.querySelectorAll === "function" &&
+        container.dataset &&
+        container.dataset.renderedTaskId === String(taskId)
+      ) {
         const boxes = container.querySelectorAll('input[type="checkbox"]');
         const boxCount = boxes.length;
-        for (let index = 0; index < boxCount; index += 1) {
-          if (!(index in boxes)) continue;
-          const box = boxes[index];
-          if (box.checked) labels.push(box.value);
+        if (boxCount > 0) {
+          for (let index = 0; index < boxCount; index += 1) {
+            if (!(index in boxes)) continue;
+            const box = boxes[index];
+            if (box.checked) labels.push(box.value);
+          }
+          return labels;
         }
-        if (labels.length > 0) return labels;
       }
     }
-    const states = taskOptionsStates && taskOptionsStates[taskId];
     const task = findTaskById(window.currentTasks || [], taskId);
     const options = task && task.predefined_options;
-    if (states && options && options.length) {
+    if (options && options.length) {
+      const states = taskOptionsStates && taskOptionsStates[taskId];
+      const defaults = Array.isArray(task.predefined_options_defaults)
+        ? task.predefined_options_defaults
+        : [];
       const optionCount = options.length;
       for (let index = 0; index < optionCount; index += 1) {
         if (!(index in options)) continue;
-        if (states["option-" + index] || states[index]) {
+        const checked = states
+          ? states["option-" + index] || states[index]
+          : defaults[index] === true;
+        if (checked) {
           labels.push(options[index]);
         }
       }
@@ -3706,12 +3715,23 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
         delete taskOptionsStates[taskId];
         _debugLog(`Cleared saved option selection state for task ${taskId}`);
       }
-      if (taskUserOptionInteracted[taskId] !== undefined) {
-        delete taskUserOptionInteracted[taskId];
-      }
       if (taskImages[taskId] !== undefined) {
         delete taskImages[taskId];
         _debugLog(`Cleared saved image list for task ${taskId}`);
+      }
+
+      if (taskId === activeTaskId) {
+        const liveTextarea = document.getElementById("feedback-text");
+        if (liveTextarea) {
+          liveTextarea.value = "";
+        }
+        if (
+          selectedImages &&
+          selectedImages.length > 0 &&
+          typeof clearAllImages === "function"
+        ) {
+          clearAllImages();
+        }
       }
 
       if (!_sseConnected) {
@@ -3931,7 +3951,6 @@ function handleRealtimeTextareaAutosave(event) {
 function handleRealtimeOptionsAutosave(event) {
   if (!activeTaskId) return;
   if (!event || !event.target || event.target.type !== "checkbox") return;
-  taskUserOptionInteracted[activeTaskId] = true;
   const optionsContainer =
     event && event.currentTarget
       ? event.currentTarget

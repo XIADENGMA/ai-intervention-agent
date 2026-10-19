@@ -44,6 +44,7 @@ def test_existing_option_scan_preserves_dom_state_without_nodelist_foreach() -> 
         };
         const optionsContainer = {
           _innerHTML: 'stale',
+          dataset: { renderedTaskId: 'task-a' },
           classList: {
             add(cls) {
               appended.push(['container-add', cls]);

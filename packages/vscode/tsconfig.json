@@ -24,6 +24,9 @@
   },
   "include": [
     "extension.ts",
+    "lang.ts",
+    "net-utils.ts",
+    "sse-parser.ts",
     "logger.ts",
     "webview.ts",
     "applescript-executor.ts",

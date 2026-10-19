@@ -228,9 +228,10 @@ suite('Extension Test Suite', () => {
     assert.ok(!webviewJs.includes("script-src 'nonce-${nonce}' ${cspSource};"))
     assert.ok(!webviewJs.includes("script-src 'nonce-${nonce}' 'unsafe-inline'"))
 
-    // 安全回归点：style-src 不应放开 unsafe-inline（CSS 应通过外链引入）
-    assert.ok(webviewJs.includes('style-src ${cspSource};'))
+    // 安全回归点：style-src 只信任 cspSource 外链与本次页面 nonce（MathJax 的 <style> 靠 nonce 放行，R720），不放开 unsafe-inline
+    assert.ok(webviewJs.includes("style-src ${cspSource} 'nonce-${nonce}';"))
     assert.ok(!webviewJs.includes("style-src ${cspSource} 'unsafe-inline'"))
+    assert.ok(!webviewJs.includes("style-src ${cspSource} 'nonce-${nonce}' 'unsafe-inline'"))
     assert.ok(webviewJs.includes('webview.css'))
 
     // CSP 细化回归点：应显式禁止 base-uri/object/frame

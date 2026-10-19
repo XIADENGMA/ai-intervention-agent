@@ -4,7 +4,15 @@ import * as path from "path";
 import * as http from "http";
 import * as https from "https";
 import { WebviewProvider } from "./webview";
+import { resolveUiLang } from "./lang";
 import { createLogger } from "./logger";
+import { discardResponseBody } from "./net-utils";
+import {
+  SSE_MAX_BUFFER_CHARS,
+  SseBufferOverflowError,
+  SseParser,
+  type SseEvent,
+} from "./sse-parser";
 
 import type { I18nKey } from "./i18n-keys";
 
@@ -182,13 +190,12 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   try {
     const localesDir = path.join(context.extensionPath, "locales");
     const localeReads: Promise<void>[] = [];
-    for (const loc of ["en", "zh-CN"]) {
+    for (const loc of ["en", "zh-CN", "zh-TW"]) {
       localeReads.push(loadHostLocale(localesDir, loc, hostLocales));
     }
     await Promise.all(localeReads);
     try {
-      const vsLang = vscode.env.language || "";
-      hostLang = vsLang.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+      hostLang = resolveUiLang(null, vscode.env.language);
     } catch {
 
     }
@@ -412,6 +419,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       } as RequestInit);
 
       if (!resp.ok) {
+        discardResponseBody(resp);
         throw new Error(`HTTP ${resp.status}`);
       }
 
@@ -595,10 +603,24 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   let _sseReq: http.ClientRequest | null = null;
   let _sseConnected = false;
   let _sseReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let _sseReconnectDelay = 1000;
+  const SSE_RECONNECT_BASE_MS = 1000;
+  const SSE_RECONNECT_MAX_MS = 30000;
+  const SSE_STABLE_CONNECTION_MS = 10000;
+  let _sseReconnectDelay = SSE_RECONNECT_BASE_MS;
+  let _sseConnectedAtMs = 0;
   let _sseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   let _lastEventId: string | null = null;
+
+  const syncHostLanguage = (): void => {
+    try {
+      provider.syncServerLanguage().catch(() => {
+
+      });
+    } catch {
+
+    }
+  };
 
   const _connectSSE = (): void => {
     if (statusPollDisposed) return;
@@ -636,28 +658,16 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       }
 
       _sseConnected = true;
-      _sseReconnectDelay = 1000;
+      _sseConnectedAtMs = Date.now();
       logger.event("sse.connected", {}, { level: "debug" });
+      syncHostLanguage();
 
-      let buffer = "";
-      let pendingId: string | null = null;
-      let pendingType: string | null = null;
-      let pendingDataLines: string[] = [];
+      const handleSseEvent = (sseEvent: SseEvent): void => {
+        const dataStr = sseEvent.data;
+        const evType = sseEvent.type || "message";
 
-      const flushPendingEvent = (): void => {
-        if (
-          pendingDataLines.length === 0 &&
-          pendingType === null &&
-          pendingId === null
-        ) {
-          return;
-        }
-
-        const dataStr = pendingDataLines.join("\n");
-        const evType = pendingType || "message";
-
-        if (pendingId !== null && pendingId !== "") {
-          const parsedId = Number(pendingId);
+        if (sseEvent.id !== null && sseEvent.id !== "") {
+          const parsedId = Number(sseEvent.id);
           if (Number.isFinite(parsedId) && parsedId > 0) {
             _lastEventId = String(parsedId);
           }
@@ -671,15 +681,13 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
             _sseDebounceTimer = null;
             scheduleStatusPoll(0);
           }, 0);
-          pendingId = null;
-          pendingType = null;
-          pendingDataLines = [];
           return;
         }
 
         if (evType === "config_changed") {
 
           logger.event("sse.config_changed", { dataStr }, { level: "info" });
+          syncHostLanguage();
           let hint = "AI Intervention Agent: configuration file changed.";
           try {
             const detail = JSON.parse(dataStr);
@@ -695,18 +703,12 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           } catch {
 
           }
-          pendingId = null;
-          pendingType = null;
-          pendingDataLines = [];
           return;
         }
 
         if (evType === "heartbeat") {
 
           logger.event("sse.heartbeat", { dataStr }, { level: "debug" });
-          pendingId = null;
-          pendingType = null;
-          pendingDataLines = [];
           return;
         }
 
@@ -717,9 +719,6 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
             { evType, dataStr },
             { level: "debug" },
           );
-          pendingId = null;
-          pendingType = null;
-          pendingDataLines = [];
           return;
         }
 
@@ -760,41 +759,29 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         } catch {
 
         }
-        pendingId = null;
-        pendingType = null;
-        pendingDataLines = [];
       };
 
+      const parser = new SseParser(handleSseEvent);
       res.setEncoding("utf8");
       res.on("data", (chunk: string) => {
         if (_sseReq !== req) return;
-        buffer += chunk;
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (line === "") {
-
-            flushPendingEvent();
-            continue;
+        try {
+          parser.push(chunk);
+        } catch (e: unknown) {
+          if (e instanceof SseBufferOverflowError) {
+            logger.event(
+              "sse.buffer_overflow",
+              { limit: SSE_MAX_BUFFER_CHARS },
+              { level: "warn" },
+            );
+            _handleSSEError();
+            return;
           }
-          if (line.startsWith(":")) {
-
-            continue;
-          }
-          if (line.startsWith("id:")) {
-            pendingId = line.slice(3).replace(/^\s+/, "");
-            continue;
-          }
-          if (line.startsWith("event:")) {
-            pendingType = line.slice(6).replace(/^\s+/, "");
-            continue;
-          }
-          if (line.startsWith("data:")) {
-
-            pendingDataLines.push(line.slice(5).replace(/^\s/, ""));
-            continue;
-          }
-
+          logger.event(
+            "sse.handler_error",
+            { error: e instanceof Error ? e.message : String(e) },
+            { level: "warn" },
+          );
         }
       });
       res.on("end", () => {
@@ -812,6 +799,12 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   };
 
   const _handleSSEError = (): void => {
+    const connectedForMs =
+      _sseConnectedAtMs > 0 ? Date.now() - _sseConnectedAtMs : 0;
+    _sseConnectedAtMs = 0;
+    if (connectedForMs >= SSE_STABLE_CONNECTION_MS) {
+      _sseReconnectDelay = SSE_RECONNECT_BASE_MS;
+    }
     _sseConnected = false;
     if (_sseReq) {
       try {
@@ -832,7 +825,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       _sseReconnectTimer = null;
       if (!statusPollDisposed) _connectSSE();
     }, _sseReconnectDelay);
-    _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2);
+    _sseReconnectDelay = Math.min(SSE_RECONNECT_MAX_MS, _sseReconnectDelay * 2);
   };
 
   const _disconnectSSE = (): void => {
@@ -853,6 +846,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       _sseReq = null;
     }
     _sseConnected = false;
+    _sseConnectedAtMs = 0;
   };
 
   const isWebviewStatsFresh = (): boolean =>
@@ -959,8 +953,14 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       }
     },
     (lang: string) => {
-      if (!lang || lang === "auto") return;
-      const normalized = lang.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+      if (!lang) return;
+      let vsLang = "";
+      try {
+        vsLang = vscode.env.language || "";
+      } catch {
+        vsLang = "";
+      }
+      const normalized = resolveUiLang(lang, vsLang);
       if (normalized !== hostLang) {
         hostLang = normalized;
         logger.event(
@@ -1013,6 +1013,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       extKnownTaskIds = new Set<string>();
       extTaskTrackingInitialized = false;
       _lastEventId = null;
+      _sseReconnectDelay = SSE_RECONNECT_BASE_MS;
       statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n${hostT("statusBar.language")}: ${hostLang}\n${hostT("statusBar.clickToOpen")}\n${hostT("statusBar.openSettings")}`;
       _connectSSE();
       scheduleStatusPoll(0);

@@ -42,9 +42,10 @@ def test_extension_host_locale_loading_uses_loop_collector_not_map_callback() ->
     activate = _extract_block(source, activate_start)
 
     assert '["en", "zh-CN"].map' not in activate
+    assert '["en", "zh-CN", "zh-TW"].map' not in activate
     assert ".map(async" not in activate
     assert "const localeReads: Promise<void>[] = []" in activate
-    assert 'for (const loc of ["en", "zh-CN"])' in activate
+    assert 'for (const loc of ["en", "zh-CN", "zh-TW"])' in activate
     assert "localeReads.push(loadHostLocale(localesDir, loc, hostLocales))" in activate
     assert "await Promise.all(localeReads)" in activate
     assert "fs.promises.readFile" in helper
@@ -85,12 +86,13 @@ def test_extension_host_locale_collector_preserves_parallel_fail_soft_loading() 
 
         const hostLocales = {}
         const localeReads = []
-        for (const loc of ['en', 'zh-CN']) {
+        for (const loc of ['en', 'zh-CN', 'zh-TW']) {
           localeReads.push(loadHostLocale('/ext/locales', loc, hostLocales))
         }
         const startedBeforeAwait = starts.slice()
         resolvers[0].resolve(JSON.stringify({ statusBar: { ok: 'OK' } }))
         resolvers[1].reject(new Error('missing locale'))
+        resolvers[2].resolve(JSON.stringify({ statusBar: { ok: '好' } }))
         await Promise.all(localeReads)
 
         process.stdout.write(JSON.stringify({
@@ -114,6 +116,10 @@ def test_extension_host_locale_collector_preserves_parallel_fail_soft_loading() 
         "startedBeforeAwait": [
             ["/ext/locales/en.json", "utf8"],
             ["/ext/locales/zh-CN.json", "utf8"],
+            ["/ext/locales/zh-TW.json", "utf8"],
         ],
-        "hostLocales": {"en": {"statusBar": {"ok": "OK"}}},
+        "hostLocales": {
+            "en": {"statusBar": {"ok": "OK"}},
+            "zh-TW": {"statusBar": {"ok": "好"}},
+        },
     }

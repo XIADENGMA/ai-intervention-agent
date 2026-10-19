@@ -10,13 +10,13 @@ cycle-22 cr46 教训: 单语改动滑漏 6 个月。R288 / R300 已经锁定了 
 | 维度                                                | tests |
 |---------------------------------------------------|-------|
 | 1. H2 数量必须相同 (en vs zh-CN)                     | 1     |
-| 2. H2 编号必须 1-13 + 结尾 1 个 (en + zh 各)         | 2     |
+| 2. H2 编号必须 1-15 + 结尾 1 个 (en + zh 各)         | 2     |
 | 3. H3 数量必须相同 (en vs zh-CN)                     | 1     |
-| 4. 关键章节存在性 (双语 parity, 13 个编号 H2)        | 13    |
+| 4. 关键章节存在性 (双语 parity, 15 个编号 H2)        | 15    |
 | 5. 结尾"Still stuck"章节存在 (双语 parity)           | 2     |
 | 6. 文档行数差距不能超过 30% (容许翻译伸缩)           | 1     |
 ================================================================
-| 合计                                                | 20    |
+| 合计                                                | 22    |
 ================================================================
 
 **pattern lineage**: R288 (sequence diagram parity), R300 (component
@@ -62,6 +62,27 @@ def _extract_numbered_h2(content: str) -> list[int]:
     return nums
 
 
+# (章节号, 英文关键字, 中文关键字) — 主题词必须在对应章节标题中出现;
+# 新增章节只改这一张表, 编号序列由它派生
+SECTION_KEYWORDS = [
+    (1, "Web UI does not start", "Web UI 启动失败"),
+    (2, "VS Code panel is blank", "VS Code 面板空白"),
+    (3, "Task list is empty", "AI 调用了"),
+    (4, "No notifications", "通知没响"),
+    (5, "mDNS", "mDNS"),
+    (6, "Open in IDE", "Open in IDE"),
+    (7, "PWA", "PWA"),
+    (8, "Bark notification", "Bark 通知"),
+    (9, "CI Gate", "CI Gate"),
+    (10, "Dependency Review", "Dependency Review"),
+    (11, "Extension host terminated", "Extension host terminated"),
+    (12, "Open VSX publish", "Open VSX 发布"),
+    (13, "Backend `/api/system/", "后端 `/api/system/"),
+    (14, "code 9 and reason 'killed'", "code 9 and reason 'killed'"),
+    (15, "sidebar panel is slow", "侧边栏面板打开或重新加载很慢"),
+]
+
+
 # ============================================================
 # #1 + #3: H2 / H3 数量必须相同
 # ============================================================
@@ -89,12 +110,12 @@ class TestHeadingCountParity(unittest.TestCase):
 
 
 # ============================================================
-# #2: H2 编号必须 1-13
+# #2: H2 编号必须与章节表一致 (1..N 连续)
 # ============================================================
 class TestH2NumberingParity(unittest.TestCase):
-    EXPECTED_NUMBERS = list(range(1, 14))  # 1..13
+    EXPECTED_NUMBERS = [num for num, _, _ in SECTION_KEYWORDS]
 
-    def test_en_h2_numbered_1_to_13(self) -> None:
+    def test_en_h2_numbered_sequentially(self) -> None:
         nums = _extract_numbered_h2(_read(EN_PATH))
         self.assertEqual(
             nums,
@@ -103,7 +124,7 @@ class TestH2NumberingParity(unittest.TestCase):
             f"实际 {nums} — 新增章节请按顺序编号, 不要跳号",
         )
 
-    def test_zh_h2_numbered_1_to_13(self) -> None:
+    def test_zh_h2_numbered_sequentially(self) -> None:
         nums = _extract_numbered_h2(_read(ZH_PATH))
         self.assertEqual(
             nums,
@@ -114,30 +135,15 @@ class TestH2NumberingParity(unittest.TestCase):
 
 
 # ============================================================
-# #4: 关键章节存在性 (13 个编号 H2)
-#    每个章节作单独 test 便于失败定位
+# #4: 关键章节存在性 (每个编号 H2)
+#    每个章节作 subTest 便于失败定位
 # ============================================================
 class TestNumberedSectionsExist(unittest.TestCase):
-    """13 个编号章节, 双语必须都存在 (各按主题关键字检测)"""
+    """每个编号章节, 双语必须都存在 (各按主题关键字检测)"""
 
-    # (英文关键字, 中文关键字, 章节号) — 主题词必须在对应章节标题中出现
-    SECTION_KEYWORDS = [
-        (1, "Web UI does not start", "Web UI 启动失败"),
-        (2, "VS Code panel is blank", "VS Code 面板空白"),
-        (3, "Task list is empty", "AI 调用了"),
-        (4, "No notifications", "通知没响"),
-        (5, "mDNS", "mDNS"),
-        (6, "Open in IDE", "Open in IDE"),
-        (7, "PWA", "PWA"),
-        (8, "Bark notification", "Bark 通知"),
-        (9, "CI Gate", "CI Gate"),
-        (10, "Dependency Review", "Dependency Review"),
-        (11, "Extension host terminated", "Extension host terminated"),
-        (12, "Open VSX publish", "Open VSX 发布"),
-        (13, "Backend `/api/system/", "后端 `/api/system/"),
-    ]
+    SECTION_KEYWORDS = SECTION_KEYWORDS
 
-    def test_all_13_sections_exist(self) -> None:
+    def test_every_numbered_section_exists(self) -> None:
         en = _read(EN_PATH)
         zh = _read(ZH_PATH)
         for num, en_key, zh_key in self.SECTION_KEYWORDS:

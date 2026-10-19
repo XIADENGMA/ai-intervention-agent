@@ -27,6 +27,20 @@
    - 'auto' / 空值 → 永远跳过
 3. ``fetchConfig`` 调用点不再有 ``!_serverLangApplied`` 前置拦截
    （幂等判断收敛到 applyServerLanguage 单点）。
+
+## R717 修订：``auto`` 不再被忽略
+
+原契约把 ``'auto'`` 当作「永远跳过」，结果服务端从显式语言切回 ``auto`` 后，
+插件卡在上一个显式语言上（宿主缓存和 ``hostLang`` 也不回退）。现契约：
+
+- ``'auto'`` 解析为 VS Code 显示语言（``getAutoLanguage()``：宿主注入的
+  ``__AIIA_I18N_AUTO_LANG``，缺失时回落 ``navigator.language``），照常走
+  值比较幂等 → 切换 → ``langDetected('auto')`` 回传宿主；
+- 空值仍然跳过；
+- 伪语言（``pseudo``，开发用）永远优先，服务端语言（含 ``auto``）不得覆盖，
+  但 ``langDetected`` 仍回传宿主，宿主侧文案继续跟随服务端；
+- 切换后除 ``retranslateAllI18nElements()`` 外还要重绘 JS 动态拼出的设置文案
+  （``rerenderSettingsDynamicText()``）。
 """
 
 from __future__ import annotations
@@ -92,13 +106,16 @@ class TestStaticContract:
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node runtime unavailable")
 class TestRuntimeBehaviour:
-    def _run_case(self) -> dict:
+    def _run_case(self, *, start_lang: str = "en") -> dict:
         src = _source()
         fn = _extract_function(src, "function applyServerLanguage(lang)")
-        script = textwrap.dedent(
-            """
-            const calls = { setLang: [], retranslate: 0, postMessage: [] };
-            let currentLang = 'en';
+        script = (
+            textwrap.dedent(
+                """
+            const calls = {
+              setLang: [], retranslate: 0, rerender: 0, postMessage: [],
+            };
+            let currentLang = '__START__';
 
             const vscode = {
               postMessage(msg) { calls.postMessage.push(msg); },
@@ -110,8 +127,10 @@ class TestRuntimeBehaviour:
                 normalizeLang(l) { return l; },
               };
             }
+            function getAutoLanguage() { return 'zh-TW'; }
             function ensureLocaleRegistered() { return true; }
             function retranslateAllI18nElements() { calls.retranslate += 1; }
+            function rerenderSettingsDynamicText() { calls.rerender += 1; }
 
             let _serverLangLastApplied = '';
             __FN__
@@ -119,12 +138,16 @@ class TestRuntimeBehaviour:
             applyServerLanguage('zh-CN');   // 首次：切换
             applyServerLanguage('zh-CN');   // 重复：幂等跳过
             applyServerLanguage('en');      // 热更新：再次切换
-            applyServerLanguage('auto');    // auto：跳过
+            applyServerLanguage('auto');    // auto：解析为 VS Code 语言后切换
+            applyServerLanguage('auto');    // auto 重复：幂等跳过
             applyServerLanguage('');        // 空值：跳过
 
             process.stdout.write(JSON.stringify(calls));
             """
-        ).replace("__FN__", fn)
+            )
+            .replace("__FN__", fn)
+            .replace("__START__", start_lang)
+        )
         proc = subprocess.run(
             ["node", "-e", script],
             check=False,
@@ -139,9 +162,18 @@ class TestRuntimeBehaviour:
 
     def test_first_apply_repeat_skip_hot_update_reapplies(self) -> None:
         calls = self._run_case()
-        # 首次 zh-CN + 热更新 en 各切换一次；重复/auto/空值都不切
-        assert calls["setLang"] == ["zh-CN", "en"]
-        assert calls["retranslate"] == 2
-        # langDetected 只在值变化时回传（zh-CN / en 各一次）
+        # zh-CN → en → auto(=zh-TW) 各切换一次；重复值与空值都不切
+        assert calls["setLang"] == ["zh-CN", "en", "zh-TW"]
+        assert calls["retranslate"] == 3
+        assert calls["rerender"] == 3
+        # langDetected 只在值变化时回传，auto 以原值回传给宿主
         langs = [m.get("language") for m in calls["postMessage"]]
-        assert langs == ["zh-CN", "en"]
+        assert langs == ["zh-CN", "en", "auto"]
+
+    def test_pseudo_locale_wins_but_host_is_still_informed(self) -> None:
+        calls = self._run_case(start_lang="pseudo")
+        assert calls["setLang"] == [], "伪语言不得被服务端语言（含 auto）覆盖"
+        assert calls["retranslate"] == 0
+        assert calls["rerender"] == 0
+        langs = [m.get("language") for m in calls["postMessage"]]
+        assert langs == ["zh-CN", "en", "auto"], "宿主侧文案仍需跟随服务端语言"

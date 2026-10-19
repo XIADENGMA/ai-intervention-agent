@@ -1335,6 +1335,17 @@ body.vscode-light .no-content-progress-bar {
   border-color: var(--vscode-focusBorder);
 }
 
+.settings-field input#feedbackCountdown {
+  max-width: 100px;
+}
+
+.settings-bark-base-url-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .settings-config-path-row {
   display: flex;
   align-items: stretch;

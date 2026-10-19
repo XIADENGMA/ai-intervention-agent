@@ -287,6 +287,9 @@ class TestFrontendResumeLiterals(unittest.TestCase):
         cls.extension_ts = (
             REPO_ROOT / "packages" / "vscode" / "extension.ts"
         ).read_text(encoding="utf-8")
+        cls.sse_parser_ts = (
+            REPO_ROOT / "packages" / "vscode" / "sse-parser.ts"
+        ).read_text(encoding="utf-8")
 
     # webview-ui.js（VSCode 插件 webview 端）
     def test_webview_ui_tracks_last_event_id(self) -> None:
@@ -315,8 +318,11 @@ class TestFrontendResumeLiterals(unittest.TestCase):
         self.assertIn("_lastEventId", self.extension_ts)
         self.assertIn("last_event_id=", self.extension_ts)
         # Node 端没有 EventSource 自动 e.lastEventId，必须手动解析 ``id:`` 行
-        # （字面量形式，引号风格不限——Prettier 默认双引号）
-        self.assertRegex(self.extension_ts, r"['\"]id:['\"]")
+        # （字面量形式，引号风格不限——Prettier 默认双引号）。解析已迁入
+        # sse-parser.ts（有界、线性时间的 SseParser，R718），extension.ts 只消费
+        # 解析出的 sseEvent.id。
+        self.assertRegex(self.sse_parser_ts, r"['\"]id:['\"]")
+        self.assertIn("sseEvent.id", self.extension_ts)
 
     def test_extension_ts_sets_last_event_id_header_on_reconnect(self) -> None:
         # SSE 标准 header（HTML Living Standard 4.13.4）：浏览器自动带

@@ -306,7 +306,7 @@ def test_c_locale_loading_uses_promises_read_file_and_parallel() -> None:
     assert body_start
     activate_body = _extract_block_by_brace(text, body_start.end() - 1)
     assert "const localeReads: Promise<void>[] = []" in activate_body
-    assert 'for (const loc of ["en", "zh-CN"])' in activate_body
+    assert 'for (const loc of ["en", "zh-CN", "zh-TW"])' in activate_body
     assert (
         "localeReads.push(loadHostLocale(localesDir, loc, hostLocales))"
         in activate_body

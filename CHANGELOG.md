@@ -31,6 +31,105 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   equivalent code features (selectors, DOM ids, call sites, code
   regexes) instead.
 
+### Fixed
+
+- Countdown auto-submit carries the options the AI pre-checked as its
+  recommendation again. Since v1.8.10 (the yesno-removal commit) an
+  untouched recommendation was dropped when the countdown ended and
+  the AI received only the `resubmit_prompt`. Auto-submit now sends
+  exactly what a manual submit would — the typed text plus every
+  checked option — and falls back to the resubmit prompt only when
+  both are empty (Web UI and VS Code extension). The now-redundant
+  `taskUserOptionInteracted` state is removed.
+- Web UI: a new task no longer inherits the previous task's leftover
+  checkboxes. Options are pre-checked from the new task's own
+  recommendation; before, the stale selection of the last task (or
+  nothing, after a manual submit) was shown and could leak into the
+  next submit.
+- Web UI: after a countdown auto-submit succeeds, the feedback form is
+  reset like a manual submit (text box emptied, attached images
+  released). Before, the submitted text and images stayed on screen
+  and were sent again by the next task's auto-submit.
+- VS Code extension: the plugin now follows the language chosen in the
+  Web UI in every state. An idle plugin (no task on screen — its most
+  common state) never re-read the server language, so a switch stayed
+  invisible until the next task; with a task on screen it took up to
+  30 s because the server's `config_changed` event was ignored. The
+  webview now syncs the language on the idle poll and on `config_changed`
+  (≈0.1 s end to end). Traditional Chinese (`zh-TW`) is honored by the
+  host-generated HTML and the status-bar strings instead of being folded
+  into Simplified, switching the server back to `auto` follows the VS Code
+  display language instead of sticking to the previous explicit language,
+  and icon-button `aria-label`s, copy-button labels and the Bark base-URL
+  status text are re-translated on the fly. The status-bar strings follow
+  as well, even when the sidebar view was never opened: the extension host
+  re-reads the server language when its SSE connection (re)connects and on
+  `config_changed`. The dev-only pseudo-locale setting now outranks the
+  server language.
+- VS Code extension host: hardened against abnormal HTTP/SSE streams,
+  found while investigating the intermittent `extensionHost crashed with
+  code 9 and reason 'killed'` report. That exit is a SIGKILL sent from
+  outside (macOS memory pressure / Mach-port exhaustion, see
+  microsoft/vscode#326338): the extension has no code path that kills
+  its host, and a fault-injection run inside a real VS Code 1.110 host
+  (SSE flapping, 6 600-event storms, URL flips, 8 MB error bodies) found
+  no leaked sockets, handles or heap. It did expose three resource
+  amplifiers, now fixed: the SSE parser buffered an unterminated line
+  without bound and re-copied it on every chunk (a 64 MiB line peaked at
+  1.8 GB of heap; lines, event data and the unterminated tail are now
+  capped at 1 MiB and a violation drops the connection and reconnects,
+  peak 37 MB); the SSE reconnect backoff was reset by every 200
+  response, so a server that accepts and immediately closes was
+  re-opened every second forever (now it only resets after a connection
+  that lasted 10 s, and when `serverUrl` changes); and non-2xx
+  responses (status poll, language prefetch, notification config) left
+  their body unread, pinning the connection until garbage collection
+  (14 concurrent connections and 85 fds under 8 MB error bodies, now 1
+  and 75; the bodies are cancelled).
+- VS Code extension: a prompt with long code blocks now renders in about
+  110 ms instead of 259 ms, and two settings controls get the layout they
+  were always meant to have. The webview's Content Security Policy
+  (`style-src ${cspSource}`, no `'unsafe-inline'`) refuses every inline
+  `style` attribute and reports each refusal as an event. The server's
+  Pygments markup carries one per highlighted token, so a 52 KB prompt with
+  12 000 tokens raised 12 050 violation events while `sanitizePromptHtml`
+  parsed it, and the sanitizer deleted those attributes right afterwards
+  anyway. It now strips them from the HTML string (`<span>`, `<pre>` and
+  `<div class="highlight">` openers) before parsing: in a real VS Code
+  1.110 host the first render of that prompt went from 259 ms to 110 ms,
+  the longest main-thread task from 195 ms to 52 ms, the violations from
+  12 050 to 0, and the sanitized output is byte-identical for every
+  server-rendered sample. Two inline styles in the settings template
+  (`#feedbackCountdown` width, the Bark action row's flex layout) moved to
+  `webview.css`; the CSP had been blocking them, so those controls never
+  got that layout (computed `max-width: none`, `display: block`). The rest
+  of the load path was measured and is not slow: about 60 ms (VS Code) to
+  90 ms (Cursor) from setting the webview HTML to the first paint. The
+  roughly one second a cold sidebar takes to appear in Cursor passes before
+  the extension's page is even requested (the editor sets up the webview and
+  its service worker); troubleshooting section 15 explains how to tell the
+  phases apart.
+- VS Code extension: math formulas in prompts no longer appear twice, and
+  display equations are centred again. The panel's Content Security Policy
+  refused all four `<style>` elements MathJax builds, including the sheet that
+  hides its screen-reader MathML copy and the one that turns `$$...$$` into a
+  centred block, so `$a^2+b^2=c^2$` showed the typeset formula followed by
+  the raw MathML text and display math sat inline, with four
+  `style-src-elem` violations on every MathJax load. `style-src` now also
+  trusts the per-load page nonce (still no `'unsafe-inline'`; a nonce never
+  unlocks `style` attributes, so inline styles stay blocked), and the panel
+  tags exactly the `<style>` elements MathJax creates with it: the three of
+  its context menu while `defaultReady()` runs, and the SVG sheet through the
+  DOM adaptor at the first render. Checked in real Chromium with the real
+  generated webview HTML: violations 4 to 0 at load, the screen-reader copy
+  clipped (`position: absolute`, `clip: rect(1px, 1px, 1px, 1px)`), display
+  equations `display: block`. MathJax's right-click menu is now off in the
+  panel: it positions itself with inline `style` attributes that no nonce can
+  unlock, so even with its stylesheets allowed it opened at the bottom of the
+  page and scrolled the panel (3 more violations); right-click on a formula
+  now behaves like right-click on the rest of the panel. The Web UI is
+  unaffected (its policy allows inline styles).
+
 ## [1.8.12] - 2026-09-07
 
 ### Fixed

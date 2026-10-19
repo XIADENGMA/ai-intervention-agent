@@ -268,6 +268,10 @@ ai-intervention-agent 触发。[Cursor 社区论坛同主题][cursor-ext-host]
   老版本会在 host restart 期间打 `ERROR: 处理通知事件失败` 噪声日志，
   容易被误判成 MCP 端故障；新版本不会再出。
 
+如果横幅出现前，Cursor / VS Code 主日志里有
+`extensionHost crashed with code 9 and reason 'killed'`，说明扩展宿主是
+被外部用 `SIGKILL` 结束的，请看下面第 14 节，按它的步骤判定这次 kill 的来源。
+
 **排查顺序**：
 
 1. **先确认是不是 MCP server 的事**。在 Cursor 里打开 MCP server 面板
@@ -467,6 +471,66 @@ R152 的 `_formatLogs` 写的是 `var entries = logs.logs`，而服务端
 **不要**因为"已经没有 UI 消费者了，可以随便改名"就 ship —— in-app
 消费者缺席会让静默回归**更难**、而非更容易被发现。UI 面板掉成 "—"
 是显式的；CI scrape job 静默掉成 0 metric 才是真坑。
+
+## 14. 日志里出现 `extensionHost crashed with code 9 and reason 'killed'`
+
+**症状**：Cursor / VS Code 主日志里出现成对的两行
+
+```log
+[error] [UtilityProcess id: 20, type: extensionHost, pid: 65757]: crashed with code 9 and reason 'killed'
+[info] Extension host with pid 65756 exited with code: 9, signal: unknown.
+```
+
+随后所有扩展（包括本扩展）一起重启，且之前没有任何扩展自己的报错。
+
+**这意味着什么**：退出码 9 就是 `SIGKILL`。扩展宿主不是自己出错退出的，而是被外部结束的。macOS 上常见的发送方有：内存压力清理（jetsam）、内核因某进程耗尽 Mach 端口而杀掉它（[macOS 26 + VS Code / Electron 上已知的一类故障][vscode-326338]：先是子进程风暴，随后出现 `spawn EBADF` / `EMFILE`，最后渲染进程或扩展宿主被杀）、或者别的工具执行了 `kill -9`。本扩展不可能产生这个信号：代码里没有任何对宿主发信号的路径，宿主侧的资源行为也在真实 VS Code 扩展宿主里测试过（R718：有界的 SSE 缓冲、重连退避、释放 HTTP 响应体，并且在抖动 / 事件风暴 / 错误响应体的故障注入下没有泄漏 socket 或堆）。
+
+[vscode-326338]: https://github.com/microsoft/vscode/issues/326338
+
+**排查顺序（macOS，崩溃后尽快做）**：
+
+1. 先判断是哪一类 kill。请使用完整路径，因为裸的 `log` 在 zsh 里是内建命令：
+
+   ```bash
+   /usr/bin/log show --last 30m \
+     --predicate 'eventMessage CONTAINS "FATAL exception" OR eventMessage CONTAINS "exiting with signal 9"' \
+     | grep -iE "code helper|cursor helper"
+   ls -lt /Library/Logs/DiagnosticReports/JetsamEvent-*.ips | head
+   ```
+
+   - 崩溃时间附近出现 `JetsamEvent`，且其中最大的进程**不是**编辑器：这是整机内存压力，关闭它列出的大户应用或虚拟机。
+   - 出现 `FATAL exception ... EXC_RESOURCE` 行，或崩溃前不久 Extension Host 输出里有 `spawn EBADF` / `EMFILE`：这是资源耗尽。上游报告里的触发条件是自定义的 `files.watcherExclude` **替换**了 VS Code 的默认值（于是 `node_modules` 被监听，内置 Git 扩展为每个嵌套仓库派生子进程）。请改成在默认值之上追加，并考虑 `git.autofetch = false` 与 `git.autoRepositoryDetection = "openEditors"`。
+   - 所有 Cursor / VS Code 进程（渲染进程、文件监听、pty host）在同一瞬间都以 code 9 退出，同样指向整机内存压力，而不是某一个扩展。
+2. 升级 Cursor / VS Code，然后用 `cursor --disable-extensions` 重试。禁用所有扩展后仍被 kill，就不是本扩展的问题。
+3. 用本扩展自己的日志排除它：打开 **输出 → AI Intervention Agent**。出现 `sse.buffer_overflow` 警告说明服务端发来了超过 1 MiB 的单行或单个 SSE 事件；这是有意丢弃连接并按退避重连。
+
+如果仍能复现，请开一个 [issue][bug]，附上崩溃时间、第 1 步里的 `JetsamEvent` / `FATAL exception` 行，以及 **AI Intervention Agent** 的输出。
+
+## 15. 侧边栏面板打开或重新加载很慢
+
+**症状**：Cursor / VS Code 启动后，或切回 AI Intervention Agent 侧边栏时，面板空白或停在加载骨架屏上很久；或者带长代码块的提示词要过一会儿才显示。
+
+**各阶段分别耗时多少**（在真实的 VS Code 1.110.0 扩展宿主里测得，并只读地观察了一个运行中的 Cursor；取热启动多次测量的中位数，Apple 芯片 Mac）：
+
+- **编辑器创建 webview（仅冷启动）：在测量的那次 Cursor 会话里约 1 秒。** 编辑器先构建 webview 框架并注册它的 service worker，之后才会请求扩展的页面，此时扩展自己的代码还没有运行，扩展无法缩短这一段。
+- **扩展自身的工作，从写入 HTML 到内容上屏：VS Code 1.110 约 60 毫秒，Cursor 约 90 毫秒。** 页面 59 KB，脚本从本地文件同步加载。
+- **隐藏后再次显示侧边栏：恢复内容约 55 毫秒。** 默认会用页面通过 `setState` 保存的状态重建 webview。`ai-intervention-agent.webview.retainContextWhenHidden` 可让它一直保留（约 25 毫秒），代价是更多内存；默认关闭是有意为之（R452）。
+- **带长代码块的提示词：一个 52 KB、含 12 000 个高亮 token 的提示词首次渲染约 110 毫秒（R719 之前是 259 毫秒）。** 代码由服务端高亮（同样大小的提示词首次请求约 70 毫秒，之后走缓存）。
+
+**排查顺序**：
+
+1. 打开 **输出 → AI Intervention Agent**，对比 `event=webview.ready` 的时间戳与你打开面板的时刻。这里出现间隔，是编辑器在创建 webview，而不是扩展慢。
+2. 运行 **Developer: Open Webview Developer Tools** 并查看控制台。普通提示词不应该打印 `Refused to apply inline style because it violates the following Content Security Policy directive`：每一条都是浏览器要生成的一个违规事件，R719 保证扩展自己的标记里没有这类内联样式。如果看到很多，请开 issue 并描述提示词的形态。
+3. 想用数据代替感觉：打开探针启动编辑器，把侧边栏隐藏再显示几次，然后在本仓库的检出目录里汇总结果文件：
+
+   ```bash
+   AIIA_WEBVIEW_BENCH_OUTPUT=/tmp/aiia-webview.ndjson cursor .
+   npm run vscode:webview-bench -- --input /tmp/aiia-webview.ndjson
+   ```
+
+4. 只有长提示词慢：给面板为当前任务发出的请求计时（服务端负责渲染并缓存 Markdown）：`curl -s -o /dev/null -w '%{time_total}\n' http://localhost:8081/api/config`。
+
+如果仍然觉得慢，请开一个 [issue][bug]，附上探针汇总、编辑器及其版本，并说明是启动后的第一次打开慢，还是每次重新显示都慢。
 
 ## 还是没解决？
 

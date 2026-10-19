@@ -240,6 +240,7 @@ plan/
 .cursorignore
 .claude
 CLAUDE.md
+AGENTS.md
 
 # 配置文件（本地/敏感）
 config.toml

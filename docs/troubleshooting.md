@@ -307,6 +307,11 @@ to come from ai-intervention-agent itself)**:
   longer appear during host restart and can no longer be confused
   with a genuine MCP-side fault.
 
+If the Cursor / VS Code main log shows `extensionHost crashed with code 9
+and reason 'killed'` just before the banner, the host was ended from
+outside with `SIGKILL`; see section 14 below for how to classify that
+kill.
+
 **Triage order**:
 
 1. **Confirm it really is the MCP server.** In Cursor, open the MCP
@@ -523,6 +528,66 @@ Don't ship a "no UI consumer left, so I can rename freely" PR — the
 absence of an in-app consumer makes silent regressions **harder**, not
 easier, to notice. UI dashboard rows go to "—" loudly; a CI scrape
 job goes to "0 metrics" silently.
+
+## 14. The log says `extensionHost crashed with code 9 and reason 'killed'`
+
+**Symptom**: the Cursor / VS Code main log contains a pair of lines like
+
+```log
+[error] [UtilityProcess id: 20, type: extensionHost, pid: 65757]: crashed with code 9 and reason 'killed'
+[info] Extension host with pid 65756 exited with code: 9, signal: unknown.
+```
+
+and every extension (this one included) restarts, with no error message of its own beforehand.
+
+**What it means**: exit code 9 is `SIGKILL`. The extension host did not fail on its own; something outside it ended the process. The usual senders on macOS are the memory-pressure killer ("jetsam"), the kernel killing a process that ran out of Mach ports (a [known macOS 26 + VS Code / Electron failure class][vscode-326338]: a spawn storm, then `spawn EBADF` / `EMFILE`, then the renderer or the extension host is killed), or another tool running `kill -9`. This extension cannot produce it: nothing in it signals its host, and its host-side resource behaviour is tested inside a real VS Code extension host (R718: bounded SSE buffer, reconnect backoff, released HTTP bodies, and no leaked sockets or heap under flapping / event-storm / error-body fault injection).
+
+[vscode-326338]: https://github.com/microsoft/vscode/issues/326338
+
+**Triage (macOS, right after it happens)**:
+
+1. Classify the kill. Use the full path, because a bare `log` is a zsh builtin:
+
+   ```bash
+   /usr/bin/log show --last 30m \
+     --predicate 'eventMessage CONTAINS "FATAL exception" OR eventMessage CONTAINS "exiting with signal 9"' \
+     | grep -iE "code helper|cursor helper"
+   ls -lt /Library/Logs/DiagnosticReports/JetsamEvent-*.ips | head
+   ```
+
+   - A `JetsamEvent` close to the crash time whose largest processes are *not* the editor means system-wide memory pressure; close the heavy apps or VMs it lists.
+   - A `FATAL exception ... EXC_RESOURCE` line, or `spawn EBADF` / `EMFILE` lines in the Extension Host output shortly before the crash, mean resource exhaustion. In the upstream report the trigger was a custom `files.watcherExclude` that *replaced* the VS Code defaults (so `node_modules` was watched and the built-in Git extension spawned a child process per nested repository). Make it add to the defaults, and consider `git.autofetch = false` and `git.autoRepositoryDetection = "openEditors"`.
+   - Every Cursor / VS Code process (renderer, file watcher, pty host) dying with code 9 at the same instant also points at system memory pressure rather than at one extension.
+2. Update Cursor / VS Code, then retry with `cursor --disable-extensions`. If the kill still happens with every extension disabled, it is not this extension.
+3. Rule this extension out from its own log: open **Output → AI Intervention Agent**. A `sse.buffer_overflow` warning means the server sent a single SSE line or event larger than 1 MiB; the connection is dropped and re-opened with backoff on purpose.
+
+If it still reproduces, open an [issue][bug] with the crash timestamp, the `JetsamEvent` / `FATAL exception` lines from step 1 and the **AI Intervention Agent** output.
+
+## 15. The sidebar panel is slow to appear or to reload
+
+**Symptom**: after Cursor / VS Code starts, or when you switch back to the AI Intervention Agent sidebar, the panel stays empty or on its loading skeleton for a noticeable time; or a prompt with long code blocks takes a moment to show up.
+
+**What takes how long** (measured in a real VS Code 1.110.0 extension host and, read-only, in a live Cursor session; medians of warm runs on an Apple-silicon Mac):
+
+- **The editor creating the webview (cold start only): about 1 s in the Cursor session that was measured.** The editor builds the webview frame and registers its service worker before it requests the extension's page, so none of the extension's code has run yet and nothing in the extension can shorten it.
+- **The extension's own work, from setting the HTML to content on screen: about 60 ms in VS Code 1.110 and about 90 ms in Cursor.** The page is 59 KB and loads its scripts synchronously from local files.
+- **Hiding and re-showing the sidebar: about 55 ms to restore the content.** By default the webview is re-created from the state the page saved with `setState`. `ai-intervention-agent.webview.retainContextWhenHidden` keeps it alive instead (about 25 ms) at the price of more memory; it is off by default on purpose (R452).
+- **A prompt with long code blocks: about 110 ms for the first render of a 52 KB prompt with 12 000 highlighted tokens (259 ms before R719).** The server highlights the code (about 70 ms on the first request for a prompt that size, cached afterwards).
+
+**Triage**:
+
+1. Open **Output → AI Intervention Agent** and compare the `event=webview.ready` timestamp with the moment you opened the panel. A gap there is the editor creating the webview, not the extension.
+2. Run **Developer: Open Webview Developer Tools** and look at the console. An ordinary prompt must not print `Refused to apply inline style because it violates the following Content Security Policy directive`: each of those is a violation event the browser has to create, and R719 keeps the extension's own markup free of them. If you see many, open an issue and describe the prompt.
+3. To get numbers instead of impressions, start the editor with the probe on, hide and show the sidebar a few times, then summarize the file from a checkout of this repository:
+
+   ```bash
+   AIIA_WEBVIEW_BENCH_OUTPUT=/tmp/aiia-webview.ndjson cursor .
+   npm run vscode:webview-bench -- --input /tmp/aiia-webview.ndjson
+   ```
+
+4. If only long prompts are slow, time the request the panel makes for the active task (the server renders and caches the Markdown): `curl -s -o /dev/null -w '%{time_total}\n' http://localhost:8081/api/config`.
+
+If it still feels slow, open an [issue][bug] with the probe summary, the editor and its version, and whether the first open after startup or every re-show is slow.
 
 ## Still stuck?
 

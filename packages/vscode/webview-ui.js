@@ -115,8 +115,26 @@
     }
   }
 
+  function getAutoLanguage() {
+    try {
+      if (typeof window !== 'undefined' && window.__AIIA_I18N_AUTO_LANG) {
+        return String(window.__AIIA_I18N_AUTO_LANG)
+      }
+    } catch (e) {
+
+    }
+    try {
+      if (typeof navigator !== 'undefined' && navigator.language) {
+        return String(navigator.language)
+      }
+    } catch (e) {
+
+    }
+    return 'en'
+  }
+
   function applyServerLanguage(lang) {
-    if (!lang || lang === 'auto' || lang === _serverLangLastApplied) return
+    if (!lang || lang === _serverLangLastApplied) return
     _serverLangLastApplied = lang
     try {
       vscode.postMessage({ type: 'langDetected', language: lang })
@@ -125,12 +143,25 @@
     }
     var i18n = getI18n()
     if (!i18n || typeof i18n.setLang !== 'function' || typeof i18n.getLang !== 'function') return
-    var normalized = typeof i18n.normalizeLang === 'function' ? i18n.normalizeLang(lang) : lang
+    if (i18n.getLang() === 'pseudo') return
+    var effective = lang === 'auto' ? getAutoLanguage() : lang
+    var normalized = typeof i18n.normalizeLang === 'function' ? i18n.normalizeLang(effective) : effective
     if (normalized !== i18n.getLang()) {
 
       ensureLocaleRegistered(normalized)
       i18n.setLang(normalized)
       retranslateAllI18nElements()
+      rerenderSettingsDynamicText()
+    }
+  }
+
+  function rerenderSettingsDynamicText() {
+    try {
+      var rerender =
+        typeof globalThis !== 'undefined' ? globalThis.__AIIA_rerenderSettingsDynamicText : null
+      if (typeof rerender === 'function') rerender()
+    } catch (e) {
+
     }
   }
 
@@ -1273,7 +1304,6 @@
 
   let taskTextareaContents = {}
   let taskOptionsStates = {}
-  let taskUserOptionInteracted = {}
   let taskImages = {}
 
   const UI_STATE_VERSION = 1
@@ -1337,9 +1367,6 @@
       if (s.taskOptionsStates && typeof s.taskOptionsStates === 'object') {
         taskOptionsStates = { ...s.taskOptionsStates }
       }
-      if (s.taskUserOptionInteracted && typeof s.taskUserOptionInteracted === 'object') {
-        taskUserOptionInteracted = { ...s.taskUserOptionInteracted }
-      }
       if (typeof s.activeTaskId === 'string') {
         activeTaskId = s.activeTaskId || null
       }
@@ -1361,7 +1388,6 @@
         activeTaskId: activeTaskId || '',
         taskTextareaContents: trimTextareaContents(taskTextareaContents),
         taskOptionsStates: taskOptionsStates || {},
-        taskUserOptionInteracted: taskUserOptionInteracted || {},
 
         textareaManualRows:
           typeof textareaManualRows === 'number' && Number.isFinite(textareaManualRows)
@@ -1476,6 +1502,12 @@
         _sseDebounceTimer = null
         pollAllData('sse')
       }, 80)
+    })
+
+    source.addEventListener('config_changed', function () {
+      if (_sseSource !== source) return
+      log('SSE config_changed received, syncing language')
+      syncServerLanguage()
     })
 
     source.addEventListener('gap_warning', function (e) {
@@ -2056,7 +2088,6 @@
       if (optionsContainerEl) {
         optionsContainerEl.addEventListener('change', e => {
           if (!activeTaskId) return
-          taskUserOptionInteracted[activeTaskId] = true
           const checkboxes = optionsContainerEl.querySelectorAll('input[type="checkbox"]')
           const states = {}
           checkboxes.forEach((cb, index) => {
@@ -2173,6 +2204,46 @@
       if (timeoutId) {
         clearTimeout(timeoutId)
       }
+    }
+  }
+
+  let languageSyncInFlight = false
+
+  async function syncServerLanguage() {
+    if (languageSyncInFlight) return
+    languageSyncInFlight = true
+    let controller = null
+    let timeoutId = null
+    try {
+      const fetchOptions = {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store'
+      }
+      if (typeof AbortController !== 'undefined') {
+        controller = new AbortController()
+        fetchOptions.signal = controller.signal
+        timeoutId = setTimeout(() => {
+          try {
+            controller.abort()
+          } catch (e) {
+
+          }
+        }, POLL_CONFIG_TIMEOUT_MS)
+      }
+      const response = await fetch(SERVER_URL + '/api/config', fetchOptions)
+      if (!response.ok) return
+      const data = await response.json()
+      if (data && typeof data.language === 'string') {
+        applyServerLanguage(data.language)
+      }
+    } catch (e) {
+
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+      languageSyncInFlight = false
     }
   }
 
@@ -2483,7 +2554,6 @@
       taskDeadlines = {}
       taskTextareaContents = {}
       taskOptionsStates = {}
-      taskUserOptionInteracted = {}
       taskImages = {}
       pendingImageUploadCounts = {}
       schedulePersistUiState()
@@ -2492,6 +2562,7 @@
       hasInitializedTaskIdTracking = true
       hideTabs()
       showNoContent()
+      syncServerLanguage()
 
       try {
         const jitter = Math.round(POLL_IDLE_MS * 0.15 * Math.random())
@@ -2791,7 +2862,6 @@
     rememberTaskIds(taskDeadlines)
     rememberTaskIds(taskTextareaContents)
     rememberTaskIds(taskOptionsStates)
-    rememberTaskIds(taskUserOptionInteracted)
     rememberTaskIds(taskImages)
     rememberTaskIds(autoSubmitAttempted)
     try {
@@ -2823,7 +2893,6 @@
       delete taskDeadlines[existingId]
       delete taskTextareaContents[existingId]
       delete taskOptionsStates[existingId]
-      delete taskUserOptionInteracted[existingId]
       delete autoSubmitAttempted[existingId]
       delete taskImages[existingId]
       delete pendingImageUploadCounts[getPendingImageUploadKey(existingId)]
@@ -3978,7 +4047,7 @@
 
     try {
       const container = document.createElement('div')
-      container.innerHTML = rawHtml
+      container.innerHTML = rawHtml.replace(/(<(?:span|pre|div class="highlight")) style="[^"]*">/g, '$1>')
 
       const DROP_TAGS = new Set([
         'script',
@@ -4156,6 +4225,8 @@
     button.type = 'button'
     button.className = 'copy-button'
     button.setAttribute('aria-label', t('ui.copy.label'))
+    button.setAttribute('data-i18n-aria-label', 'ui.copy.label')
+    button.setAttribute('data-i18n-title', 'ui.copy.label')
     button.title = t('ui.copy.label')
 
     const COPY_ICON_SVG =
@@ -4233,6 +4304,34 @@
     })
   }
 
+  function runWithStyleNonce(callback) {
+    if (!CSP_NONCE) return callback()
+    const hadOwnCreateElement = Object.prototype.hasOwnProperty.call(document, 'createElement')
+    const nativeCreateElement = document.createElement
+    document.createElement = function createElementWithStyleNonce(tagName) {
+      const element = nativeCreateElement.apply(this, arguments)
+      if (String(tagName).toLowerCase() === 'style') element.setAttribute('nonce', CSP_NONCE)
+      return element
+    }
+    try {
+      return callback()
+    } finally {
+      if (hadOwnCreateElement) document.createElement = nativeCreateElement
+      else delete document.createElement
+    }
+  }
+
+  function addNonceToMathJaxStyleNodes() {
+    const adaptor = window.MathJax && window.MathJax.startup && window.MathJax.startup.adaptor
+    if (!CSP_NONCE || !adaptor || typeof adaptor.node !== 'function') return
+    const createNode = adaptor.node
+    adaptor.node = function nodeWithStyleNonce(kind) {
+      const node = createNode.apply(this, arguments)
+      if (kind === 'style') node.setAttribute('nonce', CSP_NONCE)
+      return node
+    }
+  }
+
   window.MathJax = window.MathJax || {
     tex: {
       inlineMath: [
@@ -4249,6 +4348,7 @@
       tags: 'ams'
     },
     options: {
+      enableMenu: false,
       skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
       ignoreHtmlClass: 'tex2jax_ignore',
       processHtmlClass: 'tex2jax_process'
@@ -4256,7 +4356,8 @@
     startup: {
       ready: () => {
         try {
-          MathJax.startup.defaultReady()
+          runWithStyleNonce(() => MathJax.startup.defaultReady())
+          addNonceToMathJaxStyleNodes()
         } catch (e) {
 
         }
@@ -4834,22 +4935,16 @@
     }
 
     const typedText = collectTypedFeedbackForAutoSubmit(taskId)
-    const userDidInteractOptions =
-      taskId && taskUserOptionInteracted[taskId] === true
-    const typedOptions = userDidInteractOptions
-      ? collectSelectedOptionsForAutoSubmit()
-      : []
+    const typedOptions = collectSelectedOptionsForAutoSubmit()
     if ((typedText && typedText.trim()) || typedOptions.length > 0) {
       log(
-        'Auto-submitting user-typed content for ' +
+        'Auto-submitting current content for ' +
           (taskId || '(unknown)') +
           ' (' +
           (typedText || '').length +
           ' chars, ' +
           typedOptions.length +
-          ' options, interacted=' +
-          userDidInteractOptions +
-          ')'
+          ' options)'
       )
       const okTyped = await submitWithData(typedText || '', typedOptions, taskId)
       if (okTyped === null && taskId) {
@@ -5195,9 +5290,6 @@
           }
           if (taskOptionsStates[taskIdToSubmit] !== undefined) {
             delete taskOptionsStates[taskIdToSubmit]
-          }
-          if (taskUserOptionInteracted[taskIdToSubmit] !== undefined) {
-            delete taskUserOptionInteracted[taskIdToSubmit]
           }
           if (taskImages[taskIdToSubmit] !== undefined) {
             delete taskImages[taskIdToSubmit]

@@ -121,7 +121,6 @@ def test_submit_fallback_gets_fresh_timeout_controller() -> None:
         let uploadedImages = [];
         let taskTextareaContents = {{ 'task-a': 'draft' }};
         let taskOptionsStates = {{ 'task-a': ['A'] }};
-        let taskUserOptionInteracted = {{ 'task-a': true }};
         let taskImages = {{ 'task-a': ['image'] }};
         const toasts = [];
         const logs = [];
