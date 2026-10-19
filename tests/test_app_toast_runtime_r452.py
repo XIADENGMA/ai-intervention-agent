@@ -312,13 +312,16 @@ def test_markdown_loading_state_uses_timeout_when_animation_frame_is_missing() -
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 def test_lottie_inits_directly_without_fallback_swap() -> None:
-    """R696：lottie 运行时已随首屏 defer 预加载 → init 直接创建动画。
+    """R696 / R727：lottie 运行时已随首屏 defer 预加载 → init 直接创建动画。
 
     锁定契约：
     - 不再先渲染 SVG 降级动画（容器保持无 SVG 子节点）；
     - 不再有 500ms 首绘延迟 / 2000ms 降级清理定时器；
-    - lottie.loadAnimation 在微任务内被调用恰好一次；
-    - DOMLoaded 后主题色同步（filter 被设置）。
+    - lottie.loadAnimation 在动画数据取回后被调用恰好一次；
+    - DOMLoaded 时同步一次播放状态（R727：不再往容器上挂 CSS filter）。
+
+    更完整的生命周期（暂停 / 恢复 / 主题 / 降级）见
+    ``test_lottie_canvas_lifecycle_r727.py``。
     """
     script = _app_harness(
         """
@@ -326,24 +329,35 @@ def test_lottie_inits_directly_without_fallback_swap() -> None:
         let loadAnimationCalls = 0;
         const container = sandbox.document.createElement('div');
         container.id = 'hourglass-lottie';
+        container.offsetWidth = 120;
+        container.offsetHeight = 120;
         sandbox.document.body.appendChild(container);
         sandbox.document.readyState = 'complete';
+        sandbox.fetch = () => Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ v: '5.12.1', layers: [] }),
+        });
+        const calls = { play: 0, pause: 0, resize: 0 };
         sandbox.lottie = {
           loadAnimation() {
             loadAnimationCalls += 1;
             return {
+              isLoaded: true,
               addEventListener(type, handler) {
                 if (!listeners[type]) listeners[type] = [];
                 listeners[type].push(handler);
               },
+              play() { calls.play += 1; },
+              pause() { calls.pause += 1; },
+              resize() { calls.resize += 1; },
               destroy() {},
             };
           },
         };
 
         vm.runInContext('initHourglassAnimation()', sandbox);
-        await Promise.resolve();
-        await Promise.resolve();
+        await new Promise((resolve) => setImmediate(resolve));
 
         const afterInit = {
           childTags: container.children.map((child) => child.tagName),
@@ -354,13 +368,14 @@ def test_lottie_inits_directly_without_fallback_swap() -> None:
             .length,
         };
 
+        const playsBeforeDomLoaded = calls.play;
         for (const handler of listeners.DOMLoaded || []) handler();
         process.stdout.write(
           JSON.stringify({
             afterInit,
             afterDomLoaded: {
-              filterSet: typeof container.style.filter === 'string' &&
-                container.style.filter.length > 0,
+              filterSet: container.style.filter !== undefined,
+              resumed: calls.play === playsBeforeDomLoaded + 1,
             },
           })
         );
@@ -374,7 +389,7 @@ def test_lottie_inits_directly_without_fallback_swap() -> None:
             "domLoadedListeners": 1,
             "swapTimers": 0,
         },
-        "afterDomLoaded": {"filterSet": True},
+        "afterDomLoaded": {"filterSet": False, "resumed": True},
     }
 
 

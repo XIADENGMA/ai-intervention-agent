@@ -225,6 +225,10 @@
           "copy_diagnostics": "复制诊断信息"
         }
       }
+    },
+    "slash": {
+      "listLabel": "技能与命令",
+      "kindCommand": "命令"
     }
   }
 }

@@ -11,9 +11,11 @@
   + maskable 安全区检查，让所有同类 regression 在 CI 阶段失败。
 * **maskable / any 字节相同**：r32 的 ``icon-maskable-512.png`` 与 ``icon-512.png``
   MD5 一致，违反 W3C maskable 规范（实色全填 + 主体落在中心 80% safe zone 内）。
-* **apple-touch-icon 透明角**：iOS 14+ 的 Add to Home Screen 不支持 alpha，会用
-  黑/白填充透明角。我们把 apple-touch-icon 的角落强制实色化（``solid_background_color``
-  来自 SVG 渲染结果的浅紫灰渐变端，与 manifest ``background_color`` 视觉一致）。
+* **apple-touch-icon 透明角**：iOS 的 Add to Home Screen 不支持 alpha，会用黑/白
+  填充透明角。曾经的修法是把 ``icon.svg``（带圆角和留白的底板）的渲染结果"实色化"，
+  背景色取自一个透明像素（黑色），反而在图标外面包了一圈黑边。现在 apple-touch-icon
+  有专用的全幅源 ``icon-apple-touch.svg``，输出不带 alpha 通道的 RGB PNG；它的
+  回归测试在 ``tests/test_pwa_apple_touch_icon_r723.py``。
 
 CI 行为：本测试仅校验 disk 上的图标满足规范，**不重新渲染**。开发者修改 SVG 之后
 需要手动跑 ``uv run python scripts/generate_pwa_icons.py`` 重新生成 PNG / ICO 并
@@ -346,12 +348,12 @@ def test_maskable_icon_distinct_from_any_icon() -> None:
         )
 
 
-def _png_alpha_at(path: Path, points: list[tuple[int, int]]) -> list[int]:
-    """读取 PNG 指定坐标点的 alpha 值（不依赖 Pillow 等额外库）。
+def _decode_png_pixels(path: Path) -> tuple[int, int, int, bytearray]:
+    """解码 PNG，返回 ``(width, height, bytes_per_pixel, pixels)``（不依赖 Pillow）。
 
-    最小化 PNG 解码：只读 IDAT 块、PNG filter 反算、抽 alpha 字节。仅支持
-    RGBA 8-bit 非交错（``color_type=6 bit_depth=8 interlace=0``），其他格式
-    raise 异常。
+    最小化 PNG 解码：只读 IDAT 块、做 PNG filter 反算。支持 8-bit 非交错的 RGBA
+    （``color_type=6``，4 字节/像素）和 RGB（``color_type=2``，3 字节/像素，没有
+    alpha 通道），其他格式 raise 异常。
     """
 
     import zlib
@@ -363,11 +365,12 @@ def _png_alpha_at(path: Path, points: list[tuple[int, int]]) -> list[int]:
     bit_depth = data[24]
     color_type = data[25]
     interlace = data[28]
-    if color_type != 6 or bit_depth != 8 or interlace != 0:
+    if color_type not in (2, 6) or bit_depth != 8 or interlace != 0:
         raise ValueError(
-            f"{path.name} 必须是 RGBA8 非交错 PNG（实际 ct={color_type} "
+            f"{path.name} 必须是 RGB/RGBA 8-bit 非交错 PNG（实际 ct={color_type} "
             f"bd={bit_depth} interlace={interlace}）"
         )
+    bpp = 4 if color_type == 6 else 3
 
     idat = b""
     pos = 8
@@ -380,9 +383,9 @@ def _png_alpha_at(path: Path, points: list[tuple[int, int]]) -> list[int]:
             idat += chunk_data
 
     raw = zlib.decompress(idat)
-    bytes_per_row = 4 * width + 1  # +1 for filter byte
+    bytes_per_row = bpp * width + 1  # +1 for filter byte
     pixels = bytearray()
-    prev_row = bytes(width * 4)
+    prev_row = bytes(width * bpp)
     for y in range(height):
         row_start = y * bytes_per_row
         filter_byte = raw[row_start]
@@ -390,21 +393,21 @@ def _png_alpha_at(path: Path, points: list[tuple[int, int]]) -> list[int]:
         if filter_byte == 0:
             pass
         elif filter_byte == 1:  # Sub
-            for i in range(4, len(row)):
-                row[i] = (row[i] + row[i - 4]) & 0xFF
+            for i in range(bpp, len(row)):
+                row[i] = (row[i] + row[i - bpp]) & 0xFF
         elif filter_byte == 2:  # Up
             for i in range(len(row)):
                 row[i] = (row[i] + prev_row[i]) & 0xFF
         elif filter_byte == 3:  # Average
             for i in range(len(row)):
-                left = row[i - 4] if i >= 4 else 0
+                left = row[i - bpp] if i >= bpp else 0
                 up = prev_row[i]
                 row[i] = (row[i] + ((left + up) // 2)) & 0xFF
         elif filter_byte == 4:  # Paeth
             for i in range(len(row)):
-                left = row[i - 4] if i >= 4 else 0
+                left = row[i - bpp] if i >= bpp else 0
                 up = prev_row[i]
-                up_left = prev_row[i - 4] if i >= 4 else 0
+                up_left = prev_row[i - bpp] if i >= bpp else 0
                 p = left + up - up_left
                 pa, pb, pc = abs(p - left), abs(p - up), abs(p - up_left)
                 if pa <= pb and pa <= pc:
@@ -419,11 +422,14 @@ def _png_alpha_at(path: Path, points: list[tuple[int, int]]) -> list[int]:
         pixels.extend(row)
         prev_row = bytes(row)
 
-    out: list[int] = []
-    for x, y in points:
-        idx = (y * width + x) * 4
-        out.append(pixels[idx + 3])
-    return out
+    return width, height, bpp, pixels
+
+
+def _png_alpha_at(path: Path, points: list[tuple[int, int]]) -> list[int]:
+    """读取 PNG 指定坐标点的 alpha 值；RGB PNG 没有 alpha 通道，按完全不透明 255 计。"""
+
+    width, _height, bpp, pixels = _decode_png_pixels(path)
+    return [pixels[(y * width + x) * bpp + 3] if bpp == 4 else 255 for x, y in points]
 
 
 def test_maskable_icon_has_opaque_canvas() -> None:

@@ -361,14 +361,16 @@ Used for `ai.local` access and LAN service discovery (DNS-SD / `_http._tcp.local
 
 ### `feedback`
 
-Controls timeouts and auto re-submit prompts.
+Controls timeouts, auto re-submit prompts, the `/` skill picker of the feedback box and the local images a prompt may show.
 
-| Key                  | Type   | Default                                    | Notes                                                                                                                                                                                  |
-| -------------------- | ------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `backend_max_wait`   | number | `600`                                      | Backend maximum wait (seconds), range `[10, 7200]`                                                                                                                                     |
-| `frontend_countdown` | number | `240`                                      | Frontend auto-submit countdown (seconds), range `[10, 3600]`; `0` (or any non-positive integer) disables                                                                               |
-| `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`   | Returned on error/timeout to encourage re-calling the tool                                                                                                                             |
-| `prompt_suffix`      | string | `"\n请积极调用 interactive_feedback 工具"` | Appended to the user feedback text. Leading `\n` is a TOML-escaped newline; copy-paste verbatim into `config.toml` (the TOML parser unescapes it back to a real newline at load time). |
+| Key                  | Type     | Default                                    | Notes                                                                                                                                                                                  |
+| -------------------- | -------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backend_max_wait`   | number   | `600`                                      | Backend maximum wait (seconds), range `[10, 7200]`                                                                                                                                     |
+| `frontend_countdown` | number   | `240`                                      | Frontend auto-submit countdown (seconds), range `[10, 3600]`; `0` (or any non-positive integer) disables                                                                               |
+| `resubmit_prompt`    | string   | `"请立即调用 interactive_feedback 工具"`   | Returned on error/timeout to encourage re-calling the tool                                                                                                                             |
+| `prompt_suffix`      | string   | `"\n请积极调用 interactive_feedback 工具"` | Appended to the user feedback text. Leading `\n` is a TOML-escaped newline; copy-paste verbatim into `config.toml` (the TOML parser unescapes it back to a real newline at load time). |
+| `skill_dirs`         | string[] | `["auto"]`                                 | Directories scanned by the feedback box's `/` picker (see below); `"auto"` = well-known locations, `[]` turns the picker off                                                           |
+| `local_image_dirs`   | string[] | `["auto"]`                                 | Folders a prompt's local images may be read from (see below); `"auto"` = the MCP client's workspace folders + the system temp dir, `[]` turns the feature off                          |
 
 **Timeout rule**:
 
@@ -379,6 +381,29 @@ If `frontend_countdown <= 0`:
 Otherwise:
 
 `backend_wait = min(max(frontend_countdown + 40, 260), backend_max_wait)`
+
+**Slash picker (`skill_dirs`)**:
+
+Typing `/` at the start of a line (or after a space) in the feedback box opens a picker of the agent skills and commands installed on the machine that runs the Web UI; choosing one inserts `/<name> `.
+
+- `"auto"` expands to `.cursor/skills`, `.agents/skills`, `.claude/skills`, `.codex/skills`, `.cursor/commands` and `.claude/commands` under the working directory, then `~/.cursor/skills`, `~/.cursor/skills-cursor`, `~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`, `~/.cursor/commands`, `~/.claude/commands` and `~/.codex/prompts`. When two entries share a name, the earlier one wins.
+- Any other entry is a directory: `~` is expanded, relative paths are resolved against the working directory, and missing directories are ignored. A directory named `commands` or `prompts` is read as commands (its top-level `*.md` files); every other directory is read as skills (each folder holding a `SKILL.md` with YAML front matter, nested folders included, up to four levels deep).
+- A skill is inserted as `/<name>`. When the name is not a single word (for example a localized display name), the word written after `触发名:` or `trigger name:` in its `description` is used instead, then the folder name.
+- Hidden from the picker: a `SKILL.md` without front matter, and skills with `user-invocable: false`.
+- Only names, descriptions and a short origin label reach the browser, never file contents or absolute paths. Results are cached for 30 seconds and capped at 1000 entries.
+- `skill_dirs = []` turns the picker off. Edits to `config.toml` are picked up without restarting the Web UI.
+
+**Local images (`local_image_dirs`)**:
+
+Write a Markdown image whose destination is a file on the machine that runs the agent, such as `![chart](/work/proj/out/chart.png)`, `![shot](docs/shot.png)`, `![x](~/Pictures/x.png)`, `<img src="shot.png">` or a `file:` URL, in the `message` of `interactive_feedback`, and the Web UI (and the VS Code panel) shows the picture.
+
+- The MCP server, which runs next to the files, reads the image and sends its bytes with the task; the Web UI never opens a path by itself. Remote (`https:`), `data:` and `#anchor` destinations are left alone, and so is anything inside a fenced code block or inline code.
+- `"auto"` = the workspace folders the MCP client declares (MCP `roots`; when the client declares none, the working directory, unless that is a filesystem root or your home directory) plus the system temporary directory (`/tmp`, `$TMPDIR`). Any other entry is a directory: `~` is expanded, relative paths are resolved against the working directory, and missing directories are ignored. A filesystem root (`/`, `C:\`) is never allowed.
+- A path is resolved before it is checked: `..` and symlinks that lead out of an allowed folder are refused, and so are UNC (`\\server\share`) and remote `file://host/` paths.
+- Only png, jpg/jpeg, gif, webp, bmp and avif files whose first bytes agree with the extension are shown (SVG is refused). At most 8 images per prompt, 8 MB each and 16 MB together.
+- A reference that cannot be shown is replaced by a one-line note that says why, for example `🖼️ (image not shown: outside the allowed folders) /etc/x.png`; the agent is not told.
+- The images live in the Web UI's memory only. They are never written to disk, so a task restored after a Web UI restart shows its images as missing.
+- `local_image_dirs = []` turns the feature off (references stay as written). Edits to `config.toml` are picked up on the next tool call.
 
 ## Minimal example
 

@@ -1,0 +1,623 @@
+(function () {
+  'use strict'
+
+  const ATTRIBUTE = 'data-aiia-slash-commands'
+  const SKILLS_PATH = '/api/skills'
+  const ID_PREFIX = 'aiia-slash-'
+  const FRESH_MS = 60000
+  const FAILURE_BACKOFF_MS = 15000
+  const FETCH_TIMEOUT_MS = 5000
+  const MAX_QUERY_LENGTH = 64
+  const MAX_ITEMS = 2000
+  const MAX_ROWS = 300
+  const POPUP_MAX_HEIGHT = 320
+  const POPUP_MIN_HEIGHT = 96
+  const POPUP_MAX_WIDTH = 560
+  const POPUP_MIN_WIDTH = 260
+  const POPUP_GAP = 6
+  const VIEWPORT_MARGIN = 8
+  const WHITESPACE = /\s/
+  const WORD_BOUNDARY = /[-_.:]/
+
+  const FALLBACK_TEXT = {
+    'aiia.slash.listLabel': 'Skills and commands',
+    'aiia.slash.kindCommand': 'command'
+  }
+
+  function _t(key) {
+    try {
+      const i18n = window.AIIA_I18N
+      if (i18n && typeof i18n.t === 'function') {
+        const value = i18n.t(key)
+        if (typeof value === 'string' && value && value !== key) return value
+      }
+    } catch (_e) {
+
+    }
+    return FALLBACK_TEXT[key] || key
+  }
+
+  function findTrigger(value, caret) {
+    if (typeof value !== 'string' || !Number.isInteger(caret) || caret < 0 || caret > value.length) {
+      return null
+    }
+    let start = caret
+    while (start > 0 && !WHITESPACE.test(value.charAt(start - 1))) start -= 1
+    if (value.charAt(start) !== '/' || caret === start) return null
+    let end = caret
+    while (end < value.length && !WHITESPACE.test(value.charAt(end))) end += 1
+    if (value.indexOf('/', start + 1) !== -1 && value.indexOf('/', start + 1) < end) return null
+    const query = value.slice(start + 1, caret)
+    if (query.length > MAX_QUERY_LENGTH) return null
+    return { start, end, query }
+  }
+
+  function normalizeItems(raw) {
+    if (!Array.isArray(raw)) return []
+    const items = []
+    for (let i = 0; i < raw.length && items.length < MAX_ITEMS; i += 1) {
+      const entry = raw[i]
+      if (!entry || typeof entry !== 'object') continue
+      const insert = typeof entry.insert === 'string' ? entry.insert.trim() : ''
+      if (!insert || WHITESPACE.test(insert) || insert.indexOf('/') !== -1) continue
+      const name = typeof entry.name === 'string' && entry.name ? entry.name : insert
+      const description = typeof entry.description === 'string' ? entry.description : ''
+      items.push({
+        name,
+        insert,
+        description,
+        kind: entry.kind === 'command' ? 'command' : 'skill',
+        source: typeof entry.source === 'string' ? entry.source : '',
+        searchInsert: insert.toLowerCase(),
+        searchName: name.toLowerCase(),
+        searchDescription: description.toLowerCase()
+      })
+    }
+    return items
+  }
+
+  function isSubsequence(needle, haystack) {
+    let at = 0
+    for (let i = 0; i < haystack.length && at < needle.length; i += 1) {
+      if (haystack.charAt(i) === needle.charAt(at)) at += 1
+    }
+    return at === needle.length
+  }
+
+  function boundaryIndex(haystack, needle) {
+    for (let i = 1; i < haystack.length; i += 1) {
+      if (WORD_BOUNDARY.test(haystack.charAt(i - 1)) && haystack.startsWith(needle, i)) return i
+    }
+    return -1
+  }
+
+  function scoreItem(item, needle) {
+    const insert = item.searchInsert
+    if (insert === needle) return 1000
+    if (insert.startsWith(needle)) return 900 - Math.min(insert.length - needle.length, 100)
+    const boundary = boundaryIndex(insert, needle)
+    if (boundary > 0) return 700 - Math.min(boundary, 100)
+    const at = insert.indexOf(needle)
+    if (at >= 0) return 500 - Math.min(at, 100)
+    if (item.searchName.startsWith(needle)) return 450
+    if (item.searchName.indexOf(needle) >= 0) return 400
+    if (needle.length >= 2 && isSubsequence(needle, insert)) return 300 - Math.min(insert.length, 100)
+    if (needle.length >= 2 && item.searchDescription.indexOf(needle) >= 0) return 100
+    return 0
+  }
+
+  function rankItems(items, query, limit) {
+    const max = limit > 0 ? limit : MAX_ROWS
+    const needle = String(query || '').toLowerCase()
+    if (!needle) return items.slice(0, max)
+    const scored = []
+    for (let i = 0; i < items.length; i += 1) {
+      const score = scoreItem(items[i], needle)
+      if (score > 0) scored.push({ item: items[i], score, order: i })
+    }
+    scored.sort((a, b) => b.score - a.score || a.order - b.order)
+    return scored.slice(0, max).map(entry => entry.item)
+  }
+
+  const state = {
+    items: [],
+    loadedAt: 0,
+    failedAt: 0,
+    inflight: null,
+    textarea: null,
+    popup: null,
+    rows: [],
+    signature: '',
+    activeIndex: 0,
+    dismissed: null,
+    pointerInside: false,
+    lastMouseX: -1,
+    lastMouseY: -1,
+    tracking: false
+  }
+
+  function isSlashTextarea(node) {
+    return !!node && node.nodeType === 1 && node.tagName === 'TEXTAREA' && node.hasAttribute(ATTRIBUTE)
+  }
+
+  function isOpen() {
+    return !!state.popup && !state.popup.hidden && state.rows.length > 0
+  }
+
+  function resolveEndpoint() {
+    const config = document.getElementById('aiia-config')
+    const base = config ? String(config.getAttribute('data-server-url') || '').replace(/\/+$/, '') : ''
+    return base + SKILLS_PATH
+  }
+
+  function loadItems() {
+    if (state.inflight) return state.inflight
+    const controller = typeof AbortController === 'function' ? new AbortController() : null
+    const timer = controller ? setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS) : 0
+    let pending
+    try {
+      pending = fetch(resolveEndpoint(), {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: controller ? controller.signal : undefined
+      })
+    } catch (error) {
+      pending = Promise.reject(error)
+    }
+    const request = pending
+      .then(response => {
+        if (!response.ok) throw new Error('HTTP ' + response.status)
+        return response.json()
+      })
+      .then(payload => {
+        state.items = normalizeItems(payload && payload.skills)
+        state.loadedAt = Date.now()
+        state.failedAt = 0
+      })
+      .catch(() => {
+        state.failedAt = Date.now()
+      })
+      .then(() => {
+        if (timer) clearTimeout(timer)
+        state.inflight = null
+      })
+    state.inflight = request
+    return request
+  }
+
+  function isFresh() {
+    return state.loadedAt > 0 && Date.now() - state.loadedAt < FRESH_MS
+  }
+
+  function inBackoff() {
+    return state.failedAt > 0 && Date.now() - state.failedAt < FAILURE_BACKOFF_MS
+  }
+
+  function ensurePopup() {
+    if (state.popup && state.popup.isConnected) return state.popup
+    const popup = document.createElement('div')
+    popup.className = 'aiia-slash-popup'
+    popup.id = ID_PREFIX + 'listbox'
+    popup.setAttribute('role', 'listbox')
+    popup.hidden = true
+    popup.addEventListener('mousedown', event => event.preventDefault())
+    popup.addEventListener('pointerdown', onPopupPointerDown)
+    popup.addEventListener('mousemove', onPopupMouseMove)
+    popup.addEventListener('click', onPopupClick)
+    document.body.appendChild(popup)
+    state.popup = popup
+    return popup
+  }
+
+  function buildRow(item, index) {
+    const row = document.createElement('div')
+    row.className = 'aiia-slash-item'
+    row.id = ID_PREFIX + 'option-' + index
+    row.setAttribute('role', 'option')
+    row.setAttribute('aria-selected', 'false')
+    row.setAttribute('data-index', String(index))
+    if (item.source) row.title = item.source
+
+    const head = document.createElement('span')
+    head.className = 'aiia-slash-head'
+    const token = document.createElement('span')
+    token.className = 'aiia-slash-token'
+    token.textContent = '/' + item.insert
+    head.appendChild(token)
+    if (item.name !== item.insert) {
+      const label = document.createElement('span')
+      label.className = 'aiia-slash-label'
+      label.textContent = item.name
+      head.appendChild(label)
+    }
+    if (item.kind === 'command') {
+      const badge = document.createElement('span')
+      badge.className = 'aiia-slash-kind'
+      badge.textContent = _t('aiia.slash.kindCommand')
+      head.appendChild(badge)
+    }
+    row.appendChild(head)
+
+    if (item.description) {
+      const description = document.createElement('span')
+      description.className = 'aiia-slash-desc'
+      description.textContent = item.description
+      row.appendChild(description)
+    }
+    return row
+  }
+
+  function setActive(index, reveal) {
+    const popup = state.popup
+    if (!popup || state.rows.length === 0) return
+    const next = Math.max(0, Math.min(index, state.rows.length - 1))
+    const previous = popup.children[state.activeIndex]
+    if (previous) previous.setAttribute('aria-selected', 'false')
+    state.activeIndex = next
+    const current = popup.children[next]
+    if (!current) return
+    current.setAttribute('aria-selected', 'true')
+    if (state.textarea) state.textarea.setAttribute('aria-activedescendant', current.id)
+    if (reveal) revealRow(popup, current)
+  }
+
+  function revealRow(popup, row) {
+    const top = row.offsetTop
+    const bottom = top + row.offsetHeight
+    if (top < popup.scrollTop) {
+      popup.scrollTop = top
+    } else if (bottom > popup.scrollTop + popup.clientHeight) {
+      popup.scrollTop = bottom - popup.clientHeight
+    }
+  }
+
+  function position() {
+    const popup = state.popup
+    const textarea = state.textarea
+    if (!popup || !textarea) return
+    const rect = textarea.getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) {
+      close()
+      return
+    }
+    const viewport = window.visualViewport
+    const left = viewport ? viewport.offsetLeft : 0
+    const top = viewport ? viewport.offsetTop : 0
+    const width = viewport ? viewport.width : window.innerWidth
+    const height = viewport ? viewport.height : window.innerHeight
+    if (rect.bottom <= top || rect.top >= top + height || rect.right <= left || rect.left >= left + width) {
+      close()
+      return
+    }
+    const spaceAbove = rect.top - top - POPUP_GAP - VIEWPORT_MARGIN
+    const spaceBelow = top + height - rect.bottom - POPUP_GAP - VIEWPORT_MARGIN
+    const placeBelow = spaceBelow >= POPUP_MAX_HEIGHT || spaceBelow >= spaceAbove
+    const room = Math.max(POPUP_MIN_HEIGHT, placeBelow ? spaceBelow : spaceAbove)
+    const popupWidth = Math.max(
+      Math.min(POPUP_MIN_WIDTH, width - 2 * VIEWPORT_MARGIN),
+      Math.min(rect.width, POPUP_MAX_WIDTH, width - 2 * VIEWPORT_MARGIN)
+    )
+    const popupLeft = Math.max(
+      left + VIEWPORT_MARGIN,
+      Math.min(rect.left, left + width - popupWidth - VIEWPORT_MARGIN)
+    )
+
+    popup.style.left = Math.round(popupLeft) + 'px'
+    popup.style.width = Math.round(popupWidth) + 'px'
+    popup.style.maxHeight = Math.round(Math.min(POPUP_MAX_HEIGHT, room)) + 'px'
+    if (placeBelow) {
+      popup.style.top = Math.round(rect.bottom + POPUP_GAP) + 'px'
+      popup.style.bottom = 'auto'
+    } else {
+      popup.style.top = 'auto'
+      popup.style.bottom = Math.round(document.documentElement.clientHeight - rect.top + POPUP_GAP) + 'px'
+    }
+  }
+
+  function onViewportChange(event) {
+    if (event && state.popup && event.target === state.popup) return
+    position()
+  }
+
+  function startTracking() {
+    if (state.tracking) return
+    state.tracking = true
+    window.addEventListener('resize', onViewportChange)
+    window.addEventListener('scroll', onViewportChange, true)
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', onViewportChange)
+      window.visualViewport.addEventListener('scroll', onViewportChange)
+    }
+  }
+
+  function stopTracking() {
+    if (!state.tracking) return
+    state.tracking = false
+    window.removeEventListener('resize', onViewportChange)
+    window.removeEventListener('scroll', onViewportChange, true)
+    if (window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', onViewportChange)
+      window.visualViewport.removeEventListener('scroll', onViewportChange)
+    }
+  }
+
+  function close() {
+    const textarea = state.textarea
+    if (textarea) {
+      textarea.removeAttribute('aria-controls')
+      textarea.removeAttribute('aria-activedescendant')
+      textarea.removeAttribute('aria-autocomplete')
+    }
+    if (state.popup) {
+      state.popup.hidden = true
+      state.popup.textContent = ''
+    }
+    stopTracking()
+    state.textarea = null
+    state.rows = []
+    state.signature = ''
+    state.activeIndex = 0
+    state.pointerInside = false
+  }
+
+  function render(textarea, trigger) {
+    const rows = rankItems(state.items, trigger.query, MAX_ROWS)
+    if (rows.length === 0) {
+      close()
+      return
+    }
+    const signature = trigger.start + '\u0000' + trigger.query + '\u0000' + state.loadedAt
+    const popup = ensurePopup()
+    if (state.textarea && state.textarea !== textarea) close()
+    state.textarea = textarea
+    if (signature !== state.signature || popup.hidden) {
+      state.signature = signature
+      state.rows = rows
+      popup.textContent = ''
+      popup.setAttribute('aria-label', _t('aiia.slash.listLabel'))
+      const fragment = document.createDocumentFragment()
+      rows.forEach((item, index) => fragment.appendChild(buildRow(item, index)))
+      popup.appendChild(fragment)
+      popup.scrollTop = 0
+      state.activeIndex = 0
+    }
+    textarea.setAttribute('aria-autocomplete', 'list')
+    textarea.setAttribute('aria-controls', popup.id)
+    popup.hidden = false
+    startTracking()
+    position()
+    setActive(state.activeIndex, false)
+  }
+
+  function update(textarea) {
+    if (!isSlashTextarea(textarea) || textarea.disabled || textarea.readOnly) {
+      close()
+      return
+    }
+    if (textarea.selectionStart !== textarea.selectionEnd) {
+      close()
+      return
+    }
+    const trigger = findTrigger(textarea.value, textarea.selectionStart)
+    if (!trigger) {
+      state.dismissed = null
+      close()
+      return
+    }
+    const dismissed = state.dismissed
+    if (dismissed && (dismissed.start !== trigger.start || dismissed.query !== trigger.query)) {
+      state.dismissed = null
+    } else if (dismissed) {
+      close()
+      return
+    }
+    if (state.items.length > 0) {
+      render(textarea, trigger)
+      if (!isFresh() && !inBackoff() && !state.inflight) refreshInBackground(textarea)
+      return
+    }
+    if (isFresh() || inBackoff()) {
+      close()
+      return
+    }
+    loadItems().then(() => {
+      if (document.activeElement === textarea) update(textarea)
+    })
+  }
+
+  function refreshInBackground(textarea) {
+    loadItems().then(() => {
+      if (state.textarea === textarea && document.activeElement === textarea) update(textarea)
+    })
+  }
+
+  function replaceRange(textarea, start, end, text) {
+    textarea.focus({ preventScroll: true })
+    textarea.setSelectionRange(start, end)
+    const before = textarea.value
+    let applied = false
+    try {
+      applied = document.execCommand('insertText', false, text)
+    } catch (_e) {
+
+    }
+    if (applied && textarea.value !== before) return
+    textarea.setRangeText(text, start, end, 'end')
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  function accept(index) {
+    const textarea = state.textarea
+    const item = state.rows[index]
+    if (!textarea || !item) return false
+    const trigger = findTrigger(textarea.value, textarea.selectionStart)
+    if (!trigger || textarea.selectionStart !== textarea.selectionEnd) {
+      close()
+      return false
+    }
+    const following = textarea.value.charAt(trigger.end)
+    const end = following === ' ' || following === '\t' ? trigger.end + 1 : trigger.end
+    close()
+    replaceRange(textarea, trigger.start, end, '/' + item.insert + ' ')
+    return true
+  }
+
+  function consume(event) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+
+  function move(step) {
+    const count = state.rows.length
+    if (count === 0) return
+    setActive((state.activeIndex + step + count) % count, true)
+  }
+
+  function onKeydown(event) {
+    if (!isOpen() || event.target !== state.textarea) return
+    if (event.isComposing || event.keyCode === 229) return
+    const plain = !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
+    switch (event.key) {
+      case 'ArrowDown':
+        if (!plain) return
+        move(1)
+        consume(event)
+        return
+      case 'ArrowUp':
+        if (!plain) return
+        move(-1)
+        consume(event)
+        return
+      case 'Enter':
+      case 'Tab':
+        if (!plain) {
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) close()
+          return
+        }
+        consume(event)
+        accept(state.activeIndex)
+        return
+      case 'Escape': {
+        const trigger = findTrigger(state.textarea.value, state.textarea.selectionStart)
+        consume(event)
+        close()
+        state.dismissed = trigger ? { start: trigger.start, query: trigger.query } : null
+        return
+      }
+    }
+  }
+
+  function onInput(event) {
+    if (isSlashTextarea(event.target)) update(event.target)
+  }
+
+  function onKeyup(event) {
+    if (event.target === state.textarea) update(event.target)
+  }
+
+  function onClick(event) {
+    if (event.target === state.textarea) update(event.target)
+  }
+
+  function onCompositionEnd(event) {
+    if (isSlashTextarea(event.target)) update(event.target)
+  }
+
+  function onFocusOut(event) {
+    if (event.target !== state.textarea || state.pointerInside) return
+    close()
+  }
+
+  function onDocumentPointerDown(event) {
+    if (!state.textarea) return
+    const target = event.target
+    if (target === state.textarea || (state.popup && state.popup.contains(target))) return
+    close()
+  }
+
+  function onPointerEnd() {
+    state.pointerInside = false
+  }
+
+  function onPopupPointerDown(event) {
+    state.pointerInside = true
+    event.preventDefault()
+  }
+
+  function onPopupMouseMove(event) {
+    if (event.clientX === state.lastMouseX && event.clientY === state.lastMouseY) return
+    state.lastMouseX = event.clientX
+    state.lastMouseY = event.clientY
+    const row = event.target && event.target.closest ? event.target.closest('.aiia-slash-item') : null
+    if (!row) return
+    const index = Number(row.getAttribute('data-index'))
+    if (Number.isInteger(index) && index !== state.activeIndex) setActive(index, false)
+  }
+
+  function onPopupClick(event) {
+    const row = event.target && event.target.closest ? event.target.closest('.aiia-slash-item') : null
+    state.pointerInside = false
+    if (!row) return
+    const index = Number(row.getAttribute('data-index'))
+    if (Number.isInteger(index)) accept(index)
+  }
+
+  function onVisibilityChange() {
+    if (document.visibilityState === 'hidden') close()
+  }
+
+  const listeners = [
+    ['keydown', onKeydown, true],
+    ['input', onInput, false],
+    ['keyup', onKeyup, false],
+    ['click', onClick, false],
+    ['compositionend', onCompositionEnd, false],
+    ['focusout', onFocusOut, false],
+    ['pointerdown', onDocumentPointerDown, true],
+    ['pointerup', onPointerEnd, true],
+    ['pointercancel', onPointerEnd, true],
+    ['visibilitychange', onVisibilityChange, false]
+  ]
+
+  function destroy() {
+    close()
+    listeners.forEach(([type, handler, capture]) => document.removeEventListener(type, handler, capture))
+    if (state.popup && state.popup.parentNode) state.popup.parentNode.removeChild(state.popup)
+    state.popup = null
+    state.items = []
+    state.loadedAt = 0
+    state.failedAt = 0
+    state.inflight = null
+    state.dismissed = null
+    if (window.AIIASlashCommands === api) delete window.AIIASlashCommands
+  }
+
+  function reset() {
+    close()
+    state.items = []
+    state.loadedAt = 0
+    state.failedAt = 0
+    state.inflight = null
+    state.dismissed = null
+  }
+
+  const api = {
+    ATTRIBUTE,
+    findTrigger,
+    normalizeItems,
+    rankItems,
+    open: update,
+    close,
+    isOpen,
+    destroy,
+    reset,
+    getRows: () => state.rows.slice(),
+    getActiveIndex: () => state.activeIndex
+  }
+
+  if (window.AIIASlashCommands && typeof window.AIIASlashCommands.destroy === 'function') {
+    window.AIIASlashCommands.destroy()
+  }
+  window.AIIASlashCommands = api
+  listeners.forEach(([type, handler, capture]) => document.addEventListener(type, handler, capture))
+})()

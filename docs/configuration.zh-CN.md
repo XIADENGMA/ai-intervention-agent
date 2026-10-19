@@ -330,14 +330,16 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 
 ### `feedback`（反馈/超时）
 
-控制等待时间与自动重调提示语。
+控制等待时间、自动重调提示语、反馈输入框 `/` 选择器扫描的 skill 目录，以及提示词里本地图片的读取范围。
 
-| 配置项               | 类型   | 默认值                                     | 说明                                                                                                                                    |
-| -------------------- | ------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `backend_max_wait`   | number | `600`                                      | 后端最大等待（秒），范围 `[10, 7200]`                                                                                                   |
-| `frontend_countdown` | number | `240`                                      | 前端自动重调倒计时（秒），范围 `[10, 3600]`；`0`（或任意非正整数）禁用                                                                  |
-| `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`   | 错误/超时返回的引导语                                                                                                                   |
-| `prompt_suffix`      | string | `"\n请积极调用 interactive_feedback 工具"` | 追加到用户反馈末尾的提示语。开头的 `\n` 是 TOML 转义的换行符；原样复制到 `config.toml` 即可（加载时 TOML 解析器会把它还原成真实换行）。 |
+| 配置项               | 类型     | 默认值                                     | 说明                                                                                                                                    |
+| -------------------- | -------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `backend_max_wait`   | number   | `600`                                      | 后端最大等待（秒），范围 `[10, 7200]`                                                                                                   |
+| `frontend_countdown` | number   | `240`                                      | 前端自动重调倒计时（秒），范围 `[10, 3600]`；`0`（或任意非正整数）禁用                                                                  |
+| `resubmit_prompt`    | string   | `"请立即调用 interactive_feedback 工具"`   | 错误/超时返回的引导语                                                                                                                   |
+| `prompt_suffix`      | string   | `"\n请积极调用 interactive_feedback 工具"` | 追加到用户反馈末尾的提示语。开头的 `\n` 是 TOML 转义的换行符；原样复制到 `config.toml` 即可（加载时 TOML 解析器会把它还原成真实换行）。 |
+| `skill_dirs`         | string[] | `["auto"]`                                 | 反馈输入框 `/` 选择器扫描的目录（见下文）；`"auto"` = 常见位置，`[]` 关闭选择器                                                         |
+| `local_image_dirs`   | string[] | `["auto"]`                                 | 提示词里的本地图片可以从哪些目录读取（见下文）；`"auto"` = MCP 客户端声明的工作区目录 + 系统临时目录，`[]` 关闭该功能                   |
 
 **超时规则**：
 
@@ -348,6 +350,29 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 否则：
 
 `后端等待 = min(max(前端倒计时 + 40, 260), backend_max_wait)`
+
+**`/` 选择器（`skill_dirs`）**：
+
+在反馈输入框的行首（或空格之后）输入 `/`，会弹出运行 Web UI 的这台机器上已安装的 agent skill 与命令列表；选中后插入 `/<名称> `。
+
+- `"auto"` 依次展开为工作目录下的 `.cursor/skills`、`.agents/skills`、`.claude/skills`、`.codex/skills`、`.cursor/commands`、`.claude/commands`，以及 `~/.cursor/skills`、`~/.cursor/skills-cursor`、`~/.agents/skills`、`~/.claude/skills`、`~/.codex/skills`、`~/.cursor/commands`、`~/.claude/commands`、`~/.codex/prompts`。两个条目重名时，靠前的生效。
+- 其他条目视为目录：展开 `~`，相对路径按工作目录解析，不存在的目录会被忽略。名为 `commands` 或 `prompts` 的目录按命令读取（其顶层 `*.md` 文件）；其余目录按 skill 读取（含 YAML 头信息的 `SKILL.md` 所在文件夹，支持嵌套，最多四层）。
+- skill 以 `/<名称>` 插入。名称不是单个词时（例如本地化的显示名），改用 `description` 中 `触发名:` 或 `trigger name:` 之后的词，其次是文件夹名。
+- 不会出现在选择器中的：没有头信息的 `SKILL.md`，以及 `user-invocable: false` 的 skill。
+- 只有名称、描述和简短的来源标签会发给浏览器，不包含文件内容或绝对路径。结果缓存 30 秒，最多 1000 条。
+- `skill_dirs = []` 关闭选择器。修改 `config.toml` 后无需重启 Web UI。
+
+**本地图片（`local_image_dirs`）**：
+
+在 `interactive_feedback` 的 `message` 里写 Markdown 图片，目标是运行 agent 的这台机器上的文件，例如 `![图表](/work/proj/out/chart.png)`、`![截图](docs/shot.png)`、`![x](~/Pictures/x.png)`、`<img src="shot.png">` 或 `file:` URL，Web UI（以及 VS Code 面板）就会把图片显示出来。
+
+- 读取文件的是和文件在同一台机器上的 MCP 服务，它把图片字节随任务一起发送；Web UI 自己从不按路径打开文件。远程（`https:`）、`data:` 和 `#锚点` 目标保持原样，围栏代码块和行内代码里的内容也不处理。
+- `"auto"` = MCP 客户端声明的工作区目录（MCP `roots`；客户端没有声明时，取工作目录，但工作目录是文件系统根或你的主目录时不取）加上系统临时目录（`/tmp`、`$TMPDIR`）。其他条目视为目录：展开 `~`，相对路径按工作目录解析，不存在的目录会被忽略。文件系统根（`/`、`C:\`）永远不会被允许。
+- 路径先解析再检查：`..` 和指向允许目录之外的符号链接会被拒绝，UNC（`\\server\share`）和远程 `file://host/` 路径同样会被拒绝。
+- 只显示扩展名与文件头一致的 png、jpg/jpeg、gif、webp、bmp、avif（拒绝 SVG）。每条提示词最多 8 张，单张不超过 8 MB，合计不超过 16 MB。
+- 无法显示的引用会被替换成一行说明原因的文字，例如 `🖼️ (image not shown: outside the allowed folders) /etc/x.png`；不会通知 agent。
+- 图片只保存在 Web UI 的内存里，不会写入磁盘，所以 Web UI 重启后恢复的任务里图片会显示为缺失。
+- `local_image_dirs = []` 关闭该功能（引用保持原样）。修改 `config.toml` 后，下一次工具调用即生效。
 
 ## 最小示例
 

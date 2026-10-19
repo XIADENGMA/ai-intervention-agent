@@ -106,10 +106,16 @@ diverges.
   out-of-sync); ideal as a pre-merge sanity check after
   signature edits.
 - [`generate_pwa_icons.py`](generate_pwa_icons.py) — build the
-  PWA / favicon / `apple-touch-icon` family from a single SVG
-  source so the multi-size `favicon.ico` (16/32/48/256), the
-  iOS opaque-background tile, and the maskable PWA icon stay in
-  sync. Run after editing `src/ai_intervention_agent/icons/icon.svg`.
+  PWA / favicon / `apple-touch-icon` family from three SVG sources
+  (`icon.svg`, `icon-maskable.svg`, `icon-apple-touch.svg` in
+  `src/ai_intervention_agent/icons/`) so the multi-size
+  `favicon.ico` (16/32/48/256), the full-bleed iOS tile (RGB, no
+  alpha channel: iOS paints transparent pixels black) and the
+  maskable PWA icons stay in sync. It refuses to write a maskable
+  or apple-touch icon whose source renders translucent pixels. Run
+  after editing any of the three SVGs; `--check` (the
+  `check-pwa-icons-fresh` pre-commit hook) verifies that every file
+  exists, has the right size and, where required, is fully opaque.
 
 ## Asset / packaging pipeline
 

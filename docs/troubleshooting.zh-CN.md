@@ -156,6 +156,12 @@ export AI_INTERVENTION_AGENT_OPEN_WITH=cursor
   JSON，包含 `start_url`、`icons`、`display: standalone`。
 - iOS 用户：`分享` → `添加到主屏幕` 是稳定可用的兜底，不依赖
   浏览器的安装横幅启发。
+- 主屏幕图标带黑边，或更新后仍是旧图：iOS 在创建快捷方式的那一刻
+  就把图标存下来了，修复之前创建的快捷方式会一直保留旧图。删除后
+  重新添加即可。想确认服务端给出的是什么，运行
+  `curl -s http://127.0.0.1:8080/ | grep -A2 apple-touch-icon`，再
+  打开它打印出的 `/icons/apple-touch-icon.png?...`：应该是一块没有
+  黑色边框的浅色方块。
 
 ## 8. 在手机上点 Bark 通知，打开的是 Bark App 而不是 PWA
 
@@ -531,6 +537,47 @@ R152 的 `_formatLogs` 写的是 `var entries = logs.logs`，而服务端
 4. 只有长提示词慢：给面板为当前任务发出的请求计时（服务端负责渲染并缓存 Markdown）：`curl -s -o /dev/null -w '%{time_total}\n' http://localhost:8081/api/config`。
 
 如果仍然觉得慢，请开一个 [issue][bug]，附上探针汇总、编辑器及其版本，并说明是启动后的第一次打开慢，还是每次重新显示都慢。
+
+## 16. Cursor 把服务器标成 "Needs Authentication"，或工具列表里多出一个 `mcp_auth`
+
+**症状**：Cursor 的 MCP 列表里这个服务器显示 **Needs Authentication**，或者 agent 拿到的该服务器工具列表里多了一个 `mcp_auth` 工具（"Authenticate this MCP server so its tools can be used"）。
+
+**含义**：本服务器从不要求认证。它是本地 stdio 进程（`uvx ai-intervention-agent`），Cursor 与它之间没有任何登录，`~/.cursor/mcp.json` 里它的条目也不需要 `headers`、`auth` 或 token；Web UI 同样没有登录页。这两个现象都来自 Cursor 对所有 MCP 服务器一视同仁的处理（依据 Cursor 3.26 读到的行为）：
+
+- Cursor 会在给 agent 构造的工具列表里加一个虚拟的 `mcp_auth` 工具。服务器没有定义它，也无法关掉它。只有当某个服务器被标记为需要认证时，agent 才应该调用它。
+- 当对服务器的某次请求失败、且错误文本里含 `unauthorized` 或数字 `401` 时，Cursor 会把该服务器标为需要认证。这只是文本匹配，stdio 服务器同样适用，所以转述自其他程序的消息（例如别的程序占用了 Web UI 端口并返回 `401`）也可能触发。
+
+**排查顺序**：
+
+1. 打开 **输出 → MCP Logs**，或 macOS 上的 `~/Library/Application Support/Cursor/logs/<session>/mcp-server-user-<name>.log`（`<name>` 是 `mcp.json` 里的键名，例如 `ai-intervention-agent`），在标签出现的时间点附近搜索 `401` 或 `unauthorized`。那一行会指出是哪次调用失败。
+2. 如果是别的程序占着 Web UI 端口并在响应，腾出端口或修改 `web_ui.port`（第 1 节）。
+3. 执行 **Developer: Reload Window**，或在 Cursor 的 MCP 设置里把该服务器关掉再打开以重新连接。之后某次工具调用拿到应答时，标签也会自行消失；如果它反复出现，原因就是第 1 步日志里的那一行。
+
+Web UI 里的“访问被拒绝”提示是另一回事：它表示页面请求被服务器（或前面的代理）以 401 或 403 拒绝。请检查 `config.toml` 里的 `network_security.allowed_networks` 与 `blocked_ips`。
+
+## 17. 提示词里的本地图片被替换成“图片未显示”说明，或显示为破图
+
+**症状**：agent 在消息里写了 `![shot](path/to/shot.png)`，但反馈页面显示的是一行说明（例如 🖼️ *(image not shown: outside the allowed folders)*）而不是图片，或者是一个破图图标。
+
+**原理**：MCP 服务端与文件在同一台机器上，所以由它读取图片并把字节随任务一起发送；Web UI 自己从不按路径打开文件。无法显示的引用会被替换成一行说明，并写明原因：
+
+- `outside the allowed folders`：文件不在 MCP 客户端上报的工作区目录、系统临时目录或 `[feedback] local_image_dirs` 列出的目录之内。把文件移动或复制进工作区，或把它所在目录加进该列表。`..` 以及指向允许目录之外的符号链接都算作目录之外。
+- `file not found`：路径不存在。相对路径按工作区目录解析；`~` 是你的主目录。
+- `not a png, jpg, gif, webp, bmp or avif image`：SVG、ICO、HEIC 等格式一律拒绝，文件头与扩展名不符的文件也会被拒绝。
+- `too large (max 8 MB each, 16 MB per prompt)`、`more than 8 images in one prompt`、`cannot be read`：限制与权限见 [`configuration.zh-CN.md`](configuration.zh-CN.md)。
+
+**只有破图图标、没有说明**，说明这个引用根本没有经过 MCP 服务端：
+
+- `local_image_dirs = []` 会关闭该功能，引用保持原样。
+- 目标是远程（`https:`）或 `data:` 地址：这类地址不会被处理，由浏览器自己加载。Web UI 的内容安全策略只允许来自自身服务器以及 `data:` / `blob:` 的图片，所以远程图片在那里会被拦截。
+- Web UI 重启过：图片只保存在内存里，重启后恢复出来的任务会显示图片缺失。请让 agent 重新调用该工具。
+- 引用位于代码块或行内代码里：那里永远不会被当作图片。
+
+**排查顺序**：
+
+1. 打开 MCP 服务端日志搜索 `本地图片`：`任务 <task_id> 的本地图片: 已附带 N 张，跳过 M 张` 会说明附带了几张、跳过了几张；debug 级别还会逐条列出被跳过的引用及原因。
+2. 直接问 Web UI 是否持有这张图片（任务 ID 可在 `/api/tasks` 里查到）：`curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/tasks/<task_id>/images/0`，存有第 0 张时输出 `200`，没有则输出 `404`。
+3. 如果 MCP 客户端不上报工作区目录，服务端会退回到自己的工作目录；当工作目录是 `/` 或你的主目录时（由编辑器启动的服务端经常如此）不会使用它。请显式列出工作区，例如 `local_image_dirs = ["auto", "~/work"]`。
 
 ## 还是没解决？
 

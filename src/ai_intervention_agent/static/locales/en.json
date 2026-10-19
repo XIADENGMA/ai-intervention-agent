@@ -202,7 +202,7 @@
     "networkOffline": "Network unreachable, please check your connection",
     "serverResponseInvalid": "Server returned an invalid response, please retry",
     "uiRenderingError": "UI rendering failed, please refresh the page",
-    "unauthorized": "Authentication required, please sign in again",
+    "unauthorized": "Access denied by the server (401/403), please check the network access settings and refresh the page",
     "serviceUnavailable": "Service temporarily unavailable, please retry shortly",
     "badGateway": "Upstream server unreachable (502), please retry shortly",
     "serviceOverloaded": "Service overloaded or in maintenance (503), please retry shortly",
@@ -338,6 +338,10 @@
           "copy_diagnostics": "Copy diagnostics"
         }
       }
+    },
+    "slash": {
+      "listLabel": "Skills and commands",
+      "kindCommand": "command"
     }
   }
 }

@@ -196,3 +196,16 @@ resubmit_prompt = "请立即调用 interactive_feedback 工具"
 # 可为空字符串；超过 100000 字符会被截断（R166）
 # Can be empty; truncated beyond 100000 chars (R166)
 prompt_suffix = "\n请积极调用 interactive_feedback 工具"
+# 反馈输入框 "/" 选择器扫描的目录 / Directories scanned by the "/" picker of the feedback box
+# "auto" = 常见 skills / commands 位置（项目与 ~ 下的 .cursor .agents .claude .codex）/ the well-known skills & commands locations (project and ~)
+# 其他条目为目录路径，支持 ~ 与相对路径；名为 commands / prompts 的目录读取顶层 *.md 作为命令
+# Other entries are directories (~ and relative paths are expanded); folders named commands / prompts are read as top-level *.md commands
+# [] 关闭选择器 / [] turns the picker off
+skill_dirs = ["auto"]
+# 提示词里的本地图片可以从哪些目录读取 / Directories a prompt's local images may be read from
+# 在提示词里写 Markdown 图片 ![说明](/绝对路径/图.png) 或相对路径即可显示 / Write ![alt](/absolute/or/relative/path.png) in a prompt and the Web UI shows it
+# "auto" = MCP 客户端声明的工作区目录 + 系统临时目录 / the workspace folders the MCP client declares + the system temp directory
+# 其他条目为目录路径，支持 ~ 与相对路径；.. 与符号链接不能越出这些目录；仅 png/jpg/gif/webp/bmp/avif，单张 ≤ 8 MB
+# Other entries are directories (~ and relative paths are expanded); .. and symlinks cannot leave them; png/jpg/gif/webp/bmp/avif only, ≤ 8 MB each
+# [] 关闭该功能 / [] turns the feature off
+local_image_dirs = ["auto"]

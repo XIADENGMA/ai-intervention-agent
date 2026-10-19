@@ -10,13 +10,13 @@ cycle-22 cr46 教训: 单语改动滑漏 6 个月。R288 / R300 已经锁定了 
 | 维度                                                | tests |
 |---------------------------------------------------|-------|
 | 1. H2 数量必须相同 (en vs zh-CN)                     | 1     |
-| 2. H2 编号必须 1-15 + 结尾 1 个 (en + zh 各)         | 2     |
+| 2. H2 编号必须 1-16 + 结尾 1 个 (en + zh 各)         | 2     |
 | 3. H3 数量必须相同 (en vs zh-CN)                     | 1     |
-| 4. 关键章节存在性 (双语 parity, 15 个编号 H2)        | 15    |
+| 4. 关键章节存在性 (双语 parity, 16 个编号 H2)        | 16    |
 | 5. 结尾"Still stuck"章节存在 (双语 parity)           | 2     |
 | 6. 文档行数差距不能超过 30% (容许翻译伸缩)           | 1     |
 ================================================================
-| 合计                                                | 22    |
+| 合计                                                | 23    |
 ================================================================
 
 **pattern lineage**: R288 (sequence diagram parity), R300 (component
@@ -80,6 +80,8 @@ SECTION_KEYWORDS = [
     (13, "Backend `/api/system/", "后端 `/api/system/"),
     (14, "code 9 and reason 'killed'", "code 9 and reason 'killed'"),
     (15, "sidebar panel is slow", "侧边栏面板打开或重新加载很慢"),
+    (16, "Needs Authentication", "Needs Authentication"),
+    (17, "local image", "本地图片"),
 ]
 
 

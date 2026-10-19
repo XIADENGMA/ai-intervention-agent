@@ -136,9 +136,11 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 
 - [config_manager](config_manager.md)
 - [config_utils](config_utils.md)
+- [dir_settings](dir_settings.md)
 - [exceptions](exceptions.md)
 - [feedback_types](feedback_types.md)
 - [i18n](i18n.md)
+- [local_images](local_images.md)
 - [mcp_tool_call_metrics](mcp_tool_call_metrics.md)
 - [protocol](protocol.md)
 - [remote_environment](remote_environment.md)
@@ -150,6 +152,7 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 - [server_config](server_config.md)
 - [service_manager](service_manager.md)
 - [shared_types](shared_types.md)
+- [skill_catalog](skill_catalog.md)
 - [sse_event_schemas](sse_event_schemas.md)
 - [notification_manager](notification_manager.md)
 - [notification_models](notification_models.md)
@@ -190,12 +193,15 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 ### Utility modules
 
 - **config_utils**: Configuration utility helpers
+- **dir_settings**: Shared handling of directory-list settings (`skill_dirs`, `local_image_dirs`) — the `auto` token, normalisation and `~` expansion
 - **feedback_types**: Lightweight feedback result typing used by Web UI routes without importing Pydantic-heavy configuration modules
 - **i18n**: Lightweight back-end i18n (request-language detection + locale-keyed message lookup)
+- **local_images**: Local images in a prompt — finds Markdown / HTML image references, reads them only inside the allowed folders (realpath, symlink, type and size checks) and rewrites them to per-task image URLs
 - **mcp_tool_call_metrics**: MCP tool call counter middleware (R187 / T2) — feeds `aiia_mcp_tool_calls_total{tool,status}` Prometheus metric in `/api/system/metrics`
 - **runtime_constants**: Cheap-to-import runtime timeout constants shared by Web UI, task queue, and server config
 - **rw_lock**: Lightweight read/write lock primitive shared by queue and compatibility tests
 - **shared_types**: Shared TypedDict definitions
+- **skill_catalog**: Skill and command catalogue behind the feedback box's `/` picker — front-matter reader, bounded directory scan, display-only entries (no absolute paths or file bodies), 30 s cache
 - **sse_event_schemas**: SSE event schema registry (R198 / Cycle 7) — central definition of every known SSE `event_type` + payload field set; tests assert every `_sse_bus.emit("<literal>", ...)` call site has a matching schema
 - **notification_models**: Notification data models
 - **notification_providers**: Concrete notification backends (Web Push / system sound / Bark / mobile vibration / macOS native)

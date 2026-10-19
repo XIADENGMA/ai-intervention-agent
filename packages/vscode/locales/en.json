@@ -225,6 +225,10 @@
           "copy_diagnostics": "Copy diagnostics"
         }
       }
+    },
+    "slash": {
+      "listLabel": "Skills and commands",
+      "kindCommand": "command"
     }
   }
 }

@@ -4,6 +4,9 @@ from typing import Annotated, Any, TypedDict
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict
 
+from ai_intervention_agent.local_images import DEFAULT_IMAGE_DIRS, normalize_image_dirs
+from ai_intervention_agent.skill_catalog import DEFAULT_SKILL_DIRS, normalize_skill_dirs
+
 
 def _coerce_bool(v: Any) -> Any:
     """TOML/JSON 安全布尔值转换（兼容字符串 "true"/"false"/数字 0/1）"""
@@ -210,6 +213,12 @@ class FeedbackSectionConfig(BaseModel):
     ] = 240
     resubmit_prompt: SafeStr = "请立即调用 interactive_feedback 工具"
     prompt_suffix: SafeStr = "\n请积极调用 interactive_feedback 工具"
+    skill_dirs: Annotated[list[str], BeforeValidator(normalize_skill_dirs)] = list(
+        DEFAULT_SKILL_DIRS
+    )
+    local_image_dirs: Annotated[list[str], BeforeValidator(normalize_image_dirs)] = (
+        list(DEFAULT_IMAGE_DIRS)
+    )
 
 
 SECTION_MODELS: dict[str, type[BaseModel]] = {

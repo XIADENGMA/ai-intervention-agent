@@ -109,8 +109,13 @@ class TestInitCreatesLottieDirectly(unittest.TestCase):
             "test_lottie_plays_despite_reduced_motion_r712.py），init "
             "路径不得引入偏好判断",
         )
-        self.assertIn("_ensureLottieLoaded().then", self.body)
-        self.assertIn("_createLottieAnimation(container, token)", self.body)
+        # R727：动画数据（要按主题烘焙配色）与运行时并行取回，两者都就绪才创建。
+        self.assertIn(
+            "Promise.all([_ensureLottieLoaded(), _ensureHourglassData()])", self.body
+        )
+        self.assertIn(
+            "_createLottieAnimation(container, token, animationText)", self.body
+        )
 
     def test_lifecycle_handlers_kept(self) -> None:
         source = APP_JS.read_text(encoding="utf-8")

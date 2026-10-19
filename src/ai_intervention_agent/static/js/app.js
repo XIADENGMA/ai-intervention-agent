@@ -122,16 +122,18 @@ function configureMarkedSecurity() {
 
 configureMarkedSecurity();
 
+const HOURGLASS_ANIMATION_URL = "/static/lottie/sprout.json";
+
 let hourglassAnimation = null;
 let _lottieLoadPromise = null;
+let _hourglassDataPromise = null;
+let _hourglassDataText = null;
+let _hourglassPalette = null;
 let _hourglassObserver = null;
-let _hourglassDelayTimer = null;
-let _hourglassFallbackRemovalTimer = null;
-let _hourglassIdleCallbackId = null;
-let _hourglassLoadHandler = null;
 let _hourglassThemeTimer = null;
 let _hourglassLifecycleToken = 0;
 let _hourglassLifecycleDisposed = false;
+let _hourglassLifecycleRetired = false;
 let _hourglassLifecycleHandlersInstalled = false;
 
 function _isHourglassLifecycleActive(container, token) {
@@ -169,43 +171,6 @@ function _disconnectHourglassObserver() {
 
 function _clearHourglassLifecycleTimers() {
   try {
-    if (_hourglassDelayTimer) clearTimeout(_hourglassDelayTimer);
-  } catch (_e) {
-
-  }
-  _hourglassDelayTimer = null;
-
-  try {
-    if (_hourglassFallbackRemovalTimer) {
-      clearTimeout(_hourglassFallbackRemovalTimer);
-    }
-  } catch (_e) {
-
-  }
-  _hourglassFallbackRemovalTimer = null;
-
-  try {
-    if (
-      _hourglassIdleCallbackId !== null &&
-      typeof window.cancelIdleCallback === "function"
-    ) {
-      window.cancelIdleCallback(_hourglassIdleCallbackId);
-    }
-  } catch (_e) {
-
-  }
-  _hourglassIdleCallbackId = null;
-
-  try {
-    if (_hourglassLoadHandler) {
-      window.removeEventListener("load", _hourglassLoadHandler);
-    }
-  } catch (_e) {
-
-  }
-  _hourglassLoadHandler = null;
-
-  try {
     if (_hourglassThemeTimer) clearTimeout(_hourglassThemeTimer);
   } catch (_e) {
 
@@ -220,6 +185,7 @@ function destroyHourglassAnimation() {
 
   }
   hourglassAnimation = null;
+  _hourglassPalette = null;
 }
 
 function disposeHourglassAnimationLifecycle() {
@@ -255,13 +221,115 @@ function installHourglassAnimationLifecycleHandlers() {
   try {
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
-        disposeHourglassAnimationLifecycle();
+        _syncHourglassPlayback();
       } else {
         initHourglassAnimation();
       }
     });
   } catch (_e) {
 
+  }
+}
+
+function retireHourglassAnimation() {
+  _hourglassLifecycleRetired = true;
+  disposeHourglassAnimationLifecycle();
+}
+
+function _currentHourglassPalette() {
+  return document.documentElement.getAttribute("data-theme") === "light"
+    ? "light"
+    : "dark";
+}
+
+function _invertLottieRgb(rgba) {
+  const inverted = rgba.slice();
+  for (let i = 0; i < 3 && i < inverted.length; i += 1) {
+    inverted[i] = 1 - inverted[i];
+  }
+  return inverted;
+}
+
+function _invertLottieColors(node) {
+  if (Array.isArray(node)) {
+    if (typeof node[0] === "number") return node;
+    for (const child of node) _invertLottieColors(child);
+    return node;
+  }
+  if (!node || typeof node !== "object") return node;
+  if ((node.ty === "fl" || node.ty === "st") && node.c && node.c.k) {
+    const stops = node.c.k;
+    if (typeof stops[0] === "number") {
+      node.c.k = _invertLottieRgb(stops);
+    } else if (Array.isArray(stops)) {
+      for (const keyframe of stops) {
+        if (Array.isArray(keyframe.s)) keyframe.s = _invertLottieRgb(keyframe.s);
+        if (Array.isArray(keyframe.e)) keyframe.e = _invertLottieRgb(keyframe.e);
+      }
+    }
+  }
+  for (const key of Object.keys(node)) _invertLottieColors(node[key]);
+  return node;
+}
+
+function _hourglassAnimationData(text, palette) {
+  const data = JSON.parse(text);
+  return palette === "dark" ? _invertLottieColors(data) : data;
+}
+
+function _ensureHourglassData() {
+  if (_hourglassDataText) return Promise.resolve(_hourglassDataText);
+  if (_hourglassDataPromise) return _hourglassDataPromise;
+  _hourglassDataPromise = fetch(HOURGLASS_ANIMATION_URL)
+    .then((response) => {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return response.text();
+    })
+    .then((text) => {
+      JSON.parse(text);
+      _hourglassDataText = text;
+      return text;
+    })
+    .catch((error) => {
+      console.warn("Sprout animation data failed to load:", error);
+      return null;
+    })
+    .then((text) => {
+      _hourglassDataPromise = null;
+      return text;
+    });
+  return _hourglassDataPromise;
+}
+
+function _syncHourglassPlayback() {
+  const animation = hourglassAnimation;
+  if (!animation || !animation.isLoaded) return;
+  const container = document.getElementById("hourglass-lottie");
+  const shown =
+    !document.hidden &&
+    !!container &&
+    container.offsetWidth > 0 &&
+    container.offsetHeight > 0;
+  try {
+    if (shown) {
+      animation.resize();
+      animation.play();
+    } else {
+      animation.pause();
+    }
+  } catch (_e) {
+
+  }
+}
+
+function _observeHourglassContainer(container) {
+  if (typeof ResizeObserver !== "function") return;
+  _disconnectHourglassObserver();
+  try {
+    _hourglassObserver = new ResizeObserver(() => _syncHourglassPlayback());
+    _hourglassObserver.observe(container);
+  } catch (_e) {
+    _hourglassObserver = null;
   }
 }
 
@@ -295,10 +363,10 @@ function renderSproutFallback(container) {
           .leaf-right { transform-origin: 30px 18px; animation: leafWiggle 1.6s ease-in-out infinite reverse; }
         </style>
         <g class="sprout-root">
-          <path d="M24 42V20" stroke="#111" stroke-width="3" stroke-linecap="round"/>
-          <path class="leaf-left" d="M24 22C19 22 15 19 14 15C18 15 22 17 24 20" stroke="#111" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          <path class="leaf-right" d="M24 22C29 22 33 19 34 15C30 15 26 17 24 20" stroke="#111" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M18 44C20 40 28 40 30 44" stroke="#111" stroke-width="3" stroke-linecap="round"/>
+          <path d="M24 42V20" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+          <path class="leaf-left" d="M24 22C19 22 15 19 14 15C18 15 22 17 24 20" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="leaf-right" d="M24 22C29 22 33 19 34 15C30 15 26 17 24 20" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18 44C20 40 28 40 30 44" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
         </g>
       </svg>
     `;
@@ -324,30 +392,35 @@ function _ensureLottieLoaded() {
   return _lottieLoadPromise;
 }
 
-function _createLottieAnimation(container, token) {
+function _createLottieAnimation(container, token, animationText) {
   if (!_isHourglassLifecycleActive(container, token)) return null;
   try {
+    const palette = _currentHourglassPalette();
+    const animationData = _hourglassAnimationData(animationText, palette);
     destroyHourglassAnimation();
+    container.textContent = "";
     hourglassAnimation = lottie.loadAnimation({
       container,
-      renderer: "svg",
+      renderer: "canvas",
       loop: true,
 
       autoplay: true,
-      path: "/static/lottie/sprout.json",
+      animationData,
       rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
     });
+    _hourglassPalette = palette;
     hourglassAnimation.addEventListener("DOMLoaded", () => {
       if (!_isHourglassLifecycleActive(container, token)) return;
-      updateLottieAnimationColor();
+      _syncHourglassPlayback();
     });
     hourglassAnimation.addEventListener("error", () => {
       if (!_isHourglassLifecycleActive(container, token)) return;
 
       destroyHourglassAnimation();
       renderSproutFallback(container);
-      container.style.opacity = "1";
     });
+    _observeHourglassContainer(container);
+    _syncHourglassPlayback();
     console.debug("Sprout animation initialized (lazy load)");
     return hourglassAnimation;
   } catch (error) {
@@ -355,7 +428,6 @@ function _createLottieAnimation(container, token) {
     if (_isHourglassLifecycleActive(container, token)) {
       destroyHourglassAnimation();
       renderSproutFallback(container);
-      container.style.opacity = "1";
     }
     return null;
   }
@@ -364,6 +436,7 @@ function _createLottieAnimation(container, token) {
 function initHourglassAnimation() {
   installHourglassAnimationLifecycleHandlers();
 
+  if (_hourglassLifecycleRetired) return;
   if (typeof document !== "undefined" && document.hidden) return;
 
   const container = document.getElementById("hourglass-lottie");
@@ -372,6 +445,7 @@ function initHourglassAnimation() {
   _hourglassLifecycleDisposed = false;
   if (hourglassAnimation) {
     updateLottieAnimationColor();
+    _syncHourglassPlayback();
     return;
   }
 
@@ -380,34 +454,42 @@ function initHourglassAnimation() {
   const token = _hourglassLifecycleToken + 1;
   _hourglassLifecycleToken = token;
 
-  _ensureLottieLoaded().then((ok) => {
-    if (!_isHourglassLifecycleActive(container, token)) return;
-    if (!ok) {
-      renderSproutFallback(container);
-      return;
-    }
-    _createLottieAnimation(container, token);
-    updateLottieAnimationColor();
-  });
+  Promise.all([_ensureLottieLoaded(), _ensureHourglassData()]).then(
+    ([lottieReady, animationText]) => {
+      if (!_isHourglassLifecycleActive(container, token)) return;
+      if (!lottieReady || !animationText) {
+        renderSproutFallback(container);
+        return;
+      }
+      _createLottieAnimation(container, token, animationText);
+    },
+  );
 }
 
 function updateLottieAnimationColor() {
+  const animation = hourglassAnimation;
+  if (!animation || !_hourglassDataText) return;
+  if (_currentHourglassPalette() === _hourglassPalette) return;
+
   const container = document.getElementById("hourglass-lottie");
   if (!container) return;
 
-  const isLightTheme =
-    document.documentElement.getAttribute("data-theme") === "light";
+  const frame = animation.currentFrame;
+  const recreated = _createLottieAnimation(
+    container,
+    _hourglassLifecycleToken,
+    _hourglassDataText,
+  );
+  if (!recreated) return;
+  try {
+    recreated.goToAndStop(frame, true);
+  } catch (_e) {
 
-  if (isLightTheme) {
-
-    container.style.filter = "none";
-  } else {
-
-    container.style.filter = "invert(1)";
   }
+  _syncHourglassPlayback();
 }
 
-window.addEventListener("theme-changed", (event) => {
+window.addEventListener("theme-changed", () => {
 
   try {
     if (_hourglassThemeTimer) clearTimeout(_hourglassThemeTimer);
@@ -823,6 +905,8 @@ function showNoContentPage() {
   if (config) {
     setElementDisplayById("no-content-buttons", "block");
   }
+
+  _syncHourglassPlayback();
 }
 
 function showContentPage() {
@@ -831,6 +915,7 @@ function showContentPage() {
 
   document.body.classList.remove("no-content-mode");
 
+  _syncHourglassPlayback();
   enableSubmitButton();
 }
 
@@ -1521,7 +1606,12 @@ async function submitFeedback() {
       30000,
     );
 
-    const result = await response.json();
+    let result = {};
+    try {
+      result = await response.json();
+    } catch (parseError) {
+      if (response.ok) throw parseError;
+    }
 
     if (response.ok) {
       showStatus(result.message, "success");
@@ -1644,7 +1734,7 @@ function renderClosedTerminalState() {
 
   }
   try {
-    disposeHourglassAnimationLifecycle();
+    retireHourglassAnimation();
   } catch (_e) {
 
   }
@@ -1653,7 +1743,6 @@ function renderClosedTerminalState() {
 
   const icon = document.getElementById("hourglass-lottie");
   if (icon) {
-    icon.style.filter = "none";
     icon.innerHTML = `
       <svg width="72" height="72" viewBox="0 0 48 48" fill="none" aria-hidden="true">
         <circle cx="24" cy="24" r="21" stroke="var(--success-500, #22c55e)" stroke-width="3" opacity="0.35"/>

@@ -24,7 +24,7 @@ freshness matrix is **complete + uniform**:
 | gen_pseudo_locale     | ``**/locales/_pseudo/pseudo.json``          | R246 hook (new) |
 | generate_docs (en)    | ``docs/api/*.md``                           | R246 hook (new) |
 | generate_docs (zh-CN) | ``docs/api.zh-CN/*.md``                     | R246 hook (new) |
-| generate_pwa_icons    | ``icons/*.{png,ico}``                       | R246 hook (new) |
+| generate_pwa_icons    | ``src/ai_intervention_agent/icons/*.{png,ico}`` | R246 hook (new) |
 
 What this test guards
 ---------------------
@@ -77,7 +77,7 @@ R246_HOOKS = {
     },
     "check-pwa-icons-fresh": {
         "script": "scripts/generate_pwa_icons.py",
-        "files_keywords": ("icons",),
+        "files_keywords": ("ai_intervention_agent/icons", "generate_pwa_icons"),
     },
 }
 

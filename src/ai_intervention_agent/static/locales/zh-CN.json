@@ -202,7 +202,7 @@
     "networkOffline": "网络不可达，请检查网络连接",
     "serverResponseInvalid": "服务器响应格式异常，请重试",
     "uiRenderingError": "界面渲染异常，请刷新页面",
-    "unauthorized": "需要重新登录，请刷新页面或检查访问令牌",
+    "unauthorized": "服务器拒绝了访问 (401/403)，请检查网络访问控制设置后刷新页面",
     "serviceUnavailable": "服务暂不可用，请稍后重试",
     "badGateway": "上游服务暂不可达 (502)，请稍后重试",
     "serviceOverloaded": "服务过载或维护中 (503)，请稍后重试",
@@ -338,6 +338,10 @@
           "copy_diagnostics": "复制诊断信息"
         }
       }
+    },
+    "slash": {
+      "listLabel": "技能与命令",
+      "kindCommand": "命令"
     }
   }
 }

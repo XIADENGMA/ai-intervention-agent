@@ -95,6 +95,9 @@ INTERNAL_FIELDS: frozenset[str] = frozenset(
         # 同步是否跳过该任务 (幽灵提交根因修复); 对前端无语义, 前端只
         # 看 auto_resubmit_timeout / remaining_time 本身
         "auto_resubmit_timeout_explicit",
+        # R726 — 提示词里引用的本地图片字节, 仅存内存, ``exclude=True``
+        # 不进任何序列化; 前端只通过 ``/api/tasks/<id>/images/<n>`` 取图
+        "prompt_images",
     }
 )
 

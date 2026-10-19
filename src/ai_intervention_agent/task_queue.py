@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 import traceback
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -23,6 +23,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ai_intervention_agent.local_images import PromptImage
 from ai_intervention_agent.runtime_constants import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     AUTO_RESUBMIT_TIMEOUT_MAX,
@@ -242,6 +243,13 @@ class Task(BaseModel):
     success_criteria: str | None = None
     iteration_label: str | None = None
 
+    prompt_images: tuple[PromptImage | None, ...] = Field(
+        default=(), exclude=True, repr=False
+    )
+    """Images the prompt links to as ``/api/tasks/<task_id>/images/<n>``; ``None``
+    keeps the position of an entry that failed validation. Held in memory only:
+    never serialised and never written by ``_persist``."""
+
     def get_remaining_time(self, now_monotonic: float | None = None) -> int:
         """计算剩余倒计时（使用单调时间）。"""
         if self.status == TaskStatus.COMPLETED:
@@ -377,6 +385,7 @@ class TaskQueue:
         loop_phase: str | None = None,
         success_criteria: str | None = None,
         iteration_label: str | None = None,
+        prompt_images: Sequence[PromptImage | None] = (),
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
 
@@ -450,6 +459,7 @@ class TaskQueue:
                 iteration_label=_normalize_optional_text(
                     iteration_label, LOOP_LABEL_MAX_LENGTH
                 ),
+                prompt_images=tuple(prompt_images),
             )
 
             self._tasks[task_id] = task

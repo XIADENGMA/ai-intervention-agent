@@ -44,6 +44,7 @@ const includeList = [
   "dist",
   "webview-state.js",
   "webview-ui.js",
+  "slash-commands.js",
   "webview-helpers.js",
   "webview-notify-core.js",
   "webview-settings-ui.js",

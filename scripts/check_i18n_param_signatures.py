@@ -280,6 +280,7 @@ def _scan_vscode() -> list[dict[str, Any]]:
     placeholders = {k: _placeholders_in(v) for k, v in flat.items()}
     targets = (
         "webview-ui.js",
+        "slash-commands.js",
         "webview-settings-ui.js",
         "webview-notify-core.js",
         "webview.ts",

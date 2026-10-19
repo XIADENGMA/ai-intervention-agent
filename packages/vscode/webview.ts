@@ -1663,6 +1663,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const webviewUiUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, "webview-ui.js"),
     );
+    const slashCommandsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, "slash-commands.js"),
+    );
     const activityIconUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, "activity-icon.svg"),
     );
@@ -2055,6 +2058,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                         <textarea
                             class="feedback-textarea"
                             id="feedbackText"
+                            data-aiia-slash-commands
                             placeholder="${tl("ui.form.placeholder")}"
                             data-i18n-placeholder="ui.form.placeholder"
                         ></textarea>
@@ -2229,6 +2233,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         <script nonce="${nonce}" src="${webviewStateUri}"></script>
         <script nonce="${nonce}" src="${webviewHelpersUri}"></script>
         <script nonce="${nonce}" src="${webviewUiUri}"></script>
+        <script nonce="${nonce}" src="${slashCommandsUri}"></script>
         <script nonce="${nonce}" src="${webviewNotifyCoreUri}"></script>
 
         <!-- T1 · C10c: @aiia/tri-state-panel via Import Maps

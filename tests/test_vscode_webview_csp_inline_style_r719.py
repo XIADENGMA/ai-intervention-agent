@@ -36,6 +36,7 @@ PRE_STRIP_STATEMENT = (
 )
 FIRST_PARTY_WEBVIEW_JS = (
     "webview-ui.js",
+    "slash-commands.js",
     "webview-state.js",
     "webview-helpers.js",
     "webview-notify-core.js",

@@ -91,6 +91,13 @@ Request **interactive user feedback** through the Web UI (browser or VS Code Web
   - The prompt shown to the user (Markdown supported)
   - Max length: **1000000** characters (extra content will be truncated). The
     10 MB byte hard limit in `task_queue` still applies as a DoS guard.
+  - Local images: a Markdown image whose destination is a file on the machine
+    that runs the agent (`![chart](/abs/chart.png)`, a workspace-relative path,
+    `~/…`, `<img src>` or a `file:` URL) is read by the MCP server and shown to
+    the user. Only png / jpg / gif / webp / bmp / avif files inside the
+    workspace folders or the temp directory are shown (max 8 per message, 8 MB
+    each); anything else is replaced by a one-line note and never read. See
+    `local_image_dirs` in [configuration.md](configuration.md).
 - `predefined_options` (array, optional)
   - Predefined choices the user can pick from. **Two canonical input shapes** (v1.6.0+):
     1. **RECOMMENDED** `list[dict]` — objects of shape

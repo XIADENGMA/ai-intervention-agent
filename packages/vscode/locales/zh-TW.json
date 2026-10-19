@@ -230,6 +230,10 @@
           "copy_diagnostics": "複製診断訊息"
         }
       }
+    },
+    "slash": {
+      "listLabel": "技能與命令",
+      "kindCommand": "命令"
     }
   }
 }

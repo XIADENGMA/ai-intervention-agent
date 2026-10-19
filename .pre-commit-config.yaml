@@ -307,7 +307,7 @@ repos:
   #   | gen_i18n_types.py       | ``packages/vscode/i18n-keys.d.ts``       | R246 ``check-i18n-types-fresh`` ✓ |
   #   | gen_pseudo_locale.py    | ``**/locales/_pseudo/pseudo.json``       | R246 ``check-pseudo-locale-fresh`` ✓ |
   #   | generate_docs.py        | ``docs/api/*.md`` + ``docs/api.zh-CN/*.md`` | R246 ``check-generated-docs-fresh`` ✓ |
-  #   | generate_pwa_icons.py   | ``icons/*.png`` + ``icons/*.ico``        | R246 ``check-pwa-icons-fresh`` ✓ |
+  #   | generate_pwa_icons.py   | ``src/ai_intervention_agent/icons/*.{png,ico}`` | R246 ``check-pwa-icons-fresh`` ✓ |
   #
   # 性能：4 个 hook 总耗时 ~900ms（gen_i18n_types ~40ms +
   # gen_pseudo_locale ~40ms + generate_docs en+zh ~180ms +
@@ -345,4 +345,4 @@ repos:
         entry: uv run python scripts/generate_pwa_icons.py --check
         language: system
         pass_filenames: false
-        files: ^icons/
+        files: ^(src/ai_intervention_agent/icons/|scripts/generate_pwa_icons\.py$)

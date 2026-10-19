@@ -128,9 +128,11 @@ ChatGPT Desktop / Claude Desktop / Cursor 等客户端原生渲染，避免在�
 
 - [config_manager](config_manager.md)
 - [config_utils](config_utils.md)
+- [dir_settings](dir_settings.md)
 - [exceptions](exceptions.md)
 - [feedback_types](feedback_types.md)
 - [i18n](i18n.md)
+- [local_images](local_images.md)
 - [mcp_tool_call_metrics](mcp_tool_call_metrics.md)
 - [protocol](protocol.md)
 - [remote_environment](remote_environment.md)
@@ -142,6 +144,7 @@ ChatGPT Desktop / Claude Desktop / Cursor 等客户端原生渲染，避免在�
 - [server_config](server_config.md)
 - [service_manager](service_manager.md)
 - [shared_types](shared_types.md)
+- [skill_catalog](skill_catalog.md)
 - [sse_event_schemas](sse_event_schemas.md)
 - [notification_manager](notification_manager.md)
 - [notification_models](notification_models.md)
@@ -182,12 +185,15 @@ ChatGPT Desktop / Claude Desktop / Cursor 等客户端原生渲染，避免在�
 ### 工具模块
 
 - **config_utils**: 配置工具函数
+- **dir_settings**: 目录列表类配置（`skill_dirs`、`local_image_dirs`）的共用处理 —— `auto` 令牌、规范化与 `~` 展开
 - **feedback_types**: Web UI 路由使用的轻量反馈结果类型，避免为了类型导入 Pydantic 较重的配置模块
 - **i18n**: 后端轻量 i18n（请求语言检测 + 本地化消息查表）
+- **local_images**: 提示词里的本地图片 —— 识别 Markdown / HTML 图片引用，只在允许的目录内读取（realpath、符号链接、类型与大小检查），并改写成按任务提供的图片 URL
 - **mcp_tool_call_metrics**: MCP 工具调用计数器中间件（R187 / T2）—— 为 `/api/system/metrics` 的 `aiia_mcp_tool_calls_total{tool,status}` Prometheus 指标提供数据源
 - **runtime_constants**: 低成本导入的运行时超时常量，供 Web UI、任务队列与 server config 共享
 - **rw_lock**: 轻量读写锁原语，供队列与兼容性测试复用
 - **shared_types**: 共享 TypedDict 类型定义
+- **skill_catalog**: 反馈输入框 `/` 选择器背后的技能与命令目录 —— front matter 读取、有界目录扫描、只输出展示元数据（不含绝对路径与文件正文）、缓存 30 秒
 - **sse_event_schemas**: SSE 事件 schema 注册表（R198 / Cycle 7）—— 集中定义每种已知 SSE `event_type` 及其 payload 字段集；测试确保 `_sse_bus.emit("<literal>", ...)` 的每个调用点都有匹配的 schema 项
 - **notification_models**: 通知数据模型
 - **notification_providers**: 具体通知后端实现（Web Push / 系统声音 / Bark / 移动振动 / macOS 原生）

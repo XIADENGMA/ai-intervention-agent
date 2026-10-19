@@ -33,11 +33,13 @@ from typing import Any, cast
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context as FastMCPContext
-from mcp.types import TextContent
+from mcp.types import ClientCapabilities, RootsCapability, TextContent
 from pydantic import Field
 
+import ai_intervention_agent.local_images as local_images
 import ai_intervention_agent.server_config as server_config
 import ai_intervention_agent.service_manager as service_manager
+from ai_intervention_agent.config_manager import get_config
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.exceptions import (
     ServiceConnectionError,
@@ -160,6 +162,84 @@ async def _emit_ctx_info(
             await ctx.info(message)
     except Exception as ctx_exc:
         logger.debug(f"ctx.info 失败（已忽略）: {type(ctx_exc).__name__}: {ctx_exc}")
+
+
+_CLIENT_ROOTS_TIMEOUT_S = 3.0
+_LOCAL_IMAGES_TIMEOUT_S = 20.0
+_PROMPT_IMAGES_POST_TIMEOUT_S = 15
+
+
+async def _client_roots(ctx: FastMCPContext | None) -> list[Path]:
+    """The workspace folders the MCP client declares via ``roots/list``.
+
+    Empty when there is no ``ctx``, the client does not support roots, the
+    request times out or fails: the caller then falls back to the other allowed
+    folders instead of failing the tool call.
+    """
+    if ctx is None:
+        return []
+    try:
+        if not ctx.session.check_client_capability(
+            ClientCapabilities(roots=RootsCapability())
+        ):
+            return []
+        declared = await asyncio.wait_for(ctx.list_roots(), _CLIENT_ROOTS_TIMEOUT_S)
+    except Exception as exc:
+        logger.debug(f"roots/list 不可用（已忽略）: {type(exc).__name__}: {exc}")
+        return []
+    paths: list[Path] = []
+    for root in declared:
+        path = local_images.file_uri_to_path(str(root.uri))
+        if path is not None:
+            paths.append(path)
+    return paths
+
+
+def _read_local_images(
+    setting: Any, client_roots: list[Path], message: str, task_id: str
+) -> local_images.PreparedPrompt:
+    roots = local_images.resolve_allowed_dirs(setting, client_roots)
+    return local_images.prepare_prompt_images(message, task_id, roots)
+
+
+async def _prepare_local_images(
+    ctx: FastMCPContext | None, message: str, task_id: str
+) -> local_images.PreparedPrompt:
+    """Resolve the local images ``message`` links to; never raises.
+
+    Any failure leaves the prompt as written, which is what was shown before the
+    feature existed: a broken image instead of a failed tool call. The file work
+    runs off the event loop under a deadline, so an unresponsive mount cannot
+    stall the tool call either.
+    """
+    unchanged = local_images.PreparedPrompt(message)
+    if not local_images.has_image_candidates(message):
+        return unchanged
+    try:
+        setting = get_config().get_section("feedback").get("local_image_dirs")
+        if not local_images.normalize_image_dirs(setting):
+            return unchanged
+        client_roots = await _client_roots(ctx)
+        prepared = await asyncio.wait_for(
+            asyncio.to_thread(
+                _read_local_images, setting, client_roots, message, task_id
+            ),
+            _LOCAL_IMAGES_TIMEOUT_S,
+        )
+    except Exception as exc:
+        logger.warning(
+            f"本地图片处理失败，提示词按原文发送: {type(exc).__name__}: {exc}",
+            exc_info=True,
+        )
+        return unchanged
+    if prepared.images or prepared.skipped:
+        logger.info(
+            f"任务 {task_id} 的本地图片: 已附带 {len(prepared.images)} 张，"
+            f"跳过 {len(prepared.skipped)} 张"
+        )
+        for skipped in prepared.skipped:
+            logger.debug(f"本地图片被跳过: {skipped.ref!r} ({skipped.reason.value})")
+    return prepared
 
 
 _POLL_INTERVAL_FAST_S = 2.0
@@ -695,6 +775,12 @@ async def interactive_feedback(
             "Question, summary, or proposal to display to the human user. "
             "MUST be a non-empty string. Supports CommonMark / GitHub-Flavored Markdown "
             "(headings, lists, tables, fenced code blocks, links, inline code). "
+            "To show a screenshot or chart that lives on this machine, embed it as a "
+            "Markdown image whose destination is the file path, e.g. "
+            "`![chart](/abs/path/chart.png)` or a path relative to the workspace: "
+            "png/jpg/gif/webp/bmp/avif files inside the workspace or the temp "
+            "directory are displayed (max 8 per message, 8 MB each); any other "
+            "local path is replaced by a short note and never read. "
             "Recommended length: 1-2000 characters; soft cap 1,000,000 characters "
             "(~1 MB UTF-8, R166); inputs longer than the cap are truncated with a "
             "trailing ellipsis marker. "
@@ -1039,23 +1125,30 @@ async def interactive_feedback(
         target_host = server_config.get_target_host(config.host)
         api_url = f"http://{target_host}:{config.port}/api/tasks"
 
+        prepared = await _prepare_local_images(ctx, cleaned_message, task_id)
+        task_payload: dict[str, Any] = {
+            "task_id": task_id,
+            "prompt": prepared.prompt,
+            "predefined_options": predefined_options_list,
+            "predefined_options_defaults": predefined_options_defaults,
+            "feedback_placeholder": feedback_placeholder,
+            "header_label": header_label,
+            "loop_id": loop_id,
+            "loop_objective": loop_objective,
+            "loop_phase": loop_phase,
+            "success_criteria": success_criteria,
+            "iteration_label": iteration_label,
+        }
+        if prepared.images:
+            task_payload["prompt_images"] = local_images.encode_prompt_images(
+                prepared.images
+            )
+
         try:
             response = await client.post(
                 api_url,
-                json={
-                    "task_id": task_id,
-                    "prompt": cleaned_message,
-                    "predefined_options": predefined_options_list,
-                    "predefined_options_defaults": predefined_options_defaults,
-                    "feedback_placeholder": feedback_placeholder,
-                    "header_label": header_label,
-                    "loop_id": loop_id,
-                    "loop_objective": loop_objective,
-                    "loop_phase": loop_phase,
-                    "success_criteria": success_criteria,
-                    "iteration_label": iteration_label,
-                },
-                timeout=5,
+                json=task_payload,
+                timeout=_PROMPT_IMAGES_POST_TIMEOUT_S if prepared.images else 5,
             )
 
             if response.status_code != 200:

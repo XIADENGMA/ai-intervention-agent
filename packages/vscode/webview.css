@@ -671,6 +671,87 @@ body.vscode-light .no-content-progress-bar {
   background: transparent;
 }
 
+.aiia-slash-popup {
+  position: fixed;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  background: var(
+    --vscode-quickInput-background,
+    var(--vscode-editorWidget-background)
+  );
+  color: var(--vscode-quickInput-foreground, var(--vscode-foreground));
+  border: 1px solid
+    var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  border-radius: 6px;
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.aiia-slash-popup[hidden] {
+  display: none;
+}
+
+.aiia-slash-item {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.aiia-slash-item[aria-selected="true"] {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+  outline: 1px solid var(--vscode-contrastActiveBorder, transparent);
+  outline-offset: -1px;
+}
+
+.aiia-slash-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.aiia-slash-token {
+  flex: none;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-weight: 600;
+}
+
+.aiia-slash-label,
+.aiia-slash-desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+}
+
+.aiia-slash-item[aria-selected="true"] .aiia-slash-label,
+.aiia-slash-item[aria-selected="true"] .aiia-slash-desc,
+.aiia-slash-item[aria-selected="true"] .aiia-slash-kind {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.aiia-slash-kind {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
 .input-buttons {
   position: absolute;
   bottom: 10px;

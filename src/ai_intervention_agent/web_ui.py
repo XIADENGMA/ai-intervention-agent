@@ -82,6 +82,7 @@ from ai_intervention_agent.web_ui_rate_limiter import (
 from ai_intervention_agent.web_ui_routes import (
     FeedbackRoutesMixin,
     NotificationRoutesMixin,
+    SkillRoutesMixin,
     StaticRoutesMixin,
     SystemRoutesMixin,
     TaskRoutesMixin,
@@ -374,6 +375,7 @@ class WebFeedbackUI(
     TaskRoutesMixin,
     FeedbackRoutesMixin,
     NotificationRoutesMixin,
+    SkillRoutesMixin,
     StaticRoutesMixin,
     SystemRoutesMixin,
 ):
@@ -385,6 +387,7 @@ class WebFeedbackUI(
     - TaskRoutesMixin        — 任务 CRUD（5 个路由）
     - FeedbackRoutesMixin    — 反馈提交/查询（3 个路由）
     - NotificationRoutesMixin — 通知配置/触发（5 个路由）
+    - SkillRoutesMixin       — 反馈输入框 ``/`` 选择器的 skill 目录（1 个路由）
     - StaticRoutesMixin      — 静态资源（8 个路由）
     - SystemRoutesMixin      — 系统集成（用 IDE 打开配置文件等）
     核心路由（index / config / health / close）保留在本类。
@@ -1128,6 +1131,7 @@ class WebFeedbackUI(
         self._setup_task_routes()
         self._setup_feedback_routes()
         self._setup_notification_routes()
+        self._setup_skill_routes()
         self._setup_static_routes()
         self._setup_system_routes()
 
@@ -1364,6 +1368,13 @@ class WebFeedbackUI(
             ),
             "keyboard_shortcut_help_version": _compute_file_version(
                 str(static_dir / "js" / "keyboard_shortcut_help.js")
+            ),
+            "slash_commands_version": _compute_file_version(
+                str(static_dir / "js" / "slash-commands.js")
+            ),
+            # /icons/* is cached for a week (HTTP + service worker): a regenerated icon needs its own URL
+            "apple_touch_icon_version": _compute_file_version(
+                str(static_dir.parent / "icons" / "apple-touch-icon.png")
             ),
             "inline_locale_json": inline_locale_json,
         }

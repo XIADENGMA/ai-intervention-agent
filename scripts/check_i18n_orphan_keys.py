@@ -116,6 +116,7 @@ def _collect_vscode_used() -> set[str]:
     used: set[str] = set()
     targets = (
         "webview-ui.js",
+        "slash-commands.js",
         "webview-settings-ui.js",
         "webview-notify-core.js",
         "webview.ts",

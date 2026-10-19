@@ -168,6 +168,13 @@ offer to install it as a Progressive Web App.
   should return JSON with `start_url`, `icons`, and `display: standalone`.
 - iOS users: `Share` → `Add to Home Screen` always works regardless
   of the install banner heuristics.
+- The home-screen icon has a black border, or still shows the old
+  picture after an update: iOS stores the icon at the moment the
+  shortcut is created, so a shortcut made before the fix keeps the old
+  one. Delete it and add the page again. To see what the server
+  offers, run `curl -s http://127.0.0.1:8080/ | grep -A2 apple-touch-icon`
+  and open the `/icons/apple-touch-icon.png?...` URL it prints: it
+  must be a light square tile with no black frame.
 
 ## 8. Tapping a Bark notification on my phone opens the Bark app instead of the PWA
 
@@ -588,6 +595,47 @@ If it still reproduces, open an [issue][bug] with the crash timestamp, the `Jets
 4. If only long prompts are slow, time the request the panel makes for the active task (the server renders and caches the Markdown): `curl -s -o /dev/null -w '%{time_total}\n' http://localhost:8081/api/config`.
 
 If it still feels slow, open an [issue][bug] with the probe summary, the editor and its version, and whether the first open after startup or every re-show is slow.
+
+## 16. Cursor marks the server "Needs Authentication" or lists an `mcp_auth` tool
+
+**Symptom**: in Cursor's MCP list this server shows **Needs Authentication**, or the tool list an agent receives for it contains an extra `mcp_auth` tool ("Authenticate this MCP server so its tools can be used").
+
+**What it means**: this server never asks for authentication. It runs as a local stdio process (`uvx ai-intervention-agent`), so nothing is signed in between Cursor and it, and its entry in `~/.cursor/mcp.json` needs no `headers`, `auth` or token. The Web UI has no sign-in page either. Both signs come from Cursor, which treats every MCP server alike (behaviour read from Cursor 3.26):
+
+- Cursor adds a virtual `mcp_auth` tool to the lists it builds for agents. The server does not define it and cannot switch it off. An agent should call it only for a server that is marked as needing authentication.
+- Cursor marks a server as needing authentication when a request to it fails with an error whose text contains `unauthorized` or the number `401`. This is a plain text match and it applies to stdio servers too, so a message relayed from something else (for example another program that already owns the Web UI port and answers `401`) can trigger it.
+
+**Triage**:
+
+1. Open **Output → MCP Logs**, or on macOS the file `~/Library/Application Support/Cursor/logs/<session>/mcp-server-user-<name>.log` (`<name>` is the key in `mcp.json`, for example `ai-intervention-agent`), and search for `401` or `unauthorized` around the time the label appeared. The line names the call that failed.
+2. If another program answers on the Web UI port, free the port or change `web_ui.port` (section 1).
+3. Run **Developer: Reload Window**, or switch the server off and on again in Cursor's MCP settings, to reconnect it. The label also clears by itself once a later tool call gets an answer; if it keeps coming back, the line from step 1 is the cause.
+
+The access-denied message in the Web UI is a different thing: it means the server, or a proxy in front of it, answered the page with 401 or 403. Check `network_security.allowed_networks` and `blocked_ips` in `config.toml`.
+
+## 17. A local image in the prompt is replaced by an "image not shown" note, or shows as broken
+
+**Symptom**: the agent put `![shot](path/to/shot.png)` in its message, but the feedback page shows a one-line note such as 🖼️ *(image not shown: outside the allowed folders)* instead of the picture, or a broken-image icon.
+
+**How it works**: the MCP server runs next to the files, so it reads the image and sends the bytes with the task; the Web UI never opens a path by itself. A reference that cannot be shown is replaced by a note that says why:
+
+- `outside the allowed folders`: the file is not under a folder the MCP client reports as its workspace, the system temp directory, or a folder listed in `[feedback] local_image_dirs`. Move or copy it into the workspace, or add its folder to the list. `..` and symlinks that lead out of an allowed folder count as outside.
+- `file not found`: the path does not exist. Relative paths are resolved against the workspace folders; `~` is your home directory.
+- `not a png, jpg, gif, webp, bmp or avif image`: SVG, ICO, HEIC and similar formats are refused, and so is a file whose first bytes do not match its extension.
+- `too large (max 8 MB each, 16 MB per prompt)`, `more than 8 images in one prompt`, `cannot be read`: the limits and permissions described in [`configuration.md`](configuration.md).
+
+**A broken-image icon without a note** means the reference never went through the MCP server:
+
+- `local_image_dirs = []` turns the feature off, so references stay as written.
+- The destination is a remote (`https:`) or `data:` URL: these are left alone and the browser loads them itself. The Web UI's content security policy only allows images from its own server and `data:` / `blob:`, so a remote image is blocked there.
+- The Web UI was restarted: images are kept in memory only, so a task restored after a restart shows its images as missing. Ask the agent to call the tool again.
+- The reference is inside a code block or inline code, which is never treated as an image.
+
+**Triage**:
+
+1. Open the MCP server log and look for `本地图片`: `任务 <task_id> 的本地图片: 已附带 N 张，跳过 M 张` says how many images were attached and how many were skipped; at debug level each skipped reference is listed with its reason.
+2. Ask the Web UI whether it holds the image (task ids are listed by `/api/tasks`): `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/tasks/<task_id>/images/0` prints `200` when image 0 is stored and `404` when it is not.
+3. If the MCP client does not report workspace folders, the server falls back to its working directory, which is not used when it is `/` or your home directory (common for a server started by an editor). List the workspace explicitly, for example `local_image_dirs = ["auto", "~/work"]`.
 
 ## Still stuck?
 

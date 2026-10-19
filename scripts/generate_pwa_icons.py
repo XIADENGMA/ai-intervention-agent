@@ -7,20 +7,26 @@ PWA / favicon / iOS apple-touch-icon 对图标质量有不同的硬性要求：
 
 1. ``favicon.ico`` 应包含**多尺寸**（16/32/48/256），单尺寸会让浏览器 tab
    位置（16×16 渲染槽）和 Windows 资源管理器（256×256 槽）均有质量损失；
-2. ``apple-touch-icon.png`` 在 iOS 主屏幕**应有实色背景**——iOS 不支持透明
-   alpha，会用黑/白填充透明角，与系统其它图标视觉割裂；
+2. ``apple-touch-icon.png`` 在 iOS 主屏幕必须是**整张 canvas 实色的方形**
+   （无圆角、无留白、无阴影）——iOS 自己裁圆角，并把 PNG 里每一个透明像素
+   涂成黑色。曾经把带圆角和留白的 ``icon.svg`` 直接渲染、再把透明像素
+   "实色化"：背景色取自一个透明像素（黑色），结果留白区变成包住图标的黑边。
+   现在由专用的全幅源 ``icon-apple-touch.svg`` 渲染，输出不带 alpha 通道的
+   RGB PNG；
 3. ``icon-maskable-*.png`` 必须**整张 canvas 实色填充**且主体落在中心 80%
    safe zone 内（W3C maskable spec）。OS 蒙板（圆形 / squircle / teardrop）
    会按设备形状裁切，透明角或越界主体都会丢失视觉；
 4. ``icon.svg`` 是 "any" purpose 的源——透明角可以保留（OS 不会裁切，会
    渲染原始矩形），但 raster fallback PNG 需要支持降级。
 
-为了同时满足以上 4 类约束，我们维护**两个 SVG 源**：
+为了同时满足以上 4 类约束，我们维护**三个 SVG 源**：
 
-* ``src/ai_intervention_agent/icons/icon.svg``           — "any" purpose，原始设计；
-* ``src/ai_intervention_agent/icons/icon-maskable.svg``  — 实色背景 + 主体缩到 0.6× 居中，专供 maskable。
+* ``src/ai_intervention_agent/icons/icon.svg``              — "any" purpose，原始设计；
+* ``src/ai_intervention_agent/icons/icon-maskable.svg``     — 实色背景 + 主体缩到 0.6× 居中，专供 maskable；
+* ``src/ai_intervention_agent/icons/icon-apple-touch.svg``  — 全幅实色方形，主体与底板的比例同 ``icon.svg``，专供 apple-touch-icon。
 
-并由本脚本一次性产出所有 PNG/ICO，幂等可重复。
+并由本脚本一次性产出所有 PNG/ICO，幂等可重复。要求整张实色的两类图标
+（maskable、apple-touch）渲染出任何半透明像素时，脚本直接报错、不写文件。
 
 零额外依赖
 ----------
@@ -30,7 +36,7 @@ cairosvg：
 * ``rsvg-convert``（GNOME librsvg 提供）与 Firefox / WebKit / Chromium SVG
   渲染器同源，输出与浏览器渲染视觉一致，比 ImageMagick 内置 SVG 解析器
   质量高几个数量级。
-* PNG 后处理（透明角实色化、像素采样）以及 ICO multi-size 容器写入都用
+* PNG 编解码（RGBA / RGB）、实色性校验以及 ICO multi-size 容器写入都用
   ``zlib`` + ``struct`` 纯 Python 实现，避免 ``uv sync`` 把 Pillow 装进
   lockfile 又因为只在 scripts/ 用而成为僵尸依赖。
 
@@ -54,6 +60,10 @@ CI 行为
     # 只检查不写入（不会改 disk，对比 SVG 源与现有 PNG 的尺寸 / 实色性）
     uv run python scripts/generate_pwa_icons.py --check
 
+只检查模式（``--check``）校验：文件存在、尺寸一致、要求实色的图标没有半透明
+像素、apple-touch-icon 不带 alpha 通道。它不逐像素对比渲染结果——不同机器上
+librsvg 版本不同，边缘抗锯齿会有细微差异。
+
 退出码
 ------
 * 0 = 成功 / 无需重生成
@@ -75,30 +85,51 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ICONS_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "icons"
 SOURCE_SVG_ANY = ICONS_DIR / "icon.svg"
 SOURCE_SVG_MASKABLE = ICONS_DIR / "icon-maskable.svg"
+SOURCE_SVG_APPLE_TOUCH = ICONS_DIR / "icon-apple-touch.svg"
+
+SOURCES: dict[str, Path] = {
+    "any": SOURCE_SVG_ANY,
+    "maskable": SOURCE_SVG_MASKABLE,
+    "apple-touch": SOURCE_SVG_APPLE_TOUCH,
+}
 
 
 @dataclass(frozen=True)
 class PngSpec:
-    """单个 PNG 输出规格。"""
+    """单个 PNG 输出规格。
+
+    ``require_opaque``：渲染结果不允许有任何半透明像素，否则脚本报错、不写文件。
+    ``drop_alpha``：输出不带 alpha 通道的 RGB PNG（iOS 对带透明度的图标会把透明
+    像素涂黑，没有 alpha 通道就没有这个可能）；只能与 ``require_opaque`` 一起用。
+    """
 
     filename: str
     size: int
     source: str
-    fill_corners: bool = False
+    require_opaque: bool = False
+    drop_alpha: bool = False
+
+    def __post_init__(self) -> None:
+        if self.source not in SOURCES:
+            raise ValueError(f"{self.filename}: 未知源 {self.source!r}")
+        if self.drop_alpha and not self.require_opaque:
+            raise ValueError(f"{self.filename}: drop_alpha 必须同时 require_opaque")
 
 
 PNG_OUTPUTS: tuple[PngSpec, ...] = (
     PngSpec("favicon-16.png", 16, "any"),
     PngSpec("favicon-32.png", 32, "any"),
-    PngSpec("apple-touch-icon.png", 180, "any", fill_corners=True),
+    PngSpec(
+        "apple-touch-icon.png", 180, "apple-touch", require_opaque=True, drop_alpha=True
+    ),
     PngSpec("icon-72.png", 72, "any"),
     PngSpec("icon-96.png", 96, "any"),
     PngSpec("icon-128.png", 128, "any"),
     PngSpec("icon-144.png", 144, "any"),
     PngSpec("icon-192.png", 192, "any"),
     PngSpec("icon-512.png", 512, "any"),
-    PngSpec("icon-maskable-192.png", 192, "maskable"),
-    PngSpec("icon-maskable-512.png", 512, "maskable"),
+    PngSpec("icon-maskable-192.png", 192, "maskable", require_opaque=True),
+    PngSpec("icon-maskable-512.png", 512, "maskable", require_opaque=True),
 )
 
 
@@ -212,11 +243,22 @@ def _decode_png_to_rgba(data: bytes) -> tuple[int, int, bytearray]:
     return width, height, rgba
 
 
-def _encode_png_rgba(width: int, height: int, rgba: bytes | bytearray) -> bytes:
-    """把 RGBA 像素 buffer 编码成 PNG 字节流（最小化实现）。"""
+_PNG_CHANNELS_BY_COLOR_TYPE = {2: 3, 6: 4}
 
-    if len(rgba) != width * height * 4:
-        raise ValueError(f"rgba 长度 {len(rgba)} 与 {width}×{height}×4 不匹配")
+
+def _encode_png(
+    width: int, height: int, pixels: bytes | bytearray, color_type: int
+) -> bytes:
+    """把像素 buffer 编码成 8-bit 非交错 PNG 字节流（最小化实现）。
+
+    ``color_type`` 为 6（RGBA）或 2（RGB），``pixels`` 的通道数必须与之相符。
+    """
+
+    channels = _PNG_CHANNELS_BY_COLOR_TYPE[color_type]
+    if len(pixels) != width * height * channels:
+        raise ValueError(
+            f"像素 buffer 长度 {len(pixels)} 与 {width}×{height}×{channels} 不匹配"
+        )
 
     def _chunk(tag: bytes, payload: bytes) -> bytes:
         header = struct.pack(">I", len(payload)) + tag
@@ -224,12 +266,13 @@ def _encode_png_rgba(width: int, height: int, rgba: bytes | bytearray) -> bytes:
         return header + payload + struct.pack(">I", crc)
 
     sig = b"\x89PNG\r\n\x1a\n"
-    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, color_type, 0, 0, 0)
 
+    stride = width * channels
     raw = bytearray()
     for y in range(height):
         raw.append(0)
-        raw.extend(rgba[y * width * 4 : (y + 1) * width * 4])
+        raw.extend(pixels[y * stride : (y + 1) * stride])
     idat_data = zlib.compress(bytes(raw), 9)
 
     return (
@@ -237,31 +280,46 @@ def _encode_png_rgba(width: int, height: int, rgba: bytes | bytearray) -> bytes:
     )
 
 
-def _solid_background_color(
-    rgba: bytes | bytearray, width: int
-) -> tuple[int, int, int]:
-    """从 RGBA buffer (1, 1) 像素取实色背景色。"""
+def _encode_png_rgba(width: int, height: int, rgba: bytes | bytearray) -> bytes:
+    """把 RGBA 像素 buffer 编码成 PNG 字节流（最小化实现）。"""
 
-    idx = (1 * width + 1) * 4
-    return (rgba[idx], rgba[idx + 1], rgba[idx + 2])
+    return _encode_png(width, height, rgba, 6)
 
 
-def _fill_transparent_corners(width: int, height: int, rgba: bytearray) -> bytearray:
-    """把透明像素合成到实色背景上（in-place 修改 rgba）。"""
+def _encode_png_rgb(width: int, height: int, rgba: bytes | bytearray) -> bytes:
+    """丢弃 alpha 通道，把 RGBA 像素 buffer 编码成不带 alpha 的 RGB PNG。
 
-    bg_r, bg_g, bg_b = _solid_background_color(rgba, width)
-    for y in range(height):
-        for x in range(width):
-            idx = (y * width + x) * 4
-            a = rgba[idx + 3]
-            if a == 255:
-                continue
-            inv = 255 - a
-            rgba[idx] = (rgba[idx] * a + bg_r * inv + 127) // 255
-            rgba[idx + 1] = (rgba[idx + 1] * a + bg_g * inv + 127) // 255
-            rgba[idx + 2] = (rgba[idx + 2] * a + bg_b * inv + 127) // 255
-            rgba[idx + 3] = 255
-    return rgba
+    调用方先用 :func:`_first_translucent_pixel` 确认没有半透明像素；这里不做合成，
+    直接取 RGB 三个通道。
+    """
+
+    if len(rgba) != width * height * 4:
+        raise ValueError(f"rgba 长度 {len(rgba)} 与 {width}×{height}×4 不匹配")
+    rgb = bytearray(width * height * 3)
+    rgb[0::3] = rgba[0::4]
+    rgb[1::3] = rgba[1::4]
+    rgb[2::3] = rgba[2::4]
+    return _encode_png(width, height, rgb, 2)
+
+
+def _first_translucent_pixel(
+    width: int, rgba: bytes | bytearray
+) -> tuple[int, int, int] | None:
+    """返回第一个 alpha != 255 的像素 ``(x, y, alpha)``；整张实色则返回 ``None``。"""
+
+    alphas = rgba[3::4]
+    if min(alphas, default=255) == 255:
+        return None
+    index = next(i for i, a in enumerate(alphas) if a != 255)
+    return (index % width, index // width, alphas[index])
+
+
+def _png_color_type(data: bytes) -> int:
+    """读取 PNG IHDR 里的 color type（2 = RGB，6 = RGBA）。"""
+
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("不是 PNG 流")
+    return data[25]
 
 
 def _build_ico(svg_path: Path, sizes: tuple[int, ...]) -> bytes:
@@ -297,65 +355,106 @@ def _build_ico(svg_path: Path, sizes: tuple[int, ...]) -> bytes:
     return header + bytes(entries) + bytes(payloads)
 
 
+def _render_all() -> tuple[list[tuple[PngSpec, int, int, bytearray]], bytes] | None:
+    """渲染全部 PNG 与 ICO 并校验实色性；任何一步失败都返回 ``None``。
+
+    所有渲染与校验都在写盘之前完成，所以失败时磁盘上不会留下写了一半的图标族。
+    """
+
+    rendered: list[tuple[PngSpec, int, int, bytearray]] = []
+    for spec in PNG_OUTPUTS:
+        src = SOURCES[spec.source]
+        try:
+            width, height, rgba = _render_svg_to_rgba(src, spec.size)
+        except Exception as exc:
+            print(f"FAIL render {spec.filename}: {exc}", file=sys.stderr)
+            return None
+
+        if spec.require_opaque:
+            bad = _first_translucent_pixel(width, rgba)
+            if bad is not None:
+                x, y, alpha = bad
+                print(
+                    f"FAIL {spec.filename}: {src.name} 渲染出半透明像素 "
+                    f"(x={x}, y={y}, alpha={alpha})。该图标必须整张实色：让背景铺满"
+                    "整个 canvas，不要留透明边或圆角（iOS 会把透明像素涂成黑色）。",
+                    file=sys.stderr,
+                )
+                return None
+        rendered.append((spec, width, height, rgba))
+
+    try:
+        ico_bytes = _build_ico(SOURCE_SVG_ANY, ICO_SIZES)
+    except Exception as exc:
+        print(f"FAIL build ICO: {exc}", file=sys.stderr)
+        return None
+    return rendered, ico_bytes
+
+
+def _check_png_on_disk(spec: PngSpec, dest: Path, width: int, height: int) -> list[str]:
+    """校验磁盘上的 PNG：存在、尺寸一致、要求实色的图标确实实色且不带 alpha 通道。"""
+
+    if not dest.is_file():
+        return [f"{spec.filename}: 缺失"]
+    data = dest.read_bytes()
+    try:
+        disk_w, disk_h, disk_pixels = _decode_png_to_rgba(data)
+    except Exception as exc:
+        return [f"{spec.filename}: 解码失败 {exc}"]
+
+    problems: list[str] = []
+    if (disk_w, disk_h) != (width, height):
+        problems.append(
+            f"{spec.filename}: 尺寸不一致 disk={disk_w}x{disk_h} expected={width}x{height}"
+        )
+    if spec.require_opaque:
+        bad = _first_translucent_pixel(disk_w, disk_pixels)
+        if bad is not None:
+            problems.append(
+                f"{spec.filename}: 磁盘上的 PNG 有半透明像素 "
+                f"(x={bad[0]}, y={bad[1]}, alpha={bad[2]})，必须整张实色"
+            )
+    if spec.drop_alpha and _png_color_type(data) != 2:
+        problems.append(
+            f"{spec.filename}: 磁盘上的 PNG 带 alpha 通道"
+            f"（color type {_png_color_type(data)}），应为不带 alpha 的 RGB"
+        )
+    return problems
+
+
 def generate_all(check_only: bool = False) -> int:
     """主流程：生成全部 PNG + ICO。返回退出码。"""
 
     if not _check_dependencies():
         return 1
-    if not SOURCE_SVG_ANY.is_file():
-        print(f"ERROR: 缺少源 {SOURCE_SVG_ANY}", file=sys.stderr)
-        return 1
-    if not SOURCE_SVG_MASKABLE.is_file():
-        print(f"ERROR: 缺少源 {SOURCE_SVG_MASKABLE}", file=sys.stderr)
-        return 1
+    for source in SOURCES.values():
+        if not source.is_file():
+            print(f"ERROR: 缺少源 {source}", file=sys.stderr)
+            return 1
 
     if check_only:
-        print("=== check-only 模式：仅验证现有 PNG/ICO 的存在性与尺寸 ===")
+        print("=== check-only 模式：验证现有 PNG/ICO 的存在性、尺寸与实色性 ===")
 
-    sources = {
-        "any": SOURCE_SVG_ANY,
-        "maskable": SOURCE_SVG_MASKABLE,
-    }
+    outcome = _render_all()
+    if outcome is None:
+        return 1
+    rendered, ico_bytes = outcome
 
     drift: list[str] = []
 
-    for spec in PNG_OUTPUTS:
-        src = sources[spec.source]
+    for spec, width, height, rgba in rendered:
         dest = ICONS_DIR / spec.filename
-        try:
-            width, height, rgba = _render_svg_to_rgba(src, spec.size)
-        except Exception as exc:
-            print(f"FAIL render {spec.filename}: {exc}", file=sys.stderr)
-            return 1
-
-        if spec.fill_corners:
-            rgba = _fill_transparent_corners(width, height, rgba)
-
         if check_only:
-            if not dest.is_file():
-                drift.append(f"{spec.filename}: 缺失")
-                continue
-            try:
-                disk_w, disk_h, _ = _decode_png_to_rgba(dest.read_bytes())
-            except Exception as exc:
-                drift.append(f"{spec.filename}: 解码失败 {exc}")
-                continue
-            if (disk_w, disk_h) != (width, height):
-                drift.append(
-                    f"{spec.filename}: 尺寸不一致 disk={disk_w}x{disk_h} expected={width}x{height}"
-                )
+            drift.extend(_check_png_on_disk(spec, dest, width, height))
+            continue
+        if spec.drop_alpha:
+            png_bytes = _encode_png_rgb(width, height, rgba)
         else:
-            png_bytes = _encode_png_rgba(width, height, bytes(rgba))
-            dest.write_bytes(png_bytes)
-            print(f"  wrote  {spec.filename:32s} {spec.size}x{spec.size}")
+            png_bytes = _encode_png_rgba(width, height, rgba)
+        dest.write_bytes(png_bytes)
+        print(f"  wrote  {spec.filename:32s} {spec.size}x{spec.size}")
 
     ico_dest = ICONS_DIR / "icon.ico"
-    try:
-        ico_bytes = _build_ico(SOURCE_SVG_ANY, ICO_SIZES)
-    except Exception as exc:
-        print(f"FAIL build ICO: {exc}", file=sys.stderr)
-        return 1
-
     if check_only:
         if not ico_dest.is_file():
             drift.append("icon.ico: 缺失")
@@ -378,7 +477,7 @@ def generate_all(check_only: bool = False) -> int:
         return 1
 
     if check_only:
-        print("OK: 所有 PNG / ICO 与 SVG 渲染一致")
+        print("OK: 所有 PNG / ICO 存在，尺寸与实色性符合要求")
     else:
         print(f"DONE: 生成 {len(PNG_OUTPUTS)} 个 PNG + 1 个 multi-size ICO")
     return 0

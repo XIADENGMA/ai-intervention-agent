@@ -126,6 +126,50 @@ class TestResetFeedbackConfig(_ResetFeedbackBase):
         self.assertEqual(payload["resubmit_prompt"], RESUBMIT_PROMPT_DEFAULT)
         self.assertEqual(payload["prompt_suffix"], PROMPT_SUFFIX_DEFAULT)
 
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
+    def test_resets_skill_dirs_to_the_auto_default(
+        self, mock_get_cfg: MagicMock
+    ) -> None:
+        """``skill_dirs`` belongs to the ``feedback`` section, so the reset
+        restores it too (the whole section goes back to its defaults) and hands
+        out a fresh list each time instead of a shared module-level one."""
+        from ai_intervention_agent.skill_catalog import DEFAULT_SKILL_DIRS
+
+        mock_cfg = MagicMock()
+        mock_cfg.get_section.return_value = {"skill_dirs": ["~/my-skills"]}
+        mock_get_cfg.return_value = mock_cfg
+
+        resp = self._client.post("/api/reset-feedback-config")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["defaults"]["skill_dirs"], ["auto"])
+
+        _, payload = mock_cfg.update_section.call_args.args
+        self.assertEqual(payload["skill_dirs"], list(DEFAULT_SKILL_DIRS))
+        payload["skill_dirs"].append("mutated")
+        self.assertEqual(DEFAULT_SKILL_DIRS, ("auto",))
+
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
+    def test_resets_local_image_dirs_to_the_auto_default(
+        self, mock_get_cfg: MagicMock
+    ) -> None:
+        """``local_image_dirs`` is part of the ``feedback`` section too: a user
+        who switched local images off (``[]``) or narrowed them to one folder
+        gets the default back, as a fresh list."""
+        from ai_intervention_agent.local_images import DEFAULT_IMAGE_DIRS
+
+        mock_cfg = MagicMock()
+        mock_cfg.get_section.return_value = {"local_image_dirs": []}
+        mock_get_cfg.return_value = mock_cfg
+
+        resp = self._client.post("/api/reset-feedback-config")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["defaults"]["local_image_dirs"], ["auto"])
+
+        _, payload = mock_cfg.update_section.call_args.args
+        self.assertEqual(payload["local_image_dirs"], list(DEFAULT_IMAGE_DIRS))
+        payload["local_image_dirs"].append("mutated")
+        self.assertEqual(DEFAULT_IMAGE_DIRS, ("auto",))
+
     @patch(
         "ai_intervention_agent.web_ui_routes.notification.get_config",
         side_effect=RuntimeError("boom"),

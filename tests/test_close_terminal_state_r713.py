@@ -94,8 +94,13 @@ class TestTerminalStateRenderer(unittest.TestCase):
             "否则角落 SSE 徽章转红报警 + 后台空转重连",
         )
 
-    def test_disposes_lottie_lifecycle(self) -> None:
-        self.assertIn("disposeHourglassAnimationLifecycle()", self.body)
+    def test_retires_lottie_lifecycle(self) -> None:
+        # R727：不只是销毁——还要登记「已退役」，否则切走再切回标签页时
+        # visibilitychange 会在对勾旁边把嫩芽重新建起来。
+        self.assertIn("retireHourglassAnimation()", self.body)
+        retire = _function_body(self.app, "retireHourglassAnimation")
+        self.assertIn("_hourglassLifecycleRetired = true", retire)
+        self.assertIn("disposeHourglassAnimationLifecycle()", retire)
 
     def test_swaps_copy_to_closed_keys(self) -> None:
         self.assertIn('t("status.closedTitle")', self.body)

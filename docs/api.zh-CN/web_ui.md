@@ -169,6 +169,7 @@ Web 反馈界面核心类 - Flask 应用、安全策略、API 路由、任务管
 - TaskRoutesMixin        — 任务 CRUD（5 个路由）
 - FeedbackRoutesMixin    — 反馈提交/查询（3 个路由）
 - NotificationRoutesMixin — 通知配置/触发（5 个路由）
+- SkillRoutesMixin       — 反馈输入框 ``/`` 选择器的 skill 目录（1 个路由）
 - StaticRoutesMixin      — 静态资源（8 个路由）
 - SystemRoutesMixin      — 系统集成（用 IDE 打开配置文件等）
 核心路由（index / config / health / close）保留在本类。

@@ -90,6 +90,7 @@ PROJECT_OWNED_FILES: tuple[str, ...] = (
     "webview-helpers.js",
     "webview-settings-ui.js",
     "webview-ui.js",
+    "slash-commands.js",
     "prism-bootstrap.js",
 )
 

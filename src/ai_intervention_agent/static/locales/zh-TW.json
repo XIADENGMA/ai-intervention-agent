@@ -207,7 +207,7 @@
     "networkOffline": "網路不可達，請檢查網路連線",
     "serverResponseInvalid": "伺服器回應格式異常，請重試",
     "uiRenderingError": "介面繪製異常，請重新整理頁面",
-    "unauthorized": "需要重新登入，請重新整理頁面或檢查存取權杖",
+    "unauthorized": "伺服器拒絕了存取 (401/403)，請檢查網路存取控制設定後重新整理頁面",
     "serviceUnavailable": "服務暫時無法使用，請稍候再試",
     "badGateway": "上游服務暫時無法連線 (502)，請稍候再試",
     "serviceOverloaded": "服務過載或維護中 (503)，請稍候再試",
@@ -343,6 +343,10 @@
           "copy_diagnostics": "複製診断訊息"
         }
       }
+    },
+    "slash": {
+      "listLabel": "技能與命令",
+      "kindCommand": "命令"
     }
   }
 }

@@ -3164,7 +3164,12 @@ async function closeTask(taskId) {
       { method: "POST" },
       10000,
     );
-    const data = await response.json();
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      if (response.ok) throw parseError;
+    }
 
     if (!response.ok || !data.success) {
       console.error("Server-side close task failed:", data.error);

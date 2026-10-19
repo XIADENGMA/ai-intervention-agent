@@ -1102,7 +1102,8 @@ class NotificationRoutesMixin:
             description: >-
               把 feedback.frontend_countdown / resubmit_prompt / prompt_suffix 写回
               server_config.py 中定义的默认值。前端不再硬编码中文默认值，
-              避免 i18n 破坏和默认值漂移。
+              避免 i18n 破坏和默认值漂移。整个 feedback 段一并重置：
+              backend_max_wait 回到默认，skill_dirs 与 local_image_dirs 回到 ``["auto"]``。
             responses:
               200:
                 description: 配置已重置
@@ -1120,18 +1121,22 @@ class NotificationRoutesMixin:
                       description: 错误说明文本
             """
             try:
+                from ai_intervention_agent.local_images import DEFAULT_IMAGE_DIRS
                 from ai_intervention_agent.server_config import (
                     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
                     FEEDBACK_TIMEOUT_DEFAULT,
                     PROMPT_SUFFIX_DEFAULT,
                     RESUBMIT_PROMPT_DEFAULT,
                 )
+                from ai_intervention_agent.skill_catalog import DEFAULT_SKILL_DIRS
 
                 defaults = {
                     "backend_max_wait": int(FEEDBACK_TIMEOUT_DEFAULT),
                     "frontend_countdown": int(AUTO_RESUBMIT_TIMEOUT_DEFAULT),
                     "resubmit_prompt": RESUBMIT_PROMPT_DEFAULT,
                     "prompt_suffix": PROMPT_SUFFIX_DEFAULT,
+                    "skill_dirs": list(DEFAULT_SKILL_DIRS),
+                    "local_image_dirs": list(DEFAULT_IMAGE_DIRS),
                 }
 
                 config_mgr = get_config()

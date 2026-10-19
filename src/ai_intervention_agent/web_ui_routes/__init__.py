@@ -7,6 +7,7 @@
 
 from ai_intervention_agent.web_ui_routes.feedback import FeedbackRoutesMixin
 from ai_intervention_agent.web_ui_routes.notification import NotificationRoutesMixin
+from ai_intervention_agent.web_ui_routes.skills import SkillRoutesMixin
 from ai_intervention_agent.web_ui_routes.static import StaticRoutesMixin
 from ai_intervention_agent.web_ui_routes.system import SystemRoutesMixin
 from ai_intervention_agent.web_ui_routes.task import TaskRoutesMixin
@@ -14,6 +15,7 @@ from ai_intervention_agent.web_ui_routes.task import TaskRoutesMixin
 __all__ = [
     "FeedbackRoutesMixin",
     "NotificationRoutesMixin",
+    "SkillRoutesMixin",
     "StaticRoutesMixin",
     "SystemRoutesMixin",
     "TaskRoutesMixin",

@@ -3,6 +3,8 @@
 // editing packages/vscode/locales/en.json.
 
 export type I18nKey =
+  | "aiia.slash.kindCommand"
+  | "aiia.slash.listLabel"
   | "aiia.state.empty.message.default"
   | "aiia.state.empty.message.filtered"
   | "aiia.state.empty.title"
@@ -169,6 +171,8 @@ export type I18nKey =
   | "ui.toast.configFallbackReason"
 
 export const I18N_KEYS: readonly I18nKey[] = [
+  "aiia.slash.kindCommand",
+  "aiia.slash.listLabel",
   "aiia.state.empty.message.default",
   "aiia.state.empty.message.filtered",
   "aiia.state.empty.title",

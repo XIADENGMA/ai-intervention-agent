@@ -14,14 +14,14 @@ TypeError / SyntaxError) 分成 5 类。但 ``fetch()`` 默认对 HTTP 4xx/5xx
     }
 
 把所有 HTTP 错误笼统显示 backend ``result.message``。但用户对 401/403
-应该"重新登录"而非看 backend message；对 5xx (502/503/504) 应该
-"稍后重试"而非看 stack trace。
+应该看到"访问被拒绝，检查网络访问设置"(产品没有登录, 见 R724) 而非
+backend message；对 5xx (502/503/504) 应该"稍后重试"而非看 stack trace。
 
 R294 引入 ``_classifyHttpResponse(response)`` 按 ``status`` 分类:
 
 .. code-block:: text
 
-    status 401 / 403 → "status.unauthorized"      (用户重新登录)
+    status 401 / 403 → "status.unauthorized"      (访问被拒绝)
     status 5xx       → "status.serviceUnavailable" (稍后重试)
     其他             → null (调用方按既有 backend message + fallback)
 

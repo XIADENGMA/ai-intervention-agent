@@ -80,6 +80,12 @@ FastMCP 3.2.4 能动态 add/remove 工具，保留 annotations/tags/version，
 - `message`（string，必填）
   - 展示给用户的问题/提示（支持 Markdown）
   - 最大长度：**1000000** 字符（超出会截断；`task_queue` 仍保留 10 MB 字节硬上限作为 DoS 防御）
+  - 本地图片：目标为运行 agent 的这台机器上文件的 Markdown 图片
+    （`![chart](/abs/chart.png)`、相对工作区的路径、`~/…`、`<img src>` 或 `file:` URL）
+    会由 MCP 服务端读取并展示给用户。只显示工作区目录或临时目录内的
+    png / jpg / gif / webp / bmp / avif（每条消息最多 8 张，单张不超过 8 MB）；
+    其余路径会被替换成一行说明，且不会被读取。详见
+    [configuration.zh-CN.md](configuration.zh-CN.md) 中的 `local_image_dirs`。
 - `predefined_options`（array，可选）
   - 预定义选项列表，用户可选择其一或多项（以实际前端交互为准）。**两种规范输入形态**（v1.6.0+）：
     1. **推荐使用** `list[dict]` —— `{ "label": str, "default": bool }`

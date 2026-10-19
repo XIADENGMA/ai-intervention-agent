@@ -17,6 +17,7 @@ from flask.typing import ResponseReturnValue
 
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.i18n import msg
+from ai_intervention_agent.local_images import parse_prompt_images
 from ai_intervention_agent.sse_event_schemas import validate_payload
 from ai_intervention_agent.task_constants import PLACEHOLDER_MAX_LENGTH
 from ai_intervention_agent.task_queue_singleton import get_task_queue
@@ -1456,6 +1457,15 @@ class TaskRoutesMixin:
                       maximum: 3600
                       default: 240
                       description: 倒计时秒数；0=禁用；非零值范围 [10, 3600]，与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐（与 POST /api/update-feedback-config 同字段一致）
+                    prompt_images:
+                      type: array
+                      items:
+                        type: object
+                      description: |
+                        提示文本里以 /api/tasks/<task_id>/images/<n> 引用的图片，按 n 排列；
+                        每项形如 {"data": "<base64>"}（单张 ≤ 8 MB，最多 8 张，合计 ≤ 16 MB）。
+                        格式只看文件头（png/jpeg/gif/webp/bmp/avif），不合格的条目保留位置但
+                        不可访问（GET 返回 404）。仅保存在内存里，不写入持久化文件。
             responses:
               200:
                 description: 任务创建成功
@@ -1563,6 +1573,8 @@ class TaskRoutesMixin:
             ):
                 loop_raw = data.get(loop_key)
                 loop_fields[loop_key] = loop_raw if isinstance(loop_raw, str) else None
+
+            prompt_images = parse_prompt_images(data.get("prompt_images"))
 
             if not isinstance(task_id_raw, str) or not task_id_raw.strip():
                 return (
@@ -1698,6 +1710,7 @@ class TaskRoutesMixin:
                     loop_phase=loop_fields["loop_phase"],
                     success_criteria=loop_fields["success_criteria"],
                     iteration_label=loop_fields["iteration_label"],
+                    prompt_images=prompt_images,
                 )
             except Exception as e:
                 logger.error(f"创建任务失败: {e}", exc_info=True)
@@ -1705,6 +1718,12 @@ class TaskRoutesMixin:
 
             if success:
                 logger.info(f"任务已通过API添加到队列: {task_id}")
+                rejected_images = sum(image is None for image in prompt_images)
+                if rejected_images:
+                    logger.warning(
+                        f"任务 {task_id} 的 prompt_images 有 {rejected_images} 张无效"
+                        f"（非图片 / 超限 / base64 错误），对应链接将返回 404"
+                    )
 
                 resp: dict[str, object] = {"success": True, "task_id": task_id}
                 if (
@@ -1858,6 +1877,50 @@ class TaskRoutesMixin:
             except Exception as e:
                 logger.error(f"获取任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
+
+        @self.app.route("/api/tasks/<task_id>/images/<int:index>", methods=["GET"])
+        @self.limiter.limit("300 per minute")
+        def get_task_image(task_id: str, index: int) -> ResponseReturnValue:
+            """获取任务提示词里引用的图片（由 MCP 进程随任务一并提交的本地图片）
+            ---
+            tags:
+              - Tasks
+            parameters:
+              - name: task_id
+                in: path
+                type: string
+                required: true
+                description: 任务 ID
+              - name: index
+                in: path
+                type: integer
+                required: true
+                description: 图片序号，从 0 开始，与提示词里改写后的链接一致
+            responses:
+              200:
+                description: 图片内容；Content-Type 由文件头决定（png/jpeg/gif/webp/bmp/avif）
+              404:
+                description: 任务不存在、已被清理，或该序号没有可用图片
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本
+            """
+            task = get_task_queue().get_task(task_id)
+            images = task.prompt_images if task else ()
+            image = images[index] if index < len(images) else None
+            if image is None:
+                return jsonify({"success": False, "error": "图片不存在"}), 404
+            response = Response(image.data, mimetype=image.mime_type)
+            response.headers["Cache-Control"] = "private, max-age=3600"
+            response.headers["Content-Disposition"] = "inline"
+            return response
 
         @self.app.route("/api/tasks/<task_id>/extend", methods=["POST"])
         @self.limiter.limit("10 per minute")

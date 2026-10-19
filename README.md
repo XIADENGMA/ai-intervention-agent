@@ -186,6 +186,8 @@ Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
 - **Web UI** — Markdown, code highlighting, and math rendering out of the box
 - **Multi-task tabs** — concurrent requests with independent countdowns, per-task draft autosave, and auto re-submit that keeps long sessions alive (your typed text and checked options are submitted at zero, never an empty prompt)
 - **Typing-hold** — the countdown auto-extends while you type and never fires mid-input (web page and VS Code extension alike)
+- **Skill and command picker** — type `/` in the feedback box to insert an installed Agent Skill or custom command (Cursor / Claude Code / Codex layouts, auto-detected or set with `[feedback] skill_dirs`)
+- **Local images in prompts** — write `![alt](path/to/image.png)` in the message and the Web UI shows the file; only images inside your workspace folders and the temp directory are read (adjust with `[feedback] local_image_dirs`)
 - **Agent-loop ergonomics** — per-task `header_label` context chips, `feedback_placeholder` hints, and loop engineering metadata (`loop_id`, `loop_phase`, `success_criteria`)
 - **Notifications** — web / sound / system / Bark (iOS push), plus custom notification sound upload
 - **SSH / LAN friendly** — works behind port forwarding; mDNS publishes a `<host>.local` URL when supported
@@ -269,7 +271,7 @@ On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and po
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp) (poliva) | ~310 | Direct ancestor fork (see Acknowledgements); minimal Python MCP, single feedback dialog. |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp) (Pursue-LLL) | ~30 | Independent smaller-scale fork emphasising minimal dependencies. |
 
-**Where AIIA sits on the spectrum**: AIIA targets the operationally deep end — Web UI + VS Code extension sharing one backend, production-grade observability (`/metrics` Prometheus endpoint + a [reference Grafana dashboard](docs/observability/README.md)), bilingual i18n + docs, strict invariant test discipline (8,200+ tests + 1,050+ subtests across 40 audit cycles), and a 5-job release pipeline. Want the smallest drop-in? poliva's fork. A desktop app? mcp-feedback-enhanced. Voice / multi-tab UI? Relay or the Node.js fork. Full-stack operational integration? AIIA.
+**Where AIIA sits on the spectrum**: AIIA targets the operationally deep end — Web UI + VS Code extension sharing one backend, production-grade observability (`/metrics` Prometheus endpoint + a [reference Grafana dashboard](docs/observability/README.md)), bilingual i18n + docs, strict invariant test discipline (8,700+ tests + 1,050+ subtests across 40 audit cycles), and a 5-job release pipeline. Want the smallest drop-in? poliva's fork. A desktop app? mcp-feedback-enhanced. Voice / multi-tab UI? Relay or the Node.js fork. Full-stack operational integration? AIIA.
 
 **Feature gap callouts** (contributions welcome): Speech-to-Text input, always-on-top native window, Cursor usage monitoring, multi-tab session merging UI.
 

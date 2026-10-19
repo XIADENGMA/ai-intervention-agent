@@ -34,7 +34,7 @@
     <link
       rel="apple-touch-icon"
       sizes="180x180"
-      href="/icons/apple-touch-icon.png?v={{ version }}"
+      href="/icons/apple-touch-icon.png?v={{ version }}&amp;r={{ apple_touch_icon_version }}"
     />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#D97757" />
@@ -932,6 +932,7 @@
             <textarea
               class="feedback-textarea"
               id="feedback-text"
+              data-aiia-slash-commands
               data-i18n-placeholder="page.feedbackPlaceholder"
               placeholder="Enter feedback…"
               data-i18n-aria-label="page.feedbackTextareaAriaLabel"
@@ -2113,6 +2114,12 @@
     <script
       defer
       src="/static/js/keyboard_shortcut_help.js?v={{ keyboard_shortcut_help_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
+    <script
+      defer
+      src="/static/js/slash-commands.js?v={{ slash_commands_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 

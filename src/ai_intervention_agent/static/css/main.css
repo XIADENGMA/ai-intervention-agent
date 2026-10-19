@@ -722,6 +722,7 @@ h1 {
   height: 120px;
   font-size: 4rem;
   margin-bottom: 0.5rem;
+  color: var(--text-primary, #faf9f5);
   opacity: 1;
   display: flex;
   align-items: center;
@@ -2152,6 +2153,83 @@ h1 {
   background: var(--error-bg);
 }
 
+.aiia-slash-popup {
+  position: fixed;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.375rem;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 14px;
+  box-shadow: var(--shadow-xl);
+  backdrop-filter: blur(12px);
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.aiia-slash-popup[hidden] {
+  display: none;
+}
+
+.aiia-slash-popup .aiia-slash-item {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.aiia-slash-popup .aiia-slash-item[aria-selected="true"] {
+  background: var(--bg-active);
+  outline: 2px solid var(--focus-ring-color, var(--primary-500));
+  outline-offset: -2px;
+}
+
+.aiia-slash-popup .aiia-slash-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.aiia-slash-popup .aiia-slash-token {
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.aiia-slash-popup .aiia-slash-label,
+.aiia-slash-popup .aiia-slash-desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.aiia-slash-popup .aiia-slash-kind {
+  flex: none;
+  margin-left: auto;
+  padding: 0 0.4rem;
+  border: 1px solid var(--border-secondary);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.aiia-slash-popup .aiia-slash-item[aria-selected="true"] .aiia-slash-label,
+.aiia-slash-popup .aiia-slash-item[aria-selected="true"] .aiia-slash-desc,
+.aiia-slash-popup .aiia-slash-item[aria-selected="true"] .aiia-slash-kind {
+  color: var(--text-primary);
+}
+
 .button-container {
   display: flex;
   gap: 0.625rem;
@@ -2876,6 +2954,12 @@ h1 {
   background: rgba(217, 119, 87, 0.08);
   border-left: 3px solid #d97757;
   color: #f5f5f7;
+}
+
+.markdown-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
 }
 
 .markdown-content code {
@@ -5340,6 +5424,17 @@ code,
 
       outline-color: Highlight;
     }
+  }
+}
+
+/* The slash picker keeps DOM focus in the textarea, so its selected row is the
+   focus indicator. This rule has to stay unlayered (the row's base rule is) and
+   after the a11y-layer block above, which the contrast audit looks up first. */
+@media (prefers-contrast: more) {
+  .aiia-slash-popup .aiia-slash-item[aria-selected="true"] {
+    outline-color: var(--text-primary);
+    outline-width: 3px;
+    outline-offset: -3px;
   }
 }
 

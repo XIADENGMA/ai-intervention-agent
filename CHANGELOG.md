@@ -9,6 +9,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Type `/` in the feedback box (Web UI and VS Code extension) to pick an
+  installed agent skill or custom command. The list filters as you type
+  (names first, then display names and descriptions), `↑`/`↓` move,
+  `Enter` or `Tab` insert `/name `, `Esc` closes it, and the mouse and
+  touch work too; `Ctrl`/`Cmd`+`Enter` still submits, an IME composition
+  is never interrupted, and in "Enter submits" mode `Enter` picks the
+  highlighted entry instead of sending the form. The server finds the
+  entries (`GET /api/skills`, display metadata only: no file bodies, no
+  absolute paths) in the well-known Agent Skills locations — project and
+  home `.cursor`, `.agents`, `.claude`, `.codex`: every `SKILL.md` below
+  `skills/` and the top-level `*.md` of `commands/` and `prompts/` — or in
+  the directories of the new `[feedback] skill_dirs` option (default
+  `["auto"]`; `~` and relative paths work; `[]` turns the picker off).
+  Skills are read from their front matter (`name`, `description`;
+  `user-invocable: false` hides one; a `SKILL.md` without front matter is
+  skipped). A display name that is not a single word, such as
+  `CTF•Web 漏洞`, inserts the `触发名:` / `trigger name:` token written in
+  its description. Scans are bounded (depth, 1000 entries, 3 s) and cached
+  for 30 s, so a huge or hostile directory cannot stall the UI.
+- Images that the agent's message links to now show up on the feedback
+  page, in the Web UI and in the VS Code panel. Write `![chart](out/chart.png)`
+  (or `<img src="...">`) with a path on your machine: the MCP server, which
+  runs next to the files, reads the picture and sends the bytes with the
+  task, and the page shows it. Only png, jpg, gif, webp, bmp and avif files
+  are read, and only inside the allowed folders: the workspace folders your
+  MCP client reports, the system temp directory, and the entries of the new
+  `[feedback] local_image_dirs` option (default `["auto"]`; `~` and relative
+  paths work; `[]` turns the feature off). `..` segments and symlinks that
+  lead out, SVG, a file whose first bytes do not match its extension, and
+  anything beyond 8 MB per image, 16 MB or 8 images per message are
+  refused, and a refused reference becomes a one-line note that names the
+  reason instead of a broken image. Code blocks, inline code and `http(s):`
+  or `data:` references are left alone. The Web UI never opens a path it
+  is sent: it serves the bytes it was given from
+  `GET /api/tasks/<id>/images/<n>` and keeps them in memory only, so a task
+  restored after a Web UI restart shows its images as missing.
+
 ### Changed
 
 - Repository-wide comment cleanup (maintainer decision: comments are
@@ -129,6 +168,81 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   page and scrolled the panel (3 more violations); right-click on a formula
   now behaves like right-click on the rest of the panel. The Web UI is
   unaffected (its policy allows inline styles).
+- Web UI: the icon saved to the iOS home screen no longer has a black
+  border. `apple-touch-icon.png` was rendered from the rounded, inset
+  `icon.svg`, and the generator then "filled" the transparent margin with a
+  colour sampled from a transparent pixel, which is black: a third of the
+  180×180 PNG (33.3 %, the whole frame and the corners) was solid black, and
+  iOS showed it around the icon. The icon now comes from its own full-bleed
+  source, `icon-apple-touch.svg`, and is written as an RGB PNG without an
+  alpha channel (0 near-black pixels, the frame is the tile's own
+  `#E8ECF5`-to-`#DEE4F1` background). The generator refuses to write a
+  maskable or apple-touch icon whose source renders translucent pixels, and
+  writes nothing in that case. The page links the icon with a revision taken
+  from the file (`?v=…&r=…`), so a regenerated icon is not hidden behind the
+  one-week `/icons/*` cache or the service worker's copy. iOS stores the icon
+  when the shortcut is created: remove the old shortcut and add the page to
+  the home screen again to get the new one. The `check-pwa-icons-fresh`
+  pre-commit hook watched `icons/`, a directory that does not exist, so it
+  never ran; it now watches `src/ai_intervention_agent/icons/` and the
+  generator.
+- Web UI: the message for an HTTP 401/403 answer no longer says
+  "Authentication required, please sign in again" (zh-CN and zh-TW said the
+  same in Chinese). There is no sign-in anywhere in the product, and the only
+  things that answer 401/403 are the network access control or a proxy in front
+  of the page, so the message now reads "Access denied by the server (401/403),
+  please check the network access settings and refresh the page" (translated in
+  zh-CN and zh-TW). A new invariant (R724) keeps the copy free of sign-in wording and
+  keeps the FastMCP constructor free of an `auth=` provider and the first-party
+  front-end code free of password fields and `Authorization` headers.
+  Troubleshooting §16 (EN + zh-CN) explains why Cursor can still show
+  "Needs Authentication" or an `mcp_auth` tool for this stdio server: both
+  come from Cursor (a virtual tool added for every server, and a text match on
+  `unauthorized` / `401` in a failed request), and the server has no setting
+  for either.
+- Web UI: a failed submit or "close task" request is now explained by its HTTP
+  status, whatever the response body is. `submitFeedback` and `closeTask`
+  parsed the body as JSON before looking at the status, but the 403 page of
+  the network access control and the 502/503/504 pages of a reverse proxy are
+  HTML (or empty): the parse threw, the user read "Server returned an invalid
+  response", and the 401/403/5xx messages added in R294 could never be shown
+  for the responses they exist for. The status is now read first (401/403 →
+  access denied, 502/503/504/other 5xx → the matching "retry shortly"
+  message); an unclassified status keeps the generic failure text or the
+  server's own JSON message, a 2xx with a non-JSON body is still reported as
+  an invalid response, and the user's text, draft and images are kept when a
+  submit fails. Checked in a real browser by replaying the server's real HTML
+  403 and 401/502/503/504/500/413 answers against the page; a new invariant
+  (R725) runs the shipped functions in Node against 10 kinds of failing
+  response (10 mutations killed).
+- Web UI: the sprout animation on the waiting page no longer flashes or
+  restarts on phones. Three things were wrong. lottie's SVG renderer
+  expanded the 72-frame sprout into 514 DOM nodes and rewrote about 265
+  attributes a second (lottie users report white flicker with it on iOS and
+  switch to the canvas renderer); in the dark theme the container was also
+  inverted with a CSS `filter` while it repainted, a path where WebKit has
+  open bugs for animated content; and every `visibilitychange` (switching
+  apps, locking the phone, the notification shade) destroyed the animation
+  and rebuilt it from frame 0 (three round trips meant three rebuilds). A closed
+  task's card also got a second, animated sprout next to its check icon
+  when the tab was hidden and shown again. The page now draws the sprout
+  with lottie's canvas renderer (1 DOM node, no DOM changes while it
+  plays), bakes the dark palette into the animation data instead of using
+  a filter (against the old picture the average difference is at most
+  0.13/255 once aligned by one device pixel, 1.5/255 unaligned), and pauses
+  instead of rebuilding: a hidden page, or a feedback form on screen,
+  pauses it, and it resumes on the same frame after the canvas is resized
+  and redrawn, which also covers a canvas that is 0×0 because it was made
+  inside a hidden container or that iOS dropped from memory. A closed card
+  keeps only its check icon. The fallback sprout, drawn only when the
+  animation file cannot be loaded, follows the theme's text colour instead
+  of a fixed near-black stroke. Checked in headless WebKit 27.2 and
+  Chromium 156 with an iPhone 15 profile (both renderers play at 60 fps
+  with no frame jumps, so no speed-up is claimed); a flicker that
+  only a real iPhone shows cannot be reproduced there, so please look at
+  the page on the phone. A new invariant (R727) runs the shipped functions
+  in Node with a fake lottie, fetch and ResizeObserver (37 mutations
+  killed).
 
 ## [1.8.12] - 2026-09-07
 

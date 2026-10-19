@@ -186,6 +186,8 @@ pip install ai-intervention-agent
 - **Web UI** —— Markdown / 代码高亮 / 数学公式开箱即用
 - **多任务标签页** —— 并发请求各自独立倒计时、每任务草稿自动保存；自动重调保持长会话不断开（归零时优先提交已输入的文本与勾选项，绝不发空提示）
 - **输入即延长（typing-hold）** —— 正在输入时倒计时自动延长、归零也绝不打断（Web 页面与 VS Code 插件语义一致）
+- **技能与命令选择器** —— 在反馈输入框里输入 `/`，即可插入已安装的 Agent Skill 或自定义命令（兼容 Cursor / Claude Code / Codex 目录布局，自动识别，也可用 `[feedback] skill_dirs` 指定）
+- **提示词里的本地图片** —— 在提示词里写 `![说明](图片路径)`，Web UI 就会把图片显示出来；只读取工作区目录和临时目录内的图片（可用 `[feedback] local_image_dirs` 调整）
 - **Agent 循环友好** —— 每任务 `header_label` 上下文短标签、`feedback_placeholder` 自定义占位提示、循环工程元数据（`loop_id`、`loop_phase`、`success_criteria`）
 - **通知** —— Web UI / 声音 / 系统通知 / Bark（iOS 推送），支持上传自定义通知音效
 - **SSH / 局域网友好** —— 适配 SSH 端口转发；本地网络支持时通过 mDNS 发布 `<host>.local` 入口
@@ -268,7 +270,7 @@ iPhone 上最顺手的用法是把 Web UI 包进快捷指令（Shortcuts），�
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp)（poliva） | 约 310 | 直系上游 fork（参见下方致谢）；最精简的 Python MCP，单一反馈对话框。 |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp)（Pursue-LLL） | 约 30 | 体量更小的独立 fork，强调"依赖最少"。 |
 
-**AIIA 在光谱中的位置**：AIIA 走的是**完整运维栈**路线——Web UI 与 VS Code 插件共享同一后端、生产级可观测性（`/metrics` Prometheus 端点 + [参考 Grafana 仪表盘](docs/observability/README.zh-CN.md)）、中英双语 i18n + 双语文档、严格的不变量测试纪律（8,200+ 测试 + 1,050+ subtests，40 cycles 持续审计）、以及 5 个 job 的发布流水线。只想要最轻量的 drop-in？选 poliva 版本。想要桌面应用？mcp-feedback-enhanced。想要语音输入 / 多 tab UI？Relay 或 Node.js 版本。想要完整运维集成？AIIA。
+**AIIA 在光谱中的位置**：AIIA 走的是**完整运维栈**路线——Web UI 与 VS Code 插件共享同一后端、生产级可观测性（`/metrics` Prometheus 端点 + [参考 Grafana 仪表盘](docs/observability/README.zh-CN.md)）、中英双语 i18n + 双语文档、严格的不变量测试纪律（8,700+ 测试 + 1,050+ subtests，40 cycles 持续审计）、以及 5 个 job 的发布流水线。只想要最轻量的 drop-in？选 poliva 版本。想要桌面应用？mcp-feedback-enhanced。想要语音输入 / 多 tab UI？Relay 或 Node.js 版本。想要完整运维集成？AIIA。
 
 **功能 gap 提示**（欢迎贡献）：语音转文字输入、原生置顶窗口、Cursor 用量监控、多 tab 会话合并 UI。
 

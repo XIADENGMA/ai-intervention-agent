@@ -812,6 +812,7 @@ class TestI18nDeadKeys(unittest.TestCase):
         keys: set[str] = set()
         for name in (
             "webview-ui.js",
+            "slash-commands.js",
             "webview-settings-ui.js",
             "webview-notify-core.js",
             "webview.ts",
