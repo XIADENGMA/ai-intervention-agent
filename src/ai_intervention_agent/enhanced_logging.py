@@ -8,6 +8,7 @@ import re
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from typing import Any
 
 from loguru import logger as _loguru_logger
@@ -181,8 +182,19 @@ class InterceptHandler(logging.Handler):
         except ValueError:
             level = record.levelno
 
+        try:
+            message = record.getMessage()
+        except Exception as exc:
+            # 标准库 handler 遇到填不进去的参数只会打一份错误报告，不会让 logging
+            # 调用抛出；这里也一样，并且不输出原始参数，保证脱敏。
+            try:
+                template = str(record.msg)
+            except Exception:
+                template = "<无法转成文本的日志消息>"
+            message = f"{template}（日志参数无法代入：{type(exc).__name__}）"
+
         _loguru_logger.bind(logger_name=record.name).opt(exception=record.exc_info).log(
-            level, record.getMessage()
+            level, message
         )
 
 
@@ -273,21 +285,40 @@ class EnhancedLogger:
                 return level
         return default_level
 
+    @staticmethod
+    def _render(message: str, args: tuple[Any, ...]) -> str:
+        """按标准库的规则把 ``args`` 代入 ``message``，代入不了就原样返回。
+
+        去重和 ring buffer 要的是最终写出去的那一句，不是还带着 ``%s`` 的模板。
+        """
+        fill: Any = args
+        if len(args) == 1 and isinstance(args[0], Mapping) and args[0]:
+            fill = args[0]
+        if not fill:
+            return message
+        try:
+            return message % fill
+        except Exception:
+            return message
+
     def log(self, level: int, message: str, *args: Any, **kwargs: Any) -> None:
         """记录日志，带去重和级别映射"""
         effective_level = self._get_effective_level(message, level)
         if not self.logger.isEnabledFor(effective_level):
             return
 
-        should_log, duplicate_info = self.deduplicator.should_log(message)
+        rendered = self._render(message, args)
+        should_log, duplicate_info = self.deduplicator.should_log(rendered)
 
         if should_log:
             if duplicate_info:
-                message += f" ({duplicate_info})"
+                suffix = f" ({duplicate_info})"
+                message += suffix
+                rendered += suffix
 
             self.logger.log(effective_level, message, *args, **kwargs)
 
-            _record_to_ring(effective_level, self.logger.name, message)
+            _record_to_ring(effective_level, self.logger.name, rendered)
 
     def setLevel(self, level: int) -> None:
         """兼容标准 logging.Logger API：设置底层 logger 的级别。"""

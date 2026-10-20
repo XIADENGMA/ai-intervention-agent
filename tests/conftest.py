@@ -14,10 +14,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 # R76 src/ layout 改造之后，让 ``import ai_intervention_agent.<module>`` 在
@@ -122,6 +124,68 @@ def _silence_loguru_sinks_during_tests():
     yield
 
 
+def reset_log_duplicate_windows() -> None:
+    """清空所有包内模块级 ``EnhancedLogger`` 的重复日志窗口。"""
+    for name, loaded in list(sys.modules.items()):
+        if not name.startswith("ai_intervention_agent"):
+            continue
+        namespace = getattr(loaded, "__dict__", None)
+        if not isinstance(namespace, dict):
+            continue
+        for attribute in ("logger", "enhanced_logger"):
+            candidate = namespace.get(attribute)
+            # 按类名而不是 isinstance 判断：有用例会 reload enhanced_logging，
+            # 之前创建的 logger 属于旧的 EnhancedLogger 类。
+            if type(candidate).__name__ != "EnhancedLogger":
+                continue
+            with candidate.deduplicator.lock:
+                candidate.deduplicator.cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_log_duplicate_window():
+    """每个用例都从空的重复日志窗口开始。
+
+    ``EnhancedLogger`` 在 5 秒内丢弃相同的消息，窗口随 logger 实例存在于整个
+    进程。先跑的用例发过某条警告，后跑的 ``assertLogs`` 就什么也收不到——
+    用例是否通过取决于执行顺序。
+    """
+    reset_log_duplicate_windows()
+    yield
+
+
+def snapshot_global_log_levels() -> Callable[[], None]:
+    """记录 root logger、root 上所有 handler 和 werkzeug 当前的级别，返回还原它们的函数。"""
+    root = logging.getLogger()
+    werkzeug = logging.getLogger("werkzeug")
+    root_level = root.level
+    werkzeug_level = werkzeug.level
+    handler_levels = [(handler, handler.level) for handler in root.handlers]
+
+    def restore() -> None:
+        root.setLevel(root_level)
+        werkzeug.setLevel(werkzeug_level)
+        for handler, level in handler_levels:
+            handler.setLevel(level)
+
+    return restore
+
+
+@pytest.fixture(autouse=True)
+def _restore_global_log_levels():
+    """每个用例结束后把全局日志级别还原成开始时的样子。
+
+    ``apply_runtime_log_level``（POST ``/api/system/log-level``）同时改 root
+    logger、root 上所有 handler 和 werkzeug 的级别。做完不还原，后面的用例就带着
+    INFO 级别跑，连 pytest 自己长期挂在 root 上的 live-log handler 也被放宽了。
+    pytest 9.1 起这些 handler 还会直接挂到不向上传播的 logger 上，INFO 记录一经过
+    它，pytest 就暂停再恢复输出捕获，把用例里 ``redirect_stdout`` 设的目标换掉。
+    """
+    restore = snapshot_global_log_levels()
+    yield
+    restore()
+
+
 @pytest.fixture(autouse=True)
 def _isolate_config_and_notification_singletons():
     """每个用例前后都做隔离，保证测试离线且互不污染。"""
@@ -142,9 +206,15 @@ def _isolate_config_and_notification_singletons():
     # 3) NotificationManager：取消残留 Timer、确保线程池可用，并让 Bark provider 与配置一致
     try:
         from ai_intervention_agent.notification_manager import (
+            NotificationManager,
             NotificationType,
             notification_manager,
         )
+
+        # 有的用例用 ``__new__`` 自建实例（``_make_manager``），``__new__`` 会把
+        # 它登记成单例；不拉回来，后面的 ``NotificationManager()`` 会拿到别人
+        # 留下的、可能已经 shutdown 的实例。
+        NotificationManager._instance = notification_manager
 
         # 清理上一个用例可能遗留的 timer/线程池（避免用例结束后继续重试打印日志）
         try:

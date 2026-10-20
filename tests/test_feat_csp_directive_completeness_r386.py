@@ -156,7 +156,8 @@ class TestLayer2SourceLevelLock:
     """Layer 2: 完整 CSP 字符串含每个必需 directive + 关键值, 无弱化。"""
 
     @pytest.fixture(scope="class")
-    def directives(self) -> dict[str, str]:
+    @classmethod
+    def directives(cls) -> dict[str, str]:
         return _split_directives(_build_full_csp())
 
     def test_every_required_directive_present(self, directives, subtests):
@@ -210,7 +211,8 @@ class TestLayer3RuntimeLock:
     """Layer 3: Flask test_client 响应 CSP header 含同样 10 directive。"""
 
     @pytest.fixture(scope="class")
-    def runtime_csp(self) -> str:
+    @classmethod
+    def runtime_csp(cls) -> str:
         """启动 minimal Flask app, 拿到 ``/`` 响应的 CSP header。"""
         from flask import Flask
 

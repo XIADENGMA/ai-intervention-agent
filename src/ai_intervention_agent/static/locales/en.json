@@ -182,7 +182,8 @@
     "resetFeedbackConfig": "Reset feedback config",
     "feedbackConfigSaved": "Feedback config saved",
     "feedbackConfigReset": "Feedback config reset to defaults",
-    "feedbackConfigSaveFailed": "Failed to save feedback config"
+    "feedbackConfigSaveFailed": "Failed to save feedback config",
+    "notificationConfigSaveFailed": "Failed to save notification settings"
   },
   "status": {
     "loadFailed": "Failed to load config",
@@ -197,6 +198,7 @@
     "submitEmpty": "Please enter feedback, select an option, or upload an image",
     "submitting": "Submitting…",
     "submitFailed": "Submit failed",
+    "switchFailed": "Switch task failed, please retry",
     "networkError": "Network error, please retry",
     "requestTimeout": "Request timed out, please retry",
     "networkOffline": "Network unreachable, please check your connection",

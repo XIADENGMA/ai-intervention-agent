@@ -20,6 +20,10 @@
 
 ### `_get_module_static_dir() -> Path`
 
+### `_server_bind_without_reverse_dns(server: Any) -> None`
+
+### `ensure_bind_without_reverse_dns() -> bool`
+
 ### `web_feedback_ui(prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, output_file: str | None = None, host: str = '0.0.0.0', port: int = 8080, external_base_url: str = '', mdns_hostname: str = MDNS_DEFAULT_HOSTNAME, trusted_hosts: list[str] | None = None) -> FeedbackResult | None`
 
 ## Classes

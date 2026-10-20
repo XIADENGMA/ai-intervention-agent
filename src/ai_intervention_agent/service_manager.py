@@ -120,6 +120,7 @@ def _ensure_notification_system_loaded() -> tuple[Any, Any]:
 
 
 _async_client: httpx.AsyncClient | None = None
+_async_client_loop: asyncio.AbstractEventLoop | None = None
 _sync_client: httpx.Client | None = None
 _http_client_lock = threading.Lock()
 
@@ -171,24 +172,44 @@ def _coerce_env_int(env_name: str, lo: int, hi: int) -> int | None:
     return value
 
 
-def _close_async_client_best_effort(client: httpx.AsyncClient | None) -> None:
-    """在同步上下文中尽力关闭异步 HTTP 客户端的连接池。
+def _close_async_client_best_effort(
+    client: httpx.AsyncClient | None,
+    owner_loop: asyncio.AbstractEventLoop | None = None,
+) -> None:
+    """尽力关闭异步 HTTP 客户端的连接池。
 
     R25.2: ``client`` 为 ``None`` 时（典型 cold-start：MCP 进程从未调用过 HTTP）直接
     返回，避免触发 httpx 模块加载——``client`` 不为 None 意味着调用方早已通过
     ``get_async_client`` 把 httpx 导入过（``sys.modules`` 命中），此时调用 ``client.is_closed``
     与 ``client.aclose()`` 都不会重复加载。
+
+    R766: 连接属于创建 client 的事件循环（``owner_loop``）。配置热重载回调在文件
+    监听线程里执行，此前直接 ``asyncio.run(client.aclose())``——transport 在别的线程
+    被关掉，拥有它的循环却没有被唤醒，正阻塞在 SSE 读上的 ``_sse_listener`` 要等到
+    循环因别的事件醒来（最长一个 30 s 轮询周期）才发现连接已断，期间提交的反馈
+    会因为任务被清理而丢失。``owner_loop`` 仍在运行时，把 ``aclose()`` 交给它
+    自己执行（``run_coroutine_threadsafe`` 会唤醒循环）。
     """
     if client is None or client.is_closed:
         return
     try:
-        loop = asyncio.get_running_loop()
-        _task = loop.create_task(client.aclose())  # noqa: RUF006 — fire-and-forget cleanup
+        running = asyncio.get_running_loop()
     except RuntimeError:
+        running = None
+    if owner_loop is not None and owner_loop is not running and owner_loop.is_running():
+        closing = client.aclose()
         try:
-            asyncio.run(client.aclose())
-        except Exception:
-            logger.debug("无法关闭异步 HTTP 客户端（无可用事件循环），将由 GC 回收")
+            asyncio.run_coroutine_threadsafe(closing, owner_loop)
+            return
+        except RuntimeError:
+            closing.close()
+    if running is not None:
+        running.create_task(client.aclose())
+        return
+    try:
+        asyncio.run(client.aclose())
+    except Exception:
+        logger.debug("无法关闭异步 HTTP 客户端（无可用事件循环），将由 GC 回收")
 
 
 def _invalidate_runtime_caches_on_config_change() -> None:
@@ -210,7 +231,7 @@ def _invalidate_runtime_caches_on_config_change() -> None:
 
     与项目 "fail-loud, no silent skips" 政策（cf. R107-R110 系列）一致。
     """
-    global _async_client, _sync_client, _config_cache_generation
+    global _async_client, _async_client_loop, _sync_client, _config_cache_generation
     try:
         with _config_cache_lock:
             _config_cache["config"] = None
@@ -230,8 +251,10 @@ def _invalidate_runtime_caches_on_config_change() -> None:
                 _sync_client.close()
             _sync_client = None
             old_async = _async_client
+            old_async_loop = _async_client_loop
             _async_client = None
-        _close_async_client_best_effort(old_async)
+            _async_client_loop = None
+        _close_async_client_best_effort(old_async, old_async_loop)
     except Exception as e:
         logger.debug(
             "[R118] _invalidate_runtime_caches_on_config_change "
@@ -286,7 +309,7 @@ def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
     """
     import httpx
 
-    global _async_client
+    global _async_client, _async_client_loop
     client = _async_client
     if client is None or client.is_closed:
         with _http_client_lock:
@@ -297,6 +320,10 @@ def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
                     transport=transport,
                     timeout=httpx.Timeout(config.timeout, connect=5.0),
                 )
+                try:
+                    _async_client_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    _async_client_loop = None
                 _async_client = client
     return client
 
@@ -1199,7 +1226,7 @@ def cleanup_http_clients() -> None:
     但 debug 日志便于排查 "为什么我的 ai-intervention-agent 进程退出
     后 FD 不释放"。
     """
-    global _sync_client, _async_client
+    global _sync_client, _async_client, _async_client_loop
     with _http_client_lock:
         try:
             if _sync_client is not None and not _sync_client.is_closed:
@@ -1212,5 +1239,7 @@ def cleanup_http_clients() -> None:
             )
         _sync_client = None
         old_async = _async_client
+        old_async_loop = _async_client_loop
         _async_client = None
-    _close_async_client_best_effort(old_async)
+        _async_client_loop = None
+    _close_async_client_best_effort(old_async, old_async_loop)

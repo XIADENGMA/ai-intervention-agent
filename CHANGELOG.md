@@ -50,6 +50,42 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- The test suite no longer depends on the order in which its tests run. Run
+  in a random order (pytest-randomly, six seeds), it failed 2 to 6 tests per
+  run, eight different tests in all, each because an earlier test had left
+  something in the process. `EnhancedLogger` drops a message that repeats
+  within five seconds and keeps that window for the life of the process, so
+  three tests that wait for a warning with `assertLogs` saw nothing after an
+  earlier test had logged the same one. `NotificationManager.__new__`
+  registers the instance it builds as the singleton, so a test that built its
+  own manager became the `NotificationManager()` of every later test (one
+  test failed, on a manager that was already shut down). The test that
+  reloads `task_queue_singleton` left `server` holding functions the module no
+  longer exported, which failed the two re-export tests. And two tests
+  counted on a build-info cache and a latency table that nothing had touched
+  yet. `tests/conftest.py` now empties the log windows and puts the module's
+  singleton back before each test, the reload test restores the functions and
+  checks the re-export itself, and the other two tests reset their state at
+  the start as well as at the end. The new `test_conftest_isolation_r762.py`
+  has 14 tests and 8 mutants, all killed. With the fixes, 14 random orders
+  (the six that failed and eight new ones) pass.
+- The test suite also passes on pytest 9.1, which `uv.lock` does not install
+  (it pins 9.0.3 while `pyproject.toml` allows `pytest>=9.0.3`), so a fresh
+  unlocked install or the next lock refresh runs on 9.1 without the gate
+  noticing. There the suite had 10 errors and, depending on the order, 2
+  failures. A class-scoped fixture written as an instance method is
+  deprecated, which `filterwarnings = error` turns into an error; the four
+  fixtures of the CSP and CORS tests are class methods now. pytest 9.1 also
+  attaches its log handlers to the loggers that do not propagate, the
+  `EnhancedLogger` ones included, and a record reaching the live-log handler
+  suspends the output capture and resumes it, which swaps the buffer of a
+  `redirect_stdout` for pytest's own stream: two `--print-config` tests found
+  their buffer empty after another test had switched the runtime log level to
+  INFO through the endpoint and left it there. `tests/conftest.py` now puts
+  the level of the root logger, its handlers and werkzeug back after each
+  test. The new `test_pytest_9_1_compat_r763.py` has 15 tests and 12 mutants,
+  all killed. On pytest 9.1.1 with the newest allowed version of every
+  dependency the suite passes (9,350 tests), in five random orders as well.
 - The configuration guide (EN + zh-CN) has a new section, "When an edit
   takes effect". The MCP server and the Web UI each check the config file
   every 2 seconds, so edits to `notification`, `feedback`, the language,
@@ -189,6 +225,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Removed
 
+- Leftovers of older Python versions. Three tests in
+  `test_runtime_behavior.py` tried `import tomllib` and fell back to `tomli`,
+  a package the project does not depend on (the line needed a type-checker
+  exemption); the project requires Python 3.11, which has `tomllib`, so the
+  module is imported once at the top. In `server_feedback.py` the back-off
+  sleep before the close-time fetch retry sat inside
+  `try ... except asyncio.CancelledError: raise`, a handler that does what no
+  handler does. Seven slices that cut a prefix or suffix after a
+  `startswith` or `endswith` check (in `normalize_mdns_hostname`, two checker
+  scripts and `test_feat_routes_mixin_registration_matrix_r406.py`) are
+  `removeprefix` and `removesuffix` calls. Nothing changes at run time.
+- `scripts/_r230_add_svg_aria.py`, the one-shot helper that added
+  `aria-hidden` to the decorative SVGs of the page in R230. Code review 26
+  kept it for one more cycle as an audit trail and planned to delete it in
+  Cycle 15; nothing refers to it, and git history has the file.
+- Web UI and VS Code extension: dead code that the compiler and a lint pass
+  turned up. `notification-manager.js` had its own `isMobileDevice`, which
+  `app.js` replaced with a better one (it also recognises an iPad that asks
+  for the desktop site) because it loads later, and nothing in
+  `notification-manager.js` called it; the page now has one definition.
+  `settings-manager.js` read the theme attribute into a variable it never
+  used. The extension kept three poll-status variables (`lastPollAtMs`,
+  `lastPollDurationMs`, `lastPollHttpStatus`) that were written on every poll
+  and read nowhere, and `webview.ts` and `notification-providers.ts` an unused
+  local and two unused private fields. A new test,
+  `test_web_page_script_globals_unique_r756.py` (12 tests, 10 mutants killed),
+  reads the script lists of the Web UI template and of `webview.ts` and fails
+  when two scripts of one page declare the same top-level name: a `function`
+  or `var` would silently replace the other one, and a `const`, `let` or
+  `class` would stop the later script from running. The status-poll test
+  `test_vscode_extension_status_poll_url_change_r452.py` used one of the
+  removed variables as its marker for "state is written"; it now checks that
+  none of the shared poll state (error text, connection state, status bar
+  painting) is written before the stale-poll check, which the old check could
+  not see when a write came first (6 mutants killed).
 - Dependency audit: the waivers for the four npm findings of the 2026-06-21
   triage (`@vscode/test-cli`, `mocha`, `diff`, `serialize-javascript`) in
   `scripts/dependency_audit.py`. All four are fixed in `package-lock.json`
@@ -286,6 +357,133 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- A change to the configuration no longer loses the reply to a question the
+  agent is waiting on. The reload runs on the file-watcher thread and closed
+  the shared HTTP client there; the connections belong to the event loop that
+  opened them, so that loop was never woken and the call waiting for the
+  reply (`wait_for_task_completion`) kept blocking on its event stream. It
+  then polled only every 30 s, and the Web UI forgets a finished task after
+  about 10 s, so a reply typed in between was gone: the next poll got "not
+  found" and the agent was told to ask again. Editing `config.toml`, or
+  saving a setting in the Web UI, which writes the same file, while a question
+  is open was enough. Reproduced with the built wheel, by editing the config
+  file while a task waited (a comment added, a value changed, the same bytes,
+  a corrupted file) and by saving a setting in the page and then typing and
+  sending the reply there (headless Chromium): the call returned the ask-again
+  text 24 to 28 s after the reply was sent. The client is now closed on the
+  loop that created it, and when the event stream ends the poll wakes at once,
+  fetches, and goes back to its 2 s cadence; the same five runs now return the
+  reply 2 s after it was sent. The new `test_config_reload_sse_wait_r766.py`
+  has 10 tests, one of them over a real loopback event stream, and 9 mutants,
+  all killed.
+- A log call whose arguments do not fit its message no longer raises into
+  the code that made it. `InterceptHandler`, the bridge from the standard
+  `logging` to loguru, sits on the root logger for every third-party library
+  and on each `EnhancedLogger`, and it read `record.getMessage()` with
+  nothing around it, so `logging.warning("%d items", "many")` raised
+  `TypeError` out of the logging call (a plain `StreamHandler` prints a
+  report and returns). The bridge now writes the message as the call gave it
+  with a note naming the error, and leaves the arguments out, since the
+  standard report would print them unmasked. The new
+  `test_intercept_handler_bad_format_r765.py` has 8 tests and 6 mutants, all
+  killed.
+- The log lines and the recent-errors list now show the message that was
+  written, not its template. A call such as
+  `logger.error("Jinja2 模板缺失: %s", exc)` hands the template and its
+  argument to the standard logger separately, and `EnhancedLogger` used the
+  template for two things: the five-second duplicate check, so a second error
+  with another argument inside the window was dropped as a repeat of the
+  first, and the ring buffer behind `aiia://server/info`, so the entry read
+  `Jinja2 模板缺失: %s` and the cause was nowhere in it. Three calls pass
+  arguments this way (a missing template in the Web UI, two damaged
+  in-flight files in the notification manager). The logger now fills the
+  arguments in the way the standard library does, keeps the template when
+  that fails, and feeds the result to both. The new
+  `test_enhanced_logger_rendered_message_r764.py` has 14 tests and 8 mutants,
+  all killed.
+- The Web UI no longer waits for a reverse DNS lookup of its own address
+  before it listens. Werkzeug's development server inherits
+  `HTTPServer.server_bind`, which stores `socket.getfqdn(host)` as a name
+  nothing here reads. On macOS 15 and later that lookup of `127.0.0.1` takes
+  about 35 s in every process whose Python is not uv's (Homebrew,
+  python.org, pyenv), and `start_web_service` waits only 15 s, so on such a
+  setup every start ended in a start timeout and the process was killed; a
+  uv-managed Python (what `uvx` uses) was not affected. Measured with the
+  real `web_ui.py` on Homebrew's Python 3.14 on macOS 26: 35.3 s before the
+  change and 0.2 s after it, for the hosts 127.0.0.1 and 0.0.0.0.
+  `WebFeedbackUI` now installs a `server_bind` without the lookup
+  (`ensure_bind_without_reverse_dns`); a Werkzeug that overrides
+  `server_bind` itself is left alone. Found by running the whole suite on
+  Python 3.14: with this change and two test-only fixes (a deprecated
+  `asyncio.iscoroutinefunction` call and an `HTTPError` that was never
+  closed) it passes there. The new
+  `test_web_ui_bind_without_reverse_dns_r761.py` has 7 tests and 8 mutants,
+  all killed.
+- Web UI: a notification setting that the server did not take is now
+  reported. Every change in the notification settings (Bark, sound, mobile
+  options) is applied in the page at once and sent to
+  `/api/update-notification-config` in the background, because Bark and the
+  other channels are sent by the server. When that request failed (a network
+  error, an HTTP 500, an answer that was not JSON) the only trace was a
+  console line: the page kept showing a switch the server had never
+  received, and the next page load silently went back to the server's value.
+  The feedback settings next to it already said so. After the last request
+  of a burst has failed, the page now shows "Failed to save notification
+  settings" (`settings.notificationConfigSaveFailed`, in English, Simplified
+  and Traditional Chinese); an earlier failure that a later request made
+  good is not reported, two failures in a row give one message, and a sync
+  that worked says nothing. Checked in a real browser with the endpoint
+  answering 500, with three quick toggles that all worked, and with
+  overlapping requests where the first failed and the last worked (no
+  message) or the first worked and the last failed (one message). The new
+  `test_web_notification_sync_failure_reported_r760.py` has 7 tests and 9
+  mutants, 8 killed and 1 equivalent.
+- Web UI: messages raised while the settings dialog or the paste-code dialog
+  is open are now visible. `showStatus` writes an error to the status line
+  under the feedback form, and both dialogs cover the whole page, so a failed
+  "Test Bark notification" (the button that exists to tell you whether Bark
+  works), a failed settings save or an empty code box showed nothing at all;
+  on the waiting page success and warning messages were hidden the same way.
+  While one of the dialogs is open, messages now go to the toast, which sits
+  above them; an error stays for 6 s instead of 1.8 s, and the toast wraps
+  long server messages and is limited to the page width (on a 375 px phone a
+  long Bark error takes five lines at the top of the screen). With the
+  dialogs closed nothing changes. Checked in a real browser with the Bark
+  test answered by HTTP 500, a failing settings save and an empty code box:
+  before, the status line sat under the overlay; now the toast with the
+  message is on screen. The new `test_web_dialog_errors_visible_r759.py` has
+  6 tests and 13 mutants, all killed.
+- Web UI: a new submit no longer starts with the previous attempt's error
+  still on screen. An error from `showStatus` stays in the inline status
+  line for 10 s, while a success only raises a toast, so after "Please enter
+  feedback" (an empty form submitted by mistake) or after a failed submit
+  followed by a good one, the red line stayed next to the next task's form
+  for the rest of its ten seconds. `submitFeedback` now hides the line once
+  the form has passed validation; a failed retry replaces it with its own
+  message and the validation error of the attempt itself is kept. Checked in
+  a real browser: after an empty submit and then a good one, and after a
+  network error, a 503 and an invalid answer each followed by a successful
+  retry, the line is gone as soon as the good submit has gone through. The
+  new `test_web_submit_clears_stale_status_r758.py` has 5 tests and 5
+  mutants, all killed.
+- Web UI: a tab click that the server did not accept is now reported and
+  undone right away. `switchTask` shows the clicked task at once and tells
+  the server in the background, and the refresh that follows takes the
+  server's active task as the truth. When the request failed (a network
+  error, a timeout or an answer with `success: false`) the page therefore
+  kept the clicked task until the next refresh arrived, about 30 s once the
+  event stream is connected, and then jumped back without a word, possibly
+  while the user was typing. The page now shows "Switch task failed, please
+  retry" (`status.switchFailed`, in English, Simplified and Traditional
+  Chinese) and fetches the task list as soon as the switch lock is released,
+  about a quarter of a second after the click; a switch that succeeded shows
+  nothing and costs no extra request, and a failure for a task the user has
+  already left is ignored. The VS Code webview already rolled back and said
+  so. Checked in a real browser with the activation request failing: before,
+  the page returned to the other task 28.5 s after the click; now the message
+  is there at once and the page is back after 0.3 s. The new
+  `test_web_task_switch_failure_r757.py` has 5 tests and 10 mutants, all
+  killed.
 - A package folder that cannot be written to no longer stops the server.
   The task queue keeps its snapshot in `data/tasks.json` and the Web UI
   subprocess writes `logs/web_ui.log`, both inside the installed package,

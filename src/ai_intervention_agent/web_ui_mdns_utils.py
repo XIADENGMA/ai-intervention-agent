@@ -29,8 +29,7 @@ def normalize_mdns_hostname(value: Any) -> str:
     if not hostname:
         return MDNS_DEFAULT_HOSTNAME
 
-    if hostname.endswith("."):
-        hostname = hostname[:-1]
+    hostname = hostname.removesuffix(".")
 
     if "." not in hostname:
         hostname = f"{hostname}.local"

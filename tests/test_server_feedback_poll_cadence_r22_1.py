@@ -702,7 +702,7 @@ class TestCoroutineStructure(unittest.TestCase):
 
     def test_wait_for_task_completion_is_coroutine_function(self) -> None:
         self.assertTrue(
-            asyncio.iscoroutinefunction(server_feedback.wait_for_task_completion)
+            inspect.iscoroutinefunction(server_feedback.wait_for_task_completion)
         )
 
     def test_wait_for_task_completion_signature_unchanged(self) -> None:

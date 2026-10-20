@@ -62,17 +62,35 @@ def test_status_poll_uses_request_scoped_server_url() -> None:
     assert "fetch(`${serverUrl}/api/tasks`" not in body
 
 
+_POLL_STATE_WRITES = (
+    "lastPollErrorName =",
+    "lastPollError =",
+    "lastConnected =",
+    "lastActive =",
+    "lastPending =",
+    "applyStatusBarPresentation(",
+    "setStatusBarShown(",
+)
+
+
 def test_status_poll_stale_guard_precedes_state_mutation() -> None:
     body = _extract_function_body(_source(), "updateStatusBar")
 
-    stale_idx = body.index("if (isStaleStatusPoll())")
-    mutate_idx = body.index("lastPollAtMs = Date.now();", stale_idx)
-    assert stale_idx < mutate_idx
+    request_idx = body.index("await fetch(")
+    stale_idx = body.index("if (isStaleStatusPoll())", request_idx)
+    for write in _POLL_STATE_WRITES:
+        assert write not in body[request_idx:stale_idx], (
+            f"{write!r} runs before the stale check of the success path"
+        )
+    assert "lastPollErrorName =" in body[stale_idx:]
 
     catch_idx = body.index("catch (e: unknown)")
     catch_stale_idx = body.index("if (isStaleStatusPoll())", catch_idx)
-    catch_mutate_idx = body.index("lastPollAtMs = Date.now();", catch_idx)
-    assert catch_stale_idx < catch_mutate_idx
+    for write in _POLL_STATE_WRITES:
+        assert write not in body[catch_idx:catch_stale_idx], (
+            f"{write!r} runs before the stale check of the error path"
+        )
+    assert "lastPollErrorName = errName" in body[catch_stale_idx:]
 
 
 def test_status_poll_controller_aborted_on_config_change_and_cleanup() -> None:

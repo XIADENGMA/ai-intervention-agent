@@ -10,6 +10,7 @@
 
 import json
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -1448,11 +1449,6 @@ class TestTOMLConfigIntegrity(unittest.TestCase):
         if not config_path.exists():
             self.skipTest("config.toml 不存在")
 
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib  # ty: ignore[unresolved-import]
-
         text = config_path.read_text(encoding="utf-8")
         try:
             data = tomllib.loads(text)
@@ -1466,11 +1462,6 @@ class TestTOMLConfigIntegrity(unittest.TestCase):
         if not config_path.exists():
             self.skipTest("config.toml 不存在")
 
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib  # ty: ignore[unresolved-import]
-
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
         missing = [s for s in self._REQUIRED_SECTIONS if s not in data]
         if missing:
@@ -1481,11 +1472,6 @@ class TestTOMLConfigIntegrity(unittest.TestCase):
         config_path = REPO_ROOT / "config.toml"
         if not config_path.exists():
             self.skipTest("config.toml 不存在")
-
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib  # ty: ignore[unresolved-import]
 
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
         web_ui = data.get("web_ui", {})

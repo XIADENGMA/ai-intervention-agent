@@ -112,6 +112,21 @@ R26.2 引入：``WebFeedbackUI._get_template_context`` 优先使用 ``self._stat
 跳过 ``__init__`` 直接构造裸对象，此时 ``self._static_dir`` 不存在；这条
 fallback 路径让那些测试继续工作而不必显式设置 ``_static_dir``。
 
+### `_server_bind_without_reverse_dns(server: Any) -> None`
+
+``HTTPServer.server_bind`` without the reverse lookup of the bind address.
+
+### `ensure_bind_without_reverse_dns() -> bool`
+
+Keep Werkzeug's dev server from reverse-resolving its bind address; ``True`` if patched.
+
+``HTTPServer.server_bind`` stores ``socket.getfqdn(host)`` as ``server_name``, a
+name nothing here reads. On macOS 15 and later that lookup of ``127.0.0.1`` blocks
+for about 35 s in every process whose Python is not uv's (Homebrew, python.org,
+pyenv), so the Web UI started listening after the 15 s wait of
+``start_web_service`` had given up. A Werkzeug that overrides ``server_bind``
+itself is left alone, and so is our own override: calling this again is a no-op.
+
 ### `web_feedback_ui(prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, output_file: str | None = None, host: str = '0.0.0.0', port: int = 8080, external_base_url: str = '', mdns_hostname: str = MDNS_DEFAULT_HOSTNAME, trusted_hosts: list[str] | None = None) -> FeedbackResult | None`
 
 启动 Web UI（交互反馈界面）的便捷函数

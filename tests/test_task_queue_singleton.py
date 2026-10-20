@@ -346,13 +346,30 @@ class TestModuleStructure(unittest.TestCase):
         )
 
     def test_reload_does_not_create_duplicate_singleton(self) -> None:
-        """importlib.reload 不应该让单例被错误重置（非常规场景，但防御性测试）"""
+        """importlib.reload 不应该让单例被错误重置（非常规场景，但防御性测试）
+
+        reload 会换掉模块里的函数对象，``server`` 里已经导入的旧对象就不再是
+        同一个；用例结束前把原对象放回去，否则后面的再导出契约用例是否通过
+        取决于它们谁先跑。
+        """
+        import ai_intervention_agent.server as server
         import ai_intervention_agent.task_queue_singleton as task_queue_singleton
 
+        reexported = ("get_task_queue", "_shutdown_global_task_queue")
+        originals = {name: getattr(task_queue_singleton, name) for name in reexported}
         before = task_queue_singleton._global_task_queue
-        importlib.reload(task_queue_singleton)
-        after = task_queue_singleton._global_task_queue
-        self.assertIsNone(after, "reload 后单例字段应回到 None（重新初始化）")
+        try:
+            importlib.reload(task_queue_singleton)
+            after = task_queue_singleton._global_task_queue
+            self.assertIsNone(after, "reload 后单例字段应回到 None（重新初始化）")
+        finally:
+            for name, original in originals.items():
+                setattr(task_queue_singleton, name, original)
+        self.assertIs(server.get_task_queue, task_queue_singleton.get_task_queue)
+        self.assertIs(
+            server._shutdown_global_task_queue,
+            task_queue_singleton._shutdown_global_task_queue,
+        )
         if before is not None:
             try:
                 before.stop_cleanup()

@@ -7,6 +7,10 @@ import inspect
 from ai_intervention_agent import mcp_tool_call_metrics as mtcm
 
 
+def setup_function() -> None:
+    mtcm.reset_mcp_tool_call_stats()
+
+
 def teardown_function() -> None:
     mtcm.reset_mcp_tool_call_stats()
 

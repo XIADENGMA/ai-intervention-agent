@@ -94,7 +94,8 @@ def status_of(url: str) -> int:
         with urllib.request.urlopen(url, timeout=5) as response:
             return int(response.status)
     except urllib.error.HTTPError as error:
-        return int(error.code)
+        with error:
+            return int(error.code)
     except OSError:
         return 0
 

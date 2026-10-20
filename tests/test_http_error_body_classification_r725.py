@@ -157,6 +157,7 @@ def _submit_script(status: int, body: str) -> str:
               if (SUBMIT_BTN_ORIGINAL_HTML === null) SUBMIT_BTN_ORIGINAL_HTML = button.innerHTML;
             }
             function showStatus(message, type) { statuses.push({ message, type }); }
+            function hideInlineStatus() {}
             function t(key) { return key; }
             function clearAllImages() { clearAllImagesCalls += 1; }
             async function refreshTasksList() { refreshCalls.push(window.activeTaskId); }

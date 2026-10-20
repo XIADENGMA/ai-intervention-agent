@@ -59,14 +59,21 @@ safety 的唯一防线。
 返回 None 的三种情形：env 未设置 / 解析失败 / 越界。后两种会记
 ``logger.warning`` 让运维能在日志反查，调用方按 None 走 fallback 路径。
 
-### `_close_async_client_best_effort(client: httpx.AsyncClient | None) -> None`
+### `_close_async_client_best_effort(client: httpx.AsyncClient | None, owner_loop: asyncio.AbstractEventLoop | None = None) -> None`
 
-在同步上下文中尽力关闭异步 HTTP 客户端的连接池。
+尽力关闭异步 HTTP 客户端的连接池。
 
 R25.2: ``client`` 为 ``None`` 时（典型 cold-start：MCP 进程从未调用过 HTTP）直接
 返回，避免触发 httpx 模块加载——``client`` 不为 None 意味着调用方早已通过
 ``get_async_client`` 把 httpx 导入过（``sys.modules`` 命中），此时调用 ``client.is_closed``
 与 ``client.aclose()`` 都不会重复加载。
+
+R766: 连接属于创建 client 的事件循环（``owner_loop``）。配置热重载回调在文件
+监听线程里执行，此前直接 ``asyncio.run(client.aclose())``——transport 在别的线程
+被关掉，拥有它的循环却没有被唤醒，正阻塞在 SSE 读上的 ``_sse_listener`` 要等到
+循环因别的事件醒来（最长一个 30 s 轮询周期）才发现连接已断，期间提交的反馈
+会因为任务被清理而丢失。``owner_loop`` 仍在运行时，把 ``aclose()`` 交给它
+自己执行（``run_coroutine_threadsafe`` 会唤醒循环）。
 
 ### `_invalidate_runtime_caches_on_config_change() -> None`
 

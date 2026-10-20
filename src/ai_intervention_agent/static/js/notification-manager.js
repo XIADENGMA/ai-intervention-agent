@@ -7,12 +7,6 @@ function t(key, params) {
   return key
 }
 
-function isMobileDevice() {
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent
-  )
-}
-
 const DEFAULT_NOTIFICATION_SOUND_URL = '/sounds/deng.wav'
 const AUTO_PERMISSION_REQUEST_LISTENER_OPTIONS = {
   once: true,

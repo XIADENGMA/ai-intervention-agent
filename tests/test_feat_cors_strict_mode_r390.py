@@ -138,7 +138,8 @@ class TestLayer2SourceLevelLock:
     """Layer 2: CORS 调用必须含安全参数 + origins 必须是 closed list。"""
 
     @pytest.fixture(scope="class")
-    def cors_call(self) -> ast.Call:
+    @classmethod
+    def cors_call(cls) -> ast.Call:
         return _find_cors_call(_read_web_ui_source())
 
     def test_supports_credentials_false(self, cors_call):
@@ -192,7 +193,8 @@ class TestLayer3RuntimeLock:
     """Layer 3: 实际 HTTP 响应 CORS header 不能是 wildcard / credentials true。"""
 
     @pytest.fixture(scope="class")
-    def runtime_cors_headers(self) -> dict[str, str]:
+    @classmethod
+    def runtime_cors_headers(cls) -> dict[str, str]:
         """启动 minimal Flask app + CORS, 拿到 ``/`` OPTIONS preflight 响应 header。"""
         import re as _re
 

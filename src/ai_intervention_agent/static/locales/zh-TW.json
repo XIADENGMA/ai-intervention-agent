@@ -187,7 +187,8 @@
     "resetFeedbackConfig": "重置回饋設定",
     "feedbackConfigSaved": "回饋設定已儲存",
     "feedbackConfigReset": "回饋設定已重置為預設值",
-    "feedbackConfigSaveFailed": "回饋設定儲存失敗"
+    "feedbackConfigSaveFailed": "回饋設定儲存失敗",
+    "notificationConfigSaveFailed": "通知設定儲存失敗"
   },
   "status": {
     "loadFailed": "載入設定失敗",
@@ -202,6 +203,7 @@
     "submitEmpty": "請輸入回饋內容、選擇預定義選項或上傳圖片",
     "submitting": "提交中…",
     "submitFailed": "提交失敗",
+    "switchFailed": "切換任務失敗，請重試",
     "networkError": "網路錯誤，請重試",
     "requestTimeout": "請求逾時，請重試",
     "networkOffline": "網路不可達，請檢查網路連線",

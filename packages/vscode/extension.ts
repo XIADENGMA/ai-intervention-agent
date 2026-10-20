@@ -244,9 +244,6 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   let lastConnected: boolean | null = null;
   let lastActive: number | null = null;
   let lastPending: number | null = null;
-  let lastPollAtMs = 0;
-  let lastPollDurationMs: number | null = null;
-  let lastPollHttpStatus: number | null = null;
   let lastPollErrorName = "";
   let lastPollError = "";
 
@@ -376,9 +373,6 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
 
   const updateStatusBar = async (): Promise<boolean | null> => {
     if (typeof fetch !== "function") {
-      lastPollAtMs = Date.now();
-      lastPollDurationMs = null;
-      lastPollHttpStatus = null;
       lastPollErrorName = "NoFetch";
       lastPollError = vscode.l10n.t(
         "No fetch available in current runtime; cannot probe server status",
@@ -446,9 +440,6 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         connected !== prevConnected ||
         active !== prevActive ||
         pending !== prevPending;
-      lastPollAtMs = Date.now();
-      lastPollDurationMs = durationMs;
-      lastPollHttpStatus = resp.status;
       lastPollErrorName = "";
       lastPollError = "";
 
@@ -546,9 +537,6 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       const durationMs = Date.now() - startedAt;
       const errName = e instanceof Error ? e.name : "";
       const errMsg = e instanceof Error ? e.message : String(e);
-      lastPollAtMs = Date.now();
-      lastPollDurationMs = durationMs;
-      lastPollHttpStatus = null;
       lastPollErrorName = errName;
       lastPollError = errMsg;
 

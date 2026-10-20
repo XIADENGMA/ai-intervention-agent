@@ -369,6 +369,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         从 ~119 次冗余 fetch 减到 ~7 次（-94%），节省 web_ui 端 ``task_queue``
         锁竞争与网络栈开销。常量见模块顶部 ``_POLL_INTERVAL_FAST_S`` /
         ``_POLL_INTERVAL_SAFETY_NET_S``。
+        R766：SSE 退出时还会叫醒正在睡 30 s 的轮询，让它立刻补一次 fetch。
 
     【R13·B1 ghost-task cleanup】timeout / 父 cancel 路径下，本函数会
     在 finally 中通过 ``_close_orphan_task_best_effort`` 通知 web_ui
@@ -397,6 +398,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     completion = asyncio.Event()
 
     sse_connected = asyncio.Event()
+    sse_ended = asyncio.Event()
     result_box: list[Any] = [None]
 
     async def _fetch_result() -> dict[str, Any] | None:
@@ -502,6 +504,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
             logger.debug(f"SSE 监听失败（依赖轮询保底）: {e}")
         finally:
             sse_connected.clear()
+            sse_ended.set()
 
     async def _poll_fallback() -> None:
         """HTTP 轮询保底：SSE 已连接时 30s safety net，否则 2s 紧密兜底。
@@ -509,6 +512,11 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         R22.1 之前固定 2s 间隔，与 SSE 主路径并行造成每任务 ~119 次
         冗余 fetch；现在每个 wait 周期开始前读 ``sse_connected.is_set()``
         决定 interval：SSE 健康 → 30s safety net；SSE 未起 / 已断 → 2s。
+
+        R766: interval 在睡眠开始前就定下了，SSE 在 30s 睡眠中途断开时，轮询要
+        睡满才回来；已完成的任务只在 Web UI 里保留约 10s，这段盲区里提交的反馈
+        就拿不到了。``_sse_listener`` 退出时 set ``sse_ended`` 叫醒睡眠，轮询立刻
+        补一次 fetch 并回到 2s 节奏。
         """
         while not completion.is_set():
             r = await _fetch_result()
@@ -516,16 +524,14 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
                 result_box[0] = r
                 completion.set()
                 return
+            sse_ended.clear()
             interval = (
                 _POLL_INTERVAL_SAFETY_NET_S
                 if sse_connected.is_set()
                 else _POLL_INTERVAL_FAST_S
             )
-            try:
-                await asyncio.wait_for(completion.wait(), timeout=interval)
-                return
-            except TimeoutError:
-                pass
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(sse_ended.wait(), timeout=interval)
 
     sse_task = asyncio.create_task(_sse_listener())
     poll_task = asyncio.create_task(_poll_fallback())
@@ -600,10 +606,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         if result_box[0] is None:
             for retry_idx, backoff_s in enumerate(_FETCH_RETRY_BACKOFF_S):
                 if backoff_s > 0:
-                    try:
-                        await asyncio.sleep(backoff_s)
-                    except asyncio.CancelledError:
-                        raise
+                    await asyncio.sleep(backoff_s)
                 retry_result = await _fetch_result()
                 if retry_result is not None:
                     result_box[0] = retry_result

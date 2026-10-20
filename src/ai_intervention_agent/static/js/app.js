@@ -832,15 +832,28 @@ function _clearStatusDismissTimer(statusElementId) {
   }
 }
 
+const _MODAL_DIALOG_IDS = ["settings-panel", "code-paste-panel"];
+const _ERROR_TOAST_MS = 6000;
+
+function _isModalDialogOpen() {
+  return _MODAL_DIALOG_IDS.some((id) => {
+    const panel = document.getElementById(id);
+    return !!panel && !panel.classList.contains("hidden");
+  });
+}
+
 function showStatus(message, type) {
   const noContentContainer = document.getElementById("no-content-container");
   const isNoContentPage =
     noContentContainer && noContentContainer.style.display === "flex";
+  const dialogOpen = _isModalDialogOpen();
 
-  if (!isNoContentPage && type !== "error") {
+  if (dialogOpen || (!isNoContentPage && type !== "error")) {
 
     if (type === "success" || type === "warning") {
       _showToast(message);
+    } else if (dialogOpen && type === "error") {
+      _showToast(message, _ERROR_TOAST_MS);
     }
     return;
   }
@@ -885,6 +898,14 @@ function showStatus(message, type) {
   }
 }
 
+function hideInlineStatus() {
+  _clearStatusDismissTimer("status-message");
+  const statusElement = document.getElementById("status-message");
+  if (statusElement) {
+    statusElement.style.display = "none";
+  }
+}
+
 function _scheduleNextFrame(callback) {
   if (typeof window.requestAnimationFrame === "function") {
     window.requestAnimationFrame(callback);
@@ -907,7 +928,7 @@ function _removeElement(element) {
 let _toastHideTimerId = null;
 let _toastGeneration = 0;
 
-function _showToast(message) {
+function _showToast(message, durationMs) {
   let toast = document.getElementById("_aiia-toast");
   if (!toast) {
     toast = document.createElement("div");
@@ -931,7 +952,11 @@ function _showToast(message) {
       transition: "transform 0.3s ease, opacity 0.3s ease",
       opacity: "0",
       pointerEvents: "none",
-      whiteSpace: "nowrap",
+      whiteSpace: "normal",
+      overflowWrap: "anywhere",
+      textAlign: "center",
+      width: "max-content",
+      maxWidth: "min(90vw, 36rem)",
     });
     document.body.appendChild(toast);
   }
@@ -964,7 +989,7 @@ function _showToast(message) {
     toast.style.opacity = "0";
     _toastHideTimerId = null;
     _toastGeneration += 1;
-  }, 1800);
+  }, durationMs || 1800);
   _toastHideTimerId = hideTimerId;
 }
 
@@ -1457,6 +1482,8 @@ async function submitFeedback() {
     showStatus(t("status.submitEmpty"), "error");
     return;
   }
+
+  hideInlineStatus();
 
   try {
 

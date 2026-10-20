@@ -149,6 +149,7 @@ def _submit_harness(case_js: str) -> str:
         function showStatus(message, type) {{
           statuses.push({{ message, type }});
         }}
+        function hideInlineStatus() {{}}
         function t(key) {{
           return key;
         }}

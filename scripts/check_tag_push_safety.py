@@ -132,8 +132,7 @@ def _list_remote_v_tags(remote: str = "origin") -> set[str]:
         if not ref.startswith("refs/tags/"):
             continue
         name = ref[len("refs/tags/") :]
-        if name.endswith("^{}"):
-            name = name[: -len("^{}")]
+        name = name.removesuffix("^{}")
         if _SEMVER_TAG_RE.match(name):
             tags.add(name)
     return tags

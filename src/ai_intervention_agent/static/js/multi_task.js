@@ -1997,6 +1997,7 @@ function stopTasksHealthCheck() {
 
 let isManualSwitching = false;
 let manualSwitchingTimer = null;
+const MANUAL_SWITCH_LOCK_MS = 200;
 
 Object.defineProperty(window, "isManualSwitching", {
   get: () => isManualSwitching,
@@ -2607,11 +2608,15 @@ async function switchTask(taskId) {
       .then((data) => {
         if (!data.success) {
           console.error("Activate task failed:", data.error);
+          _recoverFromFailedActivate(taskId);
         } else {
           _debugLog(`Task activated: ${taskId}`);
         }
       })
-      .catch((err) => console.error("Activate task failed:", err));
+      .catch((err) => {
+        console.error("Activate task failed:", err);
+        _recoverFromFailedActivate(taskId);
+      });
 
     loadTaskDetails(taskId).catch((err) => {
       console.warn(
@@ -2634,8 +2639,24 @@ async function switchTask(taskId) {
         new CustomEvent("taskSwitchComplete", { detail: { taskId } }),
       );
       _debugLog("Task switch lock released; polling resumed");
-    }, 200);
+    }, MANUAL_SWITCH_LOCK_MS);
   }
+}
+
+function _recoverFromFailedActivate(taskId) {
+  if (activeTaskId !== taskId) return;
+
+  try {
+    if (typeof showStatus === "function") {
+      showStatus(_t("status.switchFailed"), "error");
+    }
+  } catch (_e) {
+
+  }
+
+  setTimeout(() => {
+    fetchAndApplyTasks("activate-failed");
+  }, MANUAL_SWITCH_LOCK_MS + 50);
 }
 
 function updateCountdownRingColors(oldActiveTaskId, newActiveTaskId) {

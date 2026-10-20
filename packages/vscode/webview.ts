@@ -76,7 +76,6 @@ type TaskIdsCallback = (ids: string[]) => void;
 
 export class WebviewProvider implements vscode.WebviewViewProvider {
   private _extensionUri: vscode.Uri;
-  private _outputChannel: vscode.OutputChannel;
   private _logger: Logger;
   private _appleScriptLogger: Logger;
   private _appleScriptExecutor: AppleScriptExecutor;
@@ -131,7 +130,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     retainContextWhenHidden = false,
   ) {
     this._extensionUri = extensionUri;
-    this._outputChannel = outputChannel;
     this._logger = createLogger(outputChannel, {
       component: "ext:webview",
       getLevel: () => {
@@ -1674,9 +1672,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
     const extensionVersion = this._extensionVersion;
     const githubUrl = EXT_GITHUB_URL || "";
-    const githubUrlDisplay = githubUrl
-      ? githubUrl.replace(/^https?:\/\//i, "")
-      : "";
     const lottieJsUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, "lottie.min.js"),
     );

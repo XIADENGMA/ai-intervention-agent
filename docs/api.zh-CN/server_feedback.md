@@ -177,6 +177,7 @@ SSE 事件驱动 + HTTP 轮询保底等待任务完成。
     从 ~119 次冗余 fetch 减到 ~7 次（-94%），节省 web_ui 端 ``task_queue``
     锁竞争与网络栈开销。常量见模块顶部 ``_POLL_INTERVAL_FAST_S`` /
     ``_POLL_INTERVAL_SAFETY_NET_S``。
+    R766：SSE 退出时还会叫醒正在睡 30 s 的轮询，让它立刻补一次 fetch。
 
 【R13·B1 ghost-task cleanup】timeout / 父 cancel 路径下，本函数会
 在 finally 中通过 ``_close_orphan_task_best_effort`` 通知 web_ui

@@ -29,6 +29,7 @@ import json
 import os
 import re
 import signal
+import socketserver
 import sys
 import threading
 import time
@@ -382,6 +383,37 @@ def _get_module_static_dir() -> Path:
     return Path(__file__).resolve().parent / "static"
 
 
+_WERKZEUG_SERVER_BIND = "server_bind"
+
+
+def _server_bind_without_reverse_dns(server: Any) -> None:
+    """``HTTPServer.server_bind`` without the reverse lookup of the bind address."""
+    socketserver.TCPServer.server_bind(server)
+    host, port = server.server_address[:2]
+    server.server_name = str(host)
+    server.server_port = port
+
+
+def ensure_bind_without_reverse_dns() -> bool:
+    """Keep Werkzeug's dev server from reverse-resolving its bind address; ``True`` if patched.
+
+    ``HTTPServer.server_bind`` stores ``socket.getfqdn(host)`` as ``server_name``, a
+    name nothing here reads. On macOS 15 and later that lookup of ``127.0.0.1`` blocks
+    for about 35 s in every process whose Python is not uv's (Homebrew, python.org,
+    pyenv), so the Web UI started listening after the 15 s wait of
+    ``start_web_service`` had given up. A Werkzeug that overrides ``server_bind``
+    itself is left alone, and so is our own override: calling this again is a no-op.
+    """
+    from http.server import HTTPServer
+
+    from werkzeug.serving import BaseWSGIServer
+
+    if getattr(BaseWSGIServer, _WERKZEUG_SERVER_BIND) is not HTTPServer.server_bind:
+        return False
+    setattr(BaseWSGIServer, _WERKZEUG_SERVER_BIND, _server_bind_without_reverse_dns)
+    return True
+
+
 class WebFeedbackUI(
     SecurityMixin,
     MdnsMixin,
@@ -462,6 +494,7 @@ class WebFeedbackUI(
         self._task_queue_runtime_hooks_lock = threading.Lock()
         self.app = Flask(__name__)
         ensure_ipv6_trusted_hosts_support()
+        ensure_bind_without_reverse_dns()
         self.app.config["TRUSTED_HOSTS"] = build_trusted_hosts(
             host=host,
             mdns_hostname=mdns_hostname,

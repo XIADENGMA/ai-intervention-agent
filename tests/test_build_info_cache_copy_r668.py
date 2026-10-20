@@ -8,6 +8,10 @@ from unittest.mock import patch
 import ai_intervention_agent.server as server
 
 
+def setup_function() -> None:
+    server.reset_build_info_cache_for_testing()
+
+
 def teardown_function() -> None:
     server.reset_build_info_cache_for_testing()
 

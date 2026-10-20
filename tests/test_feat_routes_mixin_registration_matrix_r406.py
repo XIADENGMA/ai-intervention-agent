@@ -111,19 +111,13 @@ _SETUP_SUFFIX = "_routes"
 
 def _mixin_to_setup_name(mixin_name: str) -> str:
     """``TaskRoutesMixin`` → ``_setup_task_routes``."""
-    base = mixin_name
-    if base.endswith(_MIXIN_SUFFIX):
-        base = base[: -len(_MIXIN_SUFFIX)]
+    base = mixin_name.removesuffix(_MIXIN_SUFFIX)
     return f"{_SETUP_PREFIX}{base.lower()}{_SETUP_SUFFIX}"
 
 
 def _setup_to_mixin_name(setup_name: str) -> str:
     """``_setup_task_routes`` → ``TaskRoutesMixin``."""
-    base = setup_name
-    if base.startswith(_SETUP_PREFIX):
-        base = base[len(_SETUP_PREFIX) :]
-    if base.endswith(_SETUP_SUFFIX):
-        base = base[: -len(_SETUP_SUFFIX)]
+    base = setup_name.removeprefix(_SETUP_PREFIX).removesuffix(_SETUP_SUFFIX)
     return f"{base.capitalize()}{_MIXIN_SUFFIX}"
 
 

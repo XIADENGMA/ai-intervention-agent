@@ -222,15 +222,21 @@ class SettingsManager {
   }
 
   async _drainBackendConfigSyncQueue() {
+    let lastSynced = true;
     try {
       while (this._pendingBackendSyncSettings) {
         const settingsSnapshot = this._pendingBackendSyncSettings;
         this._pendingBackendSyncSettings = null;
-        await this._postNotificationConfigToBackend(settingsSnapshot);
+        lastSynced = await this._postNotificationConfigToBackend(
+          settingsSnapshot,
+        );
       }
     } finally {
 
       this._backendSyncPromise = null;
+    }
+    if (!lastSynced) {
+      showStatus(t("settings.notificationConfigSaveFailed"), "error");
     }
   }
 
@@ -248,15 +254,16 @@ class SettingsManager {
       const result = await response.json();
       if (response.ok && result.status === "success") {
         console.debug("Notification config synced to server");
-      } else {
-        console.warn(
-          "Sync notification config to server failed:",
-          result.message,
-        );
+        return true;
       }
+      console.warn(
+        "Sync notification config to server failed:",
+        result.message,
+      );
     } catch (error) {
       console.error("Sync notification config to server failed:", error);
     }
+    return false;
   }
 
   resetSettings() {
@@ -1054,8 +1061,6 @@ class SettingsManager {
   }
 
   applySettingsTheme() {
-    const theme = document.documentElement.getAttribute("data-theme");
-
     if (!document.getElementById("settings-light-theme-styles")) {
       const style = document.createElement("style");
       style.id = "settings-light-theme-styles";

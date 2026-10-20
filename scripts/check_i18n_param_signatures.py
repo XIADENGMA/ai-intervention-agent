@@ -69,12 +69,7 @@ _SHORTHAND_KEY_RE = re.compile(r"^['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?$")
 def _extract_param_names(obj_body: str) -> set[str]:
     """Parse the object literal body between ``{`` and ``}`` and
     return the set of top-level key names."""
-    inner = obj_body.strip()
-    if inner.startswith("{"):
-        inner = inner[1:]
-    if inner.endswith("}"):
-        inner = inner[:-1]
-    inner = inner.strip()
+    inner = obj_body.strip().removeprefix("{").removesuffix("}").strip()
     if not inner:
         return set()
     if "..." in inner:

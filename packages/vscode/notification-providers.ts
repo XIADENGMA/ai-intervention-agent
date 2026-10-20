@@ -349,11 +349,9 @@ function ensureStableTerminalNotifier(): StableResult {
 }
 
 export class VSCodeApiNotificationProvider {
-  private _logger: Logger | null
   private _vscode: VsCodeApi
 
   constructor(options: ProviderOptions = {}) {
-    this._logger = options && options.logger ? options.logger : null
     this._vscode = options && options.vscodeApi ? options.vscodeApi : vscode
   }
 
