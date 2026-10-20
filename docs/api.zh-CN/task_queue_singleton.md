@@ -6,6 +6,8 @@ TaskQueue 全局单例访问器（与 server.py 解耦的轻量入口）。
 
 ## 函数
 
+### `_default_persist_path() -> Path`
+
 ### `get_task_queue() -> TaskQueue`
 
 获取全局任务队列实例

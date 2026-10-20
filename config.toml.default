@@ -16,7 +16,7 @@ auto_request_permission = true
 web_icon = "default"
 # Web 通知显示时长（毫秒）/ Web notification display duration (ms) - range [1, 600000]
 web_timeout = 5000
-# 桌面系统通知 / Desktop system notification (plyer, optional; off by default to avoid unexpected popups)
+# 桌面系统通知 / Desktop system notification (via plyer; macOS also needs pyobjus; off by default to avoid unexpected popups)
 system_enabled = false
 # macOS 原生通知 / macOS native notification (primarily triggered by VS Code/Cursor plugin; backend field for config consistency)
 macos_native_enabled = true
@@ -77,12 +77,13 @@ http_request_timeout = 30
 http_max_retries = 3
 # HTTP 重试延迟(秒) / HTTP retry delay (seconds) - range [0, 60]
 http_retry_delay = 1.0
-# 日志级别 / Log level for the standalone server's enhanced_logging module.
+# 日志级别 / Log level of the MCP server and of the Web UI process. Each process reads it
+# once when it starts; restart the MCP server after an edit.
 # Valid values (case-insensitive): "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL".
-# Override at runtime with the env var ``AI_INTERVENTION_AGENT_LOG_LEVEL`` —
-# the env var wins over this config when both are set, useful for one-off
-# debugging without touching config.toml. VS Code extension users tune
-# ``ai-intervention-agent.logLevel`` in VS Code settings instead (separate axis).
+# Override with the env var ``AI_INTERVENTION_AGENT_LOG_LEVEL`` — the env var wins
+# over this config when both are set, useful for one-off debugging without touching
+# config.toml. VS Code extension users tune ``ai-intervention-agent.logLevel`` in
+# VS Code settings instead (separate axis).
 log_level = "WARNING"
 # 外部访问基地址 / External base URL for notification click links and reverse proxies.
 # Leave empty to prefer mDNS http://{mdns.hostname}:{port} when available, then fall back

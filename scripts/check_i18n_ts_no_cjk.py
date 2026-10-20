@@ -22,8 +22,11 @@
   ``vendor/``、``mathjax/``、以及 ``packages/vscode/test/*`` 下的测试文件（测试
   用例对 CJK 字符串做断言是合法的，前提是这些断言对应的源文件本身已经 i18n
   化。测试目录用独立 CI 检查保证）。
-- 使用轻量词法扫描：先把 ``/* */`` 块注释和 ``//`` 行注释替换成等宽空白（保持
-  行号不变），再按 ``'…'`` / ``"…"`` / ```…``` 三种字面量匹配。
+- 字面量由 ``scripts/js_source_scan.py`` 的词法扫描器识别（与 TypeScript 自带
+  扫描器逐字面量比对过）：注释、字符串里的 ``//``、正则字面量里的引号和反引号、
+  嵌套模板字符串都不会让后面的配对错位；``\\uXXXX`` / ``\\u{…}`` / ``\\xNN`` 转义
+  先还原再判断，所以写成转义的中文同样会被发现。模板字符串按整个字面量报告，
+  ``${…}`` 内的字符串另算。
 - 显式豁免：若某一行带 ``// aiia:i18n-allow-cjk`` 注释，该行 CJK 字符串跳过。
 
 退出码
@@ -41,6 +44,10 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from js_source_scan import string_literals
+
 ROOT = Path(__file__).resolve().parent.parent
 _VSCODE_ROOT = ROOT / "packages" / "vscode"
 
@@ -53,15 +60,6 @@ CJK_RE = re.compile(
     r"]"
 )
 
-STRING_RE = re.compile(
-    r"(?<!\\)'([^'\\\n]*(?:\\.[^'\\\n]*)*)'"
-    r"|(?<!\\)\"([^\"\\\n]*(?:\\.[^\"\\\n]*)*)\""
-    r"|(?<!\\)`([^`\\]*(?:\\.[^`\\]*)*)`",
-    re.DOTALL,
-)
-
-
-_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 ALLOW_MARKER = "aiia:i18n-allow-cjk"
 
 _SKIP_PREFIXES: tuple[str, ...] = (
@@ -73,22 +71,6 @@ _SKIP_PREFIXES: tuple[str, ...] = (
     "packages/vscode/mathjax/",
     "packages/vscode/test/",
 )
-
-
-def _strip_comments(src: str) -> str:
-    """Zero out ``//`` line comments and ``/* ... */`` block comments while
-    preserving line offsets."""
-
-    def _blank_block(match: re.Match[str]) -> str:
-        span = match.group(0)
-        return "".join("\n" if ch == "\n" else " " for ch in span)
-
-    out_lines: list[str] = []
-    for line in src.split("\n"):
-        idx = line.find("//")
-        out_lines.append(line if idx == -1 else line[:idx] + " " * (len(line) - idx))
-    intermediate = "\n".join(out_lines)
-    return _BLOCK_COMMENT_RE.sub(_blank_block, intermediate)
 
 
 def _iter_ts_source_files() -> list[Path]:
@@ -105,31 +87,18 @@ def _iter_ts_source_files() -> list[Path]:
     return paths
 
 
-def _line_has_allow_marker(original_src: str, line_number: int) -> bool:
-    lines = original_src.splitlines()
-    if 1 <= line_number <= len(lines):
-        return ALLOW_MARKER in lines[line_number - 1]
-    return False
-
-
 def scan_file(path: Path) -> list[tuple[int, str]]:
     """Return a list of (line_number, literal) violations for a given file."""
     try:
         src = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return []
-    stripped = _strip_comments(src)
-    offenders: list[tuple[int, str]] = []
-    for match in STRING_RE.finditer(stripped):
-        literal = match.group(1) or match.group(2) or match.group(3) or ""
-        if not CJK_RE.search(literal):
-            continue
-        start = match.start()
-        line_number = stripped[:start].count("\n") + 1
-        if _line_has_allow_marker(src, line_number):
-            continue
-        offenders.append((line_number, literal))
-    return offenders
+    lines = src.split("\n")
+    return [
+        (literal.line, literal.text)
+        for literal in string_literals(src)
+        if CJK_RE.search(literal.text) and ALLOW_MARKER not in lines[literal.line - 1]
+    ]
 
 
 def collect_violations() -> list[tuple[Path, int, str]]:

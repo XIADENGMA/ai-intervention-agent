@@ -112,7 +112,7 @@ HTTP POST 发送通知到 Bark，返回成功与否
 
 ### `class SystemNotificationProvider`
 
-系统通知 - 通过 plyer 库发送跨平台桌面通知（可选依赖）。
+系统通知 - 通过 plyer 发送桌面通知；macOS 另需 pyobjus（不随包安装）。
 
 #### 方法
 

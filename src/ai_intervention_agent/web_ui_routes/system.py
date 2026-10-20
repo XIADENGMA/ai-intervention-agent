@@ -1511,14 +1511,11 @@ def _resolve_allowed_paths() -> list[Path]:
     except Exception as exc:
         logger.warning(f"获取当前配置文件路径失败: {exc}")
 
-    here = Path(__file__).resolve()
-    repo_root = here.parent.parent.parent.parent
-    pkg_root = here.parent.parent
-    for base in (repo_root, pkg_root):
-        p = (base / "config.toml.default").resolve()
-        if p.exists():
-            candidates.append(p)
-            break
+    from ai_intervention_agent.config_manager import find_default_config_template
+
+    template = find_default_config_template()
+    if template is not None:
+        candidates.append(template.resolve())
 
     deduped: list[Path] = []
     seen: set[str] = set()

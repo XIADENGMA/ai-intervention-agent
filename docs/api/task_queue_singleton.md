@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `_default_persist_path() -> Path`
+
 ### `get_task_queue() -> TaskQueue`
 
 ### `_shutdown_global_task_queue() -> None`

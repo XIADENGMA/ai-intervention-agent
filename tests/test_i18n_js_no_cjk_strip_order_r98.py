@@ -1,4 +1,4 @@
-"""R98 回归：锁住 ``check_i18n_js_no_cjk.py::_strip_comments`` 的剥序契约。
+"""R98 回归：锁住 ``js_source_scan.py::blank_comments`` 的剥序契约。
 
 历史 silent breakage（与 R97 同源）
 --------------------
@@ -17,6 +17,10 @@ breakage——未来在被吞区域加 CJK 字面量都会逃过扫描。
 
 这套 fixture-based 测试独立于真实 JS 文件内容，直接锁住 line-first
 契约——R97 同款，复用经过 reverse-injection 验证的测试模式。
+
+后续：R753 起两份 CJK 扫描脚本不再各自带 ``_strip_comments``，注释剥除与字面量识别
+合并为 ``scripts/js_source_scan.py`` 的一次词法扫描；本文件的契约改由其
+``blank_comments`` 承担（字符串里的 ``//`` 也不再被当作注释，见 R753）。
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT_PATH = REPO_ROOT / "scripts" / "check_i18n_js_no_cjk.py"
+SCANNER_PATH = REPO_ROOT / "scripts" / "js_source_scan.py"
 
 
 def _load_gate_module():
@@ -42,8 +47,19 @@ def _load_gate_module():
     return module
 
 
+def _load_scanner_module():
+    spec = importlib.util.spec_from_file_location(
+        "_aiia_js_source_scan_r98", SCANNER_PATH
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class TestStripCommentsLineFirstR98(unittest.TestCase):
-    """``_strip_comments`` 必须先剥 ``//`` 再剥 ``/* */``，否则 line comment
+    """``blank_comments`` 必须先剥 ``//`` 再剥 ``/* */``，否则 line comment
     内的裸 ``/*`` 会触发 block-comment 跨吞数百行真代码（R92 docstring
     点名的 ``static/js/app.js:538`` 案例）。"""
 
@@ -57,14 +73,14 @@ class TestStripCommentsLineFirstR98(unittest.TestCase):
         comment 里）才能让 buggy block-first 实现真正 swallow——否则 buggy
         正则找不到配对 ``*/`` 0 命中，跟正确实现等价，反向注入验证不了。
         """
-        gate = _load_gate_module()
+        scanner = _load_scanner_module()
         src = (
             "// 走 locales/*.json 静态 key 且无参数\n"
             "const realCode = 'should-survive';\n"
             "const realCjk = '中文真字符串';\n"
             "/* a legitimate block-comment to provide the closing */\n"
         )
-        stripped = gate._strip_comments(src)
+        stripped = scanner.blank_comments(src)
         self.assertIn(
             "should-survive",
             stripped,
@@ -83,7 +99,7 @@ class TestStripCommentsLineFirstR98(unittest.TestCase):
     ) -> None:
         """更恶劣 fixture：line comment 含 ``/*``，文件尾部真有一个 ``*/``，
         修复前会让两者配对，吞掉中间所有真代码。"""
-        gate = _load_gate_module()
+        scanner = _load_scanner_module()
         src = (
             "// 引用 locales/*.json 多行陷阱\n"
             "const realCjk1 = '中文一';\n"
@@ -92,7 +108,7 @@ class TestStripCommentsLineFirstR98(unittest.TestCase):
             "   comment */\n"
             "const realCjk3 = '中文三';\n"
         )
-        stripped = gate._strip_comments(src)
+        stripped = scanner.blank_comments(src)
         for needle in ("中文一", "中文二", "中文三"):
             self.assertIn(
                 needle,
@@ -109,10 +125,10 @@ class TestStripCommentsLineFirstR98(unittest.TestCase):
 
     def test_strip_preserves_byte_length_for_line_number_mapping(self) -> None:
         """``scan_file()`` 用 ``stripped[:start].count('\\n') + 1`` 算行号，
-        要求 ``_strip_comments`` 输出长度与输入逐字节相等。"""
-        gate = _load_gate_module()
+        要求 ``blank_comments`` 输出长度与输入逐字节相等。"""
+        scanner = _load_scanner_module()
         src = "// header line\n/* block\n   comment */\nconst x = 1;\n"
-        stripped = gate._strip_comments(src)
+        stripped = scanner.blank_comments(src)
         self.assertEqual(
             len(stripped),
             len(src),
@@ -129,13 +145,13 @@ class TestStripCommentsLineFirstR98(unittest.TestCase):
     ) -> None:
         """更精细的 byte-offset 契约：``// /*`` 触发陷阱时，关键真代码字
         符串字面量在 strip 后位置不变，喂给 ``scan_file()`` 行号映射。"""
-        gate = _load_gate_module()
+        scanner = _load_scanner_module()
         src = (
             "// 引用 locales/*.json 中的 layout note\n"
             "const greeting = '中文硬编码';\n"
             "/* legit block */\n"
         )
-        stripped = gate._strip_comments(src)
+        stripped = scanner.blank_comments(src)
         self.assertEqual(len(stripped), len(src))
         original_start = src.index("'中文硬编码'")
         stripped_start = stripped.index("'中文硬编码'")
@@ -178,7 +194,7 @@ class TestScanFileEndToEndR98(unittest.TestCase):
                 "中文硬编码",
                 literals,
                 msg="scan_file() 没扫到 line-comment 之后的硬编码 CJK 字面量"
-                "—— 高度提示 ``_strip_comments`` 的剥序回归到了 R98 之前的"
+                "—— 高度提示 ``blank_comments`` 的剥序回归到了 R98 之前的"
                 " block-first 实现，line-comment 内裸 ``/*`` 与后续真实"
                 " ``*/`` 误配对吞掉了中间真代码。",
             )

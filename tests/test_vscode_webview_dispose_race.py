@@ -10,7 +10,7 @@
       .finally(() => {
         if (this._view !== view) return       // ← R18.2 dispose-race guard
         if (view.webview) view.webview.html = this._getHtmlContent(view.webview)
-        this._webviewReadyTimer = setTimeout(() => { ...warning log... }, 2500)
+        this._armWebviewReadyTimer("serverUrl_changed")
       })
 
 ``_preloadResources`` 通常含一次 HTTP probe（locale / config / version
@@ -22,7 +22,7 @@
    引用，VSCode 多半 noop 但偶发抛 ``Webview is disposed``，把
    finally 转成 unhandled rejection，污染 Output channel。
 
-2. ``this._webviewReadyTimer = setTimeout(..., 2500)``：dispose 的
+2. ``this._armWebviewReadyTimer(...)``：dispose 的
    ``clearTimeout`` 已经在 capture 之前完成，新创建的 timer 不会被
    dispose 回收。2.5 s 后 timer fires → 写一条
    ``webview.ready_timeout`` warning 日志 —— 但 webview 早已不存在，
@@ -34,7 +34,7 @@
 1. **Guard 存在性**（前向 lock）：确认 ``webview.ts`` 的
    ``updateServerUrl`` 函数体里包含
    ``if (this._view !== view) return``。
-2. **Guard 出现在 ``setTimeout`` 之前**（顺序 lock）：保证一旦
+2. **Guard 出现在 ``_armWebviewReadyTimer`` 之前**（顺序 lock）：保证一旦
    stale 退出生效，新 timer 永远不会被创建 —— 这是修复"2.5 s 后
    false-positive 日志"的载荷。
 3. **Reverse lock**：如果将来某次 refactor 把 guard 从 finally 里
@@ -115,16 +115,16 @@ def test_dispose_race_guard_present_in_update_server_url() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. Guard 顺序 lock：必须在 setTimeout 创建之前
+# 2. Guard 顺序 lock：必须在 ready timer 创建之前
 # ---------------------------------------------------------------------------
 
 
-def test_dispose_race_guard_precedes_setTimeout_in_finally() -> None:
-    """guard 必须出现在 ``setTimeout`` 创建之前。
+def test_dispose_race_guard_precedes_ready_timer_in_finally() -> None:
+    """guard 必须出现在 ``_armWebviewReadyTimer(`` 调用之前。
 
-    这是真正的 load-bearing 不变量：guard 在 setTimeout 之前 → 一旦
+    这是真正的 load-bearing 不变量：guard 在创建 timer 之前 → 一旦
     stale 退出生效，新 timer 不会被创建，dispose 已经 cancel 的
-    timer 不会"再生"。如果 guard 跑到 setTimeout 之后，false-positive
+    timer 不会"再生"。如果 guard 跑到 arm 之后，false-positive
     日志的 race 会原地复活。
     """
     body = _extract_update_server_url_body()
@@ -132,13 +132,13 @@ def test_dispose_race_guard_precedes_setTimeout_in_finally() -> None:
     assert guard_match, (
         "guard 缺失（详细见 test_dispose_race_guard_present_in_update_server_url）"
     )
-    settimeout_match = re.search(r"\bsetTimeout\s*\(", body)
-    assert settimeout_match, (
-        "updateServerUrl 应当含 setTimeout 调用（_webviewReadyTimer 创建）"
+    arm_match = re.search(r"\b_armWebviewReadyTimer\s*\(", body)
+    assert arm_match, (
+        "updateServerUrl 应当调用 _armWebviewReadyTimer（_webviewReadyTimer 创建）"
     )
-    assert guard_match.start() < settimeout_match.start(), (
-        "dispose-race guard 必须出现在 ``setTimeout`` 之前；"
-        " 当前 guard 在 setTimeout 之后等于"
+    assert guard_match.start() < arm_match.start(), (
+        "dispose-race guard 必须出现在 ``_armWebviewReadyTimer`` 之前；"
+        " 当前 guard 在它之后等于"
         " 没修，stale finally 仍会创建 false-positive timer。"
     )
 
@@ -194,25 +194,55 @@ def test_dispose_race_guard_inside_preload_resources_finally() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. setTimeout 必须仍然在 finally 里（防御 over-fix：guard 把 setTimeout
-#    误删的可能）
+# 4. ready timer 必须仍然在 finally 里被创建，且 timer 本体仍然写 warning
+#    （防御 over-fix：guard 把 timer 误删的可能）
 # ---------------------------------------------------------------------------
 
 
-def test_setTimeout_still_present_for_ready_timeout_observability() -> None:
-    """guard 引入后，``setTimeout(..., 2500)`` 仍然必须保留 —— 这是
-    "webview script 真没起来"时的观测点，不能因为加 guard 顺手把
-    它删掉。
+def _extract_arm_ready_timer_body() -> str:
+    text = _read_webview_ts()
+    m = re.search(r"_armWebviewReadyTimer\s*\([^)]*\)\s*:\s*void\s*\{", text)
+    assert m, "webview.ts 找不到 ``_armWebviewReadyTimer`` 方法签名"
+    start = m.end() - 1
+    depth = 0
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : idx + 1]
+    raise AssertionError("``_armWebviewReadyTimer`` 方法体 brace 不平衡")
+
+
+def test_ready_timer_still_armed_for_ready_timeout_observability() -> None:
+    """guard 引入后，``updateServerUrl`` 仍然必须创建 ready timer，且 timer 本体
+    仍然在页面没上报 ``ready`` 时写 ``webview.ready_timeout`` warning —— 这是
+    "webview script 真没起来"时的观测点，不能因为加 guard 顺手把它删掉。
     """
     body = _extract_update_server_url_body()
-    m = re.search(
-        r"setTimeout\s*\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?\}\s*,\s*2500\s*\)", body
+    assert re.search(r'_armWebviewReadyTimer\s*\(\s*"serverUrl_changed"\s*\)', body), (
+        'updateServerUrl 应当仍调用 ``_armWebviewReadyTimer("serverUrl_changed")``。'
+        " R18.2 dispose race guard 仅应让 stale finally 跳过这一段，而不是把可观测性删掉。"
     )
-    assert m, (
-        "updateServerUrl 应当仍包含 ``setTimeout(() => {...}, 2500)``，用于在 webview"
-        " script 未上报 ``ready`` 时记录 ``webview.ready_timeout`` warning。R18.2 dispose"
-        " race guard 仅应让 stale finally 跳过这一段，而不是把可观测性删掉。"
+    timer = _extract_arm_ready_timer_body()
+    assert re.search(
+        r"setTimeout\s*\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?\}\s*,\s*WEBVIEW_READY_TIMEOUT_MS\s*\)",
+        timer,
+    ), "``_armWebviewReadyTimer`` 应当用 WEBVIEW_READY_TIMEOUT_MS 创建 setTimeout"
+    assert '"webview.ready_timeout"' in timer, (
+        "timer 本体应当写 ``webview.ready_timeout`` 事件"
     )
+
+
+def test_ready_timer_has_a_single_creation_site() -> None:
+    """两处 resolve / updateServerUrl 各自内联一份 timer 时，可见性判断只改了一处就会
+    让另一处继续误报；timer 与它的日志必须只在 ``_armWebviewReadyTimer`` 里出现一次。
+    """
+    text = _read_webview_ts()
+    assert len(re.findall(r"_webviewReadyTimer\s*=\s*setTimeout\s*\(", text)) == 1
+    assert text.count('"webview.ready_timeout"') == 1
 
 
 # ---------------------------------------------------------------------------

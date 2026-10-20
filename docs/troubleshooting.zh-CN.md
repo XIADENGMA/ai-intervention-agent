@@ -6,10 +6,10 @@
 请参考 [`SUPPORT.zh-CN.md`](../.github/SUPPORT.zh-CN.md) 选择合适渠道。
 
 > 提示：拿到日志后绝大多数问题都能秒级定位。在 `config.toml` 里
-> 设 `web_ui.log_level = "DEBUG"`（或独立 server 用环境变量
-> `AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG`，VS Code 里把
-> `ai-intervention-agent.logLevel` 改成 `debug`）。然后复现问题，
-> 抓 stderr / Output 的**最后 20-30 行**。
+> 设 `web_ui.log_level = "DEBUG"`（或用环境变量
+> `AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG`，它优先于配置文件）并重启
+> MCP 服务端；VS Code 里则把 `ai-intervention-agent.logLevel` 改成
+> `debug`。然后复现问题，抓 stderr / Output 的**最后 20-30 行**。
 
 ## 1. Web UI 启动失败（端口被占用）
 
@@ -62,11 +62,13 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
 - **MCP server 还没启动** —— 让 AI 调用一次任意 MCP 工具
   （比如 `interactive_feedback`），server 才会拉起 Web UI 子进程。
   面板每秒轮询，一旦 URL 通了大约 2 秒内就渲染。
-- **Webview 静默崩溃** —— Output → "AI Intervention Agent" 应该
-  打 5 行 boot 日志（`webview.resolve`、`webview.boot`、
-  `webview.ready`、`webview.config_loaded`、
-  `webview.first_task_rendered`）。如果断在哪一行，就说明哪个阶段
-  挂了。
+- **面板里的脚本没有启动** —— 打开 Output → "AI Intervention Agent"。面板
+  正常时，脚本跑起来后会记录一行 `event=webview.ready`。如果面板可见、脚本却在
+  2.5 秒内没有报告就绪，扩展会以 `WARN` 级别记录 `event=webview.ready_timeout`；
+  它的 `reason` 字段说明计时从何而来（面板被隐藏后再次显示是 `shown`，服务器地址
+  变化后是 `serverUrl_changed`，首次加载没有 `reason`）。面板处于隐藏状态时不会
+  告警，再次显示时重新计时。常见原因是脚本被页面拦截（CSP）或 HTML 没有加载出来；
+  **Developer: Open Webview Developer Tools** 可以查看面板的控制台。
 - **企业网络拦截** —— 公司 Zscaler / 终端安全软件偶尔会拦
   VS Code 发起的 `localhost` 请求。要么找 IT 加白，要么把
   `web_ui.host` 改成 `0.0.0.0` 走局域网 IP。
@@ -93,7 +95,7 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
 | 渠道              | 最常见原因                                                   | 修复                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ----------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Web**           | 浏览器 tab 在后台 + 系统拒绝授权                             | 页面右上角铃铛 → "允许通知"。Safari 还要去 系统设置 → 通知 → Safari 单独允许。                                                                                                                                                                                                                                                                                                                                                               |
-| **声音**          | `notifications.sound_mute = true` 或音量 0                   | 设置页 → 声音 → 关闭"静音"，调高音量。iOS / iPadOS 需要每次会话至少把页面置前一次。                                                                                                                                                                                                                                                                                                                                                          |
+| **声音**          | `notification.sound_mute = true` 或音量 0                   | 设置页 → 声音 → 关闭"静音"，调高音量。iOS / iPadOS 需要每次会话至少把页面置前一次。                                                                                                                                                                                                                                                                                                                                                          |
 | **系统（plyer）** | `system_enabled = false`（默认）或 macOS 缺 `pyobjus`        | 在 `[notification]` 里设置 `system_enabled = true`。macOS 通过 plyer 走的系统通知有意跳过；项目改用 `macos_native_enabled = true`（基于 `osascript`）。Linux 需要 `libnotify`；Windows 走 Toast。                                                                                                                                                                                                                                            |
 | **Bark**          | device key 错 / 推送服务不可达 / `bark_url` 没指向你自建实例 | 用 `curl -v "$BARK_URL/$DEVICE_KEY/test"` 单测。设 `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` 做点击直达。**如果解析出来的 URL 是 loopback 地址**（`localhost` / `127.x.x.x` / `::1`），agent 现在会在服务端直接过滤——手机不会再收到一个无法点击打开的 URL；同时 Web UI 的 Bark 设置面板会推荐对应的 LAN IP（`http://<lan-ip>:<port>`）让你一键复制并写入 `web_ui.external_base_url`（或开 mDNS）后重试。 |
 

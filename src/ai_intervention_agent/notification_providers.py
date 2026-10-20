@@ -469,7 +469,7 @@ class BarkNotificationProvider(BaseNotificationProvider):
 
 
 class SystemNotificationProvider(BaseNotificationProvider):
-    """系统通知 - 通过 plyer 库发送跨平台桌面通知（可选依赖）。"""
+    """系统通知 - 通过 plyer 发送桌面通知；macOS 另需 pyobjus（不随包安装）。"""
 
     def __init__(self, config):
         """检查 plyer 库是否可用"""

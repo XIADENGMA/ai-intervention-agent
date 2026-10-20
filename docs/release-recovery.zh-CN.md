@@ -177,7 +177,6 @@ Issue 跟踪器发条简报：
 
 ## 相关 guard
 
-- `tests/test_housekeeping_r151.py` —— R180 rescue 测试。
 - `tests/test_workflow_paths_ignore_r181.py` —— R181 paths-ignore
   guard。
 - `tests/test_release_workflow_ovsx_pinned_r149.py` —— R149 ovsx

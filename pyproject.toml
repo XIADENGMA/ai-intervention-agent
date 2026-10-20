@@ -127,6 +127,10 @@ ai-intervention-agent = "ai_intervention_agent.server:_cli_main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_intervention_agent"]
 
+# 首次运行把带注释的模板复制到用户配置目录（config_manager.find_default_config_template）
+[tool.hatch.build.targets.wheel.force-include]
+"config.toml.default" = "ai_intervention_agent/config.toml.default"
+
 [tool.hatch.build.targets.sdist]
 # R76 起所有运行时资产（``templates/`` ``static/`` ``icons/`` ``sounds/``）都迁入
 # ``src/ai_intervention_agent/`` 包内，会随 wheel.packages 自动随 sdist 一并打包；

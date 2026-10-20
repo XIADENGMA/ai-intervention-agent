@@ -190,7 +190,6 @@ move?" detective work in future bisect sessions.
 
 ## Related guards
 
-- `tests/test_housekeeping_r151.py` — R180 rescue test.
 - `tests/test_workflow_paths_ignore_r181.py` — R181 paths-ignore
   guard.
 - `tests/test_release_workflow_ovsx_pinned_r149.py` — R149 ovsx

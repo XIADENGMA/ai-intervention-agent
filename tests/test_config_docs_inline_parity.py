@@ -37,6 +37,8 @@
 - ``test_section_set_matches_toml_top_level``: 元测试，确保 ``KNOWN_SECTIONS``
   与 ``config.toml.default`` 真实顶层 section 集合一致 —— 项目新增
   ``[security]`` 之类 section 时本测试会先挂，提醒同步白名单。
+- ``test_section_names_are_not_pluralised``: ``notifications.sound_mute`` 这类
+  复数 section 名不在白名单里，主断言看不到，这里单独拦。
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from __future__ import annotations
 import re
 import tomllib
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -108,6 +111,11 @@ _FILE_EXT_LIKE_KEYS = frozenset(
 )
 
 
+# 代码段里常写成赋值示例 `` `notification.sound_mute = true` ``：key 后面可以跟
+# `` = <值>``，仍然算一次 ``section.key`` 引用。
+_ASSIGNMENT_TAIL = r"(?:\s*=[^`]*)?"
+
+
 def _load_toml_sections() -> dict[str, set[str]]:
     """``{section: {key, …}}`` 全集，来自 ``config.toml.default``。"""
     data = tomllib.loads(TOML_TEMPLATE.read_text(encoding="utf-8"))
@@ -131,13 +139,26 @@ def _iter_docs() -> list[Path]:
     return out
 
 
+def _iter_doc_lines() -> Iterator[tuple[Path, int, str]]:
+    """``_iter_docs()`` 里每个文件的 ``(path, 行号, 行文本)``，读不了的文件跳过。"""
+    for path in _iter_docs():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            yield path, lineno, line
+
+
 class TestConfigDocsInlineParity(unittest.TestCase):
     def setUp(self) -> None:
         self.toml_sections = _load_toml_sections()
         sections_re = "|".join(re.escape(s) for s in self.toml_sections)
         # 反引号包裹的 ``<section>.<key>``。section 限定为 TOML 模板真实
         # 顶层名，key 是小写 snake_case。
-        self.inline_re = re.compile(r"`(" + sections_re + r")\.([a-z_][a-z0-9_]*)`")
+        self.inline_re = re.compile(
+            r"`(" + sections_re + r")\.([a-z_][a-z0-9_]*)" + _ASSIGNMENT_TAIL + "`"
+        )
         # ``<section>`` 任意小写 snake_case 名，用于"section 名错"反查：
         # 出现 ``web_ui.bind_interface`` 时，我们要能定位到 ``bind_interface``
         # 真实属于哪个 section（network_security）。
@@ -176,22 +197,17 @@ class TestConfigDocsInlineParity(unittest.TestCase):
         """主断言：``docs/*.md`` 反引号 inline 写的每个 ``<section>.<key>`` 都必须
         真在 ``config.toml.default`` 里声明。"""
         drifts: dict[str, list[tuple[str, int, str]]] = {}
-        for path in _iter_docs():
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            for lineno, line in enumerate(text.splitlines(), 1):
-                for m in self.inline_re.finditer(line):
-                    sec, key = m.group(1), m.group(2)
-                    # 排除文件后缀类（``web_ui.py`` / ``server.py`` 类引用）
-                    if key in _FILE_EXT_LIKE_KEYS:
-                        continue
-                    if key not in self.toml_sections.get(sec, set()):
-                        ref = f"{sec}.{key}"
-                        drifts.setdefault(ref, []).append(
-                            (str(path.relative_to(REPO_ROOT)), lineno, line.strip())
-                        )
+        for path, lineno, line in _iter_doc_lines():
+            for m in self.inline_re.finditer(line):
+                sec, key = m.group(1), m.group(2)
+                # 排除文件后缀类（``web_ui.py`` / ``server.py`` 类引用）
+                if key in _FILE_EXT_LIKE_KEYS:
+                    continue
+                if key not in self.toml_sections.get(sec, set()):
+                    ref = f"{sec}.{key}"
+                    drifts.setdefault(ref, []).append(
+                        (str(path.relative_to(REPO_ROOT)), lineno, line.strip())
+                    )
 
         if drifts:
             lines = ["docs 散文中提到了 config.toml.default 未声明的 `section.key`："]
@@ -210,6 +226,23 @@ class TestConfigDocsInlineParity(unittest.TestCase):
                 for fp, ln, snippet in locs[:5]:
                     lines.append(f"     @ {fp}:{ln}: {snippet[:120]}")
             self.fail("\n".join(lines))
+
+    def test_section_names_are_not_pluralised(self) -> None:
+        """``notifications.sound_mute`` 这类把 section 名写成复数的引用不在
+        ``inline_re`` 的白名单里，``test_no_undeclared_inline_refs`` 看不到；
+        troubleshooting 的声音排查行曾因此写了很久的 ``notifications.``。"""
+        plural_names = "|".join(re.escape(sec + "s") for sec in self.toml_sections)
+        plural_re = re.compile(
+            r"`(" + plural_names + r")\.([a-z_][a-z0-9_]*)" + _ASSIGNMENT_TAIL + "`"
+        )
+        found = [
+            f"{path.relative_to(REPO_ROOT)}:{lineno}: {m.group(0)} "
+            f"(应为 `{m.group(1)[:-1]}.{m.group(2)}`)"
+            for path, lineno, line in _iter_doc_lines()
+            for m in plural_re.finditer(line)
+            if m.group(2) not in _FILE_EXT_LIKE_KEYS
+        ]
+        self.assertEqual(found, [], "\n".join(found))
 
 
 if __name__ == "__main__":

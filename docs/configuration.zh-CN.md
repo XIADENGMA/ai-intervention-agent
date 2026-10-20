@@ -72,6 +72,24 @@ dev 模式内部优先级顺序：
 > 同一目录如果同时存在 `config.toml` 和 `config.jsonc`（或 `config.json`），TOML 优先；
 > agent 启动时会打印 `WARNING` 列出被忽略的旧格式文件。迁移完成后请删除或重命名旧文件。
 
+### 修改何时生效
+
+MCP 服务端和它启动的 Web UI 各自每 2 秒检查一次配置文件的修改时间，所以大多数修改
+无需重启就会作用到正在运行的安装上；少数设置只在进程启动时读取一次。
+
+| 设置                                                                                                                         | 何时生效                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `notification.*`                                                                                                             | Web UI：约 2 秒内。MCP 服务端：每次反馈请求之前                                                                                     |
+| `feedback.*`                                                                                                                 | MCP 服务端：每次反馈请求。Web UI：使用默认倒计时的未完成任务在页面加载后约 2 秒内跟随 `frontend_countdown`                          |
+| `web_ui.language`                                                                                                            | 约 2 秒内                                                                                                                           |
+| `web_ui.http_request_timeout`、`http_max_retries`、`http_retry_delay`                                                        | MCP 服务端：HTTP 客户端会重建，下一次请求使用新值                                                                                   |
+| `network_security.allowed_networks`、`blocked_ips`、`access_control_enabled`、`api_token`                                   | 正在运行的 Web UI 约 2 秒内应用新规则                                                                                               |
+| `web_ui.host`、`web_ui.port`、`network_security.bind_interface`、`network_security.trusted_hosts`、`mdns.*`、`web_ui.log_level` | 进程启动时读取一次：请重启 MCP 服务端                                                                                               |
+
+重启 MCP 服务端会停止它启动的 Web UI，下一次反馈请求会用新值再启动一个。如果有 Web UI
+在它的 MCP 服务端之后还活着（服务端是被杀掉而不是正常停止的），它会继续使用旧值和旧端口：
+把它也停掉，参见 [故障排查 第 1 条](troubleshooting.zh-CN.md#1-web-ui-启动失败端口被占用)。
+
 ### 环境变量覆盖
 
 为方便 `uvx`、Docker、systemd 等「难以直接修改 `config.toml`」的运行场景，
@@ -155,8 +173,9 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 
 #### 其他 env vars（已在别处文档化）
 
-- `AI_INTERVENTION_AGENT_LOG_LEVEL` —— 覆盖 `web_ui.log_level`（仅独立服务端）。
-  VS Code 插件用户改 VS Code 设置里的 `ai-intervention-agent.logLevel`。
+- `AI_INTERVENTION_AGENT_LOG_LEVEL` —— 覆盖 `web_ui.log_level`，对 MCP 服务端和
+  Web UI 进程都生效（各自在启动时读取一次）。VS Code 插件用户改 VS Code 设置里的
+  `ai-intervention-agent.logLevel`。
 - `AI_INTERVENTION_AGENT_OPEN_WITH` —— 决定「用 IDE 打开配置文件」按钮调用的
   IDE，详见 [`docs/troubleshooting.zh-CN.md`](troubleshooting.zh-CN.md)。
 - 路径探测类 env vars（`AI_INTERVENTION_AGENT_CONFIG_FILE`、`*_DEV_MODE`、
@@ -174,13 +193,12 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
   无 `try/except` 包裹，raise 会让 production 挂掉）。无效值
   → fall back `off` + 启动 `WARNING` 一次。**进程启动时读一次**
   （Twelve-Factor sticky），启动后改 env var 不生效，必须重启。
-  计数器通过 `/api/system/stats` JSON
-  （`stats_snapshot()['schema_violation_total']`）与 `/api/system/
-metrics` Prometheus `aiia_sse_schema_violation_total` counter
-  （R207 / Cycle 10 · F-205-2，**omit-when-off** —— 用 `absent(
-aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
-  启且 0 violation」两类 ops 状态）暴露。一条 emit 多字段错只算
-  1 次 violation（避免噪声膨胀）。
+  计数器通过 `/api/system/sse-stats` JSON（`schema_violation_total`）与
+  `/api/system/metrics` 里的 Prometheus 计数器 `aiia_sse_schema_violation_total`
+  （R207 / Cycle 10 · F-205-2，**omit-when-off** —— 用
+  `absent(aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开启且 0
+  violation」两类 ops 状态）暴露。一条 emit 多字段错只算 1 次 violation（避免噪声
+  膨胀）。
 
 ### 跨平台用户配置目录
 
@@ -277,7 +295,7 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 | `http_request_timeout` | number  | `30`        | HTTP 请求超时（秒），范围 `[1, 600]`                                                                                                                                                                                                                                                   |
 | `http_max_retries`     | number  | `3`         | HTTP 最大重试次数，范围 `[0, 20]`                                                                                                                                                                                                                                                      |
 | `http_retry_delay`     | number  | `1.0`       | HTTP 重试间隔（秒），范围 `[0, 60]`                                                                                                                                                                                                                                                    |
-| `log_level`            | string  | `"WARNING"` | 独立服务端 enhanced_logging 模块日志级别，大小写不敏感，有效值：`"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` / `"CRITICAL"`。可被环境变量 `AI_INTERVENTION_AGENT_LOG_LEVEL` 覆盖（env 优先）。VS Code 扩展使用方应改 VS Code 设置里的 `ai-intervention-agent.logLevel`（独立维度）。 |
+| `log_level`            | string  | `"WARNING"` | MCP 服务端和 Web UI 进程的日志级别，各自在启动时读取一次，所以修改后需要重启 MCP 服务端。大小写不敏感，有效值：`"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` / `"CRITICAL"`。可被环境变量 `AI_INTERVENTION_AGENT_LOG_LEVEL` 覆盖（env 优先）。VS Code 扩展使用方应改 VS Code 设置里的 `ai-intervention-agent.logLevel`（独立维度）。 |
 | `external_base_url`    | string  | `""`        | 通知点击跳转使用的外部 Web UI 基地址，例如 `http://ai.local:8080`；留空时优先回退到 mDNS（`http://ai.local:{port}`），再回退到 `http://{host}:{port}`                                                                                                                                  |
 | `ios_a2hs_hint_dismissed` | boolean | `false`  | iOS「安装到桌面」引导横幅的服务端永久关闭状态（R707）。用户点击横幅叉号时经 `POST /api/system/ios-a2hs-dismiss` 自动写为 `true`——之所以存服务端，是因为快捷指令「显示网页」WebView 的 localStorage 跨会话不持久。想重新显示横幅可手动改回 `false`。 |
 

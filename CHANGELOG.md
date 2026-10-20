@@ -50,6 +50,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- The configuration guide (EN + zh-CN) has a new section, "When an edit
+  takes effect". The MCP server and the Web UI each check the config file
+  every 2 seconds, so edits to `notification`, `feedback`, the language,
+  the HTTP client settings and the `network_security` rules apply to a
+  running install (measured on a running Web UI: 1.0 to 2.1 s), while
+  `web_ui.host`, `web_ui.port`, `network_security.bind_interface`,
+  `trusted_hosts`, `mdns.*` and `web_ui.log_level` are read once when a
+  process starts. `log_level` and `AI_INTERVENTION_AGENT_LOG_LEVEL` are now
+  described as what they are, settings of both the MCP server and the Web
+  UI process (the guide, the template and the tip at the top of the
+  troubleshooting page said "standalone server only").
+  Other pages caught up with the code: troubleshooting §2 lists the events
+  the VS Code panel really writes (`event=webview.ready`, and
+  `event=webview.ready_timeout` at `WARN` after 2.5 s while the panel is
+  visible) instead of five boot lines that no code emits; §4 names the
+  setting `notification.sound_mute` (it said `notifications.`); the
+  SSE-schema paragraph points to `/api/system/sse-stats`, the route that
+  exists, and its broken code spans are repaired; `scripts/README.md` names
+  the pseudo-locale file `_pseudo/pseudo.json`; the template and the
+  `SystemNotificationProvider` docstring say that macOS also needs
+  `pyobjus`; the release-recovery checklist no longer lists a test file
+  that was deleted. `test_config_docs_inline_parity.py` had let the
+  `notifications.` slip through: it only read code spans that end right
+  after the key, so a span such as `notification.sound_mute = true` was
+  never checked, and it ignored section names it did not know. It now
+  reads assignment-style spans too and fails on a plural section name
+  (3 mutants killed, one of them a key typo the old test also missed).
 - Troubleshooting §18 (EN + zh-CN) explains the `WARNING` line
   `event=server.boot` that every start of the MCP server writes: it is the
   start-up banner (version, transport, Python, middleware), written at
@@ -259,6 +286,124 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- A package folder that cannot be written to no longer stops the server.
+  The task queue keeps its snapshot in `data/tasks.json` and the Web UI
+  subprocess writes `logs/web_ui.log`, both inside the installed package,
+  and neither folder ships in the wheel. Creating them raised
+  `PermissionError` whenever the package could not be written to (for
+  example a system-wide install run by another user, a container that runs
+  as a non-root user, or a read-only store), so the first feedback request
+  failed. Started from a read-only copy of the package, the Web UI now
+  comes up with one warning (its log is discarded, there is nowhere to
+  write it), tasks can be created and listed, and the queue forgets them
+  when the process ends; before, `start_web_service` failed at once. A
+  snapshot folder that exists but is read-only is noticed once at start
+  (persistence off, one warning) instead of one warning with a traceback
+  on every task change. The new `test_read_only_package_dir_r755.py` has
+  8 tests and 10 mutants, all killed.
+- Web UI: edits to `network_security` in `config.toml` (`blocked_ips`,
+  `allowed_networks`, `access_control_enabled`) now reach a Web UI that is
+  already running. The MCP server starts the Web UI as a script, so the file
+  ran as `__main__` while the config-change callbacks imported it as
+  `ai_intervention_agent.web_ui`: two copies in one process, and the one the
+  callbacks used had never created an instance, so the reload found nothing
+  to update and returned without a word. The new rules took effect only
+  after the Web UI process was restarted, which only happens when the MCP
+  server itself restarts. The file now registers itself under its package
+  name when it runs as a script. Pinned by R754 (a real Web UI process started
+  the way the MCP server starts it: blocking 127.0.0.1 in the file answers 403
+  within seconds, lifting the block answers 200).
+- i18n checks: the "no hardcoded CJK" gates for JavaScript and TypeScript now
+  read the code instead of pattern-matching it. They blanked everything after
+  the first `//` of a line and then paired quotes with a regex, so a string such
+  as `"http://localhost/"` lost its closing quote and the quotes after it were
+  paired the wrong way round: 85 of the 407 strings of `webview.ts`, 19 of 193
+  in `extension.ts` and 26 of 820 in `multi_task.js` were never read as the
+  string they are, and Chinese written as `\uXXXX` escapes (how the host-side
+  notification below stayed Chinese) could not be seen at all.
+  `scripts/js_source_scan.py` goes through the source once, knowing strings,
+  template literals (substitutions lexed as code), regex literals and comments,
+  decodes the escapes, and both gates use it. The first run with it found the
+  one literal the old scan had stepped over: the Chinese debug message
+  `显示新任务视觉提示: ${count} 个新任务` in `multi_task.js` (a `console.debug`
+  line behind `window.AIIA_DEBUG`), now English like the rest of that file's
+  debug messages. The scanner agrees with TypeScript's own scanner literal for
+  literal, line and decoded value, on a fixture of tricky cases and on every
+  JS/TS source of the repository (also tried once on the minified libraries:
+  116 files, 53,398 literals, no difference). Pinned by R753 (35 tests, 37
+  mutants of the scanner and the two gates killed).
+- VS Code panel: the "new task" notification shown while the panel is hidden
+  is now in the language of the panel. The extension's own copy of that
+  notification kept its Chinese text as `\u` escapes (a form the CJK check
+  cannot see), so an English user with a collapsed panel got `AI 交互反馈` and
+  `新任务已添加: …` in the status bar and in the macOS notification, while the
+  panel-side twin of the same notification was already translated. The text now
+  comes from the `ui.notification.*` entries of the locale files, in the
+  language the panel uses: the server's `web_ui.language`, otherwise the VS Code
+  display language, English when a locale file is missing. The plural forms
+  ("Received 3 new tasks") are formatted by a small formatter that the new host
+  test compares with the panel's `i18n.js` for every notification string in all
+  three languages and ten counts, so the two cannot drift apart. A summary
+  followed by a task count is now separated by a space, as in the panel
+  (`summary （共 3 个任务）` rather than `summary（共 3 个任务）`). New host tests:
+  `message-format.test.js` (10) and `host-new-task-notification.test.js` (10),
+  25 mutants of which 24 are killed and the survivor is equivalent.
+- Config: the first run creates the commented `config.toml` again. The wheel
+  did not contain `config.toml.default` (the file sits in the repository root
+  and the packaging config listed it only for the source distribution), and
+  the code looked for it next to the module, which stopped holding it when the
+  sources moved into `src/`. Every first run, from PyPI and from a checkout
+  alike, therefore logged `模板文件不存在，使用默认配置创建文件` at `WARNING`
+  and wrote a file with no comments and no `network_security` section, although
+  the configuration guide says the file is copied from the packaged template.
+  The wheel now ships the template inside the package, and the first run, the
+  JSONC migration (whose template branch had been dead for the same reason) and
+  the "open in editor" whitelist share one lookup. The template's values are
+  the built-in defaults, so nothing behaves differently; the file just carries
+  its comments. The copy is made with the user's default permissions, so a
+  package installed read-only does not leave a read-only config. Pinned by R752
+  (14 tests, 12 mutants killed). Checked on wheels built before and after: 322
+  and 323 members, the one addition being the template, and a first start of
+  each in a clean home directory wrote 1,050 bytes with no comment lines, then
+  12,725 bytes with 145.
+- VS Code panel: the Output channel no longer carries two warnings about a
+  healthy panel. Every start of the panel wrote `Webview HTML contains 4
+  backtick character(s); may cause injection failure`: the four backticks sat
+  in two developer comments of the page template (they are gone, see Removed)
+  and cannot break anything, so the check and its two translations are gone.
+  Changing `ai-intervention-agent.serverUrl` while the panel was hidden
+  (sidebar collapsed, another view on top) wrote
+  `event=webview.ready_timeout` ("script may not have executed (CSP /
+  injection / HTML structure broken)") 2.5 s later, although a hidden webview
+  loads nothing and the page reported ready as soon as the panel was shown.
+  The wait now only ends in a warning while the panel is visible, and it starts
+  again when a hidden panel is shown. A page that stays silent while the panel
+  is visible is still reported, once. The two copies of the timer and their log
+  fallbacks are one method. The new host test `webview-ready-timeout.test.js`
+  runs 8 cases in the real extension host and kills 11 mutants of the timer
+  logic.
+- VS Code panel: hiding and showing the panel no longer writes
+  `event=webview.server_status connected=false` at `WARN` while the server is
+  up. The page paints its status light as disconnected before the first
+  probe and also told the extension, so every rebuilt page looked like a lost
+  connection (an INFO "connected" followed a few milliseconds later). That
+  first paint now stays in the page; probe results are still reported, so a
+  server that is really down is still logged. Pinned by R750 (4 tests, 7
+  mutants killed).
+- Config: an unchanged `config.toml` is no longer rewritten. Every process
+  that imported the config manager rewrote the file when it exited, with the
+  same text but a new inode and modification time, so every other process
+  watching the file (the MCP server and the Web UI process, a second IDE
+  window) reloaded it and broadcast `config_changed`: the Web UI showed
+  "Configuration file changed. Reload the page to see the latest values." and
+  the VS Code extension re-read the language, for a change nobody made. The
+  write could also put a stale copy over a setting saved from another process
+  a moment earlier. A save now writes only when its text differs from what the
+  process last read or wrote, or when the file is gone. The same churn made
+  `test_sum_invariant_holds_under_concurrent_emits` fail intermittently
+  (`401 != 400`); it counts on a private SSE bus now. A new test,
+  `test_config_save_unchanged_r751.py` (19 tests, 6 mutants killed), pins the
+  behaviour, including a real interpreter that only imports the config manager.
 - The log level is applied when a process starts. `web_ui.log_level` in
   `config.toml` and the `AI_INTERVENTION_AGENT_LOG_LEVEL` environment variable
   were read by a function that nothing called, so setting `DEBUG` as the

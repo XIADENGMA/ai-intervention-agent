@@ -8,9 +8,10 @@ right channel.
 
 > Tip: most issues become diagnosable in seconds once you have logs.
 > Set `web_ui.log_level = "DEBUG"` in `config.toml` (or
-> `AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG` for the standalone server,
-> or `ai-intervention-agent.logLevel` to `debug` in VS Code). Then
-> reproduce and grab the **last 20-30 lines** of stderr / Output.
+> `AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG`, which wins over the file) and
+> restart the MCP server, or set `ai-intervention-agent.logLevel` to
+> `debug` in VS Code. Then reproduce and grab the **last 20-30 lines**
+> of stderr / Output.
 
 ## 1. Web UI does not start (port already in use)
 
@@ -67,11 +68,16 @@ empty / spinning panel.
   (e.g. `interactive_feedback`) so the server can spawn the Web UI
   subprocess. The panel polls; once the URL is up, it renders within
   ~2 seconds.
-- **Webview crashed silently** — Output → "AI Intervention Agent" should
-  show a 5-line boot log (`webview.resolve`, `webview.boot`,
-  `webview.ready`, `webview.config_loaded`,
-  `webview.first_task_rendered`). If it stops mid-way, the line that
-  fired last tells you the failing stage.
+- **The panel's script did not start** — open Output → "AI Intervention
+  Agent". A healthy panel logs `event=webview.ready` once its script is
+  running. If the panel is visible and the script has not reported ready
+  within 2.5 seconds, the extension logs `event=webview.ready_timeout` at
+  `WARN`; its `reason` field says what started the timer (`shown` when the
+  panel was hidden and shown again, `serverUrl_changed` after the server URL
+  changed, no `reason` for the first load). A hidden panel does not warn, and
+  the timer starts again when it is shown. The usual causes are a script the
+  page blocked (CSP) or HTML that did not load; **Developer: Open Webview
+  Developer Tools** shows the panel's console.
 - **Network firewall** — corporate Zscaler / Endpoint Security
   occasionally blocks `localhost` requests from VS Code. Ask IT for
   an exception, or run with `web_ui.host = "0.0.0.0"` and use the
@@ -103,7 +109,7 @@ does not show the task.
 | Channel            | Most common cause                                                                                  | Fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------ | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Web**            | Browser tab is in the background and OS denied permission                                          | Click the bell icon on the page → "Allow notifications". On Safari, also enable in System Settings → Notifications → Safari.                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **Sound**          | `notifications.sound_mute = true` or volume = 0                                                    | Settings page → Sound → toggle "Mute" off, raise volume. iOS / iPadOS require the page to be foregrounded once per session.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **Sound**          | `notification.sound_mute = true` or volume = 0                                                    | Settings page → Sound → toggle "Mute" off, raise volume. iOS / iPadOS require the page to be foregrounded once per session.                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | **System (plyer)** | `system_enabled = false` (the default), or macOS missing `pyobjus` (intentional skip)              | Set `system_enabled = true` under `[notification]`. macOS native notifications via plyer are intentionally skipped; the project relies on `macos_native_enabled = true` (`osascript`-based) instead. Linux requires `libnotify`; Windows uses Toast.                                                                                                                                                                                                                                                                                           |
 | **Bark**           | Wrong device key, push server unreachable, or `bark_url` not pointing at your self-hosted instance | Test the URL with `curl -v "$BARK_URL/$DEVICE_KEY/test"`. Set `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` for a click-through deep link. **If the URL would resolve to a loopback address** (`localhost` / `127.x.x.x` / `::1`) the agent now suppresses it server-side — the phone never gets a useless click target — and the Web UI Bark settings panel surfaces a copy-pasteable LAN-IP suggestion (`http://<lan-ip>:<port>`). Apply that to `web_ui.external_base_url` (or expose mDNS) and re-trigger. |
 

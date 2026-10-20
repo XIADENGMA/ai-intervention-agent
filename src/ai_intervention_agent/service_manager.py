@@ -798,10 +798,17 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
         raise ValueError(f"Web UI 配置加载失败: {e}") from e
 
 
-def _get_web_ui_log_path(script_dir: Path) -> Path:
-    """获取 Web UI 子进程日志文件路径，自动创建 logs 目录并截断过大文件。"""
+def _get_web_ui_log_path(script_dir: Path) -> Path | None:
+    """获取 Web UI 子进程日志文件路径，自动创建 logs 目录并截断过大文件。
+
+    logs 目录建不出来（例如包目录只读）时返回 ``None``，调用方丢弃子进程日志。
+    """
     log_dir = script_dir / "logs"
-    log_dir.mkdir(exist_ok=True)
+    try:
+        log_dir.mkdir(exist_ok=True)
+    except OSError as e:
+        logger.warning(f"无法创建日志目录 {log_dir}: {e}，子进程日志将被丢弃")
+        return None
     log_path = log_dir / "web_ui.log"
 
     try:
@@ -924,11 +931,14 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
     log_path = _get_web_ui_log_path(script_dir)
     with contextlib.ExitStack() as log_cleanup:
         log_file = None
-        try:
-            log_file = log_cleanup.enter_context(open(log_path, "a", encoding="utf-8"))
-            logger.info(f"Web UI 子进程日志将写入: {log_path}")
-        except OSError as e:
-            logger.warning(f"无法打开日志文件 {log_path}: {e}，子进程日志将被丢弃")
+        if log_path is not None:
+            try:
+                log_file = log_cleanup.enter_context(
+                    open(log_path, "a", encoding="utf-8")
+                )
+                logger.info(f"Web UI 子进程日志将写入: {log_path}")
+            except OSError as e:
+                logger.warning(f"无法打开日志文件 {log_path}: {e}，子进程日志将被丢弃")
 
         try:
             logger.info(f"启动 Web 服务进程: {' '.join(args)}")

@@ -28,6 +28,7 @@
     "net-utils.ts",
     "sse-parser.ts",
     "logger.ts",
+    "message-format.ts",
     "webview.ts",
     "applescript-executor.ts",
     "notification-models.ts",

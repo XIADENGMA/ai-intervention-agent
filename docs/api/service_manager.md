@@ -32,7 +32,7 @@
 
 ### `get_web_ui_config() -> tuple[WebUIConfig, int]`
 
-### `_get_web_ui_log_path(script_dir: Path) -> Path`
+### `_get_web_ui_log_path(script_dir: Path) -> Path | None`
 
 ### `_is_port_available(host: str, port: int) -> bool`
 

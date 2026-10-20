@@ -7,7 +7,6 @@
   "Native notification failed code={0} msg={1}": "Native notification failed code={0} msg={1}",
   "Skipping native notification: non-macOS platform": "Skipping native notification: non-macOS platform",
   "Webview HTML script tag count: {0}": "Webview HTML script tag count: {0}",
-  "Webview HTML contains {0} backtick character(s); may cause injection failure (recommend externalizing / runtime generation)": "Webview HTML contains {0} backtick character(s); may cause injection failure (recommend externalizing / runtime generation)",
   "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)": "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)",
   "Webview ready": "Webview ready",
   "Webview script ready": "Webview script ready",

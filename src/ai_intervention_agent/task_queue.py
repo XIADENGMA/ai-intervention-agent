@@ -340,8 +340,15 @@ class TaskQueue:
 
         self._persist_path: Path | None = Path(persist_path) if persist_path else None
         if self._persist_path:
-            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
-            self._restore()
+            try:
+                self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+                if not os.access(self._persist_path.parent, os.W_OK | os.X_OK):
+                    raise PermissionError(f"目录不可写: {self._persist_path.parent}")
+            except OSError as e:
+                logger.warning(f"任务持久化不可用，任务只保存在内存中: {e}")
+                self._persist_path = None
+            else:
+                self._restore()
 
         self._stop_cleanup = threading.Event()
         self._cleanup_thread = threading.Thread(

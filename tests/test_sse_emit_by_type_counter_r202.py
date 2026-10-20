@@ -179,11 +179,14 @@ class TestSseEmitByTypeSumInvariant(unittest.TestCase):
         emits_per_thread = 50
         types = ["task_changed", "config_changed", "log_level_changed"]
         barrier = threading.Barrier(n_threads)
+        # The module-level bus also receives emits from background threads
+        # (the config file watcher), so an exact total needs a private bus.
+        bus = task_module._SSEBus()
 
         def worker(tid: int) -> None:
             barrier.wait()
             for i in range(emits_per_thread):
-                _emit_simple(types[(tid + i) % len(types)], {"i": i})
+                bus.emit(types[(tid + i) % len(types)], {"i": i})
 
         threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
         for t in threads:
@@ -191,7 +194,7 @@ class TestSseEmitByTypeSumInvariant(unittest.TestCase):
         for t in threads:
             t.join()
 
-        snap = task_module._sse_bus.stats_snapshot()
+        snap = bus.stats_snapshot()
         emit_total = snap["emit_total"]
         emit_by_type = snap["emit_by_type"]
         assert isinstance(emit_by_type, dict)

@@ -9,10 +9,15 @@ clean）来确保 CHANGELOG.md 永远跟 git tag 同步。
 
 from __future__ import annotations
 
+import contextlib
+import importlib.util
+import io
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "check_changelog_freshness.py"
@@ -89,21 +94,45 @@ class TestRunsCleanOnHead(unittest.TestCase):
         )
 
 
+def _run_script_on(text: str) -> tuple[int, str]:
+    """Run ``main()`` of the script with ``--strict`` against a temporary CHANGELOG
+    holding ``text``; git is still read from the real repo."""
+    spec = importlib.util.spec_from_file_location("check_changelog_freshness", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    out = io.StringIO()
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / "CHANGELOG.md"
+        copy.write_text(text, encoding="utf-8")
+        with (
+            mock.patch.object(module, "CHANGELOG_PATH", copy),
+            mock.patch.object(sys, "argv", [str(SCRIPT), "--strict"]),
+            contextlib.redirect_stdout(out),
+        ):
+            code = module.main()
+    return code, out.getvalue()
+
+
 class TestDetectsActualDrift(unittest.TestCase):
-    """启发式：把 CHANGELOG.md 临时改坏，确认 script 真能检测到。
-    用 git stash 方式做隔离 — 测试结束恢复。
+    """Break a copy of CHANGELOG.md and check that the script notices.
+
+    The test used to rewrite the real ``CHANGELOG.md`` for the length of a
+    subprocess and put it back afterwards; a test in another xdist worker that
+    read the file in that window saw broken headers, and an interrupted run left
+    the tracked file broken. It works on a temporary copy now.
     """
 
     def test_detects_missing_unreleased(self) -> None:
-        """临时把 ``## [Unreleased]`` 改名 + 把最新 tag section header 也改名，
-        script 必须报警（覆盖 check #1 ``CHANGELOG 缺 latest tag section``，
-        不依赖 HEAD-vs-tag commit 差，避免 immediate-post-release tag-cut
-        瞬态下假阴性）。
+        """Rename ``## [Unreleased]`` and the latest tag's section header; the
+        script must report drift (check #1, ``CHANGELOG is missing the latest tag
+        section``, which does not depend on the HEAD-vs-tag commit count, so a
+        just-cut tag cannot give a false negative).
         """
         changelog = REPO_ROOT / "CHANGELOG.md"
+        stat_before = changelog.stat()
         original = changelog.read_text(encoding="utf-8")
 
-        # 找当前最新 git tag，rename 它的 CHANGELOG section → 必触发 check #1
         try:
             latest_tag = (
                 subprocess.run(
@@ -131,24 +160,27 @@ class TestDetectsActualDrift(unittest.TestCase):
                 "repo state outside test design"
             )
 
-        try:
-            changelog.write_text(broken, encoding="utf-8")
-            result = subprocess.run(
-                [PYTHON_BIN, str(SCRIPT), "--strict"],
-                cwd=str(REPO_ROOT),
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
-            self.assertEqual(
-                result.returncode,
-                1,
-                f"strict 应检测到 drift；stdout={result.stdout!r}",
-            )
-            self.assertIn("DRIFT", result.stdout)
-        finally:
-            changelog.write_text(original, encoding="utf-8")
+        code, stdout = _run_script_on(broken)
+
+        self.assertEqual(code, 1, f"strict 应检测到 drift；stdout={stdout!r}")
+        self.assertIn("DRIFT", stdout)
+        stat_after = changelog.stat()
+        self.assertEqual(
+            (stat_after.st_mtime_ns, stat_after.st_ino),
+            (stat_before.st_mtime_ns, stat_before.st_ino),
+            "the real CHANGELOG.md must not be touched by this test",
+        )
+        self.assertEqual(changelog.read_text(encoding="utf-8"), original)
+
+    def test_the_unbroken_copy_passes(self) -> None:
+        """The same helper on the real text reports no drift, so a failure above
+        comes from the broken headers and not from the helper."""
+        original = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+        code, stdout = _run_script_on(original)
+
+        self.assertEqual(code, 0, stdout)
+        self.assertIn("OK", stdout)
 
 
 if __name__ == "__main__":

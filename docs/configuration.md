@@ -76,6 +76,26 @@ Priority order inside dev mode:
 > and the agent emits a `WARNING` log line listing the ignored siblings. Delete or rename the
 > stale formats once you've migrated.
 
+### When an edit takes effect
+
+The MCP server and the Web UI it starts each check the file's modification time every
+2 seconds, so most edits reach a running installation without a restart. A few settings
+are read once, when a process starts.
+
+| Setting                                                                                                                      | When it applies                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notification.*`                                                                                                             | Web UI: within about 2 s. MCP server: before every feedback request                                                                                                                  |
+| `feedback.*`                                                                                                                 | MCP server: for every feedback request. Web UI: open tasks that follow the default countdown pick up `frontend_countdown` within about 2 s, once a page has loaded                   |
+| `web_ui.language`                                                                                                            | Within about 2 s                                                                                                                                                                      |
+| `web_ui.http_request_timeout`, `http_max_retries`, `http_retry_delay`                                                        | MCP server: its HTTP client is rebuilt, so the next request uses the new values                                                                                                      |
+| `network_security.allowed_networks`, `blocked_ips`, `access_control_enabled`, `api_token`                                   | The running Web UI applies the new rules within about 2 s                                                                                                                             |
+| `web_ui.host`, `web_ui.port`, `network_security.bind_interface`, `network_security.trusted_hosts`, `mdns.*`, `web_ui.log_level` | Read once when the process starts: restart the MCP server                                                                                                                             |
+
+Restarting the MCP server stops the Web UI it started, and the next feedback request starts
+a new one with the new values. A Web UI that outlived its MCP server (the server was killed
+instead of stopped) keeps its old values and its port: stop it too, see
+[Troubleshooting #1](troubleshooting.md#1-web-ui-does-not-start-port-already-in-use).
+
 ### Environment-variable overrides
 
 For `uvx`, Docker, systemd and other "I can't easily edit `config.toml` here"
@@ -168,9 +188,10 @@ transient internal error.
 
 #### Other env vars (already documented elsewhere)
 
-- `AI_INTERVENTION_AGENT_LOG_LEVEL` — overrides `web_ui.log_level` (standalone
-  server only). VS Code extension users tune `ai-intervention-agent.logLevel`
-  in VS Code settings instead.
+- `AI_INTERVENTION_AGENT_LOG_LEVEL` — overrides `web_ui.log_level` in the MCP
+  server and in the Web UI process (each reads it once when it starts). VS Code
+  extension users tune `ai-intervention-agent.logLevel` in VS Code settings
+  instead.
 - `AI_INTERVENTION_AGENT_OPEN_WITH` — picks the IDE used by the "Open config
   in IDE" action. See [`docs/troubleshooting.md`](troubleshooting.md).
 - Discovery env vars (`AI_INTERVENTION_AGENT_CONFIG_FILE`, `*_DEV_MODE`,
@@ -189,13 +210,12 @@ transient internal error.
   have no `try/except`). Invalid values fall back to `off` with a
   startup `WARNING`. Read **once at process startup** (Twelve-Factor
   sticky); changing the env var after start does not take effect
-  until restart. Counter exposed via `/api/system/stats` JSON
-  (`stats_snapshot()['schema_violation_total']`) and `/api/system/
-metrics` Prometheus `aiia_sse_schema_violation_total` counter
-  (R207 / Cycle 10 · F-205-2, **omit-when-off** — use `absent(
-aiia_sse_schema_violation_total)` to distinguish "monitoring
-  off" from "monitoring on with 0 violations"). Multi-field
-  violation on one emit counts as 1 (no noise inflation).
+  until restart. Counter exposed via the `/api/system/sse-stats` JSON
+  (`schema_violation_total`) and the `aiia_sse_schema_violation_total`
+  Prometheus counter at `/api/system/metrics` (R207 / Cycle 10 · F-205-2,
+  **omit-when-off** — use `absent(aiia_sse_schema_violation_total)` to
+  distinguish "monitoring off" from "monitoring on with 0 violations").
+  Multi-field violation on one emit counts as 1 (no noise inflation).
 
 ### Auto-migration
 
@@ -308,7 +328,7 @@ Controls the Web UI server and HTTP client behavior.
 | `http_request_timeout` | number  | `30`        | Seconds, range `[1, 600]`                                                                                                                                                                                                                                                                                                   |
 | `http_max_retries`     | number  | `3`         | Range `[0, 20]`                                                                                                                                                                                                                                                                                                             |
 | `http_retry_delay`     | number  | `1.0`       | Seconds, range `[0, 60]`                                                                                                                                                                                                                                                                                                    |
-| `log_level`            | string  | `"WARNING"` | Standalone-server enhanced_logging level. Case-insensitive; valid: `"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` / `"CRITICAL"`. Override at runtime with env var `AI_INTERVENTION_AGENT_LOG_LEVEL` (env wins). VS Code extension users tune `ai-intervention-agent.logLevel` in VS Code settings instead (separate axis). |
+| `log_level`            | string  | `"WARNING"` | Log level of the MCP server and of the Web UI process; each reads it once when it starts, so restart the MCP server after an edit. Case-insensitive; valid: `"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` / `"CRITICAL"`. Override with env var `AI_INTERVENTION_AGENT_LOG_LEVEL` (env wins). VS Code extension users tune `ai-intervention-agent.logLevel` in VS Code settings instead (separate axis). |
 | `external_base_url`    | string  | `""`        | Public Web UI base URL for notification click links, e.g. `http://ai.local:8080`. Empty falls back to mDNS (`http://ai.local:{port}`) when enabled, then `http://{host}:{port}`                                                                                                                                             |
 | `ios_a2hs_hint_dismissed` | boolean | `false`  | Server-side dismiss state of the iOS "Add to Home Screen" hint banner (R707). Auto-set to `true` via `POST /api/system/ios-a2hs-dismiss` when the user taps the banner's close button — persisted here because the Shortcuts "Show Web Page" WebView does not retain localStorage across sessions. Reset to `false` to show the banner again. |
 

@@ -359,6 +359,18 @@ def _resolve_standard_user_config_dir() -> Path:
     return apple_dir
 
 
+def find_default_config_template() -> Path | None:
+    """定位带注释的默认配置模板：安装包里在包目录内，源码树里在仓库根。"""
+    module_dir = Path(__file__).resolve().parent
+    candidates = [module_dir / "config.toml.default"]
+    if _looks_like_repo_checkout(module_dir):
+        candidates.append(module_dir.parent.parent / "config.toml.default")
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def find_config_file(config_filename: str = "config.toml") -> Path:
     """查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。"""
     requested_path = Path(config_filename).expanduser()
@@ -603,8 +615,8 @@ class ConfigManager(
             mdns = config_data.get("mdns")
             if isinstance(mdns, dict) and mdns.get("enabled") is None:
                 mdns["enabled"] = "auto"
-            template_file = Path(__file__).parent / "config.toml.default"
-            if template_file.exists():
+            template_file = find_default_config_template()
+            if template_file is not None:
                 with open(template_file, encoding="utf-8") as f:
                     doc = tomlkit.parse(f.read())
                 for sk, sv in config_data.items():
@@ -726,15 +738,16 @@ class ConfigManager(
         try:
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
-            toml_template = Path(__file__).parent / "config.toml.default"
+            toml_template = find_default_config_template()
 
-            if self._is_toml_file() and toml_template.exists():
-                shutil.copy2(toml_template, self.config_file)
+            if self._is_toml_file() and toml_template is not None:
+                shutil.copyfile(toml_template, self.config_file)
                 with open(toml_template, encoding="utf-8") as f:
                     self._original_content = f.read()
                 logger.info(f"已从 TOML 模板创建默认配置文件: {self.config_file}")
             else:
-                logger.warning("模板文件不存在，使用默认配置创建文件")
+                if self._is_toml_file():
+                    logger.warning("模板文件不存在，使用默认配置创建文件")
                 default_config = self._exclude_network_security(
                     self._get_default_config()
                 )
@@ -811,7 +824,7 @@ class ConfigManager(
         self._schedule_save()
 
     def _save_config_immediate(self):
-        """原子写入配置文件（tempfile + os.replace），防止崩溃导致文件截断/损坏"""
+        """原子写入配置文件（tempfile + os.replace，防崩溃截断）；内容与最近一次读写一致时不写盘"""
         try:
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -821,6 +834,10 @@ class ConfigManager(
                 content = tomlkit.dumps(tomlkit.item(self._config))
             else:
                 content = json.dumps(self._config, indent=2, ensure_ascii=False)
+
+            if content == self._original_content and self.config_file.exists():
+                logger.debug(f"配置内容无变化，跳过写入: {self.config_file}")
+                return
 
             orig_mode = None
             if hasattr(os, "fchmod"):

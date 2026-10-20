@@ -63,6 +63,11 @@ diverges.
 - [`check_i18n_ts_no_cjk.py`](check_i18n_ts_no_cjk.py) — zero
   hardcoded CJK in `packages/vscode/*.ts` (extension host
   post-G6).
+- [`js_source_scan.py`](js_source_scan.py) — the lexer behind both
+  checks above (a module, not a gate): string and template literals,
+  regex literals and comments, with `\uXXXX` / `\u{…}` / `\xNN` escapes
+  decoded, so a quote inside a regex or a `//` inside a URL string does
+  not shift the pairing of what follows (R753).
 - [`check_i18n_param_signatures.py`](check_i18n_param_signatures.py)
   — `t('key', { params })` call sites must match the placeholder
   set declared in the locale value.
@@ -94,7 +99,7 @@ diverges.
 ## Generators
 
 - [`gen_pseudo_locale.py`](gen_pseudo_locale.py) — synthesise
-  `_pseudo.json` from `en.json` via accent substitution + 35 %
+  `_pseudo/pseudo.json` from `en.json` via accent substitution + 35 %
   expansion. `--check` enforces "pseudo is in sync" in CI.
 - [`gen_i18n_types.py`](gen_i18n_types.py) — emit
   `packages/vscode/i18n-keys.d.ts` from `en.json` so TypeScript

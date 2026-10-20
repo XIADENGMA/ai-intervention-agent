@@ -3,7 +3,10 @@ import * as fs from "fs";
 import * as crypto from "crypto";
 import { createLogger } from "./logger";
 import type { Logger } from "./logger";
+import type { I18nKey } from "./i18n-keys";
 import { normalizeUiLang, resolveUiLang } from "./lang";
+import { formatMessage, lookupMessage } from "./message-format";
+import type { MessageParams } from "./message-format";
 import { discardResponseBody } from "./net-utils";
 import { AppleScriptExecutor } from "./applescript-executor";
 import { NotificationCenter } from "./notification-center";
@@ -14,6 +17,7 @@ import {
 } from "./notification-providers";
 
 const EXT_GITHUB_URL = "https://github.com/XIADENGMA/ai-intervention-agent";
+const WEBVIEW_READY_TIMEOUT_MS = 2500;
 
 function getNonce(): string {
   return crypto.randomBytes(16).toString("base64");
@@ -573,6 +577,32 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._lastServerStatus = null;
   }
 
+  private _armWebviewReadyTimer(reason?: string): void {
+    if (this._webviewReadyTimer) {
+      clearTimeout(this._webviewReadyTimer);
+    }
+    this._webviewReadyTimer = setTimeout(() => {
+      this._webviewReadyTimer = null;
+      if (this._webviewReady) return;
+      if (this._view && this._view.visible === false) return;
+      const fields: Record<string, unknown> = {
+        timeoutMs: WEBVIEW_READY_TIMEOUT_MS,
+        webviewReady: false,
+      };
+      if (reason) fields.reason = reason;
+      try {
+        this._logger.event("webview.ready_timeout", fields, {
+          level: "warn",
+          message: vscode.l10n.t(
+            "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)",
+          ),
+        });
+      } catch {
+
+      }
+    }, WEBVIEW_READY_TIMEOUT_MS);
+  }
+
   async resolveWebviewView(webviewView: vscode.WebviewView): Promise<void> {
 
     await Promise.all([this._preloadResources(), this._refreshWebviewServerUrl()]);
@@ -614,6 +644,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this._onVisibilityChanged(!!webviewView.visible);
       }
       if (webviewView.visible) {
+        this._armWebviewReadyTimer("shown");
         this._sendMessage({ type: "refresh" });
 
         this._sendMessage({ type: "force-repaint" });
@@ -694,62 +725,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           ),
         );
       }
-      const tickCount = (html.match(/`/g) || []).length;
-      if (
-        tickCount > 0 &&
-        this._logger &&
-        typeof this._logger.warn === "function"
-      ) {
-        this._logger.warn(
-          vscode.l10n.t(
-            "Webview HTML contains {0} backtick character(s); may cause injection failure (recommend externalizing / runtime generation)",
-            String(tickCount),
-          ),
-        );
-      }
     } catch {
 
     }
 
     this._webviewReady = false;
-    if (this._webviewReadyTimer) {
-      clearTimeout(this._webviewReadyTimer);
-      this._webviewReadyTimer = null;
-    }
-    this._webviewReadyTimer = setTimeout(() => {
-      if (
-        !this._webviewReady &&
-        this._logger &&
-        typeof this._logger.warn === "function"
-      ) {
-        try {
-          if (typeof this._logger.event === "function") {
-            this._logger.event(
-              "webview.ready_timeout",
-              { timeoutMs: 2500, webviewReady: false },
-              {
-                level: "warn",
-                message: vscode.l10n.t(
-                  "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)",
-                ),
-              },
-            );
-          } else {
-            this._logger.warn(
-              vscode.l10n.t(
-                "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)",
-              ),
-            );
-          }
-        } catch {
-          this._logger.warn(
-            vscode.l10n.t(
-              "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)",
-            ),
-          );
-        }
-      }
-    }, 2500);
+    this._armWebviewReadyTimer();
 
     webviewView.webview.onDidReceiveMessage(
       (message: WebviewMessage) => {
@@ -800,44 +781,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           if (this._view !== view) return;
           if (view.webview)
             view.webview.html = this._getHtmlContent(view.webview);
-          this._webviewReadyTimer = setTimeout(() => {
-            if (
-              !this._webviewReady &&
-              this._logger &&
-              typeof this._logger.warn === "function"
-            ) {
-              try {
-                if (typeof this._logger.event === "function") {
-                  this._logger.event(
-                    "webview.ready_timeout",
-                    {
-                      timeoutMs: 2500,
-                      webviewReady: false,
-                      reason: "serverUrl_changed",
-                    },
-                    {
-                      level: "warn",
-                      message: vscode.l10n.t(
-                        "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)",
-                      ),
-                    },
-                  );
-                } else {
-                  this._logger.warn(
-                    vscode.l10n.t(
-                      "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)",
-                    ),
-                  );
-                }
-              } catch {
-                this._logger.warn(
-                  vscode.l10n.t(
-                    "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)",
-                  ),
-                );
-              }
-            }
-          }, 2500);
+          this._armWebviewReadyTimer("serverUrl_changed");
         });
     }
   }
@@ -1484,6 +1428,42 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     return fetchPromise;
   }
 
+  private _localeData(lang: string): Record<string, unknown> | null {
+    if (!this._cachedLocales[lang]) {
+      try {
+        const text = safeReadTextFile(
+          vscode.Uri.joinPath(this._extensionUri, "locales", lang + ".json"),
+        );
+        if (text) {
+          this._cachedLocales[lang] = JSON.parse(text) as Record<
+            string,
+            unknown
+          >;
+        }
+      } catch {
+
+      }
+    }
+    return this._cachedLocales[lang] || null;
+  }
+
+  private _displayLanguage(): string {
+    try {
+      return vscode.env.language || "";
+    } catch {
+      return "";
+    }
+  }
+
+  private _localizedText(key: I18nKey, params: MessageParams = {}): string {
+    const lang = resolveUiLang(this._cachedServerLang, this._displayLanguage());
+    for (const candidate of lang === "en" ? ["en"] : [lang, "en"]) {
+      const template = lookupMessage(this._localeData(candidate), key);
+      if (template !== null) return formatMessage(template, params, candidate);
+    }
+    return key;
+  }
+
   async dispatchNewTaskNotification(taskData: TaskData[]): Promise<void> {
     try {
       const items: TaskData[] = [];
@@ -1565,14 +1545,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           ids.length === 1
             ? summary
             : summary +
-              "\uff08\u5171 " +
-              ids.length +
-              " \u4e2a\u4efb\u52a1\uff09";
+              " " +
+              this._localizedText("ui.notification.taskCountSuffix", {
+                count: ids.length,
+              });
       } else {
         msg =
           ids.length === 1
-            ? "\u65b0\u4efb\u52a1\u5df2\u6dfb\u52a0: " + ids[0]
-            : "\u6536\u5230 " + ids.length + " \u4e2a\u65b0\u4efb\u52a1";
+            ? this._localizedText("ui.notification.newTask", { id: ids[0] })
+            : this._localizedText("ui.notification.newTasks", {
+                count: ids.length,
+              });
       }
 
       const types: string[] = [NotificationType.VSCODE];
@@ -1600,7 +1583,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       this._pendingNotifiedTaskAtMs = Date.now();
 
       this._dispatchNotificationEvent({
-        title: "AI \u4ea4\u4e92\u53cd\u9988",
+        title: this._localizedText("ui.notification.title"),
         message: msg,
         trigger: "immediate",
         types: types,
@@ -1725,12 +1708,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       pseudoLocaleEnabled = false;
     }
 
-    let vsLang = "";
-    try {
-      vsLang = vscode.env.language || "";
-    } catch {
-      vsLang = "";
-    }
+    const vsLang = this._displayLanguage();
     const autoLang = normalizeUiLang(vsLang);
 
     if (pseudoLocaleEnabled) {

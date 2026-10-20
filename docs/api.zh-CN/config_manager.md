@@ -58,6 +58,10 @@ R703：判断两个路径是否解析到同一物理文件（samefile 优先，�
 
 解析"标准用户配置目录"（R703：macOS 上免疫 ``XDG_CONFIG_HOME`` 改写）。
 
+### `find_default_config_template() -> Path | None`
+
+定位带注释的默认配置模板：安装包里在包目录内，源码树里在仓库根。
+
 ### `find_config_file(config_filename: str = 'config.toml') -> Path`
 
 查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。

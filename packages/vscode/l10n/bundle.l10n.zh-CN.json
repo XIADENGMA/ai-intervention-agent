@@ -7,7 +7,6 @@
   "Native notification failed code={0} msg={1}": "原生通知失败 code={0} msg={1}",
   "Skipping native notification: non-macOS platform": "忽略原生通知：非 macOS 平台",
   "Webview HTML script tag count: {0}": "Webview HTML script 标签数量：{0}",
-  "Webview HTML contains {0} backtick character(s); may cause injection failure (recommend externalizing / runtime generation)": "Webview HTML 包含 {0} 个反引号字符：可能导致注入失败（建议继续外链化/运行时生成）",
   "Webview not ready: script may not have executed (CSP / injection / HTML structure broken)": "Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）",
   "Webview ready": "Webview 已就绪",
   "Webview script ready": "Webview 脚本 ready",

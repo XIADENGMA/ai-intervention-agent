@@ -2491,28 +2491,10 @@ class TestCreateDefaultConfigFile(unittest.TestCase):
             mgr._original_content = None
             mgr._lock = __import__("threading").RLock()
 
-            with patch("ai_intervention_agent.config_manager.Path") as mock_path_cls:
-                template_mock = MagicMock()
-                template_mock.exists.return_value = False
-
-                real_parent = cfg.parent
-
-                class FakePath:
-                    def __init__(self, *a, **kw):
-                        self._real = Path(*a, **kw)
-
-                    def __truediv__(self, other):
-                        if other == "config.toml.default":
-                            return template_mock
-                        return self._real / other
-
-                    @property
-                    def parent(self):
-                        return real_parent
-
-                mock_path_cls.side_effect = FakePath
-                mock_path_cls.__file__ = __file__
-
+            with patch(
+                "ai_intervention_agent.config_manager.find_default_config_template",
+                return_value=None,
+            ):
                 mgr._create_default_config_file()
 
             self.assertTrue(cfg.exists())
@@ -2635,10 +2617,14 @@ class TestSaveConfigImmediate(unittest.TestCase):
             self.assertTrue(content["notification"]["debug"])
 
     def test_save_exception_propagated(self):
-        mgr = ConfigManager()
-        with patch("builtins.open", side_effect=PermissionError("no write")):
-            with self.assertRaises(PermissionError):
-                mgr._save_config_immediate()
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td) / "config.json"
+            cfg.write_text('{"notification": {"debug": false}}')
+            mgr = ConfigManager(str(cfg))
+            mgr.set("notification.debug", True, save=False)
+            with patch("builtins.open", side_effect=PermissionError("no write")):
+                with self.assertRaises(PermissionError):
+                    mgr._save_config_immediate()
 
 
 # ──────────────────────────────────────────────────────────
@@ -3281,18 +3267,10 @@ class TestMigrateJsoncToToml(unittest.TestCase):
             jsonc_path = Path(td) / "config.jsonc"
             jsonc_path.write_text('{"server": {"host": "test"}}', encoding="utf-8")
             mgr = ConfigManager(str(jsonc_path))
-            real_path = Path
-            orig_truediv = Path.__truediv__
-
-            def fake_truediv(self, other):
-                result = orig_truediv(self, other)
-                if str(other) == "config.toml.default":
-                    mock_p = MagicMock()
-                    mock_p.exists.return_value = False
-                    return mock_p
-                return result
-
-            with patch.object(Path, "__truediv__", fake_truediv):
+            with patch(
+                "ai_intervention_agent.config_manager.find_default_config_template",
+                return_value=None,
+            ):
                 result = mgr._migrate_jsonc_to_toml()
             self.assertTrue(result)
             self.assertTrue(mgr.config_file.suffix == ".toml")

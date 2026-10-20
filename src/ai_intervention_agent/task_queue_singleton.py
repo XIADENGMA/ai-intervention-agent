@@ -22,6 +22,10 @@ _global_task_queue: TaskQueue | None = None
 _global_task_queue_lock = threading.Lock()
 
 
+def _default_persist_path() -> Path:
+    return Path(__file__).resolve().parent / "data" / "tasks.json"
+
+
 def get_task_queue() -> TaskQueue:
     """获取全局任务队列实例"""
     global _global_task_queue
@@ -30,10 +34,9 @@ def get_task_queue() -> TaskQueue:
             if _global_task_queue is None:
                 from ai_intervention_agent.task_queue import TaskQueue
 
-                persist_path = str(
-                    Path(__file__).resolve().parent / "data" / "tasks.json"
+                _global_task_queue = TaskQueue(
+                    max_tasks=10, persist_path=str(_default_persist_path())
                 )
-                _global_task_queue = TaskQueue(max_tasks=10, persist_path=persist_path)
     assert _global_task_queue is not None
     return _global_task_queue
 

@@ -3786,7 +3786,7 @@ function showNewTaskVisualHint(count) {
     }
   }, 3000);
 
-  _debugLog(`显示新任务视觉提示: ${count} 个新任务`);
+  _debugLog(`New-task hint shown for ${count} new task(s)`);
 }
 
 function showNewTaskNotification(count, taskIds) {

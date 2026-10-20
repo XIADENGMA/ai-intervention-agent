@@ -1968,7 +1968,7 @@
     installHostThemeObserver()
     setupEventListeners()
 
-    updateServerStatus(false)
+    updateServerStatus(false, { report: false })
 
     Promise.resolve()
       .then(() => checkServerStatus())
@@ -2247,7 +2247,7 @@
     }
   }
 
-  function updateServerStatus(connected) {
+  function updateServerStatus(connected, options) {
 
     if (typeof updateServerStatus._last === 'boolean' && updateServerStatus._last !== !!connected) {
       showToast(connected ? t('ui.status.connected') : t('ui.status.disconnectedRetrying'), {
@@ -2299,7 +2299,9 @@
       }
     }
 
-    vscode.postMessage({ type: 'serverStatus', connected })
+    if (!options || options.report !== false) {
+      vscode.postMessage({ type: 'serverStatus', connected })
+    }
   }
 
   function startPolling() {

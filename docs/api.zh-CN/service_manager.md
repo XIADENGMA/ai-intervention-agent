@@ -184,9 +184,11 @@ invalidate 被沉默地撤销。修复：T1 写回前 re-check
 
 后续 T3 进来会再 cache miss → 拿到 G+1 → 重新 load 一次 → 拿到新值。
 
-### `_get_web_ui_log_path(script_dir: Path) -> Path`
+### `_get_web_ui_log_path(script_dir: Path) -> Path | None`
 
 获取 Web UI 子进程日志文件路径，自动创建 logs 目录并截断过大文件。
+
+logs 目录建不出来（例如包目录只读）时返回 ``None``，调用方丢弃子进程日志。
 
 ### `_is_port_available(host: str, port: int) -> bool`
 

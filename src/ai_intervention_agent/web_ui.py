@@ -108,6 +108,12 @@ from ai_intervention_agent.web_ui_validators import (
     validate_trusted_hosts,
 )
 
+if __name__ == "__main__":
+    # Started as a script (how ServiceManager starts it), this file is "__main__"
+    # while the config callbacks import "ai_intervention_agent.web_ui": without
+    # the alias they read a second copy that never saw the running instance.
+    sys.modules["ai_intervention_agent.web_ui"] = sys.modules[__name__]
+
 logger = EnhancedLogger(__name__)
 
 

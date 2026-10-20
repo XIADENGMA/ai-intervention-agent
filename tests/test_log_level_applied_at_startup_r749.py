@@ -142,20 +142,25 @@ def is_main_guard(test: ast.expr) -> bool:
     )
 
 
-def web_ui_main_block() -> list[ast.stmt]:
-    tree = ast.parse(WEB_UI.read_text(encoding="utf-8"))
-    for node in tree.body:
-        if isinstance(node, ast.If) and is_main_guard(node.test):
-            return node.body
-    raise AssertionError("web_ui.py has no __main__ block")
-
-
 def called_names(statement: ast.stmt) -> set[str]:
     return {
         node.func.id
         for node in ast.walk(statement)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
+
+
+def web_ui_main_block() -> list[ast.stmt]:
+    tree = ast.parse(WEB_UI.read_text(encoding="utf-8"))
+    blocks = [
+        node.body
+        for node in tree.body
+        if isinstance(node, ast.If)
+        and is_main_guard(node.test)
+        and any("web_feedback_ui" in called_names(item) for item in node.body)
+    ]
+    assert len(blocks) == 1, "web_ui.py needs exactly one __main__ block that serves"
+    return blocks[0]
 
 
 def test_web_ui_script_applies_the_level_before_it_serves():
