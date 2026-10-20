@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -35,12 +36,35 @@ if _SRC_ROOT_CONFTEST.is_dir() and str(_SRC_ROOT_CONFTEST) not in sys.path:
 import pytest
 
 # 会话级临时目录（pytest 退出时自动清理）
-_TEST_TMP_DIR = tempfile.TemporaryDirectory(prefix="ai-intervention-agent-pytest-")
+_TEST_TMP_PREFIX = "ai-intervention-agent-pytest-"
+_TEST_TMP_DIR = tempfile.TemporaryDirectory(prefix=_TEST_TMP_PREFIX)
 _TEST_CONFIG_PATH = Path(_TEST_TMP_DIR.name) / "config.toml"
+# 全局 TaskQueue 单例的快照文件。生产路径是 <包目录>/data/tasks.json，而
+# ``get_task_queue()`` 构造时会从它恢复任务、之后每次变更都写回——测试若直接
+# 用它，会把 ``r520-new`` 之类的夹具任务留在开发者的真实快照里，并且让同一
+# 台机器上下一次的测试 / 服务启动读到"幽灵任务"。每个 xdist worker 各有自己
+# 的临时目录，所以也不会互相覆盖。
+_TEST_TASKS_PATH = Path(_TEST_TMP_DIR.name) / "data" / "tasks.json"
 
-# 仅当外部未显式指定时才注入，方便本地/CI 自定义
 _CONFIG_ENV = "AI_INTERVENTION_AGENT_CONFIG_FILE"
-os.environ.setdefault(_CONFIG_ENV, str(_TEST_CONFIG_PATH))
+# ``tempfile`` 给 ``prefix`` 补 8 个 [a-z0-9_] 随机字符
+_SESSION_DIR_NAME = re.compile(re.escape(_TEST_TMP_PREFIX) + r"[a-z0-9_]{8}")
+
+
+def _is_path_in_a_pytest_session_dir(raw: str) -> bool:
+    """``raw`` 落在某个 pytest 会话（本进程或别的进程）建出来的临时目录里。"""
+    return any(_SESSION_DIR_NAME.fullmatch(part) for part in Path(raw).parts)
+
+
+# 仅当外部未显式指定时才注入，方便本地/CI 自定义。
+# 但 pytest-xdist 的主进程也会导入本文件、并把自己的临时路径写进环境变量，worker 继承
+# 之后若把它当成"外部显式指定"，所有 worker 就共用主进程目录里的同一份 config.toml：
+# ``_is_managed_tmp_config`` 对 worker 自己的临时目录不成立，每个用例前的"重置为默认"
+# 随之变成空操作，一个 worker 里写配置的用例（轮换 token、改通知设置……）会漏进另一个
+# worker 里正在读配置的用例。别的 pytest 会话留下的路径不是显式指定，每个进程用自己的。
+_inherited_config = os.environ.get(_CONFIG_ENV)
+if not _inherited_config or _is_path_in_a_pytest_session_dir(_inherited_config):
+    os.environ[_CONFIG_ENV] = str(_TEST_CONFIG_PATH)
 
 
 def _project_root() -> Path:
@@ -184,6 +208,60 @@ def _restore_global_log_levels():
     restore = snapshot_global_log_levels()
     yield
     restore()
+
+
+def _redirected_default_persist_path() -> Path:
+    return _TEST_TASKS_PATH
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_task_queue_persist_path():
+    """把全局 TaskQueue 单例的持久化文件重定向到本会话的临时目录（R770）。
+
+    与上面的配置文件隔离同一个思路：``get_task_queue()`` 的默认路径在包目录里
+    （``_default_persist_path()``），测试不应该读写它。只替换路径解析函数，
+    单例本身、``TaskQueue`` 的持久化 / 恢复逻辑都保持原样，因此仍在真实地
+    被测试覆盖。
+
+    必须是 session 级：unittest 风格的用例在 ``setUpClass`` 里就会首次创建单例
+    （例如 ``WebFeedbackUI`` 的构造），那一步发生在任何 function 级 fixture
+    之前，function 级的替换来不及生效。
+    """
+    try:
+        import ai_intervention_agent.task_queue_singleton as task_queue_singleton
+    except Exception:
+        yield
+        return
+
+    patcher = pytest.MonkeyPatch()
+    patcher.setattr(
+        task_queue_singleton,
+        "_default_persist_path",
+        _redirected_default_persist_path,
+        raising=True,
+    )
+    try:
+        yield
+    finally:
+        patcher.undo()
+
+
+@pytest.fixture(autouse=True)
+def _reassert_task_queue_persist_redirect():
+    """每个用例结束后把重定向放回去。
+
+    ``importlib.reload(task_queue_singleton)`` 会重新执行模块体，把
+    ``_default_persist_path`` 还原成指向包目录的原版；同一个进程里之后的用例
+    再创建单例，就又会读写开发者的真实快照。
+    """
+    yield
+    try:
+        import ai_intervention_agent.task_queue_singleton as task_queue_singleton
+    except Exception:
+        return
+    task_queue_singleton._default_persist_path = (  # ty: ignore[invalid-assignment]
+        _redirected_default_persist_path
+    )
 
 
 @pytest.fixture(autouse=True)

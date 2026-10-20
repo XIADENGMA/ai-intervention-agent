@@ -1045,6 +1045,24 @@ class TestSaveNetworkSecurityImmediate(unittest.TestCase):
             self.assertIn("network_security", content)
 
     def test_json_format_invalid_json(self):
+        """文件在加载之后才变成非法 JSON（加载时没发现）→ 回退为空对象再写入 network_security"""
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "config.json"
+            cfg_path.write_text('{"notification": {}}')
+            mgr = ConfigManager(str(cfg_path))
+            cfg_path.write_text("{bad json")
+            ns = {
+                "bind_interface": "0.0.0.0",
+                "allowed_networks": [],
+                "blocked_ips": [],
+                "access_control_enabled": True,
+            }
+            mgr._save_network_security_config_immediate(ns)
+            content = json.loads(cfg_path.read_text())
+            self.assertIn("network_security", content)
+
+    def test_json_invalid_json_at_load_is_refused(self):
+        """加载时就已经是非法 JSON → 拒绝写入，文件保持原样（R783）"""
         with tempfile.TemporaryDirectory() as td:
             cfg_path = Path(td) / "config.json"
             cfg_path.write_text("{bad json")
@@ -1055,9 +1073,9 @@ class TestSaveNetworkSecurityImmediate(unittest.TestCase):
                 "blocked_ips": [],
                 "access_control_enabled": True,
             }
-            mgr._save_network_security_config_immediate(ns)
-            content = json.loads(cfg_path.read_text())
-            self.assertIn("network_security", content)
+            with self.assertRaises(RuntimeError):
+                mgr._save_network_security_config_immediate(ns)
+            self.assertEqual(cfg_path.read_text(), "{bad json")
 
     def test_json_no_content_fallback(self):
         """JSON 文件但无 base_content 和 original_content → JSON dump"""

@@ -32,11 +32,15 @@
 
 ### `get_web_ui_config() -> tuple[WebUIConfig, int]`
 
+### `_web_ui_child_env() -> dict[str, str]`
+
 ### `_get_web_ui_log_path(script_dir: Path) -> Path | None`
 
 ### `_is_port_available(host: str, port: int) -> bool`
 
 ### `start_web_service(config: WebUIConfig, script_dir: Path) -> None`
+
+### `_start_web_service_locked(config: WebUIConfig, script_dir: Path) -> None`
 
 ### `update_web_content(summary: str, predefined_options: list[str] | None, task_id: str | None, auto_resubmit_timeout: int, config: WebUIConfig) -> None`
 

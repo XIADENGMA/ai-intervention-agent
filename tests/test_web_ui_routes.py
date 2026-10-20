@@ -595,14 +595,15 @@ class TestUpdateNotificationConfig(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 500)
 
-    def test_non_dict_data_treated_as_empty(self):
-        """传入非 dict JSON 体（如 list）→ data 被重置为空 dict"""
+    def test_non_dict_body_is_refused(self):
+        """传入非 dict JSON 体（如 list）→ 400 invalid_body（R789；此前被当成 {} 回 200）"""
         resp = self._client.post(
             "/api/update-notification-config",
             data=json.dumps([1, 2, 3]),
             content_type="application/json",
         )
-        self.assertIn(resp.status_code, (200, 500))
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "invalid_body")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2308,8 +2309,8 @@ class TestUpdateFeedbackConfigEndpoint(_RouteTestBase):
         self.assertIn("无可识别", data["message"])
         mock_mgr.update_section.assert_not_called()
 
-    def test_non_dict_payload_treated_as_empty(self):
-        """payload 不是 dict（如发了一个 list）→ 视为空 dict，回 200 + 提示。"""
+    def test_non_dict_payload_is_refused(self):
+        """payload 不是 dict（如发了一个 list）→ 400 invalid_body，配置不动（R789；此前回 200）。"""
         with patch(
             "ai_intervention_agent.web_ui_routes.notification.get_config"
         ) as mock_get_config:
@@ -2322,8 +2323,10 @@ class TestUpdateFeedbackConfigEndpoint(_RouteTestBase):
                 json=["not", "a", "dict"],
             )
 
-        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "invalid_body")
         mock_mgr.update_section.assert_not_called()
+        mock_get_config.assert_not_called()
 
     def test_config_manager_exception_returns_500(self):
         """``update_section`` 抛异常 → 500 + 标准化错误（不泄漏 traceback）。"""

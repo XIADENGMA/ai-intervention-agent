@@ -34,6 +34,8 @@
 
 ### `_is_using_default_config(config_file_path: object) -> bool`
 
+### `_json_for_stdout(payload: object) -> str`
+
 ### `_print_effective_config() -> int`
 
 ### `main(argv: list[str] | None = None) -> None`

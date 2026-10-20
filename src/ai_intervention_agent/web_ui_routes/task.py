@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 from flask import Response, jsonify, request
 from flask.typing import ResponseReturnValue
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.i18n import msg
@@ -21,6 +22,7 @@ from ai_intervention_agent.local_images import parse_prompt_images
 from ai_intervention_agent.sse_event_schemas import validate_payload
 from ai_intervention_agent.task_constants import PLACEHOLDER_MAX_LENGTH
 from ai_intervention_agent.task_queue_singleton import get_task_queue
+from ai_intervention_agent.web_ui_routes._request_body import optional_json_object
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
 
 if TYPE_CHECKING:
@@ -1525,6 +1527,9 @@ class TaskRoutesMixin:
             """
             try:
                 raw = request.get_json(silent=False)
+            except RequestEntityTooLarge:
+                # R800: 体超过上限的 413 是 HTTP 本身的状态，不是"JSON 格式不对"
+                raise
             except Exception:
                 return (
                     jsonify(
@@ -1992,6 +1997,25 @@ class TaskRoutesMixin:
                     error:
                       type: string
                       description: 错误说明文本（如 `task not found`）
+              413:
+                description: |
+                  请求超过上传上限：整个请求大于 ``MAX_CONTENT_LENGTH``
+                  （``MAX_TOTAL_UPLOAD_BYTES`` + 1 MB），或 multipart 里某个文本字段大于
+                  ``MAX_FORM_MEMORY_SIZE``（默认 500 000 字节），或表单字段多于
+                  ``MAX_FORM_PARTS``（默认 1000）
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    status:
+                      type: string
+                      enum: [error]
+                    error:
+                      type: string
+                      enum: [payload_too_large]
+                    message:
+                      type: string
               422:
                 description: |
                   延长上限已达（extends_used >= COUNTDOWN_EXTENDS_MAX）。
@@ -2030,7 +2054,7 @@ class TaskRoutesMixin:
             try:
                 task_queue = get_task_queue()
 
-                payload = request.get_json(silent=True) or {}
+                payload = optional_json_object()
                 requested_seconds = payload.get(
                     "seconds", COUNTDOWN_EXTEND_DEFAULT_SECONDS
                 )
@@ -2088,6 +2112,9 @@ class TaskRoutesMixin:
                         "new_auto_resubmit_timeout": new_timeout,
                     }
                 )
+            except HTTPException:
+                # R800: 体超过上限的 413 是 HTTP 本身的状态，不是"延长失败"
+                raise
             except Exception as e:
                 logger.error(f"延长任务倒计时失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
@@ -2354,6 +2381,25 @@ class TaskRoutesMixin:
                       type: string
               400:
                 description: 请求参数错误（选项格式不正确）
+              413:
+                description: |
+                  请求超过上传上限：整个请求大于 ``MAX_CONTENT_LENGTH``
+                  （``MAX_TOTAL_UPLOAD_BYTES`` + 1 MB），或 multipart 里某个文本字段大于
+                  ``MAX_FORM_MEMORY_SIZE``（默认 500 000 字节），或表单字段多于
+                  ``MAX_FORM_PARTS``（默认 1000）
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    status:
+                      type: string
+                      enum: [error]
+                    error:
+                      type: string
+                      enum: [payload_too_large]
+                    message:
+                      type: string
               404:
                 description: 任务不存在
               500:
@@ -2430,6 +2476,10 @@ class TaskRoutesMixin:
                     f'ua="{_ua}" referer="{_referer}"'
                 )
                 return jsonify({"success": True, "message": msg("feedback.submitted")})
+            except HTTPException:
+                # R800: 读表单 / 文件时 Werkzeug 抛的 413（整体超限、单个文本字段超限、
+                # 字段过多）是 HTTP 本身的状态，不是"服务器内部错误"
+                raise
             except Exception as e:
                 logger.error(f"提交任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500

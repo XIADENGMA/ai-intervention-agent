@@ -14,6 +14,8 @@
 
 ### `get_compat_config(config: Mapping[str, Any], new_key: str, old_key: str | None = None, default: Any = None) -> Any`
 
+### `apply_legacy_key_aliases(config: dict[str, Any]) -> list[tuple[str, str, str]]`
+
 ### `get_typed_config(config: dict, key: str, default: T, value_type: type[T], min_val: Number | None = None, max_val: Number | None = None, old_key: str | None = None) -> T`
 
 ### `validate_enum_value(value: str, valid_values: tuple, field_name: str, default: str) -> str`

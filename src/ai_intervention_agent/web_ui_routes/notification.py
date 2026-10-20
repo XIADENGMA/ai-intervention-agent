@@ -43,12 +43,16 @@ import time
 from importlib.util import find_spec
 from typing import TYPE_CHECKING, Any
 
-from flask import jsonify, request
+from flask import jsonify
 from flask.typing import ResponseReturnValue
 
 from ai_intervention_agent.config_utils import clamp_value
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.i18n import msg
+from ai_intervention_agent.web_ui_routes._request_body import (
+    optional_json_object,
+    require_json_object,
+)
 
 NOTIFICATION_AVAILABLE = (
     find_spec("ai_intervention_agent.notification_manager") is not None
@@ -157,6 +161,50 @@ if TYPE_CHECKING:
 logger = EnhancedLogger(__name__)
 
 
+def _invalid_value_response(fields: list[str]) -> ResponseReturnValue:
+    """``400 invalid_value`` naming the request fields whose value cannot be used.
+
+    Same envelope ``/api/update-notification-config`` has answered since R790:
+    ``{"status": "error", "error": "invalid_value", "fields": [...], "message": ...}``.
+    The message names the fields and never echoes the values (``bark_device_key``
+    sits beside the rest of the notification settings).
+    """
+    named = sorted(set(fields))
+    return jsonify(
+        {
+            "status": "error",
+            "error": "invalid_value",
+            "fields": named,
+            "message": msg("notify.invalidFieldValue", fields=", ".join(named)),
+        }
+    ), 400
+
+
+def _fields_that_are_not_text(**values: Any) -> list[str]:
+    """Names of the given request values that are present but are not strings.
+
+    ``None`` (JSON ``null``) counts as absent: every caller treats it like a missing
+    or empty value already.
+    """
+    return [
+        name
+        for name, value in values.items()
+        if value is not None and not isinstance(value, str)
+    ]
+
+
+def _float_even_when_too_big(value: Any) -> float:
+    """``float(value)``, with an integer too large for a float read as the infinity it is.
+
+    ``float(10**400)`` raises ``OverflowError`` while ``1e999`` parses to ``inf``; the
+    two spellings of the same number must clamp the same way.
+    """
+    try:
+        return float(value)
+    except OverflowError:
+        return float("inf") if value > 0 else float("-inf")
+
+
 class NotificationRoutesMixin:
     """提供 5 个通知相关 API 路由，由 WebFeedbackUI 通过 MRO 继承。"""
 
@@ -214,7 +262,7 @@ class NotificationRoutesMixin:
                     message:
                       type: string
               400:
-                description: 设备密钥为空
+                description: 请求体不是 JSON 对象，设备密钥为空，或某个字段不是字符串
                 schema:
                   type: object
                   properties:
@@ -222,9 +270,18 @@ class NotificationRoutesMixin:
                       type: string
                       enum: [error]
                       description: 固定为 "error"
+                    error:
+                      type: string
+                      enum: [invalid_json, invalid_body, invalid_value]
+                      description: 仅请求体不合法时出现：invalid_json=无法解析/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=bark_url / bark_device_key / bark_icon / bark_action 不是字符串
+                    fields:
+                      type: array
+                      items:
+                        type: string
+                      description: 仅 invalid_value 时出现：不是字符串的字段名
                     message:
                       type: string
-                      description: 设备密钥为空的人类可读说明
+                      description: 请求体不合法、设备密钥为空或字段类型不对的人类可读说明
               500:
                 description: 发送失败或通知系统不可用
                 schema:
@@ -238,8 +295,8 @@ class NotificationRoutesMixin:
                       type: string
                       description: 后端异常或通知系统不可用的人类可读说明
             """
+            data = require_json_object()
             try:
-                data = request.json or {}
                 bark_url = data.get("bark_url", "https://api.day.app/push")
                 bark_device_key = data.get("bark_device_key", "")
                 bark_icon = data.get("bark_icon", "")
@@ -247,6 +304,19 @@ class NotificationRoutesMixin:
                 bark_url_template = str(
                     data.get("bark_url_template", "{base_url}/?task_id={task_id}") or ""
                 ).strip()
+
+                # R797: the provider calls ``.strip()`` / ``.startswith()`` on these;
+                # a number or list reached it, raised ``AttributeError`` and came back
+                # as ``500 "send failed"`` although nothing had been sent.
+                not_text = _fields_that_are_not_text(
+                    bark_url=bark_url,
+                    bark_device_key=bark_device_key,
+                    bark_icon=bark_icon,
+                    bark_action=bark_action,
+                )
+                if not_text:
+                    logger.warning(f"Bark 测试请求被拒绝，字段不是字符串: {not_text}")
+                    return _invalid_value_response(not_text)
 
                 if not bark_device_key:
                     return jsonify(
@@ -359,7 +429,7 @@ class NotificationRoutesMixin:
             """触发新任务 Bark 推送通知（兼容保留，内部不再主动调用）
 
             注意：从"后端统一推送"方案起，Bark 新任务通知由 MCP 主进程在
-            `server_feedback._interactive_feedback_impl` / `launch_feedback_ui`
+            `server_feedback.interactive_feedback` / `launch_feedback_ui`
             中直接通过 `notification_manager.send_notification(types=[...BARK])` 发送，
             Web UI 前端已不再调用该端点。此端点仅为外部第三方客户端兼容保留，
             重复调用会触发重复 Bark 推送，请调用方自行做去重。
@@ -395,6 +465,22 @@ class NotificationRoutesMixin:
                       type: string
                     message:
                       type: string
+              400:
+                description: 请求体不是 JSON 对象
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    error:
+                      type: string
+                      enum: [invalid_json, invalid_body]
+                      description: invalid_json=无法解析/缺 JSON Content-Type，invalid_body=不是 JSON 对象
+                    message:
+                      type: string
+                      description: 请求体不合法的人类可读说明
               500:
                 description: 触发失败
                 schema:
@@ -408,9 +494,8 @@ class NotificationRoutesMixin:
                       type: string
                       description: 触发失败的人类可读说明
             """
+            data = require_json_object()
             try:
-                data = request.json or {}
-
                 if "taskIds" in data:
                     raw_task_ids = data["taskIds"]
                 else:
@@ -583,6 +668,27 @@ class NotificationRoutesMixin:
                       example: success
                     message:
                       type: string
+              400:
+                description: 请求体不是 JSON 对象，或某个字段的值不能用（配置一概不改）
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    error:
+                      type: string
+                      enum: [invalid_json, invalid_body, invalid_value]
+                      description: invalid_json=无法解析/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=某个字段的值类型不对
+                    fields:
+                      type: array
+                      items:
+                        type: string
+                      description: 仅 invalid_value 时出现：值不能用的字段名（snake_case）
+                    message:
+                      type: string
+                      description: 请求不合法的人类可读说明
               500:
                 description: 更新失败
                 schema:
@@ -596,11 +702,8 @@ class NotificationRoutesMixin:
                       type: string
                       description: 写入 config 失败的人类可读说明
             """
+            data = require_json_object()
             try:
-                data = request.json or {}
-                if not isinstance(data, dict):
-                    data = {}
-
                 try:
                     if not NOTIFICATION_AVAILABLE:
                         raise ImportError(msg("notify.systemUnavailable"))
@@ -613,7 +716,12 @@ class NotificationRoutesMixin:
                     def normalize_sound_volume(raw_value: Any) -> int:
                         try:
                             return int(
-                                clamp_value(float(raw_value), 0, 100, "sound_volume")
+                                clamp_value(
+                                    _float_even_when_too_big(raw_value),
+                                    0,
+                                    100,
+                                    "sound_volume",
+                                )
                             )
                         except (TypeError, ValueError):
                             return int(notification_config.get("sound_volume", 80))
@@ -621,7 +729,12 @@ class NotificationRoutesMixin:
                     def normalize_web_timeout(raw_value: Any) -> int:
                         try:
                             return int(
-                                clamp_value(float(raw_value), 1, 600000, "web_timeout")
+                                clamp_value(
+                                    _float_even_when_too_big(raw_value),
+                                    1,
+                                    600000,
+                                    "web_timeout",
+                                )
                             )
                         except (TypeError, ValueError):
                             return int(notification_config.get("web_timeout", 5000))
@@ -783,7 +896,35 @@ class NotificationRoutesMixin:
                             }
                         )
 
-                    notification_manager.update_config_without_save(**manager_updates)
+                    from pydantic import ValidationError
+
+                    try:
+                        notification_manager.update_config_without_save(
+                            **manager_updates
+                        )
+                    except ValidationError as exc:
+                        # 调用方给了配置模型不能用的值（如 enabled: null）：不是服务器故障。
+                        # update_config_without_save 已把已赋值的字段放回原值（R790），
+                        # 这里也不落盘。只报字段名，不回显值（bark_device_key 等敏感）。
+                        fields = sorted(
+                            {
+                                str(err["loc"][0])
+                                for err in exc.errors()
+                                if err.get("loc")
+                            }
+                        )
+                        logger.warning(f"通知配置更新被拒绝，字段值无效: {fields}")
+                        return jsonify(
+                            {
+                                "status": "error",
+                                "error": "invalid_value",
+                                "fields": fields,
+                                "message": msg(
+                                    "notify.invalidFieldValue",
+                                    fields=", ".join(fields) or "notification",
+                                ),
+                            }
+                        ), 400
                     config_mgr.update_section("notification", notification_config)
 
                     logger.info("通知配置已更新到配置文件和内存")
@@ -991,7 +1132,7 @@ class NotificationRoutesMixin:
               200:
                 description: 配置已更新
               400:
-                description: 参数无效
+                description: 请求体不是 JSON 对象，或某个字段的值不能用（配置一概不改）
                 schema:
                   type: object
                   properties:
@@ -999,9 +1140,18 @@ class NotificationRoutesMixin:
                       type: string
                       enum: [error]
                       description: 固定为 "error"
+                    error:
+                      type: string
+                      enum: [invalid_json, invalid_body, invalid_value]
+                      description: invalid_json=无法解析/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=某个字段的值不能用（倒计时不是有限整数，提示语不是字符串）
+                    fields:
+                      type: array
+                      items:
+                        type: string
+                      description: 仅 invalid_value 时出现：值不能用的字段名
                     message:
                       type: string
-                      description: 参数校验失败的人类可读说明
+                      description: 请求体不合法或参数校验失败的人类可读说明
               500:
                 description: 更新失败
                 schema:
@@ -1015,11 +1165,8 @@ class NotificationRoutesMixin:
                       type: string
                       description: 写入 config 失败的人类可读说明
             """
+            data = require_json_object()
             try:
-                data = request.json or {}
-                if not isinstance(data, dict):
-                    data = {}
-
                 config_mgr = get_config()
                 feedback_config = config_mgr.get_section("feedback")
 
@@ -1034,17 +1181,30 @@ class NotificationRoutesMixin:
 
                 changed_keys: list[str] = []
 
+                # R797: look at every field before changing anything. ``int(inf)``
+                # raises ``OverflowError`` (``1e999`` is valid JSON for it) and
+                # ``truncate_string`` calls ``.strip()``: both used to surface as
+                # ``500 "Update failed"`` for what is the caller's mistake.
+                unusable = _fields_that_are_not_text(
+                    **{
+                        key: data[key]
+                        for key in ("resubmit_prompt", "prompt_suffix")
+                        if key in data
+                    }
+                )
+                val = 0
                 if "frontend_countdown" in data:
-                    raw = data["frontend_countdown"]
                     try:
-                        val = int(raw)
-                    except (TypeError, ValueError):
-                        return jsonify(
-                            {
-                                "status": "error",
-                                "message": "frontend_countdown 必须为整数",
-                            }
-                        ), 400
+                        val = int(data["frontend_countdown"])
+                    except (TypeError, ValueError, OverflowError):
+                        unusable.append("frontend_countdown")
+                if unusable:
+                    logger.warning(
+                        f"反馈配置更新被拒绝，字段值无效: {sorted(unusable)}"
+                    )
+                    return _invalid_value_response(unusable)
+
+                if "frontend_countdown" in data:
                     if val == 0:
                         feedback_config["frontend_countdown"] = 0
                     else:
@@ -1256,7 +1416,7 @@ class NotificationRoutesMixin:
                     }
                 ), 500
 
-            data = request.get_json(silent=True) or {}
+            data = optional_json_object()
             provider_raw = str(data.get("provider", "all") or "all").strip().lower()
             valid_providers = {"all", "bark", "web", "sound", "system"}
             if provider_raw not in valid_providers:

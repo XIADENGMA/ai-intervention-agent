@@ -20,7 +20,13 @@
 
 ### `async _prepare_local_images(ctx: FastMCPContext | None, message: str, task_id: str) -> local_images.PreparedPrompt`
 
+### `_dispatch_new_task_notification(task_id: str, message: str, web_ui_config: server_config.WebUIConfig) -> None`
+
 ### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int, client: Any | None = None) -> None`
+
+### `_retire_detached_cleanup(future: asyncio.Future[None]) -> None`
+
+### `async _run_to_completion(work: Coroutine[Any, Any, None]) -> None`
 
 ### `async wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str, Any]`
 

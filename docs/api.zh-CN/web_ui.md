@@ -127,6 +127,18 @@ pyenv), so the Web UI started listening after the 15 s wait of
 ``start_web_service`` had given up. A Werkzeug that overrides ``server_bind``
 itself is left alone, and so is our own override: calling this again is a no-op.
 
+### `keep_stdio_from_raising() -> None`
+
+让往 ``stdout`` / ``stderr`` 打印的东西永远不会因为字符编码不了而抛异常（R786）。
+
+``run()`` 在启动服务器之前用 ``print`` 输出中文提示和 emoji。标准输出的编码取自本机语言
+环境，错误处理是 ``strict``：Windows 上重定向后是 ANSI 代码页（cp1252、cp936 ……），
+``LANG=C`` 的容器里是 ASCII，编码不了就抛 ``UnicodeEncodeError``，进程在服务器起来之前
+退出。提示只是给人看的，不该决定服务器起不起得来：编码不了的字符改成转义序列。
+
+只改错误处理，不动编码，所以在 UTF-8 的终端里输出和以前完全一样。流不支持
+``reconfigure``（被替换成别的对象，或者是 ``None``）时什么都不做。
+
 ### `web_feedback_ui(prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, output_file: str | None = None, host: str = '0.0.0.0', port: int = 8080, external_base_url: str = '', mdns_hostname: str = MDNS_DEFAULT_HOSTNAME, trusted_hosts: list[str] | None = None) -> FeedbackResult | None`
 
 启动 Web UI（交互反馈界面）的便捷函数

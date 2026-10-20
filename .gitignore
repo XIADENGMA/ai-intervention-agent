@@ -248,6 +248,8 @@ config.jsonc
 config.json
 config.jsonc.bak
 config.json.bak
+# 通知 in-flight 持久化文件（R136 / R794）：与配置文件同目录，开发模式下就在仓库根
+notification_inflight.json
 .ace-tool/
 
 # 个人笔记 / 待办

@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import functools
+import json
+import re
 import secrets
 import warnings
 from collections.abc import Callable, Collection
@@ -120,6 +122,114 @@ def build_trusted_hosts(
         trusted_hosts.append(normalized)
         seen.add(normalized)
     return trusted_hosts
+
+
+_SAFE_HTTP_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS"})
+# GET handlers that read *and clear* state. A cross-site ``<img src=...>`` runs
+# them just as well as a form runs a POST handler, so they are treated like writes.
+_STATE_CONSUMING_GET_PATHS: frozenset[str] = frozenset({"/api/feedback"})
+
+
+def _may_change_state(method: str, path: str) -> bool:
+    """Does a request with this method and path run a handler that changes state?
+
+    ``OPTIONS`` is answered by Flask / CORS itself and never reaches a view; every
+    other method except GET / HEAD is a write; GET / HEAD count only for the paths
+    in ``_STATE_CONSUMING_GET_PATHS``.
+    """
+    method = method.upper()
+    if method == "OPTIONS":
+        return False
+    return method not in _SAFE_HTTP_METHODS or path in _STATE_CONSUMING_GET_PATHS
+
+
+def _origin_parts(value: str) -> tuple[str, str] | None:
+    """``(scheme, host[:port])`` of an origin or base URL; ``None`` if it is not an http(s) origin.
+
+    The host is lower-cased and the scheme's default port dropped, so
+    ``http://Example.com:80`` and ``http://example.com`` compare equal. ``null``
+    (a sandboxed frame, a cross-origin redirect chain) and non-http schemes such
+    as ``vscode-webview://`` give ``None``.
+    """
+    try:
+        parts = urlsplit(value.strip())
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    default_port = {"http": 80, "https": 443}.get(scheme)
+    if default_port is None or not parts.hostname:
+        return None
+    host = parts.hostname.lower()
+    if ":" in host:
+        host = f"[{host}]"
+    if port is None or port == default_port:
+        return scheme, host
+    return scheme, f"{host}:{port}"
+
+
+def _origin_is_allowed(
+    origin: str,
+    host: str,
+    allowed_origins: Collection[str | re.Pattern[str]],
+) -> bool:
+    """Is ``origin`` the Web UI's own origin (same ``Host``) or in ``allowed_origins``?"""
+    parts = _origin_parts(origin)
+    for entry in allowed_origins:
+        if isinstance(entry, re.Pattern):
+            if entry.match(origin):
+                return True
+        elif parts is not None and _origin_parts(entry) == parts:
+            return True
+    if parts is None:
+        return False
+    host_parts = _origin_parts(f"{parts[0]}://{host}")
+    return host_parts is not None and host_parts[1] == parts[1]
+
+
+def is_cross_origin_write(
+    *,
+    method: str,
+    origin: str | None,
+    fetch_site: str | None,
+    host: str,
+    allowed_origins: Collection[str | re.Pattern[str]] = (),
+    path: str = "",
+) -> bool:
+    """Should this request be refused because a page of another origin caused it? (R787)
+
+    A page on any web site can make the visitor's browser send a ``POST`` to
+    ``http://127.0.0.1:<port>``: a form with ``enctype="multipart/form-data"`` or
+    ``application/x-www-form-urlencoded`` needs no CORS preflight, and CORS only
+    decides whether the page may *read* the answer, not whether the server acts on
+    the request. ``/api/submit`` takes exactly those two body types, so such a
+    page could answer the agent's question in the user's name.
+
+    Requests that cannot change state (``GET`` / ``HEAD`` / ``OPTIONS``, except the
+    read-and-clear ``GET /api/feedback``) are never refused. For the others, in
+    this order:
+
+    * ``Sec-Fetch-Site: same-origin`` / ``none`` is the browser's own statement
+      (a page cannot set it) that the request came from this very origin: allowed,
+      whatever a proxy did to ``Host``.
+    * Neither ``Origin`` nor ``Sec-Fetch-Site``: not a browser (the MCP server's
+      httpx, ``curl``, Node ``fetch`` in the VS Code extension host): allowed.
+    * ``Sec-Fetch-Site`` without ``Origin``: a browser calling a request
+      cross-site, with nothing to identify it by: refused.
+    * Otherwise the ``Origin`` must be this server's own (same authority as
+      ``Host``) or one of ``allowed_origins`` (the CORS allow-list: the page's own
+      ``localhost`` / ``127.0.0.1`` origins and the VS Code webview). ``null`` is
+      refused.
+    """
+    if not _may_change_state(method, path):
+        return False
+    site = (fetch_site or "").strip().lower()
+    if site in ("same-origin", "none"):
+        return False
+    origin = (origin or "").strip()
+    if not origin:
+        return bool(site)
+    return not _origin_is_allowed(origin, host, allowed_origins)
 
 
 def _bracketed_address(value: str) -> IPv4Address | IPv6Address | None:
@@ -265,6 +375,43 @@ class SecurityMixin:
             if callable(ensure_hooks):
                 ensure_hooks()
 
+        @self.app.before_request
+        def reject_cross_origin_writes() -> ResponseReturnValue | None:
+            if not _may_change_state(request.method, request.path):
+                return None
+            origin = request.headers.get("Origin")
+            fetch_site = request.headers.get("Sec-Fetch-Site")
+            if not is_cross_origin_write(
+                method=request.method,
+                origin=origin,
+                fetch_site=fetch_site,
+                host=request.host,
+                allowed_origins=self._allowed_write_origins(),
+                path=request.path,
+            ):
+                return None
+            logger.warning(
+                f"拒绝跨源写请求: {request.method} {request.path}"
+                f"（Origin={(origin or '')[:200]!r}, Host={request.host!r}, "
+                f"Sec-Fetch-Site={fetch_site!r}）；Web UI 若在改写 Host 的反向代理之后，"
+                "请把 web_ui.external_base_url 设为浏览器访问的对外地址"
+            )
+            return Response(
+                json.dumps(
+                    {
+                        "success": False,
+                        "error": "cross_origin_write_blocked",
+                        "message": (
+                            "State-changing requests must come from the Web UI's "
+                            "own origin. Behind a reverse proxy that rewrites Host, "
+                            "set web_ui.external_base_url to the public address."
+                        ),
+                    }
+                ),
+                status=403,
+                mimetype="application/json",
+            )
+
         @self.app.after_request
         def add_security_headers(response: Response) -> Response:
             nonce = getattr(g, "csp_nonce", "")
@@ -282,21 +429,53 @@ class SecurityMixin:
             )
 
             path = request.path
+            cache_policy: str | None = None
             if path.startswith(("/static/js/", "/static/css/", "/static/locales/")):
                 if request.args.get("v"):
-                    response.headers["Cache-Control"] = (
-                        "public, max-age=31536000, immutable"
-                    )
+                    cache_policy = "public, max-age=31536000, immutable"
                 else:
-                    response.headers["Cache-Control"] = "public, max-age=86400"
+                    cache_policy = "public, max-age=86400"
             elif path.startswith(("/static/lottie/", "/fonts/")):
-                response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
+                cache_policy = "public, max-age=2592000, immutable"
             elif path.startswith("/sounds/") or (
                 path.startswith("/icons/") and not path.endswith(".ico")
             ):
-                response.headers["Cache-Control"] = "public, max-age=604800"
+                cache_policy = "public, max-age=604800"
+
+            if cache_policy is not None:
+                # The long lifetimes are for files that were served. An error
+                # (a 429 for a font, a 404 for a missing extension, a 5xx) given
+                # the same header is kept by the browser for a day, or a year
+                # for a ``?v=`` URL, so one failed request turned into a file
+                # that stayed missing until the cache was cleared by hand.
+                response.headers["Cache-Control"] = (
+                    cache_policy if response.status_code < 400 else "no-store"
+                )
 
             return response
+
+    def _allowed_write_origins(self) -> list[str | re.Pattern[str]]:
+        """Origins besides the server's own that may send state-changing requests.
+
+        The CORS allow-list set up in ``WebFeedbackUI.__init__``, plus the
+        ``external_base_url`` the operator gave (constructor argument or the live
+        ``web_ui.external_base_url`` setting, which also covers the WSGI factory):
+        behind a proxy that rewrites ``Host``, that is the origin the browser uses.
+        """
+        allowed: list[str | re.Pattern[str]] = list(
+            getattr(self, "_write_origin_allowlist", ())
+        )
+        external_urls = [getattr(self, "external_base_url", "")]
+        try:
+            external_urls.append(
+                get_config().get_section("web_ui").get("external_base_url", "")
+            )
+        except Exception as exc:
+            logger.debug(f"读取 web_ui.external_base_url 失败，只用构造参数: {exc}")
+        for url in external_urls:
+            if isinstance(url, str) and _origin_parts(url) is not None:
+                allowed.append(url)
+        return allowed
 
     def _get_csp_nonce(self) -> str:
         """获取当前请求的 CSP nonce；非请求上下文时生成临时随机值。"""

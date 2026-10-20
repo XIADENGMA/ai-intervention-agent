@@ -72,8 +72,10 @@ def _read(path: Path) -> str:
 
 
 def _extract_test_count_claim(readme: str) -> int:
+    # 1-2 位数字 + 可选千分位逗号 + 至少 3 位：``9,700`` 和 ``10,200`` 都认
+    # （测试总数过万后原来的单位数写法会把 ``10,200+`` 读成 ``200``）。
     match = re.search(
-        r"([0-9],?[0-9]{3,})\+\s*(?:tests|测试)",
+        r"([0-9]{1,2},?[0-9]{3,})\+\s*(?:tests|测试)",
         readme,
     )
     assert match is not None, (
@@ -88,7 +90,7 @@ def _extract_subtest_count_claim(readme: str) -> int:
     #   - 旧: "~800 subtests" (cycle-30 前)
     #   - 新: "1,000+ subtests" (cycle-36 R333 起)
     match = re.search(
-        r"(?:~([0-9]+)|([0-9],?[0-9]{3,})\+)\s*subtests",
+        r"(?:~([0-9]+)|([0-9]{1,2},?[0-9]{3,})\+)\s*subtests",
         readme,
     )
     assert match is not None, (

@@ -80,6 +80,44 @@ def get_compat_config(
     return default
 
 
+# 旧配置键 -> 现行配置键：(段, 旧名, 新名)。docs/configuration.md 的 Backward compatibility
+# 一节列的就是这张表。network_security.enable_access_control 不在其中：它由
+# NetworkSecurityMixin 直接读文件里的原始值，从来不经过默认值合并。
+LEGACY_KEY_ALIASES: tuple[tuple[str, str, str], ...] = (
+    ("feedback", "timeout", "backend_max_wait"),
+    ("feedback", "auto_resubmit_timeout", "frontend_countdown"),
+    ("web_ui", "max_retries", "http_max_retries"),
+    ("web_ui", "retry_delay", "http_retry_delay"),
+    ("web_ui", "timeout", "http_request_timeout"),
+)
+
+
+def apply_legacy_key_aliases(config: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """文件里只写了旧名字的配置项，把它的值放到新名字上（原地修改）。
+
+    config 是从配置文件里读出来、还没有合并默认值的各段；每采用一个旧名字打一条 INFO 日志
+    （写明新旧两个键名），并把被采用的 (段, 旧名, 新名) 作为列表返回。
+
+    必须在合并默认值之前调用：合并之后每个新键都带着默认值在场，"新键没写"这个判断就再也
+    做不出来。get_compat_config 先看新键，永远看得到，旧名字因此一次都没被读到过（R795）。
+    新键只要在文件里（哪怕写的是默认值）就不动；旧键本身也留在原处，文件不会被改写。
+    不是 dict 的段、表里没有的键一律跳过。
+    """
+    applied: list[tuple[str, str, str]] = []
+    for section_name, old_key, new_key in LEGACY_KEY_ALIASES:
+        section = config.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        if old_key in section and new_key not in section:
+            section[new_key] = section[old_key]
+            applied.append((section_name, old_key, new_key))
+            logger.info(
+                f"配置项 {section_name}.{old_key} 是旧名称，已按 {section_name}.{new_key} "
+                f"读取（文件里没有写 {new_key}）；建议改用新名称"
+            )
+    return applied
+
+
 def get_typed_config(
     config: dict,
     key: str,

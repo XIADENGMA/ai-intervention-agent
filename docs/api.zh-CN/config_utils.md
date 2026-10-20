@@ -22,6 +22,18 @@
 
 获取配置值，优先级：new_key > old_key > default
 
+### `apply_legacy_key_aliases(config: dict[str, Any]) -> list[tuple[str, str, str]]`
+
+文件里只写了旧名字的配置项，把它的值放到新名字上（原地修改）。
+
+config 是从配置文件里读出来、还没有合并默认值的各段；每采用一个旧名字打一条 INFO 日志
+（写明新旧两个键名），并把被采用的 (段, 旧名, 新名) 作为列表返回。
+
+必须在合并默认值之前调用：合并之后每个新键都带着默认值在场，"新键没写"这个判断就再也
+做不出来。get_compat_config 先看新键，永远看得到，旧名字因此一次都没被读到过（R795）。
+新键只要在文件里（哪怕写的是默认值）就不动；旧键本身也留在原处，文件不会被改写。
+不是 dict 的段、表里没有的键一律跳过。
+
 ### `get_typed_config(config: dict, key: str, default: T, value_type: type[T], min_val: Number | None = None, max_val: Number | None = None, old_key: str | None = None) -> T`
 
 获取配置值并进行类型转换和边界验证

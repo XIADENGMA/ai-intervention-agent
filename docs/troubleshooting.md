@@ -657,6 +657,19 @@ The access-denied message in the Web UI is a different thing: it means the serve
 - Include it when you report a problem: it names the version.
 - `web_ui.log_level = "ERROR"` hides it together with every other warning.
 
+## 19. A button in the Web UI does nothing, and the browser shows `403 cross_origin_write_blocked`
+
+**Symptom**: the Web UI loads, but submitting an answer, closing a task or saving a setting fails. In the browser's network panel the `POST` answers `403` with `{"success": false, "error": "cross_origin_write_blocked", ...}`, and the Web UI log has a warning that starts with `拒绝跨源写请求` and shows the request's `Origin`, `Host` and `Sec-Fetch-Site`. It only happens when you open the Web UI through a reverse proxy, a tunnel or a custom host name; `http://127.0.0.1:<port>`, `http://localhost:<port>` and the machine's own LAN address are not affected.
+
+**What it means**: a request that changes state (every `POST` / `PUT` / `PATCH` / `DELETE`, plus `GET /api/feedback`, which reads and clears the stored answer) is refused when the browser says another page caused it. Without that, any web page open in your browser could answer the agent's question as you, close tasks or shut the Web UI down. A request passes when the browser reports `Sec-Fetch-Site: same-origin`, when it carries neither `Origin` nor `Sec-Fetch-Site` (the MCP server, `curl`, scripts and the VS Code extension are not browsers), or when its `Origin` is the Web UI's own: the same host and port as the `Host` header, `localhost` / `127.0.0.1` on the Web UI's port, the VS Code webview, or `web_ui.external_base_url`. A plain-HTTP proxy that rewrites `Host` (nginx's default) defeats the first and the last: a browser sends no `Sec-Fetch-Site` to a plain-HTTP address, and the `Origin` (`http://agent.example.com`) no longer equals the rewritten `Host` (`127.0.0.1:8080`).
+
+**Fix** (either one):
+
+1. Set `web_ui.external_base_url` to the address you type in the browser, for example `http://agent.example.com`, and restart the MCP server. The Web UI then treats that origin as its own.
+2. Let the proxy pass the original `Host` on (nginx: `proxy_set_header Host $http_host;`) and add that name to `network_security.trusted_hosts`. The `Origin` then equals `Host`.
+
+Over HTTPS, a browser that sends `Sec-Fetch-Site` (Chrome 76, Firefox 90, Safari 16.4 and later) says `same-origin`, so an HTTPS proxy needs neither. If the log shows a request you did not make, with an `Origin` of a site you do not recognise, that is the protection working: close that page.
+
 ## Still stuck?
 
 1. Read [`SUPPORT.md`](../.github/SUPPORT.md) for the right channel.

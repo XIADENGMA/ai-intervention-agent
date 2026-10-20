@@ -87,6 +87,7 @@ def test_description_rerender_skipped_when_prompt_unchanged() -> None:
           if (id === 'description') return descriptionElement;
           return null;
         };
+        globalThis.marked = { parse: (text) => '<p>' + text + '</p>' };
 
         await updateDescriptionDisplay('# same prompt');
         await updateDescriptionDisplay('# same prompt');
@@ -135,6 +136,7 @@ def test_description_rerender_happens_when_container_cleared() -> None:
           if (id === 'description') return descriptionElement;
           return null;
         };
+        globalThis.marked = { parse: (text) => '<p>' + text + '</p>' };
 
         await updateDescriptionDisplay('# same prompt');
         // 模拟外部清空容器（例如切页/错误恢复路径）

@@ -266,6 +266,9 @@ class TestFinallyBlockMetaLint(unittest.TestCase):
         # 扫所有 .js (排除 .min.js 和 vendor 第三方库)
         vendor_files = {
             "tex-mml-chtml.js",  # MathJax 3rd-party，不在我们控制范围
+            # marked 3rd-party（npm 的 UMD 构建原样拷贝，``static/js/marked.js``）；
+            # 18.x 的构建里有编译器生成的 ``try{...}finally{...}``，不是我们的 DOM 代码。
+            "marked.js",
         }
         violations: list[str] = []
         for js_file in sorted(js_dir.glob("*.js")):

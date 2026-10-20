@@ -21,6 +21,15 @@ logger = EnhancedLogger(__name__)
 class NetworkSecurityMixin:
     """network_security 配置段的校验/读写/缓存管理。"""
 
+    # 磁盘上的配置文件内容加载失败（语法错误、编码不对、结构不合法）。置位期间所有自动写入都
+    # 不碰文件：内存里是默认配置或上一份好配置，把它们写回去会覆盖用户的内容（R783）。
+    # 由 ``ConfigManager._load_config`` 维护：只在内容错误、且文件非空时置位（读不到文件的
+    # OSError 可能是瞬时的——Windows 上杀毒软件或另一个进程刚好占着文件——一次瞬时错误不该
+    # 让之后的保存全部作废；0 字节的文件没有可保护的内容），成功加载（用户修好了文件、或
+    # 删掉后重新生成）时清除。定义成类属性，只继承这个 mixin、没走 ``__init__`` 的宿主也读得到
+    # 默认值。
+    _on_disk_config_invalid: bool = False
+
     if TYPE_CHECKING:
         _lock: RLock
         config_file: Path
@@ -278,6 +287,10 @@ class NetworkSecurityMixin:
 
     def _save_network_security_config_immediate(self, validated_ns: dict[str, Any]):
         """将 network_security 原子写回配置文件（不走通用保存逻辑，避免被排除）。"""
+        if self._on_disk_config_invalid:
+            raise RuntimeError(
+                f"配置文件无法解析，为避免覆盖你的内容已拒绝写入: {self.config_file}"
+            )
         try:
             if not self.config_file.exists():
                 self._create_default_config_file()
@@ -296,7 +309,7 @@ class NetworkSecurityMixin:
         content = ""
         try:
             if self.config_file.exists():
-                content = self.config_file.read_text(encoding="utf-8")
+                content = self.config_file.read_text(encoding="utf-8-sig")
         except Exception as e:
             raise RuntimeError(f"读取配置文件失败: {e}") from e
 
@@ -419,7 +432,8 @@ class NetworkSecurityMixin:
                     self._network_security_cache_time = current_time
                 return result
 
-            with open(self.config_file, encoding="utf-8") as f:
+            # utf-8-sig：兼容带 BOM 的配置文件，见 ConfigManager._load_config（R784）
+            with open(self.config_file, encoding="utf-8-sig") as f:
                 content = f.read()
 
             full_config = self._parse_config_content(content)

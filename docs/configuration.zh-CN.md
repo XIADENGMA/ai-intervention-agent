@@ -39,6 +39,10 @@ AI_INTERVENTION_AGENT_DEV_MODE=1
 AI_INTERVENTION_AGENT_USER_MODE=1
 ```
 
+如果 `AI_INTERVENTION_AGENT_CONFIG_FILE` 里的路径根本检查不了（落在你进不去的目录里、某一段超出
+文件系统上限、`~用户` 不存在），这个变量会被忽略，并打一条写明变量名和原因的 `WARNING`，改用表里的
+标准位置；你给的那个路径不会被创建任何东西。路径只是不存在时照写的路径使用，文件会创建在那里。
+
 `UV_TOOL_DIR`、`UV_CACHE_DIR`、`PIPX_HOME`、`PIPX_LOCAL_VENVS` 也会被识别：
 即使你修改过这些工具的默认安装目录，只要 `sys.executable` 在它们下面，agent
 就会按「已安装」处理，不需要你设置任何额外环境变量。
@@ -245,10 +249,13 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 - **web_ui**
   - `max_retries` → `http_max_retries`
   - `retry_delay` → `http_retry_delay`
+  - `timeout` → `http_request_timeout`
 - **network_security**
   - `enable_access_control` → `access_control_enabled`
 
-配置在加载时会进行校验与范围裁剪（超出范围会自动调整到边界值）。
+旧名称只在文件里没有写对应新名称时才生效：两个都写了，以新名称为准（哪怕新名称的值恰好等于默认值）。旧键在文件里保持原样，加载时（以及把 `config.jsonc` / `config.json` 迁移成 TOML 时）在内存里把它的值复制给新名称，日志里每个这样的键有一条 `INFO` 说明。注意：产品进程退出时会把填满默认值的配置写回文件，写回去的是复制过来的值，所以旧值不会被默认值盖掉；但文件里新名称已经带着默认值时，无法和"你自己选了这个值"区分开，想让旧名称生效就删掉新名称那一行（R795）。
+
+配置在加载时会进行校验与范围裁剪（超出范围会自动调整到边界值）。完全读不出来的值（例如把布尔项写成 `""` 或 `"maybe"`）只让这一项回到默认值，日志里有一条指明键名的警告；同一段里的其他项照常校验、生效（R791）。
 
 ## 配置段说明
 
@@ -318,6 +325,7 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 - Web UI 实际 host 优先使用 `network_security.bind_interface`（若存在），否则使用 `web_ui.host`。
 - HTTP `Host` 校验与 IP 白名单是两层不同边界：`trusted_hosts` 描述浏览器/代理可以使用哪些主机名，`allowed_networks` 描述哪些客户端来源网段可以访问。
 - 默认允许 `localhost`、`127.0.0.1`、`[::1]`、`mdns.hostname`（默认 `ai.local`）、配置的具体 bind host/IP，以及 `web_ui.external_base_url` 中的主机名。
+- 浏览器发来的写请求还要单独核对是不是 Web UI 自己的来源，与上面的 `Host` 和 IP 检查互不相干：会改状态的请求（所有 `POST` / `PUT` / `PATCH` / `DELETE`，加上 `GET /api/feedback`）在浏览器声明是另一个页面发起时，会返回 `403 cross_origin_write_blocked`。放行：浏览器自己的 `Sec-Fetch-Site: same-origin`；既没有 `Origin` 也没有 `Sec-Fetch-Site` 的客户端（MCP 服务、`curl`、脚本、VS Code 扩展宿主）；`Origin` 与 `Host` 是同一个主机和端口、页面自己的 `localhost` / `127.0.0.1` 来源、VS Code webview，或 `web_ui.external_base_url` 的来源。放在改写 `Host` 的纯 HTTP 反向代理（nginx 默认）后面时，把 `web_ui.external_base_url` 设成你在浏览器里打开的地址，或者让代理把原始 `Host` 传下去并写进 `trusted_hosts`（见 [故障排查 §19](troubleshooting.zh-CN.md#19-web-ui-里的按钮没反应浏览器里看到-403-cross_origin_write_blocked)）。
 
 ### `mdns`（mDNS / 局域网服务发现）
 

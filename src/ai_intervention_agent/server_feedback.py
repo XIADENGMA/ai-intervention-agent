@@ -29,8 +29,10 @@ import json
 import threading
 import time
 import warnings
+from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import quote
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context as FastMCPContext
@@ -279,6 +281,70 @@ async def _prepare_local_images(
     return prepared
 
 
+def _dispatch_new_task_notification(
+    task_id: str, message: str, web_ui_config: server_config.WebUIConfig
+) -> None:
+    """R776 · 通知用户有新任务（system / sound / Bark）；在工作线程里调用，不会抛异常。
+
+    ``send_notification`` 的 ``IMMEDIATE`` 触发会一直等到每个渠道都答复
+    （最长 ``bark_timeout`` + 5 秒），``refresh_config_from_file`` 还要读配置文件。
+    直接写在 ``interactive_feedback`` 里，Bark 服务器一慢，整个 MCP 服务的事件
+    循环就冻住这么久：ping、别的工具调用、取消通知和这个任务自己的等待都停着
+    （真实 stdio 复现：``bark_timeout = 3`` 且服务器不应答时，一个 ping 等了
+    3.01 秒才得到回答）。这里整段跑在线程里，调用方用 ``asyncio.to_thread`` 等它。
+
+    R778 · ``metadata["base_url"]`` 是 Bark 点击跳转链接（``bark_url_template`` 里的
+    ``{base_url}``）的来源，``launch_feedback_ui`` 一直会带上，``interactive_feedback``
+    从没带过：``bark_action = "url"`` 加 ``external_base_url`` 时，真实推送里没有
+    ``url`` 字段，点通知什么也不发生。解析结果是回环地址（手机够不着）时不带，由
+    Bark 渠道记下"没有可用链接"。
+    """
+    try:
+        notification_manager.refresh_config_from_file()
+
+        notification_message = message[:100]
+        if len(message) > 100:
+            notification_message += "..."
+
+        metadata: dict[str, Any] = {
+            "task_id": task_id,
+            "source": "interactive_feedback",
+        }
+        try:
+            base_url = server_config.resolve_external_base_url(
+                web_ui_config, for_external_use=True
+            )
+        except Exception as exc:
+            base_url = ""
+            logger.debug(f"解析 external_base_url 失败: {exc}")
+        if base_url:
+            metadata["base_url"] = base_url
+
+        event_id = notification_manager.send_notification(
+            title="新的反馈请求",
+            message=notification_message,
+            trigger=NotificationTrigger.IMMEDIATE,
+            types=[
+                NotificationType.SYSTEM,
+                NotificationType.SOUND,
+                NotificationType.BARK,
+            ],
+            metadata=metadata,
+            skip_unavailable=True,
+        )
+
+        if event_id:
+            logger.debug(f"已为任务 {task_id} 发送通知，事件 ID: {event_id}")
+        else:
+            logger.debug(f"任务 {task_id} 通知已跳过（通知系统已禁用或没有可用渠道）")
+
+    except Exception as e:
+        logger.warning(
+            f"发送任务通知失败: {e}，任务 {task_id} 已正常创建",
+            exc_info=True,
+        )
+
+
 _POLL_INTERVAL_FAST_S = 2.0
 _POLL_INTERVAL_SAFETY_NET_S = 30.0
 
@@ -333,7 +399,8 @@ async def _close_orphan_task_best_effort(
     ``client`` 用于 ``wait_for_task_completion`` 热路径复用已创建的
     AsyncClient；留空时保持历史行为，便于单测和旧调用方直接使用本 helper。
     """
-    close_url = f"http://{host}:{port}/api/tasks/{task_id}/close"
+    base_url = server_config.get_target_base_url(host, port)
+    close_url = f"{base_url}/api/tasks/{quote(task_id, safe='')}/close"
     try:
         if client is None:
             cfg = service_manager.get_web_ui_config()[0]
@@ -349,6 +416,29 @@ async def _close_orphan_task_best_effort(
         raise
     except Exception as e:
         logger.debug(f"清理 ghost task {task_id} 失败（已忽略，best-effort）: {e}")
+
+
+_DETACHED_CLEANUPS: set[asyncio.Future[None]] = set()
+
+
+def _retire_detached_cleanup(future: asyncio.Future[None]) -> None:
+    _DETACHED_CLEANUPS.discard(future)
+    if not future.cancelled() and (error := future.exception()) is not None:
+        logger.warning(f"孤儿任务清理出错: {error!r}", exc_info=error)
+
+
+async def _run_to_completion(work: Coroutine[Any, Any, None]) -> None:
+    """R775 · 在独立 task 里跑 ``work``，调用方被取消也不会把它截断。
+
+    MCP runner 用 anyio cancel scope 结束一个请求：scope 退出前，handler 的
+    每个 ``await`` 都会被再取消一次，``finally`` 里的清理连第一个网络请求都发
+    不出去。独立 task 不在该 scope 内，``shield`` 再挡住调用方自己的取消；
+    调用方没被取消时照常等它跑完，异常也照常抛给调用方。
+    """
+    task = asyncio.ensure_future(work)
+    _DETACHED_CLEANUPS.add(task)
+    task.add_done_callback(_retire_detached_cleanup)
+    await asyncio.shield(task)
 
 
 async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str, Any]:
@@ -375,14 +465,18 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     在 finally 中通过 ``_close_orphan_task_best_effort`` 通知 web_ui
     清理 ``task_queue`` 中的孤儿任务，避免重新 invoke 后旧 task 占着
     active 槽位让前端展示错乱的 prompt。
+    R775：清理经 ``_run_to_completion`` 在独立 task 里跑。MCP runner 用 anyio
+    cancel scope 取消 handler 时，直接写在 ``finally`` 里 ``await`` 的清理会
+    被再次取消，close 请求发不出去，被放弃的任务就留在 Web UI 上。
     """
     if timeout > 0:
         timeout = max(timeout, server_config.BACKEND_MIN)
 
     config, _ = service_manager.get_web_ui_config()
     target_host = server_config.get_target_host(config.host)
-    api_url = f"http://{target_host}:{config.port}/api/tasks/{task_id}"
-    sse_url = f"http://{target_host}:{config.port}/api/events"
+    base_url = server_config.get_target_base_url(config.host, config.port)
+    api_url = f"{base_url}/api/tasks/{quote(task_id, safe='')}"
+    sse_url = f"{base_url}/api/events"
 
     def _pooled_client() -> Any:
         return service_manager.get_async_client(config)
@@ -572,6 +666,27 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
             logger.debug(f"探测任务剩余倒计时失败（按超时处理）: {e}")
         return None
 
+    async def _settle_unanswered_task() -> None:
+        """没拿到 result 时：先重试取回，仍没有再关掉 web_ui 里的孤儿任务。"""
+        if result_box[0] is None:
+            for retry_idx, backoff_s in enumerate(_FETCH_RETRY_BACKOFF_S):
+                if backoff_s > 0:
+                    await asyncio.sleep(backoff_s)
+                retry_result = await _fetch_result()
+                if retry_result is not None:
+                    result_box[0] = retry_result
+                    logger.info(
+                        f"close 前第 {retry_idx + 1}/{len(_FETCH_RETRY_BACKOFF_S)} "
+                        f"次 fetch（退避 {backoff_s:.2f}s）拿到 result，"
+                        f"跳过 ghost-task close: {task_id}"
+                    )
+                    break
+
+        if result_box[0] is None:
+            await _close_orphan_task_best_effort(
+                task_id, target_host, config.port, client=_pooled_client()
+            )
+
     timed_out = False
     try:
         remaining_wait = effective_timeout
@@ -602,25 +717,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
             await sse_task
         with contextlib.suppress(asyncio.CancelledError):
             await poll_task
-
-        if result_box[0] is None:
-            for retry_idx, backoff_s in enumerate(_FETCH_RETRY_BACKOFF_S):
-                if backoff_s > 0:
-                    await asyncio.sleep(backoff_s)
-                retry_result = await _fetch_result()
-                if retry_result is not None:
-                    result_box[0] = retry_result
-                    logger.info(
-                        f"close 前第 {retry_idx + 1}/{len(_FETCH_RETRY_BACKOFF_S)} "
-                        f"次 fetch（退避 {backoff_s:.2f}s）拿到 result，"
-                        f"跳过 ghost-task close: {task_id}"
-                    )
-                    break
-
-        if result_box[0] is None:
-            await _close_orphan_task_best_effort(
-                task_id, target_host, config.port, client=_pooled_client()
-            )
+        await _run_to_completion(_settle_unanswered_task())
 
     if result_box[0] is not None:
         logger.info(f"任务完成: {task_id}")
@@ -667,8 +764,9 @@ def launch_feedback_ui(
 
         asyncio.run(service_manager.ensure_web_ui_running(config))
 
-        target_host = server_config.get_target_host(config.host)
-        api_url = f"http://{target_host}:{config.port}/api/tasks"
+        api_url = (
+            f"{server_config.get_target_base_url(config.host, config.port)}/api/tasks"
+        )
 
         try:
             client = service_manager.get_sync_client(config)
@@ -1166,7 +1264,9 @@ async def interactive_feedback(
         await service_manager.ensure_web_ui_running(config, client=client)
 
         target_host = server_config.get_target_host(config.host)
-        api_url = f"http://{target_host}:{config.port}/api/tasks"
+        api_url = (
+            f"{server_config.get_target_base_url(config.host, config.port)}/api/tasks"
+        )
 
         prepared = await _prepare_local_images(ctx, cleaned_message, task_id)
         task_payload: dict[str, Any] = {
@@ -1221,6 +1321,7 @@ async def interactive_feedback(
                     stage="notify",
                     reason=f"http_{response.status_code}",
                 )
+                _bump_feedback_counter("failed_total")
 
                 return server_config._make_resubmit_response()
 
@@ -1240,41 +1341,12 @@ async def interactive_feedback(
             )
 
             if NOTIFICATION_AVAILABLE:
-                try:
-                    notification_manager.refresh_config_from_file()
-
-                    notification_message = cleaned_message[:100]
-                    if len(cleaned_message) > 100:
-                        notification_message += "..."
-
-                    mcp_types = [
-                        NotificationType.SYSTEM,
-                        NotificationType.SOUND,
-                        NotificationType.BARK,
-                    ]
-                    event_id = notification_manager.send_notification(
-                        title="新的反馈请求",
-                        message=notification_message,
-                        trigger=NotificationTrigger.IMMEDIATE,
-                        types=mcp_types,
-                        metadata={"task_id": task_id, "source": "interactive_feedback"},
-                        skip_unavailable=True,
-                    )
-
-                    if event_id:
-                        logger.debug(
-                            f"已为任务 {task_id} 发送通知，事件 ID: {event_id}"
-                        )
-                    else:
-                        logger.debug(
-                            f"任务 {task_id} 通知已跳过（通知系统已禁用或没有可用渠道）"
-                        )
-
-                except Exception as e:
-                    logger.warning(
-                        f"发送任务通知失败: {e}，任务 {task_id} 已正常创建",
-                        exc_info=True,
-                    )
+                await asyncio.to_thread(
+                    _dispatch_new_task_notification,
+                    task_id,
+                    cleaned_message,
+                    config,
+                )
             else:
                 logger.debug("通知系统不可用，跳过通知发送")
 
@@ -1289,6 +1361,13 @@ async def interactive_feedback(
             _bump_feedback_counter("failed_total")
 
             return server_config._make_resubmit_response()
+        except asyncio.CancelledError:
+            await _run_to_completion(
+                _close_orphan_task_best_effort(
+                    task_id, target_host, config.port, client=client
+                )
+            )
+            raise
 
         backend_timeout = server_config.calculate_backend_timeout(auto_resubmit_timeout)
         logger.info(

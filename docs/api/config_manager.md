@@ -34,6 +34,10 @@
 
 ### `find_default_config_template() -> Path | None`
 
+### `_why_path_cannot_be_examined(path: Path) -> str | None`
+
+### `_config_file_from_env_override(override: str, config_filename: str) -> Path | None`
+
 ### `find_config_file(config_filename: str = 'config.toml') -> Path`
 
 ### `_get_user_config_dir_fallback() -> Path`
@@ -65,6 +69,8 @@
 ##### `reload(self) -> None`
 
 ##### `invalidate_section_cache(self, section: str) -> None`
+
+##### `cache_epoch(self) -> int`
 
 ##### `invalidate_all_caches(self) -> None`
 

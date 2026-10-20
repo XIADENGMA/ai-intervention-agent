@@ -65,6 +65,14 @@ location /api/events {
 }
 ```
 
+放在反向代理后面时，还要决定谁能发写请求。浏览器发来的会改状态的请求（`POST` / `PUT` /
+`PATCH` / `DELETE`，加上 `GET /api/feedback`），除非浏览器声明它来自 Web UI 自己的页面，
+否则返回 `403 cross_origin_write_blocked`。走 HTTPS 不用配置。走纯 HTTP 且代理改写了
+`Host`（nginx 默认的 `proxy_pass` 就会）时，把 `web_ui.external_base_url` 设成你在浏览器里
+打开的地址，或者让代理把原始 `Host` 传下去（`proxy_set_header Host $http_host;`）并把这个名字
+写进 `network_security.trusted_hosts`；详见
+[故障排查 §19](troubleshooting.zh-CN.md#19-web-ui-里的按钮没反应浏览器里看到-403-cross_origin_write_blocked)。
+
 如果把 Web UI 暴露到 loopback 之外，请尽量收窄
 `network_security.allowed_networks`，可行时优先使用 SSH 隧道。运行中的设置 API
 必须能 round-trip 已有通知配置，所以它不是经过 secret-redaction 的公开 API。

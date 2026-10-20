@@ -425,7 +425,8 @@ class TestSourceTextInvariants(unittest.TestCase):
         marker = "def test_bark_notification("
         idx = self.src.find(marker)
         self.assertGreater(idx, 0, "未找到 test_bark_notification 函数定义")
-        window = self.src[idx : idx + 3500]
+        # 窗口要盖住 OpenAPI docstring（每多文档一个响应码就长一截，R789 补了 400）
+        window = self.src[idx : idx + 5000]
         self.assertIn(
             "_ensure_notification_loaded()",
             window,
@@ -443,7 +444,8 @@ class TestSourceTextInvariants(unittest.TestCase):
         marker = "def notify_new_tasks("
         idx = self.src.find(marker)
         self.assertGreater(idx, 0, "未找到 notify_new_tasks 函数定义")
-        window = self.src[idx : idx + 3500]
+        # 窗口要盖住 OpenAPI docstring（每多文档一个响应码就长一截，R789 补了 400）
+        window = self.src[idx : idx + 5000]
         self.assertIn(
             "_ensure_notification_loaded()",
             window,

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import base64
+import re
+import unicodedata
 import uuid
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 
 from pydantic import BaseModel, Field, field_validator
@@ -15,6 +16,7 @@ from ai_intervention_agent.config_utils import (
     get_compat_config,
     truncate_string,
 )
+from ai_intervention_agent.dir_settings import safe_cwd
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.runtime_constants import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
@@ -352,15 +354,63 @@ def validate_input(
     return cleaned_prompt, cleaned_options
 
 
+def _task_id_prefix() -> str:
+    """任务 ID 里可读的项目前缀，保证能安全地放进任何位置。
+
+    任务 ID 会进 URL 路径、查询串、CSS 属性选择器、HTML 属性和日志，所以前缀只保留
+    任何语言的字母和数字、依附在它们后面的组合符号，以及 ``._-``；其余字符
+    （``#``、``?``、``%``、引号、空白、emoji……）一律换成 ``-``，连续的 ``-`` 合并、
+    首尾的去掉。工作目录已被删除或读不了、或者名字里没有可读字符时回落到 ``task``。
+    """
+    cwd = safe_cwd()
+    name = cwd.name if cwd is not None else ""
+    kept: list[str] = []
+    for char in name:
+        readable = char.isalnum() or char in "._-"
+        attached_mark = (
+            bool(kept)
+            and kept[-1] != "-"
+            and unicodedata.category(char).startswith("M")
+        )
+        kept.append(char if readable or attached_mark else "-")
+    return re.sub(r"-{2,}", "-", "".join(kept)).strip("-") or "task"
+
+
 def _generate_task_id() -> str:
-    """生成全局唯一任务 ID（避免极端并发下碰撞）"""
-    project_name = Path.cwd().name or "task"
-    return f"{project_name}-{uuid.uuid4()}"
+    """生成全局唯一任务 ID（避免极端并发下碰撞）
+
+    形如 ``<项目前缀>-<uuid4>``，前缀的清洗规则见 ``_task_id_prefix``。
+    """
+    return f"{_task_id_prefix()}-{uuid.uuid4()}"
 
 
 def get_target_host(host: str) -> str:
-    """将不可直连的监听地址转换为客户端可访问地址（如 localhost）"""
+    """将不可直连的监听地址转换为客户端可访问地址（如 localhost）
+
+    返回的是**主机地址**，不是 URL 里的写法：IPv6 字面量不带方括号。它要原样交给
+    ``getaddrinfo`` 之类的套接字接口（``is_web_service_running``），拼 URL 请用
+    :func:`get_target_base_url` / :func:`format_url_host`。
+    """
     return "localhost" if host in {"0.0.0.0", "::"} else host
+
+
+def format_url_host(host: str) -> str:
+    """主机放进 URL 时的写法：IPv6 字面量必须加方括号（``::1`` → ``[::1]``）。
+
+    ``http://::1:8080`` 不是合法 URL（httpx 报 ``Invalid port: ':1:8080'``），
+    ``http://[::1]:8080`` 才是。IPv4、主机名和已经带方括号的输入原样返回。
+    """
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def get_target_base_url(host: str, port: int) -> str:
+    """MCP 服务访问 Web UI 的基地址 ``http://<可直连主机>:<port>``。
+
+    ``0.0.0.0`` / ``::`` 这类通配监听地址换成 ``localhost``，IPv6 字面量加方括号。
+    """
+    return f"http://{format_url_host(get_target_host(host))}:{port}"
 
 
 def is_loopback_url(url: str) -> bool:
@@ -466,7 +516,7 @@ def resolve_external_base_url(
         if mdns_enabled and mdns_hostname and "://" not in mdns_hostname:
             resolved = f"http://{mdns_hostname}:{port}"
         else:
-            resolved = f"http://{get_target_host(host)}:{port}"
+            resolved = get_target_base_url(host, port)
 
     if for_external_use and resolved and is_loopback_url(resolved):
         logger.debug(

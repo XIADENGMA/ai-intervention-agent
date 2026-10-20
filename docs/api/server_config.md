@@ -26,9 +26,15 @@
 
 ### `validate_input(prompt: str, predefined_options: list | None = None) -> tuple[str, list[str]]`
 
+### `_task_id_prefix() -> str`
+
 ### `_generate_task_id() -> str`
 
 ### `get_target_host(host: str) -> str`
+
+### `format_url_host(host: str) -> str`
+
+### `get_target_base_url(host: str, port: int) -> str`
 
 ### `is_loopback_url(url: str) -> bool`
 

@@ -141,8 +141,8 @@ def test_load_config_preserves_option_dom_order_defaults_and_sparse_skip() -> No
               predefined_options_defaults: [true, true, false],
             }}),
           }}),
-          renderMarkdownContent(element, content) {{
-            calls.push(['renderMarkdownContent', element.id, content]);
+          renderMarkdownContent(element, content, isMarkdown) {{
+            calls.push(['renderMarkdownContent', element.id, content, isMarkdown]);
           }},
           showContentPage() {{
             calls.push(['showContentPage']);
@@ -199,7 +199,7 @@ def test_load_config_preserves_option_dom_order_defaults_and_sparse_skip() -> No
     assert result == {
         "calls": [
             ["showContentPage"],
-            ["renderMarkdownContent", "description", "<p>Prompt</p>"],
+            ["renderMarkdownContent", "description", "Prompt", True],
         ],
         "optionsInlineDisplay": None,
         "separatorInlineDisplay": None,

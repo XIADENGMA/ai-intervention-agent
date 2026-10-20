@@ -71,6 +71,16 @@ location /api/events {
 }
 ```
 
+Behind a reverse proxy, also decide who may write. A request from a browser that
+changes state (`POST` / `PUT` / `PATCH` / `DELETE`, plus `GET /api/feedback`) is
+refused with `403 cross_origin_write_blocked` unless the browser says it comes from
+the Web UI's own page. Over HTTPS nothing needs configuring. Over plain HTTP, when
+the proxy rewrites `Host` (nginx's default `proxy_pass` does), set
+`web_ui.external_base_url` to the address you open in the browser, or pass the
+original `Host` on (`proxy_set_header Host $http_host;`) and list that name in
+`network_security.trusted_hosts`; see
+[Troubleshooting §19](troubleshooting.md#19-a-button-in-the-web-ui-does-nothing-and-the-browser-shows-403-cross_origin_write_blocked).
+
 If you expose the Web UI outside loopback, keep `network_security.allowed_networks`
 as narrow as possible and prefer SSH tunnels when feasible. The live settings API
 must be able to round-trip existing notification configuration, so it is not a

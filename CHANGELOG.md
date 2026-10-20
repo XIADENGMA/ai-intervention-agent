@@ -50,6 +50,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Every pytest-xdist worker now has its own config file. `tests/conftest.py` gives each
+  pytest process a temp directory with a `config.toml`, exports it as
+  `AI_INTERVENTION_AGENT_CONFIG_FILE` and puts the default template back before each
+  test, but only while the path is inside the directory of that very process. The xdist
+  master imports `conftest` first and exports its path; the workers took the inherited
+  value for an explicit choice (`os.environ.setdefault`), so in every worker the reset
+  was a no-op and all workers read and wrote one `config.toml`, the master's (a probe
+  that printed the path in each process showed one master directory and three worker
+  directories, with all four processes pointing at the master's). A test that writes
+  the config in one worker therefore leaked into whatever another worker was reading at
+  that moment. It surfaced when the R797 sweep, which calls every write route (the
+  token-rotation route among them), ran next to unrelated tests: two tests that scan
+  the Prometheus payload for the word `token` failed in the full run because
+  `aiia_token_age_seconds` had appeared in it (the token had been rotated 0 and 2
+  seconds earlier, in another worker). CI runs `pytest -n 4 --dist=loadfile`, so any test
+  that writes the config at the wrong moment could do the same to any test that reads
+  it; the earlier runs did not hit it. A path
+  that lies in a temp directory of a pytest session (`ai-intervention-agent-pytest-`
+  plus the eight characters `tempfile` appends, at any depth) is no longer taken for an
+  explicit choice, so each process uses its own; a path you set yourself, and any
+  look-alike name, still wins, and an empty value is now ignored (the conftest used to
+  resolve it to the working directory). The new `test_pytest_worker_config_isolation_r798.py`
+  has 11 tests: nine start a fresh interpreter that inherits a path the way a worker does
+  and import the real `tests.conftest` (a master's path and a path below one are
+  replaced, nothing exported and an empty value give the process its own, five kinds of
+  explicit or look-alike path are kept and not reset), two check the process they run
+  in (the config path is inside its own temp directory and the per-test reset really
+  restores the template). With the previous `conftest.py` 3 of them fail serially and 5
+  under xdist; with the fix the full suite is green under `-n 12`.
 - The test suite no longer depends on the order in which its tests run. Run
   in a random order (pytest-randomly, six seeds), it failed 2 to 6 tests per
   run, eight different tests in all, each because an earlier test had left
@@ -86,6 +115,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   test. The new `test_pytest_9_1_compat_r763.py` has 15 tests and 12 mutants,
   all killed. On pytest 9.1.1 with the newest allowed version of every
   dependency the suite passes (9,350 tests), in five random orders as well.
+- The test suite no longer reads or writes the task snapshot of the checkout.
+  `get_task_queue()` builds the global `TaskQueue` with
+  `<package>/data/tasks.json` as its snapshot, restores the tasks it finds there
+  and writes every change back, so each test that touched the singleton started
+  from whatever an earlier run, or a service the developer had started from the
+  same checkout, had left, and wrote its own fixture tasks back:
+  `test_tasks_export_lazy_since_r520` left `r520-new` and `r520-old` behind on
+  every run, and the next service started from the checkout listed them as
+  pending tasks. `tests/conftest.py` now points `_default_persist_path` at the
+  temporary directory of the pytest session for the whole session (the
+  unittest-style classes build the singleton in `setUpClass`, before any
+  function-scoped fixture runs) and puts it back after every test, because a
+  test that reloads the module restores the original function. The new
+  `test_task_queue_pytest_isolation_r770.py` has 5 tests: the session's path is
+  outside the package, the production default is still
+  `<package>/data/tasks.json`, a singleton built in `setUpClass` uses the
+  redirect, and a module reload drops it (the hazard is real) and `conftest`
+  restores it afterwards; with the previous `conftest.py` the first of them
+  fails.
 - The configuration guide (EN + zh-CN) has a new section, "When an edit
   takes effect". The MCP server and the Web UI each check the config file
   every 2 seconds, so edits to `notification`, `feedback`, the language,
@@ -225,6 +273,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Removed
 
+- `static/js/mathjax-config.js` with its `.min.js`, `.br` and `.gz` copies.
+  It was the external MathJax configuration script that the server wrote into
+  the page until 2025-11-28 (commit 167d46ef); since then
+  `mathjax-loader.js` carries the same configuration inline, no template, route
+  or script loads the file, and the only mentions left were the R217
+  `console.log` list (which only counted it) and archived code reviews. The
+  copy had also drifted from the live one (`chtml.fontURL: null`, a
+  `startup.ready` hook), so reading it told a maintainer something false about
+  how MathJax is set up. R217 now lists eight files instead of nine.
 - Leftovers of older Python versions. Three tests in
   `test_runtime_behavior.py` tried `import tomllib` and fell back to `tomli`,
   a package the project does not depend on (the line needed a type-checker
@@ -357,6 +414,898 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Code inside a fenced block wore the inline-code border in the dark theme.
+  `.markdown-content code` gives inline code a tinted background, a `1px` border and a
+  `6px` radius; the rule meant to undo that for fenced blocks (`.markdown-content pre
+  code`) reset the background and the padding but not the border or the radius, and the
+  global rule that removes the top and bottom border of every `code` leaves the sides, so
+  each code line of a dark-theme block was framed by two faint rounded hairlines inside the
+  block (the light theme resets it with its own `border: none !important`, which is why
+  nobody saw it there). It surfaced from a geometry comparison of the two themes: a theme
+  may only change colours, and over a Markdown kitchen sink, the tab bar and the settings
+  panel (203 and 390 rendered elements, real Chrome) the only elements whose computed
+  geometry differed between light and dark were fenced code blocks: dark drew `1px`
+  left/right borders on `code`, light drew them on `pre` instead. The base rule now
+  declares `border: none; border-radius: 0` (the VS Code webview already reset the
+  border). New invariant R807 (7 tests, 2 fail on the old
+  stylesheet; 6 one-point mutants, all caught) reads `main.css` and `webview.css`: the base
+  block-code rule resets both, no other rule aimed at block code puts a border back, inline
+  code still has its border (so the reset is needed) and the webview resets it too. Real
+  Chrome, dark theme, same prompt: the `code` side borders go from `1px` to `0` and the
+  zoomed screenshot no longer shows the hairlines. Left as it was: in the light theme the
+  `pre` itself carries a `1px` left/right border right inside the code container's own
+  border (two adjacent hairlines), the only geometry difference between the themes that
+  remains.
+- The first paint of a prompt never highlighted its code. Since R767 the page renders the
+  Markdown in the browser instead of showing the server's HTML, and both writers of
+  `#description` skip a prompt the element already shows (R687). `renderMarkdownContent`
+  (`app.js`), the first paint on a page load and on the first task after an idle screen,
+  had never called `Prism.highlightAllUnder`: it was always the multi-task view
+  (`updateDescriptionDisplay`, about 100 ms later and on every tab switch) that replaced the
+  first paint with a highlighted copy, and after R767 nothing replaced it. A fenced code
+  block was therefore coloured only after a tab switch (real Chrome, same prompt: 22
+  `token` spans after a tab switch, 0 on a fresh load and 0 when the task arrived on an
+  open page; the `<pre>` also lacked the `language-*` class and the `tabindex` Prism sets;
+  1 of 4 checks passed on the old tree, 4 of 4 now). `renderMarkdownContent` now highlights
+  once the HTML is in place and before the code blocks are wrapped, in the same order as the
+  other writer, and a failing highlighter is a warning instead of the loss of every
+  remaining step; the multi-task writer got the same guard (a throwing highlighter used to
+  land in its outer catch, which replaced the rendered Markdown with the raw text). New
+  invariant R806 (9 tests, 5 fail on the old tree; 9 one-point mutants, all caught) runs
+  both real functions against recording stubs and requires the same steps in the same
+  order, the highlight after the HTML is in place and once per prompt, nothing for an
+  element that already shows the prompt, no noise on a page without Prism and exactly one
+  warning for a failing highlighter. Only the grammars of the vendored Prism build (plain,
+  markup, CSS, C-like, JavaScript) colour tokens; other languages keep the `language-*`
+  class and the focusable `<pre>` but stay uncoloured, as they always did after a tab
+  switch.
+- A formula in the agent's message could take over the approval page. With R771 every
+  TeX extension MathJax can autoload became loadable, and with the `html` extension
+  (`\href`, `\class`, `\style`, `\cssId`) and the CSS option of `\bbox[...]` working, a
+  message could, measured in headless Chrome 153 against the real page: give a math element
+  the id of the page's own button or textarea (`$\cssId{submit-btn}{x}$`,
+  `$\cssId{feedback-text}{x}$`), so that `document.getElementById('submit-btn')` and
+  `('feedback-text')` returned the math element instead of the control (DOM clobbering of a
+  page whose scripts look elements up by id); cover the whole page, Submit button included,
+  with text of the sender's choosing (`$\style{position:fixed;inset:0;width:100vw;height:100vh;
+  background:#fff;z-index:99999}{...}$`, and the same CSS through `\bbox[...]`); put a live
+  link into the page after the link policy above had run (`$\href{https://...}{Approve
+  all}$` replaced the page in its own tab, `$\href{javascript:...}{x}$` was a live
+  `javascript:` anchor that only the CSP kept from running); and put a class of the
+  sender's choosing on a math element (`\class{...}`). No agent message needs any of it
+  (Markdown has links; the colour, cancel and chemistry macros are untouched), so the page's
+  MathJax configuration now registers none of those macros for autoload (they are undefined
+  control sequences and show as text), `\require{html}` and `\require{bbox}` answer
+  "Extension ... is not allowed to be loaded", and the two files are no longer shipped, so a
+  slip in the configuration ends as a 404 for one formula (R771 retries a failed message
+  formula by formula) and not as control over the page. Checked in real Chrome, 30 formulas,
+  old vs new: the old page had 5 live `\href` anchors (one `javascript:`), 2 clobbered ids,
+  2 full-viewport overlays (`\style`, `\bbox`) and an injected class, the new page none of
+  them, while `\ce`, `\cancel`, `\boldsymbol`, `\mathbb`, `\boxed`, the colour macros,
+  `\bra`/`\ket`, `\xmapsto`, `CD`, `prooftree`, `\label`/`\eqref` (their ids keep the
+  `mjx-eqn:` prefix, the links stay in the page), `\newcommand`/`\def` and the tooltip
+  macros typeset without a MathJax error. 7 new tests and one tightened R771 test (12
+  one-point mutants, all caught): the loader's configuration, read by running both
+  `mathjax-loader.js` and the served `.min.js` in Node (autoload registers no macro and no
+  environment of the two extensions and overrides nothing else; `\require` refuses both
+  and its default stays "allow"), the bundle still names what the configuration switches
+  off (a MathJax upgrade that renames them would leave the override inert), the two
+  extensions are not shipped, and the shipped set is exactly the 12 reviewed ones (a new
+  one has to be read for a macro that lets the sender choose an href, id, class, style or
+  data attribute before it is added).
+- A link in the agent's message took the approval page away. The Web UI put every `<a>`
+  that marked produced into the page exactly as marked wrote it (marked URL-encodes a
+  destination, it never filters one), so clicking `[docs](https://...)` or a bare URL
+  replaced the approval page in the same tab; `[app.py](src/app.py)`, which agent text is
+  full of, replaced it with the Web UI server's own 404 (a relative reference can only
+  resolve to the page's origin); `[x]()` (marked renders `<a href="">`) reloaded it; and
+  `javascript:` / `data:` destinations stayed in the DOM as live links that only the CSP
+  kept from running, at the price of an error-level violation in the console per click.
+  The task keeps waiting on the server, but the feedback typed so far and the live view
+  are gone, and in an installed PWA window there is no back button. Now every prompt
+  link goes through one policy, the one the VS Code webview already applied
+  (`sanitizePromptHtml`): `http:` / `https:` (and protocol-relative `//host`) open in a
+  new tab with `rel="noopener noreferrer"`, so the Web UI's URL is not sent as a
+  referrer either; `#fragment`, `mailto:` and `tel:` are left alone, none of them
+  replaces the page; everything else (a relative path, an empty `href`, `javascript:`,
+  `data:`, `file:`, custom schemes, and anything that only becomes a scheme after the
+  browser strips tabs and spaces) is not a link: the anchor is replaced by its children,
+  so the text stays and nothing promises a click. Both places that paint the message
+  (first paint and the multi-task view) run it, before math typesetting. Checked in
+  real Chrome 153 against a real Web UI (old vs new): the old page navigated its own tab
+  to `example.com`, to `example.org` and to `/src/app.py` (404) and logged a CSP error
+  on the `javascript:` link; now the tab stays on the Web UI, two tabs open, the file and
+  script links are plain text, `#top` is an in-page jump and `mailto:` is untouched,
+  with no console error, on the first paint and after a task switch through the polling
+  path. 65 tests (49 fail with the policy turned into a no-op; sixteen one-point
+  mutants are all caught): 6 web, 6 left-alone and 25 not-a-link `href` shapes
+  (case, padding, tabs and newlines inside the scheme, control characters, a leading
+  backslash pair, protocol-relative), idempotence, mixed content with an image child,
+  no-container input, the vendored marked's real output for 20 link forms (inline,
+  reference, autolink, GFM `www.` and e-mail, image-in-link) through the same policy
+  with the assertion that marked itself does not filter `javascript:`, `data:`, an empty
+  or a relative destination, both call sites ahead of `loadMathJaxIfNeeded`, a tripwire
+  that fails when a third script starts rendering Markdown, and the parity of
+  `target="_blank"` / `rel="noopener noreferrer"` with the VS Code webview.
+- A request body over the upload limit got a different wrong answer from each route.
+  Werkzeug enforces `MAX_CONTENT_LENGTH` (100 MB + 1 MB), and Flask 3.1's per-text-part
+  `MAX_FORM_MEMORY_SIZE` (500,000 bytes) and `MAX_FORM_PARTS` (1,000), lazily, the first
+  time a handler touches the body, and the `RequestEntityTooLarge` (413) then went wherever
+  the handler's own `try` sent it: `POST /api/submit` answered an HTML error page; the
+  task-scoped `POST /api/tasks/<id>/submit` and `/extend` caught it in `except Exception`,
+  logged `ERROR ... 413 Request Entity Too Large` with a traceback and answered `500`;
+  `/api/update`, `/api/tasks` and every route that reads its body through
+  `require_json_object()` (R789: `update-language`, `update-feedback-config`, ...) answered
+  `400 invalid_json` for a body that was perfectly valid JSON, only too large. A 600 KB
+  `feedback_text` (the browser's `maxlength` is 100,000, an API client has no such limit)
+  tripped the text-part limit with the same split: `500` from the task-scoped route, an
+  HTML `413` from `/api/submit`. The OpenAPI block of `/api/submit` documented a `413`
+  that named a constant (`_FEEDBACK_PAYLOAD_LIMIT_BYTES`) that does not exist. Now one
+  application-level error handler answers every `/api/*` route with `413` and
+  `{"success": false, "status": "error", "error": "payload_too_large", "message": ...}`
+  (the message, in en / zh-CN / zh-TW, names the limit that was hit: the total size, or the
+  per-text-field and form-part limits, with their numbers; other paths keep Werkzeug's
+  page), and the five places that translated the exception (`require_json_object`,
+  `/api/update`, `/api/tasks`, task-scoped submit and extend) re-raise it. A refused submit
+  leaves the task open and a refused extend does not use up an extension. `413` is
+  documented with the real envelope on `/api/submit`, `/api/tasks/{task_id}/submit` and
+  `/api/tasks/{task_id}/extend`. Checked with real processes (old vs new): six routes
+  (120 MB multipart, 102 MB JSON) answered `413` HTML / `500` / `500` / `400` / `400` /
+  `400` with 2 tracebacks in the Web UI log, now six `413` JSON with none; a 600 KB text
+  part answered `500` / HTML `413`, now `413` JSON from both; 400 KB and a small multipart
+  are unchanged (`200`). 38 tests (21 fail with the guards removed; seven one-guard
+  mutants are all caught): every JSON route against an oversize JSON body, both form
+  routes against an oversize body, an oversize text part and too many parts, the
+  envelope, the localization and the named limit, the body helpers, the controls under
+  the limit, a hermetic sweep of every write route (JSON, urlencoded, multipart) that
+  fails on any `5xx`, and the OpenAPI claims. `tests/test_i18n_backend.py` scanned four
+  hand-picked files for used `msg()` keys and missed `skills.py` and `_request_body.py`;
+  it now scans every `web_ui_routes/*.py`.
+- `POST /api/submit` answered `500` (an HTML error page, not JSON) when the
+  `selected_options` form field was not a readable JSON array for a reason other than
+  syntax. Both form branches (multipart with files, urlencoded or multipart without)
+  parsed the field with `json.loads` and caught only `json.JSONDecodeError`, falling back
+  to "nothing selected". `json.loads` also raises `ValueError` (not a `JSONDecodeError`)
+  for an integer of more than 4300 digits, the interpreter's limit on int/str
+  conversion, and `RecursionError` for nesting deeper than the recursion limit:
+  `selected_options=<4301 digits>` and `selected_options=[[[[...` (5,000 brackets) got
+  through the handler and the server answered `500 Internal Server Error`, while `{` has
+  always meant "nothing selected" and answered `200`. The task-scoped
+  `/api/tasks/<id>/submit` catches `Exception` and answered `400` all along. Found by a
+  request-surface sweep (31,420 requests: every route against path parameters, query
+  arguments, headers, form fields and file uploads; this was the only 5xx). Both branches
+  now go through one helper (`_selected_options_from_form`) that treats any unreadable
+  value as "nothing selected", exactly like the syntax error. Checked with real processes
+  (old vs new): four requests (urlencoded, multipart, multipart with a file; a
+  5,000-bracket string, a 4,301-digit integer, a 5,000-digit integer inside an array)
+  answered `500` with 4 tracebacks in the Web UI log, now `200` with none, and the two
+  controls (a syntax error, a readable array) are unchanged. 33 tests (10 fail on the
+  old code): every encoding against every unreadable value and the stored selection, the
+  controls, the task-scoped `400`, and a source scan that fails when a `json.loads` in
+  `web_ui_routes/` or `web_ui.py` sits in a `try` that catches neither `Exception` nor
+  both `ValueError` and `RecursionError` (the scan is itself tested on a sample that
+  catches only `JSONDecodeError`).
+- Three write routes answered `500` for a request that was simply wrong. A sweep that
+  sent hostile literals (`1e999`, `-Infinity`, `NaN`, a 401-digit integer, `-1`, `0.5`,
+  `true`, `null`, `[1]`, `{"a":1}` and a few more) to every field each write route reads
+  turned up 54 of 12,654 requests answered with a 5xx and a traceback in the log, all in
+  `web_ui_routes/notification.py`. `POST /api/update-feedback-config` took
+  `{"frontend_countdown": 1e999}` (a valid JSON number that Python's parser reads as
+  infinity; `int(inf)` raises `OverflowError`, and only `TypeError` / `ValueError` were
+  caught) or a `resubmit_prompt` / `prompt_suffix` that was not a string (`.strip()` on a
+  number or list) and answered `500 "Update failed"`. `POST /api/update-notification-config`
+  answered the same for a `sound_volume` / `web_timeout` that is an integer too big for a
+  float (`float(10**400)` raises `OverflowError`, while `1e999` parses to infinity and was
+  clamped fine: the same number, two spellings, two answers). `POST /api/test-bark` with a
+  `bark_device_key`, `bark_url`, `bark_icon` or `bark_action` that was not a string
+  reached the provider, which called `.strip()` / `.startswith()` on it, and the caller
+  was told `500 "Bark notification send failed, please check configuration"` although
+  nothing had been sent. Now: the two feedback / test routes answer `400` with the
+  envelope `/api/update-notification-config` has used since R790 (`error:
+  "invalid_value"`, `fields: [...]`, a localized `message` that names the fields and
+  never echoes the values), the feedback route looks at every field before it changes
+  anything (a refused request applies nothing, even next to a valid sibling field), and
+  the notification route reads a huge integer as the infinity it is and clamps it like
+  `1e999` (`sound_volume` 100, `web_timeout` 600000, and the lower bounds 0 and 1 for the
+  negative twin). Behaviour you will notice: the old hard-coded Chinese message
+  `frontend_countdown 必须为整数` is now the localized `invalid_value` message (same 400,
+  same field named); a `resubmit_prompt` / `prompt_suffix` that is `0`, `false`, `[]` or
+  `{}` used to be quietly taken as "empty, use the default" and is now a 400 like any
+  other non-string (`null`, `""` and whitespace-only still mean "use the default"). A
+  failed send to a Bark server that really cannot be reached is still `500`, as before.
+  Checked with real processes (the Web UI on a scratch port, old vs new): the nine
+  requests above that answered `500` now answer `400` (seven) or `200` (the two huge
+  integers), and the Web UI log went from 7 ERROR lines to 1, the control that sends to a
+  closed port. 81 tests (56 fail on the old code): per-route cases for every
+  value class, the "nothing applied" guarantee, the localized message, the unchanged
+  controls, and a sweep that takes every write route and every field its handler reads
+  (found by reading the handler's own source, so a new field is covered the day it is
+  added) times ten hostile values and fails on any 5xx or escaped exception, with the
+  network and `Popen` blocked and notification sends stubbed (a real send leaves retry
+  timers behind that race the temp-dir cleanup at exit).
+- The old config key names that the docs promise to keep working were ignored. The
+  "Backward compatibility" section lists `feedback.timeout` → `backend_max_wait`,
+  `feedback.auto_resubmit_timeout` → `frontend_countdown`, `web_ui.max_retries` →
+  `http_max_retries` and `web_ui.retry_delay` → `http_retry_delay` (the code also reads
+  `web_ui.timeout` → `http_request_timeout`), and every reader goes through
+  `get_compat_config(section, new, old, default)`: "the new key if it is there, else
+  the old one, else the default". But `ConfigManager` merges the defaults into the loaded
+  file before anybody reads a section, so the new key is always there, with its default
+  value, and the old key was never looked at: a file that said
+  `auto_resubmit_timeout = 120` ran with 240, `timeout = 900` with 600, `max_retries = 7`
+  with 3. It was worse than "ignored": a running product rewrites the config file on exit
+  with every default filled in, so the first exit wrote `frontend_countdown = 240` next
+  to the user's `auto_resubmit_timeout = 120` and the old value was shadowed on disk for
+  good (the same happened when a `config.jsonc` was migrated to TOML, because the
+  template's new keys carry defaults). The compat readers' tests only ever fed them
+  hand-written dicts, and the route tests replaced `get_section` with a dict that has no
+  default-filled keys, which is why nothing noticed. The old names are now applied while
+  the file is loaded, before the defaults are merged (`apply_legacy_key_aliases`, driven
+  by one table, `LEGACY_KEY_ALIASES`): an old key that has no new counterpart in the file
+  is copied to the new name and then goes through the same validation, clamping and
+  R791 fallbacks as a value written under the new name; if both are in the file the new
+  one wins even when it equals the default; only the five pairs in the table and only in
+  their own section (`notification.retry_delay` is a current name and is left alone);
+  the same copy is made when an old `config.jsonc` / `config.json` is migrated. Loading
+  does not rewrite the file, the old key stays where it is, and the log has one `INFO`
+  line per key (old name, new name). Checked with real processes, a pristine file that
+  only uses the old names (`auto_resubmit_timeout = 120`, `timeout = 900`,
+  `max_retries = 7`, `retry_delay = 2.5`, web_ui `timeout = 41`): before, the MCP side
+  read 600 / 240, the Web UI 240 / 3 / 1.0 / 30, `GET /api/get-feedback-prompts` answered
+  `frontend_countdown = 240`, `--print-config` showed the defaults, and the file after
+  the first exit had the defaults next to the old keys (a second run changed nothing);
+  now they read 900 / 120, 120 / 7 / 2.5 / 41, the endpoint answers 120, `--print-config`
+  shows the old values under the new names, and the file written at exit carries the
+  derived values (`frontend_countdown = 120`, ...), stable over a second run. Behaviour
+  you will notice only if your file has an old name and no new one: the old value now
+  takes effect (a file where the new key is already there, for example one a previous
+  version completed, is unchanged: that case cannot be told apart from you choosing the
+  default, so remove the new key to let the old one apply). 77 tests (a 31-test core
+  that fails when the old names are not applied: every pair, TOML (also dotted keys and
+  inline tables) and JSON files, the
+  save path, reload in both directions, the JSONC migration with and without the
+  template, the MCP-side `get_feedback_config`, `get_web_ui_config`, the default
+  countdown for new tasks, the feedback-prompts route and a real `--print-config`
+  process; the rest pin the contract around it: the table against the model fields, the
+  config template and both language versions of the docs, new name wins, other sections untouched,
+  clamping and unreadable values, no INFO line when the new name is there). The docs parity guard
+  (`test_config_docs_inline_parity.py`) now accepts references to the old names in this
+  table, because they are valid; any other undeclared `section.key` is still reported.
+- The notification in-flight file was never written. `_get_inflight_file_dir()` asked the
+  config manager for `config_path`; `ConfigManager` has no such attribute (the path is
+  called `config_file`), `getattr(..., None)` turned the typo into `None`, and every
+  layer above reads `None` as "persistence unavailable". So the R136 feature (events
+  are written next to the config file while they are in flight, removed when delivered,
+  and `get_status()["inflight_seen_at_startup"]` tells operators what a killed process
+  left undelivered) had not run once since it was added: with the real singleton and a
+  Bark server that never answers there was no `notification_inflight.json` while the
+  event was in flight, `get_status()["inflight_persisted_count"]` reported 1 for
+  something that was not on disk, and after `kill -9` and a restart
+  `inflight_seen_at_startup` was empty. Nobody noticed because every R136 / R504 /
+  R506 / R510 / R511 / R513 / R785 test patches `_get_inflight_file_dir` itself, the one
+  function that was wrong. It now reads `config_file` (and leaves a DEBUG line when the
+  config manager cannot answer, so the next typo of this kind does not hide). Checked
+  with the real singleton, the real `ConfigManager` and a hanging Bark server: the file
+  appears next to `config.toml` while the event is in flight, a `kill -9` leaves it
+  behind, and a new process lists the event in `inflight_seen_at_startup`; through a
+  real stdio MCP session with the Web UI subprocess the file is there during the hang
+  and the tool call, the ping round trips and the submit are unaffected. The cost per
+  notification (write on enqueue, remove on delivery) is about 0.11 ms. Behaviour you
+  will notice: a small JSON file in the config directory while a notification is in
+  flight (and, if the process exits first, until the next run drops it after the
+  5-minute TTL); `notification_inflight.json` is in `.gitignore` because dev mode keeps
+  it next to `./config.toml`. The MCP server and the Web UI process share the one file
+  (last writer wins), which matters little because only the MCP server sends
+  notifications in practice. 9 tests that do not patch the directory (real
+  `ConfigManager`, real `send_notification` -> `_process_event` -> finalize, a second
+  instance as the "restarted process"), 5 of which fail on the previous code.
+- An `AI_INTERVENTION_AGENT_CONFIG_FILE` pointing at a path nobody can examine no longer
+  stops the product from starting. `find_config_file` guarded the search for the
+  standard config location with `except Exception` (warn, fall back to the current
+  directory) but called `Path.is_dir()` and `Path.expanduser()` on the environment
+  variable's path unprotected, and `pathlib` only treats "there is nothing at that path"
+  as `False`: a path inside a directory the user may not enter (`/root/...`, another
+  user's home, a chmod 000 directory) raised `PermissionError`, a path with a component
+  over the filesystem limit (a pasted paragraph, say) raised `OSError: File name too
+  long`, and `~no_such_user/...` raised `RuntimeError`. `config_manager` builds the
+  global `ConfigManager()` while it is imported, so the MCP server, the Web UI and
+  `--print-config` all died with a raw traceback; a real stdio MCP session against the
+  previous code never reached `initialize`. Every other environment variable that is
+  wrong (`..._WEB_UI_PORT=abc`, `..._LOG_LEVEL=bogus`) is ignored with a warning, and
+  this one now is too: when `stat` on the path fails with anything other than "not
+  there" (ENOENT, ENOTDIR, ELOOP, EBADF, and the three Windows equivalents) the variable
+  is ignored with one warning naming the variable, the value and the system's reason,
+  the standard location is searched as if it were unset, and nothing is created at the
+  path the user gave. A path that is merely absent (directory not made yet, a file name
+  below a regular file, a file not created yet) is used as before, and so are existing
+  files, directories (with or without the trailing slash) and `~` paths. The verdict
+  comes from `os.stat` and two small errno tables rather than from `Path.exists()`, so
+  it does not depend on how a given Python version treats the other errors. Swept 79
+  garbage values over every environment variable the product reads: 1 broke an entry
+  point before (the too-long name), 0 now; a real stdio MCP session with
+  `~definitelynosuchuser/config.toml` fails to start on the previous code and lists
+  `interactive_feedback` now. 30 tests; the 13 that describe behaviour fail on the
+  previous code, the other 7 exercise the new verdict helper and cannot run there.
+- A `config.toml` edit that landed while the config watcher was still asleep was never
+  applied by the notification manager. `NotificationManager.refresh_config_from_file`
+  (the MCP server calls it for every new task) skipped its work whenever the file's
+  mtime equalled the last one it had seen, without asking whether `ConfigManager`'s
+  watcher thread, which re-reads the file up to 2 seconds after the edit, had loaded the
+  new content yet. A refresh inside that window wrote down the new mtime, read the
+  still-old section out of memory and applied it; when the watcher then loaded the edit,
+  the next refresh found the mtime unchanged and returned. Measured with a real watcher
+  thread (`sound_volume` 80 -> 20 in the file, one refresh 1.5 s later, five more
+  seconds): the manager stayed at 0.8 until the process restarted or the file was
+  touched again, so switching Bark off in the Web UI, which the MCP server's process
+  learns about through the file, could leave pushes going out indefinitely.
+  `ConfigManager` now counts how often it replaced its in-memory configuration as
+  `cache_epoch` (bumped last in `invalidate_all_caches()`, i.e. after `reload()` and
+  `restore_config()` cleared the caches), and the refresh skips only when the mtime and
+  the epoch are both the ones it last applied; it reads the epoch before the section, so
+  a refresh that got old content also holds the old epoch and runs again after the
+  reload. A refresh with nothing new still reads nothing. 17 tests, 13 of which fail on
+  the previous code.
+- One unreadable value in `config.toml` no longer takes the whole section, or the MCP
+  server, down. `ConfigManager._validate_section` validated a section as a whole: when
+  a single value could not be read (a boolean written as `""`, `"maybe"`, `"enabled"`,
+  a list), `get_section` returned the *raw* dict, with no coercion and no clamping for
+  any other key either, and `NotificationConfig.from_config_file`, which trusts
+  `get_section` and builds a strict model from it, raised while `notification_manager`
+  was being imported. `server_feedback` only catches `ImportError`, so
+  `import ai_intervention_agent.server` failed, the real stdio MCP server never came up
+  (`bark_enabled = ""` under `[notification]` was enough) and
+  `ai-intervention-agent --print-config` printed a traceback. A key whose value cannot
+  be read now falls back to its default, as integer settings always did and
+  `[network_security]` does key by key, with a warning that names the key and never
+  prints the value (pydantic's own message echoes `input_value`, and `bark_device_key`
+  sits right next to `bark_enabled`); every other key is still coerced and clamped.
+  `inf` in an integer setting (`retry_count = inf`) was the same failure through an
+  `OverflowError` the clamping validators did not catch. Swept every key of every
+  section with every kind of wrong value (297 cases): 74 broke at least one entry point
+  (the import, `get_web_ui_config`, a Web UI route) that works with the default config,
+  now 0; a real stdio MCP server with `bark_enabled = ""` did not start, now it lists
+  its tool. 145 tests, 131 of which fail on the previous code.
+- A refused notification-config update no longer leaves part of it applied.
+  `POST /api/update-notification-config` set the fields on the running notification
+  manager one by one, and the config model checks every assignment, so a value it
+  cannot use as a boolean (`null`, a list, `"maybe"`) made it raise halfway: the
+  fields before it were already in force, the ones after it never were, and the
+  caller was told `500 Update failed`. Measured on a real Web UI with web and sound
+  notifications on: `{"webEnabled": false, "soundMute": true, "mobileVibrate": null}`
+  answered 500 and left the running process dispatching to no channel at all
+  (`POST /api/system/notifications/test` went from `["sound", "web"]` to `[]`) while
+  `config.toml` still said both were on, until the next restart. The update is now
+  all or nothing: whatever was already assigned is put back before the error is
+  raised (the Bark provider is only adjusted after a whole update went through), and
+  the route answers `400 {"status": "error", "error": "invalid_value", "fields":
+  ["mobile_vibrate"], "message": ...}`, since a value the caller got wrong is not a
+  server fault, and persists nothing. A valid request, and a failure on the server's
+  side (the config file cannot be written), behave as before. 68 tests, 63 of which
+  fail on the previous code.
+- A request body the server cannot use is now answered `400`, not `500` or a
+  crash. Nine write routes read a JSON body, each in its own way. The five that need
+  one (`/api/update-language`, `/api/update-notification-config`,
+  `/api/update-feedback-config`, `/api/notify-new-tasks`, `/api/test-bark`) answered
+  `500` ("Update failed", "Trigger failed", "415 Unsupported Media Type: ...") when the
+  `Content-Type` was missing or not JSON, or the body was empty, truncated or nested
+  too deeply; and for JSON that is not an object (`"s"`, `123`, `[1]`) they answered
+  500 or, on the two config routes, `200` "nothing to update". So `curl -X POST
+  .../api/update-language` without `-H 'Content-Type: application/json'` told you the
+  server was broken. The four whose body is optional (`/api/system/log-level`,
+  `/api/system/open-config-file`, `/api/system/notifications/test`,
+  `/api/tasks/<id>/extend`) only ignored text that fails to parse: a JSON string,
+  number or array reached `payload.get` and crashed with an unhandled
+  `AttributeError` (a `500` HTML page and a traceback in the log), and a document
+  nested too deeply raised `RecursionError`, which `get_json(silent=True)` does not
+  catch. Measured on a real Web UI over HTTP with 8 bodies on each of 8 routes: 40
+  requests answered 500, with 40 traceback lines and 30 ERROR entries in the log;
+  now none of them do. Routes that need a body answer `400` with the shape
+  `/api/update` already used (`{"status": "error", "error": "invalid_json" |
+  "invalid_body", "message": ...}`) and change nothing; routes with an optional body
+  treat anything that is not a JSON object as "no body", as they always did for text
+  that fails to parse. A JSON object behaves as before, and `application/json` is
+  still required. One contract change: a JSON array or scalar sent to
+  `/api/update-notification-config` or `/api/update-feedback-config` is now `400`
+  instead of `200` "no fields to update". 134 tests, 98 of which fail on the previous
+  code, plus a source scan that keeps a new route from going back to
+  `request.json or {}`.
+- An API token that is not plain ASCII no longer makes the access check answer
+  HTTP 500. `network_security.api_token` lets a caller elsewhere on the network use
+  the endpoints that only the local machine may call (`/api/system/log-level`,
+  `/api/system/open-config-file`, ...). The check compared the two values with
+  `secrets.compare_digest(str, str)`, which raises `TypeError` for a `str` with a
+  non-ASCII character. So any host on the LAN that could reach the Web UI could send
+  `X-API-Token: 令牌` or `Authorization: Bearer 令牌` and get a `500 Internal Server
+  Error` page, with a full traceback in the log, instead of `403`; and a configured
+  token with non-ASCII characters (the validator accepts any 16 to 256 characters)
+  could never authenticate. Measured on a real Web UI reached over the LAN address
+  with a Chinese token: every request that carried a token answered 500, the right
+  one included, and the log filled with tracebacks. The values are now compared as
+  bytes: the configured token as UTF-8, the header as the bytes the client actually
+  sent (WSGI hands headers over as Latin-1, so `curl -H 'X-API-Token: 令牌'` matches),
+  and a character outside Latin-1 simply does not match. Now wrong tokens get 403,
+  the right one (`X-API-Token` or `Bearer`) 200, and nothing is logged as an error;
+  ASCII tokens behave as before. 11 tests, 10 of which fail on the previous code.
+- A web page on another site can no longer act on the Web UI in your name. Any
+  page open in your browser can make the browser send a form `POST` to
+  `http://127.0.0.1:<port>`: `multipart/form-data` and
+  `application/x-www-form-urlencoded` forms need no CORS preflight, and CORS only
+  decides whether the page may *read* the response, not whether the server acts on
+  the request. `/api/submit` takes exactly those two body types, so a page could
+  answer the agent's question as you, and the agent takes that for your words; a
+  form with no fields reaches the endpoints that need no body as well. Checked in
+  headless Chrome with a page served from `http://localhost:18793` against the Web
+  UI on `127.0.0.1:18792`: its auto-submitted form completed a pending task with the
+  page's text (`INJECTED-BY-EVIL-SITE...`), closed another task
+  (`/api/tasks/<id>/close`), created an API token (`/api/system/rotate-api-token`)
+  and shut the Web UI down (`/api/close`); an `<img>` pointing at the one `GET`
+  that reads and clears state, `/api/feedback`, made the stored answer disappear
+  before the real reader came (`waiting`). Now each of those requests gets
+  `403 {"error": "cross_origin_write_blocked"}`: the tasks stay `active` with no
+  result, no token appears, the server keeps running and the stored answer is still
+  there for the real reader. The Web UI's own page keeps working, over `127.0.0.1`
+  and over a plain-HTTP LAN address (a real answer typed and submitted in both).
+  The rule (`web_ui_security.is_cross_origin_write`) covers every `POST`/`PUT`/
+  `PATCH`/`DELETE` route, found by walking the URL map in the tests so a route
+  added later is covered too, plus `/api/feedback`: `Sec-Fetch-Site: same-origin`/
+  `none` (the browser's own word, which a page cannot set) passes; so does a
+  request with neither `Origin` nor `Sec-Fetch-Site`, which is not a browser (the
+  MCP server's httpx, `curl`, the VS Code extension host's `fetch`); otherwise the
+  `Origin` must be the server's own (same host and port as `Host`), an entry of the
+  CORS allow-list (the page's own `localhost`/`127.0.0.1` origins and the VS Code
+  webview) or `web_ui.external_base_url`; `Origin: null` is refused. Behind an
+  HTTPS reverse proxy nothing changes for a browser that sends `Sec-Fetch-Site`
+  (Chrome 76, Firefox 90, Safari 16.4 and later): it says `same-origin` whatever
+  the proxy did to `Host`. A plain-HTTP proxy that rewrites `Host` (nginx's
+  default) is different, because a browser sends no `Sec-Fetch-Site` to plain HTTP
+  and the `Origin` no longer matches `Host`; the same goes for an older browser
+  behind HTTPS. Set `web_ui.external_base_url` to the address you open; the
+  refusal says so, in the response and in the log. 89 tests, 10 of which fail with
+  the gate switched off; a real stdio MCP round trip is unchanged.
+- The Web UI starts on machines whose console encoding cannot hold Chinese or
+  emoji. The MCP server starts the Web UI as a child process with its output
+  redirected, and Python takes the encoding of a redirected `stdout` from the
+  machine: the ANSI code page on Windows (cp1252 on a Western install, cp936 on a
+  Simplified Chinese one), or ASCII in a container whose `LANG` is `C` with
+  Python's UTF-8 fallback off. Before the server starts, `WebFeedbackUI.run()`
+  prints a few Chinese lines and one emoji (`🔄 页面将保持打开…`); `stdout` raises
+  on a character it cannot encode, so the child exited with a
+  `UnicodeEncodeError` before it served anything. The MCP side only saw the
+  health check fail, waited 15 seconds and told the agent "Web service start
+  timeout, check whether port ... is in use" (the port was free), so the question
+  never reached the user. The repository's CI runs on Linux and macOS, where
+  `stdout` is UTF-8, which is why it never showed. Emulating those encodings with
+  `PYTHONIOENCODING` on a real MCP server and Web UI: with cp936 the child died
+  at the emoji line, with cp1252 and with ASCII at the first line, and
+  `interactive_feedback` came back after 17.5 s with the resubmit prompt; now the
+  question appears after 2.3 s, the Web UI listens on `127.0.0.1:18792` and a
+  Chinese answer round-trips. Three changes: the child is started with
+  `PYTHONIOENCODING=utf-8:backslashreplace` (UTF-8 output that never raises,
+  which also matches the UTF-8 log file its stderr goes to; before, a Windows
+  child wrote the ANSI code page into it); `WebFeedbackUI.run()` itself switches
+  stdout and stderr to `backslashreplace`, so running the module directly in such
+  a console prints escapes instead of crashing; and
+  `ai-intervention-agent --print-config`, documented as `... | jq`, escapes
+  non-ASCII as `\uXXXX` when stdout cannot hold it (still valid JSON), where it
+  used to exit 1 with no output at all under cp1252 or ASCII with the default
+  Chinese settings. 9 tests, 8 of which fail on the previous code.
+- The in-flight notification file is written as UTF-8. `notification_inflight.json`
+  (the notifications that had not finished when the process died, shown after the
+  next start) was written with `Path.write_text` without an encoding and read back
+  as UTF-8. Where the locale encoding is not UTF-8 the write either failed
+  (`UnicodeEncodeError` on cp1252 or ASCII, swallowed into a debug log, so nothing
+  was ever persisted) or produced GBK that the reader could not decode; the titles
+  and bodies are mostly Chinese. The write now names `encoding="utf-8"`, and a
+  source scan requires every text-mode `open`, `Path.open`, `os.fdopen`,
+  `read_text`, `write_text` and `subprocess(text=True)` call in the package to name
+  an encoding, so the next omission is caught on macOS too. 4 tests, 3 of which
+  fail on the previous code.
+- A `config.toml` saved with a UTF-8 byte-order mark is read like any other
+  file. Notepad's "UTF-8" option on older Windows, PowerShell 5.1's
+  `Set-Content -Encoding UTF8` and a few "edit the config" scripts add the
+  three-byte mark, the TOML parser rejects it, and the whole file counted as
+  unreadable: one ERROR in the log and every setting back at its default. That
+  included `network_security`, which has its own read path that failed the same
+  way, so the access rules and the bind address went back to their defaults
+  without any sign in the UI. In a real run with `bind_interface = "127.0.0.1"`
+  in such a file the Web UI listened on `*:18792` (all interfaces) instead of
+  `127.0.0.1:18792`, a custom `prompt_suffix` was ignored, and the file was
+  replaced by the defaults when the server exited (that last part is already
+  fixed by the next entry). The five places that read the config file (the load,
+  the check after a save, the two `network_security` reads and the legacy
+  JSON/JSONC migration) now decode it as `utf-8-sig`: the mark is dropped when
+  it is there and nothing changes when it is not. A run that changes nothing
+  leaves the file's bytes alone; a saved change writes plain UTF-8 without the
+  mark. 13 tests, 6 of which fail on the previous code. The same real run now
+  listens on `127.0.0.1:18792`, applies the suffix, logs no error and leaves the
+  file unchanged.
+- A `config.toml` that cannot be parsed is no longer overwritten with the
+  default settings. A typo in a hand edit, a file saved as GBK instead of UTF-8
+  or binary junk made the file unreadable; the server logged one ERROR and ran
+  on defaults, which is fine, and then wrote those defaults over the file when
+  it exited. The MCP server and the Web UI child both run that exit hook, and it
+  saves whether or not anything changed. In a real run (one
+  `interactive_feedback` call, no setting touched) a 1,059-byte file with a
+  syntax error became the 1,050-byte default file, and 2,048 bytes of junk
+  likewise: the port, access rules, Bark device key and prompts were gone and
+  the only trace was an ERROR nobody reads. The same happened when the file was
+  broken while the service ran (the next save put the previous settings back
+  over the new edit), and a network-security update on such a file could write
+  a zero-byte file. Now the config manager remembers that the file on disk
+  failed to load with a content error (decoding, parsing or structure, on a
+  file that is not empty) and leaves it alone until it loads again: a save logs
+  one warning naming the file and writes nothing, values changed in the meantime
+  still apply for that run, and a network-security update raises the error its
+  callers already handle (the token rotation route answers 500 and keeps the old
+  token). Fixing the file is enough, because the hot reload picks it up and
+  saving resumes; deleting it makes the next start write a fresh default file.
+  A read that fails with an OS error (a file another process holds for a moment
+  on Windows) and a zero-byte file do not count, so a transient error cannot
+  silence later saves. 38 tests, 23 of which fail on the previous code. The same
+  real run now leaves both files byte for byte unchanged and the log names the
+  file in one warning. The existing network-security JSON test that pinned
+  "invalid JSON is replaced" now covers a file that went bad after loading,
+  next to a new test for the refusal.
+- `aiia://server/info` no longer reports Web UI diagnostics that came from an
+  HTTP proxy. With `HTTP_PROXY` or `ALL_PROXY` in the environment (or a macOS
+  system proxy), the two diagnostic requests (`/api/system/sse-stats` and
+  `/api/system/recent-logs`) went through a module-level `httpx.get`, and httpx
+  reads the proxy environment by default without skipping `localhost`. In a real
+  run with a stand-in proxy, the proxy received both requests and the resource
+  reported its answer (an `emit_total` of 999 and a log entry that only the
+  proxy knew) while the Web UI itself said 1; with a proxy on another machine,
+  the `127.0.0.1` in the request would have meant that machine. The long-lived
+  clients that carry the real traffic were already direct because they pass an
+  explicit `transport`; they, the Bark client and the two diagnostic requests
+  now all say `trust_env=False` outright, so the rule no longer rests on that
+  httpx detail. 6 tests, including a source scan that requires
+  `trust_env=False` on every `httpx` call in the package; 5 fail on the
+  previous code. After the change the same run reports the Web UI's own numbers
+  and the proxy receives nothing.
+- A Web UI bound to an IPv6 address is reachable from the MCP server again.
+  With `network_security.bind_interface = "::1"` (or any IPv6 literal) the Web
+  UI child started fine, but `interactive_feedback` waited 15 seconds and failed
+  with "Web service start timeout, check whether port ... is in use". Every URL
+  the MCP server built for the Web UI was `http://{host}:{port}/...`, and an
+  IPv6 literal needs brackets in a URL: `http://::1:18792/api/health` is not a
+  URL (httpx says `Invalid port: ':1:18792'`). The startup wait polls that health
+  URL, never saw the service come up, and the message blamed the port, which was
+  free. The same gap garbled the Bark click-through link when mDNS is off
+  (`http://2001:db8::1:8080`) and hid `http://::1:8080` from the loopback
+  filter. `server_config` now has `format_url_host` (brackets an IPv6 literal,
+  leaves IPv4, host names and bracketed input alone) and `get_target_base_url`,
+  and the eleven places that build a Web UI URL use them: task poll, SSE, close,
+  create, the deprecated launcher, both health checks, content update, the two
+  `aiia://server/info` diagnostic requests and the external base URL. IPv4 and
+  host names produce the same URLs as before. Checked with a real stdio MCP
+  server and a real Web UI bound to `::1`: before, a failure after 15.5 s;
+  after, the Web UI is ready in 0.2 s and the call returns the submitted answer
+  after 2.2 s. 41 tests; 10 fail on the previous code (one per place that builds
+  a URL for an IPv6 host) and the IPv4 controls pass on both. The Web UI's own
+  startup message and CORS allow-list still print an IPv6 host without brackets
+  (log text only).
+- A project folder whose name contains `#` or `?` no longer breaks
+  `interactive_feedback`, and neither does a working directory that is deleted
+  while the server runs. A task id is `<folder name>-<uuid>`, and the folder
+  name went in as it was, into URLs, a CSS selector, HTML attributes and the
+  Bark link. With a folder called `C#-demo` the server polled
+  `GET /api/tasks/C#-demo-<uuid>`: everything after `#` is a URL fragment, so
+  the request landed on `/api/tasks/C`, got a 404, and
+  `wait_for_task_completion` took that for a lost task and returned the "call
+  again" prompt after 2.5 seconds without waiting for anyone. The task stayed
+  on the page, the agent called again at once, and the same thing happened
+  every time; a folder name with a space worked, which hid the problem. The
+  Bark link `?task_id={task_id}` broke the same way with `#`, `&` and spaces.
+  Separately, `Path.cwd()` raises once the working directory is gone (a
+  temporary project, a removed worktree); the id generator called it for a
+  cosmetic prefix, so every call failed before it created a task and returned
+  the prompt after 0 seconds until the server was restarted. A Web UI that had
+  to be started in that state crashed inside Flask, which asks the OS for the
+  working directory twice (for an `instance_path` the app never uses, and to
+  search for a `.env`), and the server waited 15 seconds and blamed the port.
+  Now the id prefix keeps the letters and digits of any language, the
+  combining marks attached to them and `._-`, turns everything else into `-`
+  (`C#-demo` gives `C-demo`, `my project` gives `my-project`), and falls back
+  to `task` when the folder is gone or nothing readable is left; an id from an
+  ASCII folder name needs no percent-encoding at all. As defence in depth the
+  two server URLs that carry the id, the `{task_id}` of `bark_url_template`
+  and the four Web UI `fetch` calls that did not yet (the VS Code panel
+  already did) percent-encode it, so an id that comes from somewhere else works
+  too. The Web UI now gives Flask an explicit `instance_path` and starts it
+  with `load_dotenv=False`. Until now `app.run()` read `.env` and `.flaskenv`
+  from the working directory and its parents into the Web UI process, so the
+  project's secrets, `HTTPS_PROXY` and `FLASK_*` ended up in its environment (a
+  `.env` holding `HTTPS_PROXY` showed up in `os.environ`; the explicit
+  `debug=False` already kept `FLASK_DEBUG` from taking effect). Nothing in the
+  docs promised that, and the MCP server, which does not read `.env`, never saw
+  those values. With a real stdio MCP server and a real Web UI: before, a
+  folder called `C#-proj` made the call return the resubmit prompt after 2.5 s
+  and left the task on the page; after, the id is `C-proj-<uuid>` and the call
+  waits and returns the answer, as it does for `what?`. With the working
+  directory deleted: before, an ERROR with a traceback and the prompt after 0.0
+  s; after, the Web UI starts in 0.6 s and the call returns the answer. In a
+  headless browser a task with the id `odd #id &? x%41-0001`, posted straight
+  to `POST /api/tasks`, could not load its details with the previous page code
+  and the submit button sent nothing; now the page submits to
+  `/api/tasks/odd%20%23id%20%26%3F%20x%2541-0001/submit` and the task
+  completes, and the link `/?task_id=<encoded id>` opens it with no console
+  error. `test_task_id_url_safe_r780.py` has 85 tests: prefix cleaning class by
+  class (URL structure characters, quotes and angle brackets, whitespace and
+  control characters, emoji, CJK, accents including a decomposed `é`), that no
+  unsafe character survives, a failing, unreadable and really deleted working
+  directory, `interactive_feedback` creating its task without one, the poll
+  and close URLs, the Bark link per class (the base URL is never encoded), the
+  Web UI app built the way `python web_ui.py` builds it with no working
+  directory, `app.run` called with `load_dotenv=False`, and a scan that
+  requires `encodeURIComponent` around the id at every `/api/tasks/<id>` URL
+  in the Web UI scripts and the VS Code webview. 48 fail with the previous
+  code; the others are controls (plain names stay as they are, an ordinary id
+  is not altered, the VS Code panel was already encoded).
+- A `POST /api/tasks` that the Web UI refuses (409 when the queue is full or
+  the ID repeats, 429 when rate-limited, 400, 500) is now counted in
+  `failed_total`. `interactive_feedback` logs a `task.failed` event and adds
+  one to `failed_total` at every failure exit; this one logged the event and
+  returned the resubmit prompt without touching the counter. Each such call
+  left a permanent gap in `created_total - completed_total - failed_total`, a
+  task that looks forever in flight in the `interactive_feedback` block of
+  `aiia://server/info`, and `failed_total` under-reported the failures of
+  exactly the situation where it matters most: a Web UI that is overloaded or
+  holds a full queue. With a real stdio MCP server and a real Web UI whose
+  queue was full: before, after one rejected call and one answered call, the
+  block read `created_total: 2, completed_total: 1, failed_total: 0`; after,
+  `failed_total: 1`. `test_feedback_counters_every_exit_r779.py` has ten
+  tests: every exit that returns (answered, rejected POST with 400, 409, 429
+  and 500, Web UI unreachable, wait error, wait timeout, unexpected exception)
+  adds exactly one to `completed_total` or `failed_total`, and after all of
+  them `created_total` equals their sum. Five fail with the previous code (the
+  four rejected POSTs and the sum); the other five are controls that keep a
+  future fix from counting an exit twice. A call the client cancels does not
+  return and is not counted by either total.
+- The Bark push for a new task now carries the link that opens it. With
+  `bark_action = "url"` (and `web_ui.external_base_url` set, so that a phone can
+  reach the Web UI, as the docs describe), the push an `interactive_feedback`
+  call sent had no `url` field and the server log said "bark_url_template
+  渲染结果不是合法 URL，已忽略: '/?task_id=...'", so tapping the notification did
+  nothing. The Bark channel renders `bark_url_template` (by default
+  `{base_url}/?task_id={task_id}`) with `{base_url}` taken from the event's
+  `metadata["base_url"]`. `launch_feedback_ui` resolved the base URL and put it
+  there; `interactive_feedback`, the path the MCP tool really takes, put only
+  `task_id` and `source`, so `{base_url}` rendered as an empty string,
+  `/?task_id=...` is not an http(s) link, and the channel dropped it. The Test
+  Bark button in the settings panel goes through another route that brings its
+  own `base_url`, which is why the panel looked fine while real pushes had no
+  link. Every template that uses `{base_url}` was affected, the default one
+  included; deep links such as `shortcuts://` that do not use it were not.
+  `_dispatch_new_task_notification` now resolves the base URL the way
+  `launch_feedback_ui` does and passes it as `metadata["base_url"]`; a loopback
+  address (a phone cannot reach it) or a failed lookup leaves it out, the
+  channel still logs that it has no link, and the push goes out as before. When
+  the template uses `{base_url}` and it is empty, that warning now also says
+  why (the host is loopback and `external_base_url` is not set) and which
+  setting fixes it. With a real stdio MCP server, a real Web UI and a local Bark
+  stand-in (`external_base_url = http://192.168.1.50:18792`): before, the JSON
+  Bark received had no `url`; after, `url` is
+  `http://192.168.1.50:18792/?task_id=<id>`. In a headless browser that link
+  opens the right task when two are queued, and an unknown `task_id` falls back
+  to the active task, with no console error. `test_bark_click_url_mcp_path_r778.py`
+  has eight tests; three fail with the previous code, and the other five pin
+  what stays the same (no `external_base_url` still means a push without a
+  link, a lookup that raises costs only the link, a known base URL still
+  renders it).
+- A failed notification's retry no longer logs an ERROR with a traceback when
+  it fires while the process is exiting. A failed send is retried by a
+  `threading.Timer`; if the MCP client disconnects (or the IDE window closes)
+  during that delay, the timer thread, a daemon, is still alive in the exit
+  phase, calls `_process_event`, and `self._executor.submit` raises "cannot
+  schedule new futures after shutdown". The log then showed "处理通知事件失败"
+  with its traceback, followed by two more "will retry (2/3)", "(3/3)"
+  warnings for retries that could never run. The pool had not been
+  closed by `NotificationManager.shutdown()`, which is what the check added for
+  R114 looks for. CPython closes it first: at exit `threading._shutdown` runs
+  before `atexit`, wakes the workers of every thread pool through
+  `concurrent.futures.thread._python_exit`, and a worker that sees the
+  interpreter exiting marks its own executor as shut down, while
+  `NotificationManager.shutdown()` is an `atexit` handler and has not run yet
+  (in the MCP server that gap is the time spent stopping the Web UI process).
+  `_process_event` now also asks `_interpreter_is_exiting()` (the main thread
+  is marked finished once `threading._shutdown` starts, so
+  `threading.main_thread().is_alive()` is false) and, like R114, skips the
+  event with one DEBUG line and schedules no retry. A pool that is closed while
+  the program is running normally is still an ERROR. A standalone interpreter
+  that lets a retry fire in the exit phase: before, the ERROR, a traceback and
+  two more warnings; after, one DEBUG line. The same lines were in the log of a
+  real stdio MCP server, with a Bark server that never answered, when the
+  client disconnected during the retry delay.
+  `test_notification_retry_at_exit_r777.py` has five tests; four fail with the
+  previous code, the fifth (a closed pool while the program runs is still an
+  ERROR) is the control.
+- Sending the "new task" notification no longer freezes the MCP server while a
+  Bark server is slow or down. `interactive_feedback` called
+  `notification_manager.send_notification` straight from the async handler.
+  Its `IMMEDIATE` trigger waits for every channel (system, sound, Bark) to
+  answer, up to `bark_timeout` plus 5 seconds, and it ran on the event loop's
+  own thread, so a Bark server that did not answer stopped the whole loop for
+  that long: pings, other tool calls, cancellations and this task's own wait
+  all stood still. A real stdio MCP server, a real Web UI and a Bark stand-in
+  that never answers (`bark_timeout = 3`), run in isolation: a `ping` was
+  answered after 3.00 seconds instead of 0.01, and a `ping` sent right after
+  the client cancelled the call after 2.24 seconds. The notification, and the
+  config-file read before it, now runs in a worker thread through
+  `asyncio.to_thread` (`_dispatch_new_task_notification`); with the change the
+  slowest of 126 pings took 0.01 seconds. The call itself still waits for its
+  own notification attempt before it starts waiting for the answer, as before,
+  and a channel that fails is still only a warning. Moving the notification
+  made that `await` a new place for the client's cancellation to land, between
+  creating the task and waiting for it, where the cleanup of the entry below
+  does not reach. `interactive_feedback` now closes the task it just created
+  (in a task of its own, `_run_to_completion`) when it is cancelled there, and
+  re-raises the cancellation; the same guard covers a cancellation that
+  arrives while the task is still being created. With the previous code the
+  cancelled task was closed 4.3 seconds after the cancel, because the frozen
+  loop had to wake up first; now it is closed at once. A working Bark and a
+  Bark that answers 500 behave as before (one request, and four with the
+  retries, secrets redacted). `test_notification_off_event_loop_r776.py` has
+  nine tests; six fail with the previous code, and the other three pin what
+  stays the same (the answer is still waited for, a failing channel or config
+  refresh is a warning and not an error).
+- Stopping an `interactive_feedback` call from the MCP client (the stop button,
+  or a client-side tool timeout, both sent as `notifications/cancelled`) now
+  removes its question from the Web UI. Before, the question stayed there as
+  the active task: the agent had given up on it, the next call's task queued
+  behind it, and an answer typed into it was read by nobody. The cleanup that
+  closes such a task (`POST /api/tasks/<id>/close`, R13·B1) sat in the
+  `finally` of `wait_for_task_completion`, and the MCP SDK cancels a handler
+  through an anyio cancel scope, which cancels it again at every `await` until
+  the scope is left, so the first `await` of the cleanup was cancelled and the
+  request was never sent. The log showed nothing, because `CancelledError` is
+  not an `Exception`. The older tests cancelled with `Task.cancel()`, which is
+  delivered once, so they passed. The cleanup now runs in a task of its own
+  (`_run_to_completion`), outside the scope and behind `asyncio.shield`; the
+  cancellation still reaches the caller at once, and a timeout or a normal
+  finish waits for the cleanup exactly as before. A real stdio MCP server and
+  a real Web UI, run in isolation: with the previous code the task was still
+  there 40 seconds after the client cancelled, with the change the Web UI
+  closed it about two seconds later (the 1.85 s retry window, then the
+  close). `test_wait_cancel_cleanup_r775.py` has six tests; five fail with
+  the previous code, the sixth is the `Task.cancel()` control.
+- Several `interactive_feedback` calls that arrive together while the Web UI
+  is not running no longer lose one of them or leave a Web UI process behind.
+  Each call ran `start_web_service` on a thread of its own and nothing made
+  them wait for each other. With three simultaneous calls on a cold start (a
+  real stdio MCP server and a real Web UI, run in isolation) the previous code
+  either started three Web UI processes, of which `ServiceManager` kept the last
+  one it registered, so the process that owned the port could outlive the MCP
+  server (one was found still listening after the run), or one call's port probe
+  (a `bind`, which holds the port for a moment) collided with another's and
+  that call failed with "port already in use (health-check did not recognise it
+  as this service)", an ERROR with a traceback, and the agent got the re-call
+  prompt with no task created. `start_web_service` now runs one call at a time;
+  the calls that wait find the service up when their turn comes and return.
+  With the change, three runs of the same scenario started one process each,
+  created three tasks, returned three answers and left nothing running.
+  `test_web_ui_cold_start_race_r774.py` has six tests; the first fails with the
+  previous code (two of the three calls raise `port_in_use`).
+  The lock-order guard of R329 (`test_feat_service_manager_lock_order_r329.py`)
+  now lists the new lock and why it is outermost.
+- `scripts/precompress_static.py` no longer leaves the `.gz` and `.br` copies
+  it writes readable only by the person who ran it. It writes through
+  `tempfile.mkstemp`, which creates the file with mode 0600, and `os.replace`
+  kept that mode, so after a rebuild a copy sat next to its 0644 source
+  without read permission for anyone else (38 of the 52 `.br` files in
+  `static/js/` were like that in the working tree used for these changes; git
+  records only the executable bit, so the repository itself never showed it).
+  The copies are 0644 now; `test_brotli_precompress_r21_4.py` has a test for
+  it that fails with the previous script (mode 0600).
+- A failed request for a static file is no longer cached for a day or a year.
+  `add_security_headers` gave every response under `/static/js/`,
+  `/static/css/`, `/static/locales/`, `/static/lottie/`, `/fonts/`, `/sounds/`
+  and `/icons/` its cache policy whatever the status, so a 429 for a font, a
+  404 for a MathJax extension or a 5xx was kept by the browser as long as the
+  file would have been (a year, `immutable`, for a `?v=` address): one failed
+  request became a file that stayed missing.
+  Seen in a real browser: after a burst of font requests was answered with
+  429, a reload showed the same 429 without the request reaching the server.
+  Only a response that served the file keeps the long policy; an error is
+  `no-store`. The new `test_static_errors_not_cached_r772.py` has 5 tests, and
+  `test_static_cache_headers_r56.py` checks the policies on a 200 response
+  instead of on the 404 of a file that does not exist, which is what had made
+  it pass.
+- Formulas that need a MathJax extension or a web font now typeset, and one
+  formula MathJax cannot read no longer takes the others of the message down.
+  `tex-mml-chtml.js` is the whole of MathJax, but it still downloads two kinds
+  of files next to itself while it typesets, and neither was shipped.
+  `\boldsymbol`, `\color`, `\textcolor`, `\cancel`, `\bra`/`\ket`, `\ce`
+  and others make it load a TeX extension (`input/tex/extensions/`);
+  the download was a 404, MathJax rejected the whole call, and every formula in
+  the message, the plain ones too, stayed as TeX. The web fonts
+  (`output/chtml/fonts/woff-v2/`) were 4 of the 22 the bundle names, so
+  `\mathbb`, `\mathbf`, `\mathcal` and large brackets fell back to a system
+  font. Twelve of the 14 extensions of MathJax 3.2.2 (the version of the
+  bundle; the other two let a formula restyle the page and are held back on
+  purpose) and its 18 missing fonts are now in the package, 369 kB in all. Two more things stood
+  in the way. The nested paths are answered by Flask's own
+  `/static/<path:filename>` endpoint, which was not exempt from the default
+  limit of ten requests per second, and a formula that needs a dozen fonts asks
+  for them at once: everything after the tenth got a 429 (found in a real
+  browser; the endpoint is exempt now, as the other static routes are). And a
+  message in which one formula still fails, such as a `\require` of a package
+  that does not exist, lost all of its formulas; a failed typeset is now
+  retried one formula at a time, so only the formula that fails stays as TeX.
+  The new `test_mathjax_runtime_assets_r771.py` has 11 tests: every extension
+  and font the bundle can ask for is shipped (and nothing it never asks for),
+  the files are served with 200 and not rate limited, the other endpoints still
+  are, and the retry runs in Node against a MathJax double.
+- Math in the agent's message is found by the page itself, so prices no longer
+  turn into formulas and formulas are no longer rewritten by Markdown. The
+  page hid only `\(...\)` and `\[...\]` from marked, so the TeX inside
+  `$...$` and `$$...$$` was rewritten: `\\` lost a backslash (a matrix
+  collapsed into one row), `\,` became a comma, `\{` and `\}` lost theirs and
+  `_` and `*` turned into emphasis. MathJax, for its part, read every `$...$`
+  of the page, so "The total is $5 and the deposit is $10" came out as one
+  italic formula (`5anddthedepositis10`), and so did option labels and the rest
+  of the page, because MathJax also typeset the whole body once after it
+  loaded. The page now scans the text itself with the Pandoc and GitHub rules
+  (the opening `$` is followed by a non-space, the closing one is preceded by a
+  non-space and not followed by a digit, and `\$` is an ordinary character),
+  hides what it found from marked, puts the original text back inside a
+  `tex2jax_process` span and has MathJax look only inside those spans; the
+  scan takes at most 30 ms on 200 kB of adversarial text. TeX is only ever
+  put back where it can be read as TeX: in a link title, a reference
+  definition or an image alt text it comes back as plain text escaped for an
+  attribute (a quote in the formula cannot close the attribute, and the
+  tooltip does not show an internal placeholder), inside an indented code block
+  or a `<pre>` as the code it is, and the `>` markers of a blockquote that a
+  formula spans are not part of its TeX (MathJax would typeset them as
+  greater-than signs). The new `test_math_spans_protect_tex_r769.py` has 83
+  tests, among them a round trip of more than 25,000 random texts and the scan
+  of 200 kB inputs made of unmatched openers.
+- The feedback page now ships marked 18.1.1 instead of 17.0.1, which closes
+  four holes in how the agent's message is rendered. A Markdown image whose
+  alt text contains a quote, such as `![a" style="position:fixed;inset:0" x="](p.png)`,
+  came out as an `<img>` with attributes the sender chose (the page's CSP stops
+  script handlers, but not a full-window `style` overlay); the alt text is now
+  escaped. Three patterns froze the page: a `[` followed by twenty code spans
+  written with two backticks each (200 bytes) never finished, `a[b](c`
+  repeated 1000 times (6 kB) took two seconds, 24 kB more than half a minute,
+  and `[a](` followed by 4,000 em spaces (or another Unicode space; 12 kB) took
+  12 to 22 seconds and 8,000 of them more than a minute, all on the main
+  thread, so the tab could not answer the question meanwhile (measured in
+  Node); all three now take milliseconds. And approximate values such as
+  `the "~3.8k", "~1.4k" figures` or `~80 ms ... ~430-byte` no longer strike
+  through the words between two tildes. The copy in `static/js/` had stayed
+  at 17.0.1 while `package-lock.json` moved on, so none of this reached the
+  page; `package.json` asks for `^18.1.1` now. Rendering this repository's own
+  Markdown (295 files, 12,868 samples) with the old and the new copy differs in
+  55 samples: 43 stray strike-throughs of approximate values are gone, 8 links
+  write the `&` of their address as `&amp;` (the correct HTML), and four are
+  list and quote boundaries and one emphasis between two code spans that follow
+  CommonMark more closely; none raised an error. The new
+  `test_vendored_marked_hardened_r768.py` has 12 tests, checked against each
+  release from 17.0.1 to 18.1.0 (each one fails exactly the tests for the fixes
+  it lacks), and one of them fails when the vendored version and the lockfile
+  disagree. Still open: marked takes quadratic time on one huge paragraph of
+  unmatched `*`, `_` or `~~` markers (about two seconds for 20 kB, nine for
+  40 kB), and the VS Code panel, which sanitises everything it renders and uses
+  its own marked 15.0.12 only when the server sends no HTML, keeps that copy.
+- The feedback page no longer shows the agent's message as raw HTML while it
+  loads. The page painted the HTML the server renders from the message
+  (`prompt_html`, made by Python-Markdown, which passes raw HTML through) and
+  about 100 ms later replaced it with its own Markdown render, which drops raw
+  HTML. In that gap a message containing `<meta http-equiv="refresh" ...>`
+  sent the approval page to another site (reproduced with the built wheel in
+  headless Chromium), and any other markup was live for a few tens of
+  milliseconds, up to about half a second with the CPU throttled. The first
+  paint now goes through the same client-side render as the multi-task view,
+  and both renders fall back to plain text instead of raw HTML when Markdown
+  cannot be rendered. The first paint also waits for an animation frame, which
+  a background tab holds back, so it could land after the multi-task view had
+  shown a newer message and overwrite it; it now yields to any render that
+  already owns the element. The same payload now leaves the page where it was,
+  and twelve page loads, six of them with the CPU throttled 6x, show a single
+  paint instead of raw HTML followed by the clean one. `prompt_html` is still
+  sent for the VS Code panel, which sanitises it. The new
+  `test_prompt_markup_untrusted_r767.py` has 13 tests and 10 mutants, all
+  killed.
 - A change to the configuration no longer loses the reply to a question the
   agent is waiting on. The reload runs on the file-watcher thread and closed
   the shared HTTP client there; the connections belong to the event loop that

@@ -3,8 +3,9 @@
 锁定的契约：
 - 已知语言（``auto`` / ``en`` / ``zh-CN``）→ 200 + 写入 ``web_ui`` section
 - 未知语言 → 400 + 不写配置
-- payload 解析异常 → 500（兜底）
-- 空 payload → 视为 ``auto``（默认值），不报错
+- 配置写入异常 → 500（兜底）
+- 请求体不是 JSON 对象 → 400（R789；细节见 ``test_request_body_shapes_r789.py``）
+- 空对象 ``{}`` → 视为 ``auto``（默认值），不报错
 """
 
 from __future__ import annotations

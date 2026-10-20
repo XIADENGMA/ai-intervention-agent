@@ -69,6 +69,14 @@ Return diagnostic self-information for this MCP server.
 
 CR#16 F-3：判断 ``config_file_path`` 是否指向项目 bundled 默认配置。
 
+### `_json_for_stdout(payload: object) -> str`
+
+把 ``payload`` 序列化成 JSON 文本，保证 ``print`` 写得进当前的 stdout（R786）。
+
+默认保持中文原样（UTF-8 终端里可读）。stdout 的编码写不下时——Windows 上管道 / 重定向后
+是 ANSI 代码页（cp1252 ……），``LANG=C`` 的环境是 ASCII——改用 ``\uXXXX`` 转义：转义后仍是
+合法 JSON，``--print-config | jq`` 照样能读，而不是 ``UnicodeEncodeError`` 加零字节输出。
+
 ### `_print_effective_config() -> int`
 
 实现 ``--print-config``：dump merged config 到 stdout 后退出。

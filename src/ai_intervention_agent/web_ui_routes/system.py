@@ -30,6 +30,7 @@ from flask import jsonify, request
 from flask.typing import ResponseReturnValue
 
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
+from ai_intervention_agent.web_ui_routes._request_body import optional_json_object
 
 if TYPE_CHECKING:
     from flask import Flask
@@ -1462,6 +1463,13 @@ def _is_api_token_authorized() -> bool:
     timing 推断 token 前缀（Web 上有公开 PoC 演示 1-byte 累计时间差能推
     50 字节 token）。
 
+    按**字节**比较（R788）：``compare_digest`` 收到含非 ASCII 字符的 ``str``
+    会抛 ``TypeError``，对端随便发一个非 ASCII 的头就能把准入检查变成 500，
+    配置里的 token 含中文时更是永远认证不了。配置侧取 UTF-8 字节；请求头的值
+    WSGI 按 latin-1 交给应用，``encode("latin-1")`` 还原的正是对端实际发送的
+    字节（``curl -H 'X-API-Token: 口令'`` 发的是 UTF-8，两边对得上）；头里有
+    latin-1 之外的字符（真实服务器给不出来）算不匹配。
+
     返回 False 的情形：
     - config 未配置 token（``api_token == ""``）—— 此时本函数不能授权任何
       请求，调用者需要回退到 loopback gate；
@@ -1477,7 +1485,13 @@ def _is_api_token_authorized() -> bool:
     if not presented:
         return False
 
-    return secrets.compare_digest(configured, presented)
+    try:
+        presented_bytes = presented.encode("latin-1")
+    except UnicodeEncodeError:
+        return False
+    return secrets.compare_digest(
+        configured.encode("utf-8", errors="surrogatepass"), presented_bytes
+    )
 
 
 def _is_authorized() -> bool:
@@ -1689,12 +1703,7 @@ class SystemRoutesMixin:
                     403,
                 )
 
-            payload: dict[str, Any] = {}
-            try:
-                if request.data:
-                    payload = request.get_json(silent=True) or {}
-            except Exception:
-                payload = {}
+            payload = optional_json_object()
 
             allowed_paths = _resolve_allowed_paths()
             if not allowed_paths:
@@ -2591,7 +2600,7 @@ class SystemRoutesMixin:
                     403,
                 )
 
-            payload: dict[str, Any] = request.get_json(silent=True) or {}
+            payload = optional_json_object()
             level = payload.get("level")
             if not isinstance(level, str):
                 return (

@@ -31,7 +31,7 @@ def _coerce_int(v: Any) -> Any:
         return v
     try:
         return int(float(v))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return v
 
 
@@ -41,7 +41,7 @@ def _clamp_int(min_val: int, max_val: int, default: int):
     def _validator(v: Any) -> int:
         try:
             iv = int(float(v)) if not isinstance(v, bool) else int(v)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return default
         return max(min_val, min(max_val, iv))
 
@@ -54,7 +54,7 @@ def _clamp_int_allow_zero(min_val: int, max_val: int, default: int):
     def _validator(v: Any) -> int:
         try:
             iv = int(float(v)) if not isinstance(v, bool) else int(v)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return default
         if iv <= 0:
             return 0
@@ -69,7 +69,7 @@ def _clamp_float(min_val: float, max_val: float, default: float):
     def _validator(v: Any) -> float:
         try:
             fv = float(v)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return default
         return max(min_val, min(max_val, fv))
 
@@ -78,11 +78,9 @@ def _clamp_float(min_val: float, max_val: float, default: float):
 
 def _coerce_float(v: Any) -> Any:
     """TOML/JSON 安全浮点转换"""
-    if isinstance(v, (int, float)) and not isinstance(v, bool):
-        return float(v)
     try:
         return float(v)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return v
 
 

@@ -102,6 +102,7 @@ from ai_intervention_agent.server_config import (
     calculate_backend_timeout,
     get_feedback_config,
     get_feedback_prompts,
+    get_target_base_url,
     get_target_host,
     parse_structured_response,
     resolve_external_base_url,
@@ -431,12 +432,13 @@ def _fetch_sse_stats_cached(host: str, port: int) -> dict[str, object]:
             cached_copy["cache_age_s"] = round(age, 3)
             return cached_copy
 
-    target_url = f"http://{host}:{port}/api/system/sse-stats"
+    target_url = f"{get_target_base_url(host, port)}/api/system/sse-stats"
     result: dict[str, object] = {}
     try:
         import httpx
 
-        resp = httpx.get(target_url, timeout=0.5)
+        # 本机 Web UI 的请求不读环境代理：httpx 默认 trust_env=True 且不会绕过 localhost（R782）
+        resp = httpx.get(target_url, timeout=0.5, trust_env=False)
     except Exception as net_exc:
         result["error"] = f"{type(net_exc).__name__}: {net_exc}"
         return result
@@ -499,12 +501,15 @@ def _fetch_recent_logs_cached(
             cached_copy["cache_age_s"] = round(age, 3)
             return cached_copy
 
-    target_url = f"http://{host}:{port}/api/system/recent-logs?limit={limit_int}"
+    target_url = (
+        f"{get_target_base_url(host, port)}/api/system/recent-logs?limit={limit_int}"
+    )
     result: dict[str, object] = {}
     try:
         import httpx
 
-        resp = httpx.get(target_url, timeout=0.5)
+        # 本机 Web UI 的请求不读环境代理：httpx 默认 trust_env=True 且不会绕过 localhost（R782）
+        resp = httpx.get(target_url, timeout=0.5, trust_env=False)
     except Exception as net_exc:
         result["error"] = f"{type(net_exc).__name__}: {net_exc}"
         return result
@@ -885,9 +890,26 @@ def _is_using_default_config(config_file_path: object) -> bool:
         return False
 
 
+def _json_for_stdout(payload: object) -> str:
+    """把 ``payload`` 序列化成 JSON 文本，保证 ``print`` 写得进当前的 stdout（R786）。
+
+    默认保持中文原样（UTF-8 终端里可读）。stdout 的编码写不下时——Windows 上管道 / 重定向后
+    是 ANSI 代码页（cp1252 ……），``LANG=C`` 的环境是 ASCII——改用 ``\\uXXXX`` 转义：转义后仍是
+    合法 JSON，``--print-config | jq`` 照样能读，而不是 ``UnicodeEncodeError`` 加零字节输出。
+    """
+    import json as _json
+
+    text = _json.dumps(payload, ensure_ascii=False, indent=2)
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        text.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        return _json.dumps(payload, ensure_ascii=True, indent=2)
+    return text
+
+
 def _print_effective_config() -> int:
     """实现 ``--print-config``：dump merged config 到 stdout 后退出。"""
-    import json as _json
 
     from ai_intervention_agent import service_manager as _sm
     from ai_intervention_agent.config_manager import get_config
@@ -906,11 +928,7 @@ def _print_effective_config() -> int:
         web_ui_section = web_ui_raw.copy() if isinstance(web_ui_raw, dict) else {}
     except Exception as exc:
         print(
-            _json.dumps(
-                {"error": f"config probe failed: {exc!r}"},
-                ensure_ascii=False,
-                indent=2,
-            ),
+            _json_for_stdout({"error": f"config probe failed: {exc!r}"}),
             flush=True,
         )
         return 1
@@ -958,7 +976,7 @@ def _print_effective_config() -> int:
         logger.debug(f"--print-config: os.environ 访问失败: {exc!r}")
     payload["env_overrides"] = active_env
 
-    print(_json.dumps(payload, ensure_ascii=False, indent=2), flush=True)
+    print(_json_for_stdout(payload), flush=True)
     return 0
 
 

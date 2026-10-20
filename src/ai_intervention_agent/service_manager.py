@@ -53,6 +53,8 @@ from ai_intervention_agent.exceptions import (
 )
 from ai_intervention_agent.server_config import (
     WebUIConfig,
+    format_url_host,
+    get_target_base_url,
     get_target_host,
     validate_input,
 )
@@ -132,6 +134,8 @@ _config_cache_generation: int = 0
 
 _config_callbacks_registered: bool = False
 _config_callbacks_lock = threading.Lock()
+
+_web_service_start_lock = threading.Lock()
 
 
 _ENV_WEB_UI_HOST = "AI_INTERVENTION_AGENT_WEB_UI_HOST"
@@ -303,6 +307,10 @@ def _ensure_config_change_callbacks_registered() -> None:
 def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
     """获取（或创建）模块级异步 HTTP 客户端，支持连接池复用和自动重试。
 
+    只访问本机的 Web UI，所以 ``trust_env=False``：不读 ``HTTP_PROXY`` 之类的环境代理
+    （httpx 不会自动绕过 localhost）。传了 ``transport`` 时 httpx 本来就不读，写明是为了
+    不依赖这条实现细节（R782）。
+
     R25.2: ``import httpx`` 在函数体首行，首次调用时触发 ~55 ms 加载并写入
     ``sys.modules``，后续调用走 cache 几乎零成本；MCP 主进程在收到首个工具调用
     前完全不会进入此函数，故 cold-start 不付这 55 ms。
@@ -319,6 +327,7 @@ def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
                 client = httpx.AsyncClient(
                     transport=transport,
                     timeout=httpx.Timeout(config.timeout, connect=5.0),
+                    trust_env=False,
                 )
                 try:
                     _async_client_loop = asyncio.get_running_loop()
@@ -346,6 +355,7 @@ def get_sync_client(config: WebUIConfig) -> httpx.Client:
                 client = httpx.Client(
                     transport=transport,
                     timeout=httpx.Timeout(config.timeout, connect=5.0),
+                    trust_env=False,
                 )
                 _sync_client = client
     return client
@@ -407,8 +417,7 @@ def health_check_service(config: WebUIConfig) -> bool:
 
     try:
         session = create_http_session(config)
-        target_host = get_target_host(config.host)
-        health_url = f"http://{target_host}:{config.port}/api/health"
+        health_url = f"{get_target_base_url(config.host, config.port)}/api/health"
 
         response = session.get(health_url, timeout=5)
         is_healthy = bool(response.status_code == 200)
@@ -825,6 +834,21 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
         raise ValueError(f"Web UI 配置加载失败: {e}") from e
 
 
+def _web_ui_child_env() -> dict[str, str]:
+    """Web UI 子进程的环境：继承当前环境，标准输出 / 错误固定成 UTF-8 且不会抛编码异常（R786）。
+
+    子进程的 stdout 是 ``DEVNULL``、stderr 是 UTF-8 的日志文件，但 Python 并不看这些：
+    ``sys.stdout`` 的编码取自本机语言环境——Windows 上重定向后是 ANSI 代码页（cp1252、
+    cp936 ……），``LANG=C`` 的容器里是 ASCII——错误处理是 ``strict``。子进程启动时的中文和
+    emoji 提示编码不了就抛 ``UnicodeEncodeError``，进程在服务器起来之前退出，这边只看到
+    健康检查一直不通过。``backslashreplace`` 让任何字符都不会抛；stderr 写进的日志文件由父进程
+    以 UTF-8 打开，这样内容和编码也一致。
+    """
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8:backslashreplace"
+    return env
+
+
 def _get_web_ui_log_path(script_dir: Path) -> Path | None:
     """获取 Web UI 子进程日志文件路径，自动创建 logs 目录并截断过大文件。
 
@@ -840,7 +864,7 @@ def _get_web_ui_log_path(script_dir: Path) -> Path | None:
 
     try:
         if log_path.exists() and log_path.stat().st_size > 5 * 1024 * 1024:
-            log_path.write_text("")
+            log_path.write_text("", encoding="utf-8")
     except OSError:
         pass
     return log_path
@@ -897,7 +921,17 @@ def _is_port_available(host: str, port: int) -> bool:
 
 
 def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
-    """启动 Flask Web UI 子进程，含健康检查"""
+    """启动 Flask Web UI 子进程，含健康检查。
+
+    进程内串行：几个 ``interactive_feedback`` 同时冷启动时，只有第一个会起子进程，
+    其余等它起完，在锁里重新判断服务是否已在运行，不重复起、也不会因为撞上别的线程
+    的端口探测而误报 ``port_in_use``。
+    """
+    with _web_service_start_lock:
+        _start_web_service_locked(config, script_dir)
+
+
+def _start_web_service_locked(config: WebUIConfig, script_dir: Path) -> None:
     web_ui_path = script_dir / "web_ui.py"
     service_manager = ServiceManager()
     service_name = f"web_ui_{config.host}_{config.port}"
@@ -919,7 +953,7 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
 
     if service_manager.is_process_running(service_name) or health_check_service(config):
         logger.info(
-            f"Web 服务已在运行: http://{get_target_host(config.host)}:{config.port}"
+            f"Web 服务已在运行: {get_target_base_url(config.host, config.port)}"
         )
         return
 
@@ -975,6 +1009,7 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
                 stderr=log_file if log_file is not None else subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
                 close_fds=True,
+                env=_web_ui_child_env(),
             )
             logger.info(f"Web 服务进程已启动，PID: {process.pid}")
             service_manager.register_process(service_name, process, config)
@@ -1006,7 +1041,7 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
             if health_check_service(config):
                 elapsed = time.monotonic() - check_start
                 logger.info(
-                    f"🌐 Web服务已启动: http://{config.host}:{config.port}"
+                    f"🌐 Web服务已启动: http://{format_url_host(config.host)}:{config.port}"
                     f"（{elapsed:.1f}s）"
                 )
                 return
@@ -1023,7 +1058,7 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
         if health_check_service(config):
             elapsed = time.monotonic() - check_start
             logger.info(
-                f"🌐 Web 服务启动成功: http://{config.host}:{config.port}"
+                f"🌐 Web 服务启动成功: http://{format_url_host(config.host)}:{config.port}"
                 f"（{elapsed:.1f}s）"
             )
             return
@@ -1059,8 +1094,7 @@ def update_web_content(
 
     cleaned_summary, cleaned_options = validate_input(summary, predefined_options)
 
-    target_host = get_target_host(config.host)
-    url = f"http://{target_host}:{config.port}/api/update"
+    url = f"{get_target_base_url(config.host, config.port)}/api/update"
 
     data = {
         "prompt": cleaned_summary,
@@ -1193,12 +1227,11 @@ async def ensure_web_ui_running(
     singleton lookup；未传入时保持历史行为。
     """
     try:
-        target_host = get_target_host(config.host)
         health_client = client
         if health_client is None or getattr(health_client, "is_closed", False) is True:
             health_client = get_async_client(config)
         response = await health_client.get(
-            f"http://{target_host}:{config.port}/api/health",
+            f"{get_target_base_url(config.host, config.port)}/api/health",
             timeout=2,
         )
         if response.status_code == 200:

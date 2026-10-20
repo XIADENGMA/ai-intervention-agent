@@ -91,6 +91,10 @@ from ai_intervention_agent.web_ui_routes import (
     SystemRoutesMixin,
     TaskRoutesMixin,
 )
+from ai_intervention_agent.web_ui_routes._request_body import (
+    request_too_large_response,
+    require_json_object,
+)
 from ai_intervention_agent.web_ui_routes._upload_helpers import MAX_TOTAL_UPLOAD_BYTES
 from ai_intervention_agent.web_ui_security import (
     SecurityMixin,
@@ -414,6 +418,27 @@ def ensure_bind_without_reverse_dns() -> bool:
     return True
 
 
+def keep_stdio_from_raising() -> None:
+    """让往 ``stdout`` / ``stderr`` 打印的东西永远不会因为字符编码不了而抛异常（R786）。
+
+    ``run()`` 在启动服务器之前用 ``print`` 输出中文提示和 emoji。标准输出的编码取自本机语言
+    环境，错误处理是 ``strict``：Windows 上重定向后是 ANSI 代码页（cp1252、cp936 ……），
+    ``LANG=C`` 的容器里是 ASCII，编码不了就抛 ``UnicodeEncodeError``，进程在服务器起来之前
+    退出。提示只是给人看的，不该决定服务器起不起得来：编码不了的字符改成转义序列。
+
+    只改错误处理，不动编码，所以在 UTF-8 的终端里输出和以前完全一样。流不支持
+    ``reconfigure``（被替换成别的对象，或者是 ``None``）时什么都不做。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="backslashreplace")
+        except (OSError, ValueError):
+            pass
+
+
 class WebFeedbackUI(
     SecurityMixin,
     MdnsMixin,
@@ -492,7 +517,10 @@ class WebFeedbackUI(
         self._base_config_runtime_hooks_lock = threading.Lock()
         self._task_queue_runtime_hooks_registered = False
         self._task_queue_runtime_hooks_lock = threading.Lock()
-        self.app = Flask(__name__)
+        # instance_path 这个应用用不到，但要显式给出：以脚本方式启动
+        # （``python web_ui.py``，MCP 服务拉起子进程的方式）时 Flask 找不到包路径，
+        # 会退回 ``os.getcwd()`` 去推算它；启动者的工作目录被删掉后子进程就在这里崩溃。
+        self.app = Flask(__name__, instance_path=str(self._project_root / "instance"))
         ensure_ipv6_trusted_hosts_support()
         ensure_bind_without_reverse_dns()
         self.app.config["TRUSTED_HOSTS"] = build_trusted_hosts(
@@ -513,6 +541,9 @@ class WebFeedbackUI(
             origins=_cors_origins,
             supports_credentials=False,
         )
+        # 同一份名单也决定哪些来源可以发写请求（R787）：CORS 只管页面读不读得到响应，
+        # 不管服务器有没有照做；跨站表单 POST 不需要预检，照样会被执行。
+        self._write_origin_allowlist = tuple(_cors_origins)
 
         self.app.config["MAX_CONTENT_LENGTH"] = MAX_TOTAL_UPLOAD_BYTES + 1024 * 1024
 
@@ -1156,9 +1187,13 @@ class WebFeedbackUI(
         @self.app.route("/api/update-language", methods=["POST"])
         @self.limiter.limit("30 per minute")
         def update_language() -> ResponseReturnValue:
-            """更新界面语言配置并持久化到 config.toml"""
+            """更新界面语言配置并持久化到 config.toml
+
+            请求体必须是 JSON 对象，否则 400（``invalid_json`` / ``invalid_body``）；
+            对象里没有 ``language`` 视为 ``auto``。
+            """
+            data = require_json_object()
             try:
-                data = request.json or {}
                 lang = str(data.get("language", "auto")).strip()
 
                 supported = ("auto", "en", "zh-CN", "zh-TW")
@@ -1219,6 +1254,12 @@ class WebFeedbackUI(
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
             return jsonify(body), status
+
+        from werkzeug.exceptions import RequestEntityTooLarge
+
+        self.app.register_error_handler(
+            RequestEntityTooLarge, request_too_large_response
+        )
 
         @self.app.errorhandler(404)
         def handle_404(exc: object) -> ResponseReturnValue:
@@ -1614,6 +1655,7 @@ class WebFeedbackUI(
             - 若self.feedback_result为None，返回空反馈字典
             - 服务器关闭后才返回，适用于单次任务模式
         """
+        keep_stdio_from_raising()
         print("\nWeb反馈界面已启动")
 
         if self.host == "0.0.0.0":
@@ -1679,8 +1721,16 @@ class WebFeedbackUI(
 
         try:
             try:
+                # load_dotenv=False：Flask 默认会把工作目录（及上级）的 .env /
+                # .flaskenv 灌进本进程的环境。MCP 服务通常就在用户的项目目录里启动，
+                # 项目自己的密钥 / 代理 / FLASK_* 不该悄悄影响这个界面；工作目录被
+                # 删掉后 find_dotenv 还会直接抛 FileNotFoundError。
                 self.app.run(
-                    host=self.host, port=self.port, debug=False, use_reloader=False
+                    host=self.host,
+                    port=self.port,
+                    debug=False,
+                    use_reloader=False,
+                    load_dotenv=False,
                 )
             except KeyboardInterrupt:
                 pass

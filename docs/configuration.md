@@ -40,6 +40,12 @@ AI_INTERVENTION_AGENT_DEV_MODE=1
 AI_INTERVENTION_AGENT_USER_MODE=1
 ```
 
+If the path in `AI_INTERVENTION_AGENT_CONFIG_FILE` cannot be examined at all (it sits in a
+directory you may not enter, a name is too long for the filesystem, `~user` does not exist), the
+variable is ignored with one `WARNING` that names it and the reason, and the standard location
+from the table is used instead; nothing is created at the path you gave. A path that is merely
+absent is used as written and the file is created there.
+
 `UV_TOOL_DIR`, `UV_CACHE_DIR`, `PIPX_HOME`, and `PIPX_LOCAL_VENVS` are also
 honoured: if `sys.executable` lives under any of those, the agent treats it as
 an installed runtime even if your custom paths don't match the default
@@ -278,10 +284,13 @@ This project keeps compatibility with older config keys:
 - **web_ui**
   - `max_retries` → `http_max_retries`
   - `retry_delay` → `http_retry_delay`
+  - `timeout` → `http_request_timeout`
 - **network_security**
   - `enable_access_control` → `access_control_enabled`
 
-Values are validated and clamped to safe ranges on load.
+An old name is used only when the file does not contain the new one: if both are there, the new name wins, even when its value equals the default. The old key stays in the file as written; it is copied to the new name in memory when the file is loaded (and when a `config.jsonc` / `config.json` is migrated to TOML), and the log has one `INFO` line per key that says so. Note that a running product rewrites the file on exit with every default filled in — the copied value is what gets written, so the old value survives that; a file that already has the new key at its default value cannot be told apart from one where you chose that value, so remove the new key if you want the old one to apply (R795).
+
+Values are validated and clamped to safe ranges on load. A value that cannot be read at all (for example a boolean written as `""` or `"maybe"`) falls back to that key's default, with a warning in the log that names the key; the other keys of the same section are still validated and applied (R791).
 
 ## Sections
 
@@ -351,6 +360,7 @@ Controls which interfaces the Web UI binds to and which networks can access it.
 - Web UI host is effectively `network_security.bind_interface` (if present), otherwise `web_ui.host`.
 - HTTP `Host` validation is separate from the IP allowlist: trusted hosts describe names the browser/proxy may use, while `allowed_networks` describes client source networks.
 - By default the Web UI accepts `localhost`, `127.0.0.1`, `[::1]`, `mdns.hostname` (default `ai.local`), the configured concrete bind host/IP, and the host from `web_ui.external_base_url`.
+- Writes from a browser are checked against the Web UI's own origin, separately from the `Host` and IP checks above: a request that changes state (every `POST` / `PUT` / `PATCH` / `DELETE`, plus `GET /api/feedback`) is refused with `403 cross_origin_write_blocked` when the browser says another page caused it. Allowed: the browser's own `Sec-Fetch-Site: same-origin`; a client that sends neither `Origin` nor `Sec-Fetch-Site` (the MCP server, `curl`, scripts, the VS Code extension host); an `Origin` with the same host and port as `Host`, the page's own `localhost` / `127.0.0.1` origin, the VS Code webview, or the origin of `web_ui.external_base_url`. Behind a plain-HTTP reverse proxy that rewrites `Host` (nginx's default), set `web_ui.external_base_url` to the address you open in the browser, or pass the original `Host` on and list it in `trusted_hosts` (see [Troubleshooting §19](troubleshooting.md#19-a-button-in-the-web-ui-does-nothing-and-the-browser-shows-403-cross_origin_write_blocked)).
 
 ### `mdns`
 

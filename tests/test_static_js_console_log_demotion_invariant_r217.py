@@ -15,7 +15,8 @@ ai_intervention_agent/static/js/`` 目录下的其它 9 个项目自有 JS 文�
   5. ``theme.js`` (3)
   6. ``mathjax-loader.js`` (3)
   7. ``validation-utils.js`` (1)
-  8. ``mathjax-config.js`` (1)
+  8. ``mathjax-config.js`` (1) — 文件已删除: 模板自 2025-11 起不再加载它,
+     同一份配置内联在 ``mathjax-loader.js`` 里
   9. ``state.js`` (1, JSDoc 示例)
 
 累计 44 处 demotion (R216 27 处 + R217 44 处 = 71 处总)。剩余两类
@@ -35,7 +36,7 @@ C. **dom-security.js** (2 处, 均在 JSDoc 注释 / 字符串字面值中):
 
 本 invariant test 守 R217 的核心契约:
 
-1. **R217 处理过的 9 个文件 zero ``console.log(`` 调用**: 防止反向
+1. **R217 处理过的 8 个文件 zero ``console.log(`` 调用**: 防止反向
    regression 把任何文件的 console.debug 改回 console.log。
 2. **vendor allow-list 严格**: vendor 列表 hardcode 在测试里, 防止
    未来有人把项目自有 JS 误标为 vendor 绕过测试。
@@ -74,7 +75,6 @@ R217_DEMOTED_FILES = (
     "theme.js",
     "mathjax-loader.js",
     "validation-utils.js",
-    "mathjax-config.js",
     "state.js",
 )
 
@@ -104,7 +104,7 @@ MULTI_TASK_DEBUGLOG_MIN = 45
 
 
 class TestR217DemotedFilesZeroConsoleLog(unittest.TestCase):
-    """R217 处理过的 9 个文件 zero ``console.log(`` 调用。"""
+    """R217 处理过的 8 个文件 zero ``console.log(`` 调用。"""
 
     def test_all_r217_files_have_zero_console_log_calls(self) -> None:
         offenders: dict[str, int] = {}

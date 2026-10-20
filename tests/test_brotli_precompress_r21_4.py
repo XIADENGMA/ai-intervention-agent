@@ -174,6 +174,24 @@ class TestCompressFileBrUnit:
         residuals = list(tmp_path.glob(".tmp.precompress.*"))
         assert not residuals, f"原子写入后不该有临时文件残留，找到：{residuals}"
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+    def test_compressed_copies_are_readable_like_their_source(
+        self, tmp_path: Path
+    ) -> None:
+        """``mkstemp`` 建出的临时文件是 0600，``os.replace`` 之后副本若保持这个权限，
+        与 0644 的源文件并排，就只有构建者本人能读（本地构建的 sdist / wheel 与
+        共享环境里别的用户）。副本必须和源文件一样是 0644。"""
+        source = tmp_path / "stable.css"
+        source.write_text("body { } " * 200, encoding="utf-8")
+        source.chmod(0o644)
+
+        precompress_static.compress_file(source)
+        precompress_static.compress_file_br(source)
+
+        for suffix in (".gz", ".br"):
+            mode = (tmp_path / f"stable.css{suffix}").stat().st_mode & 0o777
+            assert mode == 0o644, (suffix, oct(mode))
+
     def test_compressed_smaller_than_gzip_for_typical_assets(
         self, tmp_path: Path
     ) -> None:

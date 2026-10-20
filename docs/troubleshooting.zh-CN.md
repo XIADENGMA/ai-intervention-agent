@@ -595,6 +595,19 @@ Web UI 里的“访问被拒绝”提示是另一回事：它表示页面请求�
 - 报告问题时请附上这一行：里面有版本号。
 - `web_ui.log_level = "ERROR"` 会把它和其他所有警告一起隐藏。
 
+## 19. Web UI 里的按钮没反应，浏览器里看到 `403 cross_origin_write_blocked`
+
+**症状**：Web UI 能打开，但提交回答、关闭任务、保存设置都失败。浏览器网络面板里这个 `POST` 返回 `403`，响应是 `{"success": false, "error": "cross_origin_write_blocked", ...}`，Web UI 日志里有一条以 `拒绝跨源写请求` 开头的警告，写着这个请求的 `Origin`、`Host` 和 `Sec-Fetch-Site`。只在通过反向代理、隧道或自定义主机名打开 Web UI 时出现；`http://127.0.0.1:<端口>`、`http://localhost:<端口>` 和本机自己的局域网地址不受影响。
+
+**含义**：会改状态的请求（所有 `POST` / `PUT` / `PATCH` / `DELETE`，加上读后即清的 `GET /api/feedback`）在浏览器声明是另一个页面发起的时候会被拒绝。没有这道检查，你浏览器里打开的任何网页都能以你的名义回答 agent 的问题、关闭任务、把 Web UI 关掉。放行的情形有三种：浏览器带了 `Sec-Fetch-Site: same-origin`；请求既没有 `Origin` 也没有 `Sec-Fetch-Site`（MCP 服务、`curl`、脚本和 VS Code 扩展都不是浏览器）；或者 `Origin` 是 Web UI 自己的——和 `Host` 头同一个主机和端口、带 Web UI 端口的 `localhost` / `127.0.0.1`、VS Code webview，或 `web_ui.external_base_url`。改写 `Host` 的纯 HTTP 代理（nginx 默认）会让第一种和最后一种都落空：浏览器不会向纯 HTTP 地址发 `Sec-Fetch-Site`，而 `Origin`（`http://agent.example.com`）也不再等于被改写的 `Host`（`127.0.0.1:8080`）。
+
+**修复**（任选一种）：
+
+1. 把 `web_ui.external_base_url` 设成你在浏览器里输入的地址，例如 `http://agent.example.com`，然后重启 MCP 服务。Web UI 就把这个来源当作自己的。
+2. 让代理把原始 `Host` 传下去（nginx：`proxy_set_header Host $http_host;`），并把这个名字加进 `network_security.trusted_hosts`。这样 `Origin` 就等于 `Host`。
+
+走 HTTPS 时，会发 `Sec-Fetch-Site` 的浏览器（Chrome 76、Firefox 90、Safari 16.4 及以后）报的是 `same-origin`，所以 HTTPS 代理两样都不用配。如果日志里出现一个不是你发出的请求、`Origin` 是你不认识的网站，那就是这道保护在起作用：关掉那个页面。
+
 ## 还是没解决？
 
 1. 看 [`SUPPORT.zh-CN.md`](../.github/SUPPORT.zh-CN.md) 选合适渠道。

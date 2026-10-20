@@ -6,12 +6,18 @@
 
 继 R326 (task_queue 写锁 wrapper, v3.9 #1) 和 R328 (notification_manager 6
 锁 acquisition order, v3.9 #2), R329 是 v3.9 第 3 个应用, 处理
-``service_manager.py`` 的 **3 个 module-level Lock**:
+``service_manager.py`` 的 **4 个 module-level Lock**:
 
 - ``_http_client_lock`` — 保护 ``_async_client`` / ``_sync_client``
   singleton + connection pool
 - ``_config_cache_lock`` — 保护 ``_cached_config`` 单例 + LRU 缓存
 - ``_config_callbacks_lock`` — 保护 callback 注册标志
+- ``_web_service_start_lock`` — R774 加入：让 ``start_web_service`` 在进程内
+  一次只跑一个；整个启动过程（``Popen`` + 健康检查，最长十几秒）都握着它，
+  所以它在最外层。里面只会短暂拿 ``_http_client_lock``（健康检查取 client），
+  而前三把锁的持有者都不会调用 ``start_web_service``（唯一的调用方是
+  ``ensure_web_ui_running`` 经 ``asyncio.to_thread``，调用点不持任何锁），
+  因此不存在反向顺序
 
 与 R328 (instance-level ``self.X_lock``) 不同, R329 处理 **module-level
 ``X_lock``** (无 ``self.`` 前缀), 验证策略相同但 AST 提取规则不同。
@@ -19,14 +25,14 @@
 R329 invariant (4 层)
 ---------------------
 
-1. **Layer 1 (Anchor)**: 3 个 module-level lock 全部用 ``threading.Lock()``
+1. **Layer 1 (Anchor)**: 4 个 module-level lock 全部用 ``threading.Lock()``
    (非 RLock) 声明
 2. **Layer 2 (No nested same-lock)**: 不允许 ``with X: with X:`` (会
    self-deadlock 因为非 RLock)
 3. **Layer 3 (Lock acquisition order consistency)**: 任何 2 锁 X / Y, 不
    允许同时存在 ``with X: with Y:`` 和反向 ``with Y: with X:``
    (deadlock cycle guard)
-4. **Layer 4 (Lock count guard)**: 锁数量 == 3, 新增 lock 强制 audit
+4. **Layer 4 (Lock count guard)**: 锁数量 == 4, 新增 lock 强制 audit
 
 methodology lineage
 -------------------
@@ -56,6 +62,7 @@ EXPECTED_LOCKS = frozenset(
         "_http_client_lock",
         "_config_cache_lock",
         "_config_callbacks_lock",
+        "_web_service_start_lock",
     }
 )
 
@@ -95,7 +102,7 @@ class TestLayer1LockAnchor:
     def test_service_manager_exists(self):
         assert _SERVICE_MANAGER_PY.is_file()
 
-    def test_all_three_locks_declared(self, subtests):
+    def test_all_expected_locks_declared(self, subtests):
         text = _SERVICE_MANAGER_PY.read_text(encoding="utf-8")
         for name in sorted(EXPECTED_LOCKS):
             with subtests.test(lock=name):

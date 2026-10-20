@@ -28,6 +28,25 @@ R136 — 解析 in-flight 持久化文件所在目录。
 若 config 模块不可用（e.g. 单元测试隔离场景），返回 ``None``——
 callers 应当跳过持久化路径，避免污染 cwd。
 
+R794：这里曾经向配置管理器要 ``config_path``——``ConfigManager`` 没有这个属性
+（配置文件路径叫 ``config_file``），``getattr(..., None)`` 把拼写错误吞成了
+``None``，整个 in-flight 持久化从 R136 起就没有真正运行过。现在直接读
+``config_file``，读不到（属性不存在、配置管理器出错）时留一条 DEBUG 日志再返回
+``None``，下一个这样的拼写错误不会再悄无声息。
+
+### `_interpreter_is_exiting() -> bool`
+
+R777 — 解释器是否已经进入退出流程（``threading._shutdown`` 已经开始跑）。
+
+退出时 Python 先跑 ``threading._shutdown``，再跑 ``atexit``：前者通过
+``concurrent.futures.thread._python_exit`` 叫醒线程池的 worker，worker 发现
+解释器在退出，就把自己所属的 ``ThreadPoolExecutor`` 标成已关闭
+（``executor._shutdown = True``）。此时 ``NotificationManager.shutdown()``
+（挂在 ``atexit`` 上）还没有被调用，``_shutdown_called`` 仍是 ``False``，
+R114 的二次确认认不出这是退出竞态。主线程在 ``threading._shutdown`` 里被标成
+已结束，``threading.main_thread().is_alive()`` 因此变成 ``False``，是公开 API
+里能认出这一阶段的信号。
+
 ### `_shutdown_global_notification_manager()`
 
 ## 类
@@ -190,7 +209,14 @@ shutdown 后重建线程池
 
 ##### `refresh_config_from_file(self, force: bool = False) -> None`
 
-从配置文件刷新配置（mtime 缓存优化，force=True 强制刷新）
+从配置文件刷新配置（force=True 强制刷新）。
+
+文件 mtime 和 ``ConfigManager.cache_epoch`` 都与上次应用时相同才跳过（R792）。
+只看 mtime 不够：``ConfigManager`` 的监听线程最多 2 秒后才把磁盘上的新内容读进内存，
+这段时间里来的刷新读到的是旧内容，却把新 mtime 记了下来——监听线程随后载入新内容，
+下一次刷新比较 mtime 发现相同，直接返回，改动永远没有生效（MCP 服务每来一个新任务
+就刷新一次，窗口并不罕见）。epoch 在读配置段**之前**取：读到旧内容的刷新记下的
+也是旧 epoch，载入之后会再跑一次。
 
 ##### `update_config(self) -> None`
 
@@ -199,6 +225,12 @@ shutdown 后重建线程池
 ##### `update_config_without_save(self) -> None`
 
 仅内存更新配置，不写文件。bark_enabled 变化时自动更新提供者。
+
+要么全部生效，要么都不生效（R790）：配置模型对每次赋值做校验
+（``validate_assignment=True``），不能转成布尔的值（``None``、列表、``"maybe"``）
+会在循环中途抛 ``ValidationError``——此前它前面的字段已经生效、后面的没有，
+调用方拿到失败却留下半个更新。现在抛出之前先把已赋值的字段放回原值，
+Bark 提供者也只在整批更新成功后才调整。
 
 ##### `get_status(self) -> dict[str, Any]`
 

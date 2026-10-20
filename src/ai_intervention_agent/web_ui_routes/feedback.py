@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.feedback_types import FeedbackResult
@@ -73,6 +74,22 @@ def _sanitize_selected_options(raw: Any) -> list[str]:
         if len(cleaned) >= 50:
             break
     return cleaned
+
+
+def _selected_options_from_form(raw: str) -> list[str]:
+    """Cleaned ``selected_options`` of a form field that carries a JSON array.
+
+    A value that is not readable JSON means "nothing selected", as a syntax error
+    always did. ``json.loads`` also raises ``ValueError`` (not a ``JSONDecodeError``)
+    for an integer of more than 4300 digits, the interpreter's limit on int/str
+    conversion, and ``RecursionError`` for nesting deeper than the interpreter
+    allows; both used to escape the handler and came back as ``500``.
+    """
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, RecursionError):
+        parsed = []
+    return _sanitize_selected_options(parsed)
 
 
 class FeedbackRoutesMixin:
@@ -155,14 +172,22 @@ class FeedbackRoutesMixin:
                     message:
                       type: string
               413:
-                description: payload 超出 ``_FEEDBACK_PAYLOAD_LIMIT_BYTES``
-                  上限 (含图片二进制)
+                description: |
+                  请求超过上传上限：整个请求大于 ``MAX_CONTENT_LENGTH``
+                  （``MAX_TOTAL_UPLOAD_BYTES`` + 1 MB），或 multipart 里某个文本字段大于
+                  ``MAX_FORM_MEMORY_SIZE``（默认 500 000 字节），或表单字段多于
+                  ``MAX_FORM_PARTS``（默认 1000）
                 schema:
                   type: object
                   properties:
+                    success:
+                      type: boolean
                     status:
                       type: string
                       enum: [error]
+                    error:
+                      type: string
+                      enum: [payload_too_large]
                     message:
                       type: string
               429:
@@ -196,11 +221,7 @@ class FeedbackRoutesMixin:
                 requested_task_id = request.form.get("task_id", "").strip()
                 feedback_text = request.form.get("feedback_text", "").strip()
                 selected_options_str = request.form.get("selected_options", "[]")
-                try:
-                    selected_options = json.loads(selected_options_str)
-                except json.JSONDecodeError:
-                    selected_options = []
-                selected_options = _sanitize_selected_options(selected_options)
+                selected_options = _selected_options_from_form(selected_options_str)
 
                 logger.debug("接收到的反馈数据:")
                 logger.debug(f"  - 文字内容长度: {len(feedback_text)}")
@@ -214,11 +235,7 @@ class FeedbackRoutesMixin:
                 requested_task_id = request.form.get("task_id", "").strip()
                 feedback_text = request.form.get("feedback_text", "").strip()
                 selected_options_str = request.form.get("selected_options", "[]")
-                try:
-                    selected_options = json.loads(selected_options_str)
-                except json.JSONDecodeError:
-                    selected_options = []
-                selected_options = _sanitize_selected_options(selected_options)
+                selected_options = _selected_options_from_form(selected_options_str)
 
                 logger.debug("接收到的表单数据:")
                 logger.debug(
@@ -398,6 +415,9 @@ class FeedbackRoutesMixin:
             """
             try:
                 raw = request.get_json(silent=False)
+            except RequestEntityTooLarge:
+                # R800: 体超过上限的 413 是 HTTP 本身的状态，不是"JSON 格式不对"
+                raise
             except Exception:
                 return (
                     jsonify(

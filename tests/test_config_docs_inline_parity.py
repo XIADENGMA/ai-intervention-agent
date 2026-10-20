@@ -27,6 +27,8 @@
   / ``configuration.zh-CN.md``）和 ``CHANGELOG.md``（历史记录里的旧名属于
   迁移说明，不应触发回归），以及 ``docs/api*/`` 自动生成的 API docs（噪声大且
   内容受 docstring 控制，``scripts/generate_docs.py`` 自管 drift）。
+- **文档承诺兼容的旧键名不算漂移**：``config_utils.LEGACY_KEY_ALIASES`` 里的
+  ``<section>.<旧名>``（R795）。表之外的旧名字照旧报。
 - **失败信息要"指出正确 section"**：用户最常踩的是"section 名错位"（如本案
   bind_interface 在 network_security 不在 web_ui），所以失败时同时打印
   "你写错了 ``X.Y``，正确写法是 ``Z.Y``"，比单纯 "Y not found" 友好。
@@ -49,6 +51,8 @@ import unittest
 from collections.abc import Iterator
 from pathlib import Path
 
+from ai_intervention_agent.config_utils import LEGACY_KEY_ALIASES
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TOML_TEMPLATE = REPO_ROOT / "config.toml.default"
 DOCS_DIR = REPO_ROOT / "docs"
@@ -70,6 +74,13 @@ _EXCLUDED_NAMES = frozenset(
 # 抓到，但那是 ``test_docstring_validity`` 的事，不归本测试管（避免抓到
 # ``feedback.auto_resubmit_timeout`` 类参数名 → 文件名混淆的噪声）。
 _EXCLUDED_DIR_FRAGMENTS = ("/api/", "/api.zh-CN/")
+
+# 文档承诺兼容的旧键名（``feedback.timeout``、``web_ui.max_retries`` ……，R795）：模板里没有，
+# 但配置加载时会把它们的值放到新名字上，文档里按这些名字引用是对的。表是代码里的
+# ``LEGACY_KEY_ALIASES``，不在表里的旧名字照旧算漂移。
+_LEGACY_REFS = frozenset(
+    f"{section}.{old}" for section, old, _new in LEGACY_KEY_ALIASES
+)
 
 # 文件后缀白名单：``server.py`` / ``static/js/app.js`` / ``locales/en.json``
 # 这种引用经常出现在 lessons-learned 里，得排除否则会被当成 ``server.py``
@@ -202,6 +213,8 @@ class TestConfigDocsInlineParity(unittest.TestCase):
                 sec, key = m.group(1), m.group(2)
                 # 排除文件后缀类（``web_ui.py`` / ``server.py`` 类引用）
                 if key in _FILE_EXT_LIKE_KEYS:
+                    continue
+                if f"{sec}.{key}" in _LEGACY_REFS:
                     continue
                 if key not in self.toml_sections.get(sec, set()):
                     ref = f"{sec}.{key}"

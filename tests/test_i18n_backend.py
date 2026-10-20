@@ -25,11 +25,13 @@ i18n = importlib.import_module("ai_intervention_agent.i18n")
 
 ROOT = Path(__file__).resolve().parent.parent
 PKG_ROOT = ROOT / "src" / "ai_intervention_agent"
+# Every server-side module that can answer a request. The list used to be four
+# hand-picked files, which silently left ``skills.py`` and ``_request_body.py``
+# (R789 / R800) out of "which keys are used"; a new route module would have been
+# invisible to the orphan check the same way.
 SERVER_PY_GLOB = [
     PKG_ROOT / "web_ui.py",
-    PKG_ROOT / "web_ui_routes" / "feedback.py",
-    PKG_ROOT / "web_ui_routes" / "notification.py",
-    PKG_ROOT / "web_ui_routes" / "task.py",
+    *sorted((PKG_ROOT / "web_ui_routes").glob("*.py")),
 ]
 
 # Matches ``msg("x.y")`` and ``get_locale_message("x.y")`` across the

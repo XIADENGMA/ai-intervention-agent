@@ -83,6 +83,7 @@ SECTION_KEYWORDS = [
     (16, "Needs Authentication", "Needs Authentication"),
     (17, "local image", "本地图片"),
     (18, "event=server.boot", "event=server.boot"),
+    (19, "cross_origin_write_blocked", "cross_origin_write_blocked"),
 ]
 
 

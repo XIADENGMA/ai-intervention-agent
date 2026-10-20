@@ -2603,7 +2603,11 @@ async function switchTask(taskId) {
 
   try {
 
-    fetchWithTimeout(`/api/tasks/${taskId}/activate`, { method: "POST" }, 10000)
+    fetchWithTimeout(
+      `/api/tasks/${encodeURIComponent(taskId)}/activate`,
+      { method: "POST" },
+      10000,
+    )
       .then((res) => res.json())
       .then((data) => {
         if (!data.success) {
@@ -2685,7 +2689,7 @@ function updateCountdownRingColors(oldActiveTaskId, newActiveTaskId) {
 async function loadTaskDetails(taskId) {
   try {
     const response = await fetchWithTimeout(
-      `/api/tasks/${taskId}`,
+      `/api/tasks/${encodeURIComponent(taskId)}`,
       undefined,
       10000,
     );
@@ -2775,7 +2779,7 @@ async function updateDescriptionDisplay(prompt) {
 
     }
 
-    let htmlContent = prompt;
+    let htmlContent = null;
 
     if (typeof marked !== "undefined") {
       try {
@@ -2792,17 +2796,26 @@ async function updateDescriptionDisplay(prompt) {
         }
       } catch (e) {
         console.warn("marked.js parse failed:", e);
+        htmlContent = null;
       }
     }
 
-    descriptionElement.innerHTML = htmlContent;
+    if (htmlContent === null) {
+      descriptionElement.textContent = prompt;
+    } else {
+      descriptionElement.innerHTML = htmlContent;
+    }
 
     if (descriptionDataset) {
       descriptionDataset.renderedPrompt = prompt;
     }
 
     if (typeof Prism !== "undefined") {
-      Prism.highlightAllUnder(descriptionElement);
+      try {
+        Prism.highlightAllUnder(descriptionElement);
+      } catch (e) {
+        console.warn("Prism highlight failed:", e);
+      }
     }
 
     if (typeof processCodeBlocks === "function") {
@@ -2811,6 +2824,10 @@ async function updateDescriptionDisplay(prompt) {
 
     if (typeof processStrikethrough === "function") {
       processStrikethrough(descriptionElement);
+    }
+
+    if (typeof processLinks === "function") {
+      processLinks(descriptionElement);
     }
 
     _debugLog("Synchronous Markdown render complete");
@@ -3662,7 +3679,7 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
     }
 
     const response = await fetchWithTimeout(
-      `/api/tasks/${taskId}/submit`,
+      `/api/tasks/${encodeURIComponent(taskId)}/submit`,
       {
         method: "POST",
         body: formData,

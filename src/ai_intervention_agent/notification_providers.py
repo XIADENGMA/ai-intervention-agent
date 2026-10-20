@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from importlib.util import find_spec
 from typing import Any
+from urllib.parse import quote
 
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.notification_models import (
@@ -258,8 +259,10 @@ class BarkNotificationProvider(BaseNotificationProvider):
         super().__init__(config)
         self.notification_type = NotificationType.BARK
         transport = httpx.HTTPTransport(retries=3)
+        # 传了 transport 时 httpx 本来就不读环境代理；显式写明，不依赖这条实现细节（R782）
         self.session = httpx.Client(
             transport=transport,
+            trust_env=False,
             headers={
                 "Content-Type": "application/json",
                 "User-Agent": "AI-Intervention-Agent",
@@ -355,10 +358,13 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                     event.metadata.get("base_url"), str
                                 ):
                                     base_url = event.metadata.get("base_url", "")
+                                task_id = _coerce_bark_format_value(
+                                    (event.metadata or {}).get("task_id", "")
+                                )
                                 params: dict[str, Any] = {
-                                    "task_id": (event.metadata or {}).get(
-                                        "task_id", ""
-                                    ),
+                                    # ``{task_id}`` 是 URL 的一个分量，先做百分号编码：
+                                    # ``#`` / ``&`` / 空格否则会让点击链接指向别处或失效。
+                                    "task_id": quote(task_id, safe=""),
                                     "event_id": event.id or "",
                                     "base_url": (base_url or "").rstrip("/"),
                                 }
@@ -374,8 +380,16 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                     else:
                                         url_value = rendered
                                 elif rendered:
+                                    hint = ""
+                                    if "{base_url}" in template and not base_url:
+                                        hint = (
+                                            "；base_url 为空（web_ui.host 是回环地址且没有配置 "
+                                            "external_base_url），请在设置面板配置 "
+                                            "web_ui.external_base_url 或启用 mDNS"
+                                        )
                                     logger.warning(
-                                        f"bark_url_template 渲染结果不是合法 URL，已忽略: {rendered!r}"
+                                        f"bark_url_template 渲染结果不是合法 URL，已忽略: "
+                                        f"{rendered!r}{hint}"
                                     )
 
                         if url_value:

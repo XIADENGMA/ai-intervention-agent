@@ -62,6 +62,25 @@ R703：判断两个路径是否解析到同一物理文件（samefile 优先，�
 
 定位带注释的默认配置模板：安装包里在包目录内，源码树里在仓库根。
 
+### `_why_path_cannot_be_examined(path: Path) -> str | None`
+
+``stat`` 一次路径：检查不了时返回原因，存在或只是"不存在"时返回 ``None``。
+
+直接 ``os.stat`` 而不是 ``Path.exists()``：哪些错误算"检查不了"由上面两张表决定，写在
+这里、能被测试钉住，不取决于 ``pathlib`` 在某个 Python 版本里怎么处理异常。
+
+### `_config_file_from_env_override(override: str, config_filename: str) -> Path | None`
+
+``AI_INTERVENTION_AGENT_CONFIG_FILE`` 指向的配置文件路径；路径检查不了时返回 ``None``（R793）。
+
+环境变量里写的路径落在没有搜索权限的目录里、某一段超出文件系统上限、或者是
+``~没有这个用户/...`` 时，``Path.is_dir()`` / ``Path.expanduser()`` 会抛出 ``PermissionError`` /
+``OSError`` / ``RuntimeError``——而 ``config_manager`` 在 import 时就要实例化全局
+``ConfigManager()``，于是 MCP 服务器、Web UI、``--print-config`` 全部带着原始 traceback 起不来。
+其它环境变量（端口、日志级别……）写错都是"忽略 + 警告"，这里与它们一致：打一条警告，
+返回 ``None``，调用方按没有设置这个环境变量继续找标准配置位置；用户指定的位置一个字节都不动。
+路径"只是不存在"不算检查不了：照旧使用，文件由后面的流程创建。
+
 ### `find_config_file(config_filename: str = 'config.toml') -> Path`
 
 查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。
@@ -120,9 +139,18 @@ platformdirs 不可用时的回退实现，返回跨平台标准配置目录。
 
 失效指定配置段的缓存
 
+##### `cache_epoch(self) -> int`
+
+缓存被整体失效的次数；缓存了配置派生值的调用方用它判断自己手里的是不是最新一份（R792）。
+
+``reload()`` 和 ``restore_config()`` 在把内存里的配置整体换成磁盘上的内容之后都会
+清空缓存，每清一次加一。调用方先取这个数、再读配置，把两者一起记下来；之后数字变了，
+说明内存里的配置在它读过之后被换过。文件的 mtime 做不到这一点：磁盘上的文件改了，
+监听线程最多 2 秒后才把新内容读进内存，这段时间里按新 mtime 读到的还是旧内容。
+
 ##### `invalidate_all_caches(self) -> None`
 
-清空所有配置缓存
+清空所有配置缓存（最后把 ``cache_epoch`` 加一：先清缓存、再加，读到新数字的人一定读到新内容）
 
 ##### `get_cache_stats(self) -> dict[str, Any]`
 

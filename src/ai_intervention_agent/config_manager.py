@@ -1,5 +1,6 @@
 """配置管理模块：TOML 配置文件的跨平台加载、读写、热重载。"""
 
+import errno
 import json
 import logging
 import os
@@ -16,7 +17,9 @@ from pathlib import Path
 from typing import Any, cast
 
 import tomlkit
+from pydantic import BaseModel, ValidationError
 
+from ai_intervention_agent.config_utils import apply_legacy_key_aliases
 from ai_intervention_agent.exceptions import ConfigValidationError
 from ai_intervention_agent.rw_lock import ReadWriteLock as ReadWriteLock
 from ai_intervention_agent.shared_types import SECTION_MODELS
@@ -371,6 +374,61 @@ def find_default_config_template() -> Path | None:
     return None
 
 
+# ``os.stat`` 报这些错误只表示"这个路径上没有东西"（目录还没建、父路径里有个普通文件、符号链接成环……），
+# 与 ``pathlib`` 自己当作"不存在"的那一族一致；Windows 上对应 ERROR_NOT_READY / ERROR_INVALID_NAME /
+# ERROR_CANT_RESOLVE_FILENAME。其它错误（EACCES、ENAMETOOLONG、EIO、ESTALE ……）说明路径"检查不了"。
+_ABSENT_PATH_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP})
+_ABSENT_PATH_WINERRORS = frozenset({21, 123, 1921})
+
+
+def _why_path_cannot_be_examined(path: Path) -> str | None:
+    """``stat`` 一次路径：检查不了时返回原因，存在或只是"不存在"时返回 ``None``。
+
+    直接 ``os.stat`` 而不是 ``Path.exists()``：哪些错误算"检查不了"由上面两张表决定，写在
+    这里、能被测试钉住，不取决于 ``pathlib`` 在某个 Python 版本里怎么处理异常。
+    """
+    try:
+        os.stat(path)
+    except OSError as exc:
+        if exc.errno in _ABSENT_PATH_ERRNOS:
+            return None
+        if getattr(exc, "winerror", None) in _ABSENT_PATH_WINERRORS:
+            return None
+        return exc.strerror or str(exc)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _config_file_from_env_override(override: str, config_filename: str) -> Path | None:
+    """``AI_INTERVENTION_AGENT_CONFIG_FILE`` 指向的配置文件路径；路径检查不了时返回 ``None``（R793）。
+
+    环境变量里写的路径落在没有搜索权限的目录里、某一段超出文件系统上限、或者是
+    ``~没有这个用户/...`` 时，``Path.is_dir()`` / ``Path.expanduser()`` 会抛出 ``PermissionError`` /
+    ``OSError`` / ``RuntimeError``——而 ``config_manager`` 在 import 时就要实例化全局
+    ``ConfigManager()``，于是 MCP 服务器、Web UI、``--print-config`` 全部带着原始 traceback 起不来。
+    其它环境变量（端口、日志级别……）写错都是"忽略 + 警告"，这里与它们一致：打一条警告，
+    返回 ``None``，调用方按没有设置这个环境变量继续找标准配置位置；用户指定的位置一个字节都不动。
+    路径"只是不存在"不算检查不了：照旧使用，文件由后面的流程创建。
+    """
+    try:
+        path = Path(override).expanduser()
+        # os.path.isdir 对任何 OSError 都答 False；真正的错误留给下面对最终路径的那次 stat。
+        if os.path.isdir(path) or override.endswith(("/", "\\")):
+            path = path / config_filename
+        problem = _why_path_cannot_be_examined(path)
+    except RuntimeError as exc:  # Path.expanduser：``~没有这个用户``
+        path, problem = None, str(exc)
+    if problem is None:
+        return path
+    logger.warning(
+        f"环境变量 AI_INTERVENTION_AGENT_CONFIG_FILE={override!r} 指向的路径无法检查"
+        f"（{problem}），已忽略这个环境变量，改用标准配置位置；"
+        "请修正这个路径，或者去掉这个环境变量"
+    )
+    return None
+
+
 def find_config_file(config_filename: str = "config.toml") -> Path:
     """查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。"""
     requested_path = Path(config_filename).expanduser()
@@ -379,10 +437,10 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
         return requested_path
 
     override = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
-    if override:
-        override_path = Path(override).expanduser()
-        if override_path.is_dir() or override.endswith(("/", "\\")):
-            override_path = override_path / config_filename
+    override_path = (
+        _config_file_from_env_override(override, config_filename) if override else None
+    )
+    if override_path is not None:
         try:
             override_resolved = override_path.resolve()
         except Exception:
@@ -528,6 +586,10 @@ class ConfigManager(
 ):
     """配置管理器：TOML 配置文件的加载、读写、持久化、热重载。"""
 
+    # 缓存被整体失效的次数（reload / restore_config ……每次内存里的配置被整体换掉都会加一）。
+    # 类属性默认值：绕过 __init__ 构造的实例（测试里常见）也能计数。见 ``cache_epoch``。
+    _cache_epoch: int = 0
+
     def __init__(self, config_file: str = "config.toml"):
         """初始化配置管理器：查找配置文件、初始化锁和缓存、加载配置、启动文件监听"""
 
@@ -606,7 +668,7 @@ class ConfigManager(
         old_file = self.config_file
         new_file = old_file.with_suffix(".toml")
         try:
-            with open(old_file, encoding="utf-8") as f:
+            with open(old_file, encoding="utf-8-sig") as f:
                 content = f.read()
             if old_file.suffix.lower() == ".jsonc":
                 config_data = parse_jsonc(content)
@@ -615,6 +677,8 @@ class ConfigManager(
             mdns = config_data.get("mdns")
             if isinstance(mdns, dict) and mdns.get("enabled") is None:
                 mdns["enabled"] = "auto"
+            # 模板里的新键带着默认值，叠加用户的键时旧名字会被它盖住：先把旧名字的值放到新名字上（R795）
+            apply_legacy_key_aliases(config_data)
             template_file = find_default_config_template()
             if template_file is not None:
                 with open(template_file, encoding="utf-8") as f:
@@ -669,7 +733,10 @@ class ConfigManager(
                     self._migrate_jsonc_to_toml()
 
                 if self.config_file.exists():
-                    with open(self.config_file, encoding="utf-8") as f:
+                    # utf-8-sig：带 BOM 的文件（Windows 记事本、PowerShell 的
+                    # Set-Content -Encoding UTF8 都会加）照常读取，tomlkit 和 json 都不认 BOM；
+                    # 没有 BOM 时和 utf-8 完全一样，BOM 也不会进入 _original_content（R784）
+                    with open(self.config_file, encoding="utf-8-sig") as f:
                         content = f.read()
 
                     full_config = self._parse_config_content(content)
@@ -685,6 +752,10 @@ class ConfigManager(
                         if key != "network_security":
                             self._config[key] = value
 
+                    # 必须在下面合并默认值之前：合并之后每个新键都带着默认值在场，
+                    # “文件里只写了旧名字”就再也认不出来了（R795）
+                    apply_legacy_key_aliases(self._config)
+
                     if "network_security" in full_config:
                         logger.debug("network_security 配置已排除，不加载到内存中")
                 else:
@@ -699,9 +770,15 @@ class ConfigManager(
                     self._get_default_config()
                 )
                 self._config = self._merge_config(default_config, self._config)
+                self._on_disk_config_invalid = False
 
             except Exception as e:
                 logger.error(f"加载配置文件失败: {e}", exc_info=True)
+                if (
+                    isinstance(e, ValueError | ConfigValidationError)
+                    and self._config_file_has_content()
+                ):
+                    self._on_disk_config_invalid = True
                 if had_previous_config:
                     self._config = previous_config
                     self._original_content = previous_original_content
@@ -713,6 +790,13 @@ class ConfigManager(
                         self._get_default_config()
                     )
                     self._original_content = None
+
+    def _config_file_has_content(self) -> bool:
+        """配置文件在磁盘上且不是 0 字节（探测不到时按"没有"处理）。"""
+        try:
+            return self.config_file.stat().st_size > 0
+        except OSError:
+            return False
 
     def _merge_config(
         self, default: dict[str, Any], current: dict[str, Any]
@@ -824,7 +908,17 @@ class ConfigManager(
         self._schedule_save()
 
     def _save_config_immediate(self):
-        """原子写入配置文件（tempfile + os.replace，防崩溃截断）；内容与最近一次读写一致时不写盘"""
+        """原子写入配置文件（tempfile + os.replace，防崩溃截断）；内容与最近一次读写一致时不写盘。
+
+        磁盘上的文件加载失败时（``_on_disk_config_invalid``）一律不写：此时内存里是默认配置或
+        上一份好配置，写回去会盖掉用户的内容。退出时的 ``force_save`` 也走这里（R783）。
+        """
+        if self._on_disk_config_invalid:
+            logger.warning(
+                f"配置文件无法解析（见前面的“加载配置文件失败”），为避免覆盖你的内容已跳过写入: "
+                f"{self.config_file}。修好后会自动重新加载；删除它则下次启动时重新生成默认配置。"
+            )
+            return
         try:
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -879,7 +973,7 @@ class ConfigManager(
     def _validate_saved_config(self):
         """验证保存的配置文件格式和结构是否正确"""
         try:
-            with open(self.config_file, encoding="utf-8") as f:
+            with open(self.config_file, encoding="utf-8-sig") as f:
                 content = f.read()
 
             parsed_config = self._parse_config_content(content)
@@ -1130,7 +1224,15 @@ class ConfigManager(
 
     @staticmethod
     def _validate_section(section: str, raw: Any) -> dict[str, Any]:
-        """通过 Pydantic 模型校验配置段（类型强转 + 钳位），失败时降级返回原始数据"""
+        """通过 Pydantic 模型校验配置段（类型强转 + 钳位）。
+
+        某一项的值读不出来（布尔项写成 ``""`` / ``"maybe"`` / 列表等）时，只有这一项退回
+        默认值，其余各项照常强转和钳位（R791）。以前是整段校验失败、整段原样返回：
+        ``NotificationConfig.from_config_file`` 信任 ``get_section`` 已经校验过，拿着原始
+        字典去建严格模型，构造抛出异常，``notification_manager`` 在导入时就失败，MCP
+        服务进不来。整数项一直是这个行为（``_clamp_int`` 读不出来就用默认值），
+        ``[network_security]`` 也是逐项校验。
+        """
         if not isinstance(raw, dict):
             raw = {}
         model_cls = SECTION_MODELS.get(section)
@@ -1138,9 +1240,48 @@ class ConfigManager(
             return raw.copy()
         try:
             return model_cls.model_validate(raw).model_dump()
+        except ValidationError as e:
+            degraded = ConfigManager._validate_without_unreadable_keys(
+                section, model_cls, raw, e
+            )
+            if degraded is not None:
+                return degraded
+            logger.warning(f"配置段 '{section}' Pydantic 校验失败，使用原始值: {e}")
         except Exception as e:
             logger.warning(f"配置段 '{section}' Pydantic 校验失败，使用原始值: {e}")
-            return raw.copy()
+        return raw.copy()
+
+    @staticmethod
+    def _validate_without_unreadable_keys(
+        section: str,
+        model_cls: type[BaseModel],
+        raw: dict[str, Any],
+        error: ValidationError,
+    ) -> dict[str, Any] | None:
+        """去掉校验报错的那几项再校验一次（它们取模型默认值）；做不到时返回 ``None``。
+
+        日志里只写键名，不写值：配置里的值可能是密钥（``bark_device_key`` 就在
+        ``bark_enabled`` 旁边），pydantic 自己的报错文本会带上 ``input_value``。
+        """
+        unreadable = sorted(
+            {str(err["loc"][0]) for err in error.errors() if err.get("loc")}
+            & raw.keys()
+        )
+        if not unreadable:
+            return None
+        usable = {key: value for key, value in raw.items() if key not in unreadable}
+        try:
+            result = model_cls.model_validate(usable).model_dump()
+        except Exception as e:
+            logger.debug(
+                f"配置段 '{section}' 去掉无效项后仍校验失败: {type(e).__name__}"
+            )
+            return None
+        logger.warning(
+            f"配置段 '{section}' 里 {unreadable} 的值无法解析，这些项改用默认值，"
+            "其余各项不受影响；请检查配置文件"
+        )
+        return result
 
     def update_section(
         self, section: str, updates: dict[str, Any], save: bool = True
@@ -1212,8 +1353,19 @@ class ConfigManager(
                 self._cache_stats["invalidations"] += 1
                 logger.debug(f"已失效 section 缓存: {section}")
 
+    @property
+    def cache_epoch(self) -> int:
+        """缓存被整体失效的次数；缓存了配置派生值的调用方用它判断自己手里的是不是最新一份（R792）。
+
+        ``reload()`` 和 ``restore_config()`` 在把内存里的配置整体换成磁盘上的内容之后都会
+        清空缓存，每清一次加一。调用方先取这个数、再读配置，把两者一起记下来；之后数字变了，
+        说明内存里的配置在它读过之后被换过。文件的 mtime 做不到这一点：磁盘上的文件改了，
+        监听线程最多 2 秒后才把新内容读进内存，这段时间里按新 mtime 读到的还是旧内容。
+        """
+        return self._cache_epoch
+
     def invalidate_all_caches(self) -> None:
-        """清空所有配置缓存"""
+        """清空所有配置缓存（最后把 ``cache_epoch`` 加一：先清缓存、再加，读到新数字的人一定读到新内容）"""
         with self._lock:
             invalidated_count = len(self._section_cache)
             self._section_cache.clear()
@@ -1223,6 +1375,7 @@ class ConfigManager(
             self._network_security_cache_time = 0
 
             self._cache_stats["invalidations"] += invalidated_count + 1
+            self._cache_epoch += 1
             logger.debug(f"已失效所有缓存 (共 {invalidated_count + 1} 个)")
 
     def get_cache_stats(self) -> dict[str, Any]:

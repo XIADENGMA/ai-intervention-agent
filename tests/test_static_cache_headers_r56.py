@@ -13,9 +13,10 @@
 
 设计要点：
 
-* 不依赖具体某个 ``static/css/main.css`` 等文件存在 —— 测试夹具直接
-  用 Flask test client 跑，文件不存在时也能验证 hook 仍然设了 Cache-
-  Control（hook 是无条件设的）；
+* 不依赖具体某个 ``static/css/main.css`` 等文件存在 —— 前缀覆盖性
+  的用例让一个 200 响应直接经过 hook（``process_response``）：策略只
+  取决于路径与状态码（R772 起错误响应一律 ``no-store``，不再「无条件
+  设长缓存」）；
 * 不要写"路径精确等值"（``max-age=86400``）的脆弱断言，只查"必含
   关键 token"如 ``86400`` / ``31536000`` / ``immutable``，这样未来如果
   改成 ``public, max-age=86400, must-revalidate`` 也不会无意义破坏。
@@ -190,33 +191,43 @@ class TestEtagAndConditionalGet(_StaticHeaderTestBase):
 
 
 class TestHookCoversAllStaticPrefixes(_StaticHeaderTestBase):
-    """hook 各分支前缀覆盖性快速回归。"""
+    """hook 各分支前缀覆盖性快速回归。
+
+    R772 之后 hook 只给「成功送出文件」的响应长缓存（错误响应一律
+    ``no-store``，见 ``tests/test_static_errors_not_cached_r772.py``），所以
+    这里不再请求不存在的文件指望拿到长缓存头，而是让一个 200 响应
+    直接经过 hook（``process_response``）：策略只取决于路径与状态码，
+    与磁盘上有没有这个文件无关。
+    """
+
+    def _cache_control_for(self, path: str, status: int = 200) -> str:
+        from flask import Response
+
+        with self._ui.app.test_request_context(path):
+            response = self._ui.app.process_response(Response("body", status=status))
+        return response.headers.get("Cache-Control", "")
 
     def test_lottie_thirty_days_immutable(self) -> None:
-        resp = self._client.get("/static/lottie/anim.json")
-        cache = resp.headers.get("Cache-Control", "")
+        cache = self._cache_control_for("/static/lottie/anim.json")
         self.assertIn("2592000", cache)
         self.assertIn("immutable", cache)
-        resp.close()
 
     def test_fonts_thirty_days_immutable(self) -> None:
-        resp = self._client.get("/fonts/test.woff2")
-        cache = resp.headers.get("Cache-Control", "")
+        cache = self._cache_control_for("/fonts/test.woff2")
         self.assertIn("2592000", cache)
         self.assertIn("immutable", cache)
-        resp.close()
 
     def test_sounds_one_week(self) -> None:
-        resp = self._client.get("/sounds/foo.mp3")
-        cache = resp.headers.get("Cache-Control", "")
+        cache = self._cache_control_for("/sounds/foo.mp3")
         self.assertIn("604800", cache)
-        resp.close()
 
     def test_icons_non_ico_one_week(self) -> None:
-        resp = self._client.get("/icons/icon.png")
-        cache = resp.headers.get("Cache-Control", "")
+        cache = self._cache_control_for("/icons/icon.png")
         self.assertIn("604800", cache)
-        resp.close()
+
+    def test_icons_ico_has_no_hook_policy(self) -> None:
+        cache = self._cache_control_for("/icons/icon.ico")
+        self.assertNotIn("max-age=604800", cache)
 
 
 if __name__ == "__main__":

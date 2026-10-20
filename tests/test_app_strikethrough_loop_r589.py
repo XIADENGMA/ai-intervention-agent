@@ -88,11 +88,14 @@ def test_process_strikethrough_preserves_dom_replacement_without_foreach() -> No
           }};
         }}
 
-        function makeParent(tagName, closestResult) {{
+        function makeParent(tagName, closestResult, onlyMath) {{
           return {{
             tagName,
             closest(selector) {{
-              return selector === 'pre, code, script, style' ? closestResult : null;
+              if (onlyMath) {{
+                return selector.includes('.tex2jax_process') ? closestResult : null;
+              }}
+              return selector.startsWith('pre, code, script, style') ? closestResult : null;
             }},
             replaceChild(fragment, textNode) {{
               replacements.push({{
@@ -109,6 +112,7 @@ def test_process_strikethrough_preserves_dom_replacement_without_foreach() -> No
         const normalParent = makeParent('P', null);
         const codeParent = makeParent('CODE', null);
         const nestedCodeParent = makeParent('SPAN', {{}});
+        const mathParent = makeParent('SPAN', {{}}, true);
         const nodes = [
           {{ textContent: 'plain text', parentElement: normalParent, parentNode: normalParent }},
           {{ textContent: 'A ~~deleted~~ B', parentElement: normalParent, parentNode: normalParent }},
@@ -118,6 +122,7 @@ def test_process_strikethrough_preserves_dom_replacement_without_foreach() -> No
             parentElement: nestedCodeParent,
             parentNode: nestedCodeParent,
           }},
+          {{ textContent: 'skip ~~math~~', parentElement: mathParent, parentNode: mathParent }},
           {{
             textContent: 'X ~~one~~ Y ~~two~~ Z',
             parentElement: normalParent,
@@ -183,7 +188,11 @@ def test_process_strikethrough_preserves_dom_replacement_without_foreach() -> No
         "A ~~deleted~~ B",
         "X ~~one~~ Y ~~two~~ Z",
     ]
-    assert result["rejected"] == ["skip ~~code~~", "skip ~~nested~~"]
+    assert result["rejected"] == [
+        "skip ~~code~~",
+        "skip ~~nested~~",
+        "skip ~~math~~",
+    ]
     assert result["replacements"] == [
         {
             "oldText": "A ~~deleted~~ B",

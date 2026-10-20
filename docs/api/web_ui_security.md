@@ -8,6 +8,14 @@
 
 ### `build_trusted_hosts() -> list[str]`
 
+### `_may_change_state(method: str, path: str) -> bool`
+
+### `_origin_parts(value: str) -> tuple[str, str] | None`
+
+### `_origin_is_allowed(origin: str, host: str, allowed_origins: Collection[str | re.Pattern[str]]) -> bool`
+
+### `is_cross_origin_write() -> bool`
+
 ### `_bracketed_address(value: str) -> IPv4Address | IPv6Address | None`
 
 ### `_host_is_trusted_with_ipv6(original: Callable[..., bool]) -> Callable[..., bool]`

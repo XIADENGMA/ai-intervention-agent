@@ -10,6 +10,8 @@
 
 ### `_get_inflight_file_dir() -> Path | None`
 
+### `_interpreter_is_exiting() -> bool`
+
 ### `_shutdown_global_notification_manager()`
 
 ## Classes

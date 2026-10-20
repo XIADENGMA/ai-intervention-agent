@@ -519,6 +519,15 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
 
   _scheduleNextFrame(() => {
     if (content) {
+      if (
+        isMarkdown &&
+        renderedDataset &&
+        renderedDataset.renderedPrompt !== undefined &&
+        element.childNodes &&
+        element.childNodes.length > 0
+      ) {
+        return;
+      }
 
       try {
         element.removeAttribute("data-i18n");
@@ -526,43 +535,65 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
 
       }
       let htmlContent = content;
+      let renderAsText = false;
 
-      if (isMarkdown && typeof marked !== "undefined") {
-        try {
+      if (isMarkdown) {
+        renderAsText = true;
+        if (typeof marked !== "undefined") {
+          try {
 
-          const mathGuard = window.protectMathDelimiters
-            ? window.protectMathDelimiters(content)
-            : { text: content, segments: [] };
-          htmlContent = marked.parse(mathGuard.text);
-          if (window.restoreMathDelimiters) {
-            htmlContent = window.restoreMathDelimiters(
-              htmlContent,
-              mathGuard.segments,
-            );
+            const mathGuard = window.protectMathDelimiters
+              ? window.protectMathDelimiters(content)
+              : { text: content, segments: [] };
+            htmlContent = marked.parse(mathGuard.text);
+            if (window.restoreMathDelimiters) {
+              htmlContent = window.restoreMathDelimiters(
+                htmlContent,
+                mathGuard.segments,
+              );
+            }
+            renderAsText = false;
+          } catch (e) {
+            console.warn("marked.js parse failed:", e);
           }
-        } catch (e) {
-          console.warn("marked.js parse failed:", e);
         }
       }
 
-      const fragment = document.createDocumentFragment();
-      const tempDiv = document.createElement("div");
-      tempDiv.innerHTML = htmlContent;
+      if (renderAsText) {
+        element.textContent = content;
+      } else {
+        const fragment = document.createDocumentFragment();
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = htmlContent;
 
-      while (tempDiv.firstChild) {
-        fragment.appendChild(tempDiv.firstChild);
+        while (tempDiv.firstChild) {
+          fragment.appendChild(tempDiv.firstChild);
+        }
+
+        element.innerHTML = "";
+        element.appendChild(fragment);
       }
-
-      element.innerHTML = "";
-      element.appendChild(fragment);
 
       if (renderedDataset) {
         renderedDataset.renderedContent = content;
+        if (isMarkdown) {
+          renderedDataset.renderedPrompt = content;
+        }
+      }
+
+      if (typeof Prism !== "undefined") {
+        try {
+          Prism.highlightAllUnder(element);
+        } catch (e) {
+          console.warn("Prism highlight failed:", e);
+        }
       }
 
       processCodeBlocks(element);
 
       processStrikethrough(element);
+
+      processLinks(element);
 
       const textContent = element.textContent || "";
       if (window.loadMathJaxIfNeeded) {
@@ -644,7 +675,7 @@ function processStrikethrough(container) {
           parent.tagName === "PRE" ||
           parent.tagName === "SCRIPT" ||
           parent.tagName === "STYLE" ||
-          parent.closest("pre, code, script, style"))
+          parent.closest("pre, code, script, style, .tex2jax_process"))
       ) {
         return NodeFilter.FILTER_REJECT;
       }
@@ -687,6 +718,58 @@ function processStrikethrough(container) {
   }
 }
 
+// A link in the agent's message must never take the approval page away.
+// marked passes every destination to the DOM unchanged, so a click used to
+// replace this page with the link (or with the server's 404 for a relative
+// "src/app.py"), reload it for an empty href, and leave "javascript:" and
+// "data:" destinations in place as links that only the CSP stops.
+// Same policy as the VS Code webview's sanitizePromptHtml: web links open in
+// a new tab, everything the browser could not follow for the user is text.
+function classifyPromptLink(href) {
+  // Browsers drop tabs and newlines anywhere, and control characters and
+  // spaces at the ends, before they read the scheme: classify what they read.
+  const target = String(href == null ? "" : href).replace(
+    /[\u0000-\u0020\u007f]+/g,
+    "",
+  );
+  if (target === "") return "text";
+  if (target.charAt(0) === "#") return "keep";
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(target);
+  if (scheme) {
+    const name = scheme[1].toLowerCase();
+    if (name === "http" || name === "https") return "new-tab";
+    if (name === "mailto" || name === "tel") return "keep";
+    return "text";
+  }
+  if (target.slice(0, 2) === "//") return "new-tab";
+  return "text";
+}
+
+function processLinks(container) {
+  if (!container || typeof container.querySelectorAll !== "function") return;
+
+  const anchors = container.querySelectorAll("a[href]");
+  const anchorCount =
+    anchors && Number.isFinite(anchors.length) ? anchors.length : 0;
+  for (let anchorIndex = 0; anchorIndex < anchorCount; anchorIndex += 1) {
+    const anchor = anchors[anchorIndex];
+    if (!anchor) continue;
+
+    const kind = classifyPromptLink(anchor.getAttribute("href"));
+    if (kind === "new-tab") {
+      anchor.setAttribute("target", "_blank");
+      anchor.setAttribute("rel", "noopener noreferrer");
+    } else if (kind === "text") {
+      const parent = anchor.parentNode;
+      if (!parent) continue;
+      while (anchor.firstChild) {
+        parent.insertBefore(anchor.firstChild, anchor);
+      }
+      parent.removeChild(anchor);
+    }
+  }
+}
+
 async function loadConfig() {
   try {
     const response = await fetchWithTimeout("/api/config", undefined, 10000);
@@ -702,10 +785,7 @@ async function loadConfig() {
 
     const descriptionElement = document.getElementById("description");
     if (descriptionElement) {
-      renderMarkdownContent(
-        descriptionElement,
-        config.prompt_html || config.prompt,
-      );
+      renderMarkdownContent(descriptionElement, config.prompt, true);
     } else {
       console.warn(
         "loadConfig: #description not in DOM (SSE reload + multi-task " +
@@ -1513,7 +1593,7 @@ async function submitFeedback() {
     submitTargetTaskId = window.activeTaskId;
 
     const submitUrl = submitTargetTaskId
-      ? `/api/tasks/${submitTargetTaskId}/submit`
+      ? `/api/tasks/${encodeURIComponent(submitTargetTaskId)}/submit`
       : "/api/submit";
     console.debug(`Using submit endpoint: ${submitUrl}`);
 

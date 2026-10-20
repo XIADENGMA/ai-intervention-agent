@@ -566,3 +566,15 @@ class StaticRoutesMixin:
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
             return response
+
+        # Flask's own ``/static/<path:filename>`` endpoint answers every static
+        # URL the routes above do not take: the nested ones, i.e. the MathJax
+        # fonts (``/static/js/output/chtml/fonts/woff-v2/``), the TeX extensions
+        # (``/static/js/input/tex/extensions/``) and ``/static/locales/_pseudo/``.
+        # It is a static resource like the rest, so it gets the same exemption
+        # from the default limits ("10 per second"): a formula that needs a
+        # dozen fonts and extensions asks for them all within one second, and
+        # every answer past the tenth was a 429 (the font simply never loaded).
+        builtin_static = self.app.view_functions.get("static")
+        if builtin_static is not None:
+            self.limiter.exempt(builtin_static)
