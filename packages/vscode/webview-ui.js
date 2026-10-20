@@ -4128,7 +4128,7 @@
 
         if (kind === 'a' && /^\s*data:/i.test(trimmed)) return ''
 
-        if (trimmed.startsWith('/')) return SERVER_URL + trimmed
+        if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return SERVER_URL + trimmed
 
         try {
           const u = new URL(trimmed, SERVER_URL)

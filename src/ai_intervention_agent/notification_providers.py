@@ -547,6 +547,12 @@ def create_notification_providers(
         if system_provider.supported:
             providers[NotificationType.SYSTEM] = system_provider
             logger.debug("系统通知提供者已创建")
+        elif config.system_enabled:
+            logger.warning(
+                "system_enabled=true，但当前环境无法发送系统通知"
+                "（需要 plyer；macOS 还需要 pyobjus），该渠道会被跳过；"
+                "安装缺少的依赖或将 system_enabled 设为 false 可消除此提示"
+            )
     except Exception as e:
         logger.debug(f"系统通知提供者创建失败: {e}", exc_info=True)
 

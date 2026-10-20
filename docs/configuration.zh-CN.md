@@ -246,7 +246,7 @@ aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
 | `auto_request_permission` | boolean | `true`                            | 页面加载时自动请求通知权限                                                                  |
 | `web_icon`                | string  | `"default"`                       | `"default"` 或自定义图标 URL                                                                |
 | `web_timeout`             | number  | `5000`                            | Web 通知显示时长（毫秒），范围 `[1, 600000]`                                                |
-| `system_enabled`          | boolean | `false`                           | 桌面系统通知（`plyer` 可选依赖）                                                            |
+| `system_enabled`          | boolean | `false`                           | 桌面系统通知（需要 `plyer`，macOS 另需 `pyobjus`）；仅在开启时发送，不可用时启动日志告警    |
 | `macos_native_enabled`    | boolean | `true`                            | macOS 原生通知（主要由 VS Code/Cursor 插件侧使用）                                          |
 | `sound_enabled`           | boolean | `true`                            | 声音通知                                                                                    |
 | `sound_mute`              | boolean | `false`                           | 静音                                                                                        |

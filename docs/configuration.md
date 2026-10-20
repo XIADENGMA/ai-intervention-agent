@@ -277,7 +277,7 @@ Controls web/sound/system/Bark notifications.
 | `auto_request_permission` | boolean | `true`                            | Auto request permission on page load                                                                             |
 | `web_icon`                | string  | `"default"`                       | `"default"` or a custom icon URL                                                                                 |
 | `web_timeout`             | number  | `5000`                            | Milliseconds, range `[1, 600000]`                                                                                |
-| `system_enabled`          | boolean | `false`                           | Desktop notifications via `plyer` (optional dependency)                                                          |
+| `system_enabled`          | boolean | `false`                           | Desktop notifications via `plyer` (macOS also needs `pyobjus`); sent only while on, warns at startup if unusable |
 | `macos_native_enabled`    | boolean | `true`                            | macOS native notifications (primarily used by the VS Code/Cursor extension)                                      |
 | `sound_enabled`           | boolean | `true`                            | Sound notifications                                                                                              |
 | `sound_mute`              | boolean | `false`                           | Mute sound                                                                                                       |

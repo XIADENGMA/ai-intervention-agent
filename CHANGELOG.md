@@ -50,6 +50,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- The zh-TW generator (`scripts/gen_zhtw_from_zhcn.py`) merges by
+  default: strings already in `zh-TW.json` are kept, only the keys it
+  lacks are derived (and listed for review), keys that zh-CN no longer
+  has are dropped, and an unchanged file is not rewritten. `--force`
+  re-derives everything and discards hand edits (the old behaviour),
+  `--check` also reports keys that only zh-TW has, and the release
+  checklist runs `--all --check`; it used to run `--all`, which
+  overwrote every string polished by hand. A new test,
+  `test_zhtw_generator_merge_r738.py` (42 tests, 37 mutants killed),
+  covers the merge, the one-pass phrase conversion, the clean derivation
+  of both zh-CN files and the checklist command.
+- The zh-TW generator's per-character table (`CHAR_MAP_v2`) no longer
+  carries 232 entries that could never match: it is read one character
+  at a time, and they had two to four (`实际`, `贡献者`, `赖账不还`...).
+  The 35 single characters those words need (`际`, `业`, `状`, `账`...)
+  are now in the table, so a new zh-CN string with `实际` is converted
+  whole instead of coming out as `實际`; the spellings that depend on
+  the word became phrases (`赞助` is `贊助` while `赞扬` is `讚揚`, `细致`
+  is `細緻` while `一致` keeps its `致`); the one-character phrases `节`
+  and `栏` moved into the table. What the generator derives from both
+  zh-CN files is byte for byte what it was. A new test,
+  `test_zhtw_generator_tables_r739.py` (54 tests, 15 mutants killed),
+  keeps words out of the table and pins the conversions.
 - Repository-wide comment cleanup (maintainer decision: comments are
   removed unless load-bearing), delivered in five verified batches:
   web CSS (`main.css` −42% lines), all first-party web JS, the whole
@@ -118,6 +141,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- MCP server: `system_enabled = false`, the shipped default, did not stop
+  desktop notifications. The system provider is registered whenever `plyer`
+  works (Linux, Windows, macOS with `pyobjus`) and the switch was never
+  checked, so every feedback request still raised one. The system channel is
+  now left out while the switch is off. The switch is read on every request,
+  so editing it in the config applies to the next one. Anyone who relied on
+  the notifications without setting `system_enabled = true` needs to set it.
+- VS Code extension: a protocol-relative link or image in a prompt, such as
+  `[docs](//example.com/docs)`, pointed at the local server
+  (`http://127.0.0.1:8080//example.com/docs`, a 404) instead of at
+  `example.com`. Only a path with a single leading slash is treated as local
+  now; `//host/path` resolves against the server's scheme like any other
+  URL, and one that cannot be resolved (`//`) is dropped.
+- MCP server log: every feedback request logged four WARNING lines and spent
+  about seven seconds on notification retries whenever none of the channels
+  it asks for (system, sound, Bark) had a provider, for example with sound
+  and Bark switched off and system notifications unavailable on macOS.
+  A channel without a provider is now left out instead of being counted as a
+  failed delivery, and a request with no channel left sends nothing; a
+  provider that is there but fails is still reported as before. A
+  `system_enabled = true` that cannot work (no `plyer`, or no `pyobjus` on
+  macOS) is reported once when the server starts.
+- VS Code extension, Traditional Chinese (zh-TW): three messages said
+  "模區塊" ("設定模區塊載入失敗", "設定模區塊無法使用", "通知核心模區塊未就緒")
+  instead of "模組" (module), and the empty-clipboard message asked for
+  "一區段程式碼" instead of "一段程式碼". The generator's one-character
+  conversion rules for "块" and "段" fired inside other words; they are
+  gone, and the generator now converts each phrase once, left to right,
+  without scanning its own output again (the source of "尚尚未授予").
+  Its tables also gained the 40 characters the shipped text needed,
+  "標準", "日誌" and "異常" (it wrote "例外").
+- Traditional Chinese (zh-TW): 27 strings in the Web UI and the VS Code
+  extension still contained Simplified characters (the file-picker and
+  decode errors, "路徑", "幫助", "詳情", "診斷", "日誌", "篩選" and
+  others, each shown half-converted), and the notification fallback
+  message began "尚尚未授予". They read as Traditional Chinese now. A new
+  test refuses Simplified-only characters and doubled characters in
+  every zh-TW text the project ships (both locale files, the server's
+  messages and the offline page).
 - Web UI: picking more than three images at once in the file dialog
   attached only the first three; the rest failed with "invalid file
   object". The browser empties the picker's file list as soon as the page

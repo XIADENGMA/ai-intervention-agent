@@ -51,7 +51,7 @@
     },
     "config": {
       "title": "設定",
-      "path": "目前設定檔案路径",
+      "path": "目前設定檔案路徑",
       "pathPlaceholder": "載入中…",
       "openInEditor": "打開",
       "openInEditorTitle": "在目前編輯器中打開設定檔案"
@@ -66,11 +66,11 @@
       "noChange": "無需同步（未變更）",
       "loadFailed": "載入失敗",
       "loadFailedReason": "載入失敗：{{reason}}",
-      "coreNotReady": "載入失敗：通知核心模區塊未就绪",
+      "coreNotReady": "載入失敗：通知核心模組未就緒",
       "remoteChanged": "檢測到設定已更新（目前有未儲存修改），為避免覆寫，本次未自動同步",
       "notifyDisabled": "通知已關閉：請先開啟「啟用通知」",
       "macosNotEnabled": "提示：目前未開啟「macOS 原生通知」，仍將執行一次測試用於排查…",
-      "macosTestTriggered": "已触發測試通知：請留意系統通知",
+      "macosTestTriggered": "已觸發測試通知：請留意系統通知",
       "postFailed": "傳送失敗：VS Code Webview API 無法使用（請嘗試關閉/重新打開面板或重載視窗）",
       "testFailed": "測試失敗：{{reason}}",
       "testFailedNoUrl": "測試失敗：serverUrl 為空",
@@ -114,8 +114,8 @@
       "submit": "提交回饋"
     },
     "toast": {
-      "configFallback": "設定載入失敗，已使用任務详情兜底",
-      "configFallbackReason": "設定載入失敗，已使用任務详情兜底（{{reason}}）"
+      "configFallback": "設定載入失敗，已使用任務詳情兜底",
+      "configFallbackReason": "設定載入失敗，已使用任務詳情兜底（{{reason}}）"
     },
     "status": {
       "connected": "已連線",
@@ -154,14 +154,14 @@
       "historyError": "循環歷史載入失敗"
     },
     "clipboard": {
-      "empty": "剪貼簿為空，請先複製一區段程式碼。",
+      "empty": "剪貼簿為空，請先複製一段程式碼。",
       "noCode": "插入失敗：未檢測到有效程式碼",
       "inserted": "已插入剪貼簿內容",
       "insertFailed": "插入程式碼失敗：{{reason}}"
     },
     "settingsPanel": {
-      "loadFailed": "設定模區塊載入失敗",
-      "unavailable": "設定模區塊無法使用",
+      "loadFailed": "設定模組載入失敗",
+      "unavailable": "設定模組無法使用",
       "openFailed": "打開設定失敗：{{reason}}"
     },
     "copy": {
@@ -182,7 +182,7 @@
     },
     "image": {
       "readFailed": "讀取圖片失敗",
-      "decodeFailed": "圖片解码失敗",
+      "decodeFailed": "圖片解碼失敗",
       "invalid": "無效的圖片檔案",
       "unsupportedFormat": "不支援的圖片格式：{{type}}",
       "tooLarge": "圖片過大：{{size}}MB > 10MB",
@@ -213,7 +213,7 @@
         "title": "暫無內容",
         "message": {
           "default": "等待下一個回饋要求。",
-          "filtered": "目前筛選條件下沒有匹配結果。"
+          "filtered": "目前篩選條件下沒有匹配結果。"
         }
       },
       "error": {
@@ -226,8 +226,8 @@
         },
         "action": {
           "retry": "重試",
-          "open_log": "打開日志",
-          "copy_diagnostics": "複製診断訊息"
+          "open_log": "打開日誌",
+          "copy_diagnostics": "複製診斷訊息"
         }
       }
     },

@@ -117,12 +117,12 @@
       "uploaded": "自訂音效已啟用",
       "notUploaded": "未上傳自訂音效",
       "errors": {
-        "generic": "音訊上傳失敗，請换一個檔案再試。",
+        "generic": "音訊上傳失敗，請換一個檔案再試。",
         "invalidMime": "不支援的音訊格式。請使用 mp3、wav、ogg、m4a 或 flac。",
         "tooLarge": "音訊檔案過大（最大 700 KB）。",
         "readFailed": "音訊檔案讀取失敗，請重試。",
         "storageFailed": "瀏覽器儲存空間無法使用或已滿，無法儲存音訊。",
-        "decodeFailed": "無法解码此音訊檔案。",
+        "decodeFailed": "無法解碼此音訊檔案。",
         "durationTooLong": "音訊時長過長（最大 30 秒）。"
       }
     },
@@ -158,7 +158,7 @@
     "langAuto": "自動檢測",
     "langZhCN": "繁體中文",
     "langZhTW": "繁體中文",
-    "configPath": "目前設定檔案路径",
+    "configPath": "目前設定檔案路徑",
     "openConfigInIde": "用 IDE 打開設定檔案",
     "openConfigInIdeReady": "用 {editor} 打開",
     "openConfigInIdeRequesting": "打開中…",
@@ -172,10 +172,10 @@
     "shortcutPasteImage": "貼上圖片：",
     "shortcutUploadImage": "上傳圖片：",
     "shortcutClearImage": "清除圖片：",
-    "shortcutsFullHelpHint": "在頁面任意位置按 Ctrl+/（macOS 用 Cmd+/）即可在瀏覽器控制台打印完整的鍵盤快捷鍵参考。",
+    "shortcutsFullHelpHint": "在頁面任意位置按 Ctrl+/（macOS 用 Cmd+/）即可在瀏覽器控制台打印完整的鍵盤快捷鍵參考。",
     "feedbackTitle": "回饋",
     "autoResubmitTimeout": "自動重新調用倒數計時（秒）",
-    "autoResubmitTimeoutHint": "倒數結束後自動重新提交回饋要求。範圍 10-3600 秒，設為 0 则停用。",
+    "autoResubmitTimeoutHint": "倒數結束後自動重新提交回饋要求。範圍 10-3600 秒，設為 0 則停用。",
     "resubmitPrompt": "重新調用提示語",
     "resubmitPromptHint": "倒數結束後自動提交的提示內容（最多 100000 字元）",
     "submitMode": "提交快捷鍵",
@@ -199,7 +199,7 @@
     "clipboardTimeout": "瀏覽器沒有及時返回剪貼簿內容。請在下方手動貼上程式碼。",
     "clipboardNoText": "未檢測到可插入的剪貼簿文本。請在下方手動貼上程式碼。",
     "clipboardDefault": "由於瀏覽器安全限制無法自動讀取剪貼簿，請在下方手動貼上程式碼。",
-    "submitEmpty": "請輸入回饋內容、選擇預定义選項或上傳圖片",
+    "submitEmpty": "請輸入回饋內容、選擇預定義選項或上傳圖片",
     "submitting": "提交中…",
     "submitFailed": "提交失敗",
     "networkError": "網路錯誤，請重試",
@@ -223,7 +223,7 @@
     "barkFailed": "Bark 通知傳送失敗",
     "barkTestFailed": "Bark 測試通知失敗: {{reason}}",
     "maxImages": "最多只能上傳 {count, plural, other {# 張圖片}}",
-    "imageDuplicate": "該圖片已经新增過了",
+    "imageDuplicate": "該圖片已經新增過了",
     "imageError": "圖片處理失敗: {{reason}}",
     "sizeLabelKB": "{{name}} ({{size}} KB)",
     "processing": "處理中…",
@@ -246,7 +246,7 @@
     "fileProcessFailed": "處理 {{filename}} 失敗：{{reason}}",
     "confirmCloseTask": "確定要關閉任務 {{taskId}} 嗎？",
     "notifFallbackPermDenied": "通知權限已被拒絕；已改用頁面內提示。請在瀏覽器設定中重新開啟系統通知後即可收到桌面提醒。",
-    "notifFallbackPermDefault": "尚尚未授予通知權限；目前改用頁面內提示。可點擊右上角铃铛圖示或頁面任意可交互元素来触發瀏覽器權限授權要求。",
+    "notifFallbackPermDefault": "尚未授予通知權限；目前改用頁面內提示。可點擊右上角鈴鐺圖示或頁面任意可互動元素來觸發瀏覽器權限授權要求。",
     "notifFallbackPermDisabled": "系統通知已在設定中關閉；目前顯示頁面內提示。可在設定面板重新開啟。",
     "notifFallbackUnsupported": "目前瀏覽器不支援系統通知；已改用頁面內提示作為降級方案。",
     "notifFallbackInsecure": "通知功能需要 HTTPS 或 localhost；目前頁面為不安全上下文，已降級為頁面內提示。",
@@ -255,19 +255,19 @@
   "validation": {
     "invalidFile": "無效的檔案物件",
     "unsupportedFormat": "不支援的檔案格式：{{type}}",
-    "fileTooSmall": "檔案太小（{{size}} 位元組），可能為空或已损坏",
+    "fileTooSmall": "檔案太小（{{size}} 位元組），可能為空或已損壞",
     "fileSizeExceeded": "檔案大小超過限制：{{actual}}MB > {{limit}}MB",
     "fileNameTooLong": "檔名過長",
     "filenameEmpty": "檔名為空",
     "filenameIllegalChars": "檔名包含非法字元",
-    "filenamePathTraversal": "檔名包含路径遍歷字元",
+    "filenamePathTraversal": "檔名包含路徑遍歷字元",
     "suspiciousExt": "檢測到可疑檔案類型：{{ext}}",
-    "maskedExecutable": "檢測到伪装的可執行檔",
+    "maskedExecutable": "檢測到偽裝的可執行檔",
     "emptyField": "輸入內容不能為空",
     "inputTooShort": "輸入長度不足：{{length}} < {{min}}",
     "inputTooLong": "輸入內容過長：{{length}} > {{max}}",
     "defaultFieldName": "值",
-    "notANumber": "{{field}} 必须是數字",
+    "notANumber": "{{field}} 必須是數字",
     "numberBelowMin": "{{field}} 不能小於 {{min}}",
     "numberAboveMax": "{{field}} 不能大於 {{max}}"
   },
@@ -300,12 +300,12 @@
     "dark": "主題：深色"
   },
   "shortcuts": {
-    "helpTitle": "鍵盤快捷鍵帮助",
+    "helpTitle": "鍵盤快捷鍵幫助",
     "helpSubtitle": "在任意 input/textarea 之外按 ? 即可打開本面板",
     "helpEscHint": "按 Esc 或點擊空白處關閉",
     "submitFeedback": "提交回饋",
     "openSettings": "打開設定",
-    "showHelp": "顯示此帮助",
+    "showHelp": "顯示此幫助",
     "toggleTheme": "切換主題",
     "nextTask": "下一個任務",
     "prevTask": "上一個任務",
@@ -314,7 +314,7 @@
     "submitEnter": "提交回饋（Enter 模式啟用時）",
     "newline": "插入換行（Enter 模式啟用時）",
     "notifyTitle": "快捷鍵",
-    "notifyBody": "{{mod}}+Enter 提交 · {{mod}}+, 設定 · {{mod}}+/ 帮助 · T 主題 · Tab/Shift+Tab 任務 · Esc 關閉（完整表格在瀏覽器 DevTools 控制台）"
+    "notifyBody": "{{mod}}+Enter 提交 · {{mod}}+, 設定 · {{mod}}+/ 幫助 · T 主題 · Tab/Shift+Tab 任務 · Esc 關閉（完整表格在瀏覽器 DevTools 控制台）"
   },
   "aiia": {
     "state": {
@@ -326,7 +326,7 @@
         "title": "暫無內容",
         "message": {
           "default": "等待下一個回饋要求。",
-          "filtered": "目前筛選條件下沒有匹配結果。"
+          "filtered": "目前篩選條件下沒有匹配結果。"
         }
       },
       "error": {
@@ -339,8 +339,8 @@
         },
         "action": {
           "retry": "重試",
-          "open_log": "打開日志",
-          "copy_diagnostics": "複製診断訊息"
+          "open_log": "打開日誌",
+          "copy_diagnostics": "複製診斷訊息"
         }
       }
     },

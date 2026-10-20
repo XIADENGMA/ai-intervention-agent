@@ -151,7 +151,7 @@ class TestSchemaParityWithZhCn(unittest.TestCase):
             only_in_tw,
             set(),
             f"zh-TW 中存在但 zh-CN 中没有的 key：{sorted(only_in_tw)}\n"
-            "解决：先在 zh-CN.json 加 key，再重跑生成脚本",
+            "解决：先在 zh-CN.json 加这些 key，或重跑生成脚本（合并模式会删掉它们）",
         )
 
 
@@ -218,7 +218,7 @@ class TestGenScriptVariantSupport(unittest.TestCase):
         self.assertIn(
             '"--all"',
             self.src,
-            "--all 让 CI / 维护者一次重生成所有 variant，避免 web/vscode drift",
+            "--all 让 CI / 维护者一次处理所有 variant（派生或 --check），避免 web/vscode drift",
         )
 
 
@@ -234,8 +234,9 @@ class TestTranslationQualityBaseline(unittest.TestCase):
 
     def test_no_high_frequency_simplified_residue(self) -> None:
         """常见 GUI 简体字残留 = phrase/char map 没覆盖到的 case。
-        发现新残留时把字加进 ``scripts/gen_zhtw_from_zhcn.py::CHAR_MAP_v2``
-        并重跑 ``--all`` 即可。"""
+        发现新残留时直接改 zh-TW.json 里那条字符串，并把字加进
+        ``scripts/gen_zhtw_from_zhcn.py::CHAR_MAP_v2``（生成脚本默认保留已有
+        译文，只影响之后新派生的 key）。"""
         residue_chars = ["测", "缀"]  # cr32 §3.2 fix 顺手补的字
         offenders: list[str] = []
         for ch in residue_chars:
@@ -246,7 +247,7 @@ class TestTranslationQualityBaseline(unittest.TestCase):
             offenders,
             [],
             f"VSCode zh-TW.json 仍有简体残留 GUI 字符：{offenders}。"
-            "解决：在 CHAR_MAP_v2 加映射重跑 ``--all`` 后再 commit。",
+            "解决：直接改 zh-TW.json 里的字符串，并在 CHAR_MAP_v2 补映射。",
         )
 
     def test_contains_traditional_chinese_markers(self) -> None:

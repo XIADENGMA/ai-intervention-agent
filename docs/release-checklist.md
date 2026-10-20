@@ -61,7 +61,9 @@ graph, so manually re-run if pre-commit didn't fire them:
 
 - [ ] `uv run python scripts/minify_assets.py`
 - [ ] `uv run python scripts/precompress_static.py`
-- [ ] `uv run python scripts/gen_zhtw_from_zhcn.py --all`
+- [ ] `uv run python scripts/gen_zhtw_from_zhcn.py --all --check`
+      (reports keys missing from zh-TW; without `--check` the script adds
+      them and keeps the text already translated)
 - [ ] `uv run python scripts/gen_pseudo_locale.py`
 - [ ] `uv run python scripts/generate_docs.py --lang en`
 - [ ] `uv run python scripts/generate_docs.py --lang zh-CN`

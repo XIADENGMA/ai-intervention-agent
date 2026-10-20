@@ -48,7 +48,7 @@
 
 ##### `trigger_callbacks(self, event_name: str) -> None`
 
-##### `send_notification(self, title: str, message: str, trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE, types: list[NotificationType] | None = None, metadata: dict[str, Any] | None = None, priority: NotificationPriority | str = NotificationPriority.NORMAL) -> str`
+##### `send_notification(self, title: str, message: str, trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE, types: list[NotificationType] | None = None, metadata: dict[str, Any] | None = None, priority: NotificationPriority | str = NotificationPriority.NORMAL, skip_unavailable: bool = False) -> str`
 
 ##### `shutdown(self, wait: bool = False, grace_period: float = 0.0) -> None`
 

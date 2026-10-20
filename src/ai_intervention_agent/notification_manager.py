@@ -713,8 +713,14 @@ class NotificationManager:
         types: list[NotificationType] | None = None,
         metadata: dict[str, Any] | None = None,
         priority: NotificationPriority | str = NotificationPriority.NORMAL,
+        skip_unavailable: bool = False,
     ) -> str:
-        """发送通知主入口，返回事件ID。types=None 时根据配置自动选择渠道。"""
+        """发送通知主入口，返回事件ID。types=None 时根据配置自动选择渠道。
+
+        skip_unavailable=True 时，没有已注册提供者的渠道（配置里关闭或当前环境不支持）
+        被直接丢弃，而不是算作发送失败并重试；一个渠道都不剩就不创建事件，返回 ""。
+        系统通知的提供者只要环境支持就会注册，所以 system_enabled 在这里单独检查。
+        """
         if not self.config.enabled:
             logger.debug("通知功能已禁用，跳过发送")
             return ""
@@ -736,6 +742,15 @@ class NotificationManager:
                 types.append(NotificationType.BARK)
             if self.config.system_enabled:
                 types.append(NotificationType.SYSTEM)
+
+        if skip_unavailable:
+            with self._providers_lock:
+                types = [t for t in types if t in self._providers]
+            if not self.config.system_enabled:
+                types = [t for t in types if t is not NotificationType.SYSTEM]
+            if not types:
+                logger.debug("没有可用的通知渠道，跳过发送")
+                return ""
 
         event_priority = NotificationPriority.NORMAL
         if isinstance(priority, NotificationPriority):

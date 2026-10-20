@@ -6,30 +6,36 @@
 1. **零运行时依赖**：本脚本是 dev-only，不进 Python 运行时依赖图，
    也不要求其它环境装 OpenCC / opencc-python-reimplemented，
    避免增加项目体积 + license 复杂度。
-2. **inline 双层替换**：先做高频 GUI 词组替换（preserve word boundary），
+2. **inline 双层替换**：先做高频 GUI 词组替换（从左到右，每个位置取最长命中，
+   一趟扫完，替换结果不会被再次扫描），
    再做字符级简-繁映射。词组覆盖了真正影响台湾用户体验的术语
    （设置→設定 / 软件→軟體 / 文件→檔案 / 视频→影片 等），
    字符表覆盖了其余高频 hanzi。
 3. **MVP，待 native review**：不是完美翻译。输出的 zh-TW.json 顶部
    会注入 ``_meta.translationNote`` 标注派生来源 + 反馈渠道，
    邀请繁体中文用户走 PR 做 polish（仓库 / 翻译平台都可接受）。
-4. **deterministic + reproducible**：同样的 zh-CN.json 输入 → 同样的
-   zh-TW.json 输出（dict 顺序通过 json.dumps(sort_keys=False) 保留）。
-   只要 zh-CN.json 字典 schema 不变，重跑本脚本 idempotent。
+4. **默认合并，不覆盖手改**：zh-TW.json 里已有的译文原样保留，只为缺失的
+   key 从 zh-CN 派生；zh-CN 里已不存在的 key 会被删除；key 顺序跟随
+   zh-CN；``_meta`` 保留；内容没变就不写文件（重跑 idempotent，也不会
+   动 mtime）。``--force`` 才整体重新派生（丢弃全部手改）。
 
 什么时候重跑
 ------------
-- zh-CN.json 新增了 key → 重跑本脚本，zh-TW.json 才会同步出现新 key
-  （否则 zh-TW 用户看到的是 fallback 到英文）。
-- 词组 / 字符表需要扩充时 → 改本脚本里的 PHRASE_MAP / CHAR_MAP 后重跑。
+- zh-CN.json 新增了 key → 直接跑本脚本（合并模式），zh-TW.json 才会同步
+  出现新 key（否则 zh-TW 用户看到的是 fallback 到英文），再复核新派生的译文。
+- zh-CN.json 改了某条已有文案 → 脚本不会动 zh-TW 里的旧译文：手改那一条，
+  或先把它从 zh-TW.json 删掉再跑脚本重新派生。
+- PHRASE_MAP / CHAR_MAP_v2 扩充后只影响之后新派生的 key；要对全部文案生效
+  用 ``--force``，并先看 diff（它会覆盖手改）。
+- ``--check`` 只报告 zh-TW 相对 zh-CN 缺的 / 多的 key，不写文件，发版清单用它。
 
 后续 native polish
 ------------------
 - 长期方案：维护者可直接 hand-edit zh-TW.json，不必回到 script 端。
-  invariant 测试只锁定 *存在性* 和 *schema 同构*，不锁定具体字符串。
+  invariant 测试锁定 *存在性*、*schema 同构* 和「不含简体专用字」，不锁定
+  具体措辞。
 - 如果维护者手改了 zh-TW.json 然后下游又要从 zh-CN 重跑本脚本，
-  脚本会通过 ``--check`` 子命令仅做 schema diff（不覆盖），让维护者
-  人工把 zh-CN 新增的 key 翻译后 merge。
+  默认的合并模式会保留手改，只补缺失的 key；``--check`` 只做 schema diff。
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -100,7 +107,7 @@ PHRASE_MAP: dict[str, str] = {
     "状态": "狀態",
     "错误": "錯誤",
     "网络错误": "網路錯誤",
-    "异常": "例外",
+    "异常": "異常",
     "进度": "進度",
     "刷新": "重新整理",
     "刷新页面": "重新整理頁面",
@@ -114,6 +121,7 @@ PHRASE_MAP: dict[str, str] = {
     "图标": "圖示",
     "图像": "影像",
     "标签": "標籤",
+    "标准": "標準",
     "目录": "目錄",
     "支持": "支援",
     "选择": "選擇",
@@ -277,13 +285,14 @@ PHRASE_MAP: dict[str, str] = {
     "示例": "範例",
     "占位": "預留位置",
     "占位符": "預留位置符",
-    "块": "區塊",
-    "段": "區段",
-    "节": "節",
+    "模块": "模組",
+    "代码块": "程式碼區塊",
     "记录": "記錄",
+    "日志": "日誌",
+    "制作": "製作",
+    "制造": "製造",
     "条目": "項目",
     "导航": "導覽",
-    "栏": "欄",
     "栏目": "欄位",
     "切换": "切換",
     "切换主题": "切換主題",
@@ -335,6 +344,10 @@ PHRASE_MAP: dict[str, str] = {
     "字段必须": "欄位必須",
     "请求体必须": "要求主體必須",
     "请求体": "要求主體",
+    "细致": "細緻",
+    "赞同": "贊同",
+    "赞成": "贊成",
+    "赞助": "贊助",
 }
 
 
@@ -537,34 +550,17 @@ CHAR_MAP_v2: dict[str, str] = {
     "桥": "橋",
     "环": "環",
     "脑": "腦",
-    "电脑": "電腦",
     "于": "於",
-    "由于": "由於",
     "这": "這",
-    "这里": "這裡",
     "里": "裡",
     "后": "後",
-    "然后": "然後",
     "长": "長",
-    "长按": "長按",
     "务": "務",
-    "任务": "任務",
     "数": "數",
-    "字数": "字數",
-    "次数": "次數",
-    "数量": "數量",
-    "数据": "數據",
     "权": "權",
-    "权限": "權限",
     "达": "達",
-    "送达": "送達",
-    "到达": "到達",
-    "抵达": "抵達",
     "转": "轉",
-    "转换": "轉換",
     "划": "劃",
-    "划分": "劃分",
-    "划线": "劃線",
     "灵": "靈",
     "宫": "宮",
     "宁": "寧",
@@ -572,269 +568,172 @@ CHAR_MAP_v2: dict[str, str] = {
     "审": "審",
     "宪": "憲",
     "实": "實",
-    "实际": "實際",
-    "实验": "實驗",
-    "实施": "實施",
-    "实践": "實踐",
-    "实体": "實體",
     "宽": "寬",
-    "宪法": "憲法",
-    "审核": "審核",
-    "审查": "審查",
-    "审批": "審批",
-    "审讯": "審訊",
-    "宁愿": "寧願",
-    "宁可": "寧可",
     "总": "總",
-    "总是": "總是",
-    "总数": "總數",
-    "总额": "總額",
-    "总体": "總體",
-    "总结": "總結",
-    "总和": "總和",
-    "总而言之": "總而言之",
-    "总之": "總之",
-    "总不": "總不",
-    "总要": "總要",
-    "总会": "總會",
-    "总有": "總有",
-    "总能": "總能",
-    "总在": "總在",
-    "总让": "總讓",
-    "总叫": "總叫",
-    "总爱": "總愛",
     "爱": "愛",
-    "爱情": "愛情",
-    "爱好": "愛好",
-    "爱戴": "愛戴",
-    "爱护": "愛護",
     "态": "態",
-    "状态": "狀態",
-    "态度": "態度",
-    "形态": "形態",
-    "态势": "態勢",
-    "态势感知": "態勢感知",
     "动": "動",
-    "动作": "動作",
-    "动力": "動力",
-    "动机": "動機",
-    "动物": "動物",
-    "动手": "動手",
-    "动态": "動態",
-    "动画": "動畫",
-    "动员": "動員",
-    "动用": "動用",
-    "活动": "活動",
-    "运动": "運動",
-    "震动": "震動",
-    "感动": "感動",
     "况": "況",
-    "情况": "情況",
-    "状况": "狀況",
-    "概况": "概況",
-    "况且": "況且",
     "细": "細",
-    "细节": "細節",
-    "细心": "細心",
-    "细致": "細緻",
-    "致辞": "致辭",
     "辞": "辭",
-    "辞典": "辭典",
-    "辞职": "辭職",
-    "辞退": "辭退",
-    "辞行": "辭行",
-    "辞海": "辭海",
-    "言论": "言論",
-    "言语": "言語",
     "论": "論",
-    "理论": "理論",
-    "讨论": "討論",
-    "辩论": "辯論",
     "辩": "辯",
-    "辩护": "辯護",
-    "辩论会": "辯論會",
-    "辩证": "辯證",
-    "辩才": "辯才",
-    "辩驳": "辯駁",
-    "辩诬": "辯誣",
-    "辩白": "辯白",
-    "辩解": "辯解",
-    "解释": "解釋",
-    "解决": "解決",
-    "解雇": "解僱",
     "释": "釋",
-    "释放": "釋放",
-    "释义": "釋義",
-    "释怀": "釋懷",
-    "释疑": "釋疑",
-    "释然": "釋然",
-    "释手": "釋手",
-    "释卷": "釋卷",
-    "释教": "釋教",
-    "释教语": "釋教語",
     "毕": "畢",
-    "毕业": "畢業",
-    "毕竟": "畢竟",
-    "毕生": "畢生",
-    "毕力": "畢力",
     "尽": "盡",
-    "尽力": "盡力",
-    "尽心": "盡心",
-    "尽情": "盡情",
-    "尽量": "盡量",
-    "尽快": "盡快",
-    "尽职": "盡職",
-    "尽到": "盡到",
-    "尽人事": "盡人事",
-    "尽善尽美": "盡善盡美",
-    "尽心尽力": "盡心盡力",
-    "尽如人意": "盡如人意",
     "贝": "貝",
-    "贝壳": "貝殼",
-    "贝类": "貝類",
     "财": "財",
-    "财产": "財產",
-    "财富": "財富",
-    "财务": "財務",
-    "财政": "財政",
     "贞": "貞",
-    "贞节": "貞節",
-    "贞操": "貞操",
     "负": "負",
-    "负责": "負責",
-    "负担": "負擔",
-    "负载": "負載",
-    "负面": "負面",
-    "负数": "負數",
     "贡": "貢",
-    "贡献": "貢獻",
-    "贡品": "貢品",
-    "贡献者": "貢獻者",
-    "贡米": "貢米",
     "贪": "貪",
-    "贪婪": "貪婪",
-    "贪心": "貪心",
-    "贪污": "貪污",
-    "贪图": "貪圖",
     "贫": "貧",
-    "贫穷": "貧窮",
-    "贫困": "貧困",
-    "贫苦": "貧苦",
-    "贫民": "貧民",
-    "贫民窟": "貧民窟",
-    "贫贱": "貧賤",
-    "贫民区": "貧民區",
-    "贱卖": "賤賣",
-    "贱人": "賤人",
-    "贱视": "賤視",
     "贱": "賤",
-    "贵重": "貴重",
-    "贵族": "貴族",
-    "贵宾": "貴賓",
-    "贵客": "貴客",
-    "贵姓": "貴姓",
     "贵": "貴",
     "贸": "貿",
-    "贸易": "貿易",
-    "贸然": "貿然",
-    "贸然行事": "貿然行事",
     "费": "費",
-    "费用": "費用",
-    "费力": "費力",
-    "费心": "費心",
-    "费时": "費時",
-    "费事": "費事",
-    "费解": "費解",
-    "费力气": "費力氣",
     "贺": "賀",
-    "贺卡": "賀卡",
-    "贺词": "賀詞",
-    "贺礼": "賀禮",
-    "贺岁": "賀歲",
-    "贺信": "賀信",
-    "贺寿": "賀壽",
-    "贺喜": "賀喜",
-    "贼眼": "賊眼",
     "贼": "賊",
-    "贼眉": "賊眉",
     "贿": "賄",
-    "贿赂": "賄賂",
     "赁": "賃",
     "资": "資",
-    "资源": "資源",
-    "资料": "資料",
-    "资金": "資金",
-    "资本": "資本",
-    "资格": "資格",
-    "资讯": "資訊",
-    "资讯科技": "資訊科技",
-    "资讯工程": "資訊工程",
     "赋": "賦",
-    "赋予": "賦予",
-    "赋税": "賦稅",
-    "赋闲": "賦閒",
-    "赋诗": "賦詩",
-    "赋值": "賦值",
-    "赋值运算": "賦值運算",
-    "赌博": "賭博",
-    "赌注": "賭注",
-    "赌徒": "賭徒",
-    "赌局": "賭局",
     "赌": "賭",
-    "赌资": "賭資",
-    "赎罪": "贖罪",
     "赎": "贖",
-    "赎金": "贖金",
-    "赎身": "贖身",
     "赏": "賞",
-    "赏识": "賞識",
-    "赏赐": "賞賜",
-    "赏罚": "賞罰",
-    "赐予": "賜予",
-    "赐福": "賜福",
     "赐": "賜",
-    "赐死": "賜死",
-    "赐姓": "賜姓",
     "赔": "賠",
-    "赔偿": "賠償",
-    "赔本": "賠本",
-    "赔款": "賠款",
-    "赔礼": "賠禮",
-    "赔笑": "賠笑",
-    "赔不是": "賠不是",
-    "赔本生意": "賠本生意",
     "赖": "賴",
-    "赖账": "賴帳",
-    "赖以生存": "賴以生存",
-    "赖以": "賴以",
-    "赖以为生": "賴以為生",
-    "赖账不还": "賴帳不還",
-    "赞美": "讚美",
-    "赞扬": "讚揚",
-    "赞同": "贊同",
-    "赞成": "贊成",
-    "赞助": "贊助",
     "赞": "讚",
-    "赞许": "讚許",
-    "赞颂": "讚頌",
-    "赞: ": "讚: ",
-    "赠送": "贈送",
-    "赠品": "贈品",
-    "赠言": "贈言",
     "赠": "贈",
-    "赠款": "贈款",
-    "赠书": "贈書",
-    "赠予": "贈予",
+    "与": "與",
+    "义": "義",
+    "从": "從",
+    "优": "優",
+    "会": "會",
+    "伪": "偽",
+    "关": "關",
+    "则": "則",
+    "协": "協",
+    "参": "參",
+    "吗": "嗎",
+    "坏": "壞",
+    "将": "將",
+    "尝": "嘗",
+    "帮": "幫",
+    "广": "廣",
+    "径": "徑",
+    "损": "損",
+    "换": "換",
+    "断": "斷",
+    "暂": "暫",
+    "机": "機",
+    "来": "來",
+    "标": "標",
+    "没": "沒",
+    "码": "碼",
+    "离": "離",
+    "筛": "篩",
+    "经": "經",
+    "绪": "緒",
+    "维": "維",
+    "装": "裝",
+    "触": "觸",
+    "详": "詳",
+    "轮": "輪",
+    "钮": "鈕",
+    "铃": "鈴",
+    "铛": "鐺",
+    "阶": "階",
+    "须": "須",
+    "么": "麼",
+    "云": "雲",
+    "价": "價",
+    "儿": "兒",
+    "党": "黨",
+    "厂": "廠",
+    "吨": "噸",
+    "圣": "聖",
+    "夸": "誇",
+    "岭": "嶺",
+    "异": "異",
+    "忏": "懺",
+    "怀": "懷",
+    "怜": "憐",
+    "惊": "驚",
+    "愿": "願",
+    "扰": "擾",
+    "晒": "曬",
+    "杰": "傑",
+    "极": "極",
+    "构": "構",
+    "柜": "櫃",
+    "气": "氣",
+    "种": "種",
+    "适": "適",
+    "胜": "勝",
+    "荐": "薦",
+    "虫": "蟲",
+    "蚕": "蠶",
+    "肮": "骯",
+    "业": "業",
+    "书": "書",
+    "产": "產",
+    "偿": "償",
+    "势": "勢",
+    "员": "員",
+    "壳": "殼",
+    "宾": "賓",
+    "寿": "壽",
+    "岁": "歲",
+    "扬": "揚",
+    "担": "擔",
+    "状": "狀",
+    "献": "獻",
+    "画": "畫",
+    "礼": "禮",
+    "税": "稅",
+    "穷": "窮",
+    "罚": "罰",
+    "职": "職",
+    "节": "節",
+    "视": "視",
+    "词": "詞",
+    "诬": "誣",
+    "责": "責",
+    "账": "帳",
+    "赂": "賂",
+    "践": "踐",
+    "还": "還",
+    "闲": "閒",
+    "际": "際",
+    "颂": "頌",
+    "额": "額",
+    "驳": "駁",
+    "栏": "欄",
 }
 
 
 def _apply_phrase_map(text: str) -> str:
-    """按 length desc 应用词组替换，避免短词组先 hit 拆开长词组。"""
-    items = sorted(PHRASE_MAP.items(), key=lambda kv: len(kv[0]), reverse=True)
-    for src, dst in items:
-        if src and src in text:
-            text = text.replace(src, dst)
-    return text
+    """词组替换：从左到右扫描，每个位置取最长命中，一趟完成。
+
+    替换结果不会被再次扫描：输出里含有别的词组、或含有自己源词的词（源文本已写着
+    「尚未授予」时，未授予 → 尚未授予 会变成 尚尚未授予）都不会被二次替换。
+    """
+    lengths = sorted({len(key) for key in PHRASE_MAP if key}, reverse=True)
+    out: list[str] = []
+    index = 0
+    while index < len(text):
+        for length in lengths:
+            chunk = text[index : index + length]
+            if len(chunk) == length and chunk in PHRASE_MAP:
+                out.append(PHRASE_MAP[chunk])
+                index += length
+                break
+        else:
+            out.append(text[index])
+            index += 1
+    return "".join(out)
 
 
 def _apply_char_map(text: str) -> str:
@@ -858,9 +757,13 @@ def _convert_value(value):
     return value
 
 
-def _inject_meta(d: dict) -> dict:
-    """在顶层注入 ``_meta.translationNote`` 注明派生来源。"""
-    meta = {
+_META_KEY = "_meta"
+_MISSING = object()
+
+
+def _default_meta() -> dict:
+    """``_meta.translationNote``：注明派生来源并邀请 native review。"""
+    return {
         "translationNote": (
             "Auto-derived from zh-CN.json by scripts/gen_zhtw_from_zhcn.py "
             "(feat-zhtw-locale §3.3 MVP). Quality is best-effort; native "
@@ -869,73 +772,156 @@ def _inject_meta(d: dict) -> dict:
         "derivedFrom": "zh-CN",
         "source": "scripts/gen_zhtw_from_zhcn.py",
     }
-    out = {"_meta": meta}
-    out.update(d)
-    return out
 
 
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _dump_json(path: Path, obj: dict) -> None:
-    text = json.dumps(obj, ensure_ascii=False, indent=2)
-    path.write_text(text + "\n", encoding="utf-8")
+@dataclass
+class _MergeReport:
+    """合并结果：保留了多少条译文，派生了哪些 key，删除了哪些 key。"""
+
+    kept: int = 0
+    derived: list[str] = field(default_factory=list)
+    dropped: list[str] = field(default_factory=list)
 
 
-def _generate(variant: str = "web") -> None:
+def _join(path: str, key: str) -> str:
+    return f"{path}.{key}" if path else key
+
+
+def _keeps_existing(source: object, existing: object) -> bool:
+    """已有的 zh-TW 值能否顶替 zh-CN 的值（同一种值；list 还要等长）。"""
+    if existing is _MISSING or isinstance(source, dict):
+        return False
+    if isinstance(source, list):
+        return isinstance(existing, list) and len(existing) == len(source)
+    return type(existing) is type(source)
+
+
+def _merge_children(
+    source: dict, existing: dict, path: str, report: _MergeReport
+) -> dict:
+    merged = {
+        key: _merge_node(value, existing.get(key, _MISSING), _join(path, key), report)
+        for key, value in source.items()
+    }
+    report.dropped.extend(_join(path, key) for key in existing if key not in source)
+    return merged
+
+
+def _merge_node(
+    source: object, existing: object, path: str, report: _MergeReport
+) -> object:
+    if isinstance(source, dict) and isinstance(existing, dict):
+        return _merge_children(source, existing, path, report)
+    if _keeps_existing(source, existing):
+        report.kept += 1
+        return existing
+    report.derived.append(path)
+    return _convert_value(source)
+
+
+def _parse_existing(path: Path, text: str) -> dict:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        print(f"[ERR] {path} 不是合法 JSON（{exc}）；修复它，或加 --force 整体重新派生")
+        raise SystemExit(2) from exc
+    if not isinstance(data, dict):
+        print(f"[ERR] {path} 顶层不是 JSON 对象；修复它，或加 --force 整体重新派生")
+        raise SystemExit(2)
+    return data
+
+
+def _plan(variant: str, *, force: bool) -> tuple[str, _MergeReport, str | None]:
+    """算出 ``variant`` 的新 zh-TW 文本与合并报告，不写任何文件。"""
     src_path, dst_path = _VARIANTS[variant]
     if not src_path.is_file():
         print(f"[ERR] source 不存在：{src_path}")
         raise SystemExit(2)
-    src = _load_json(src_path)
-    converted = _convert_value(src)
-    converted_with_meta = _inject_meta(converted)
-    _dump_json(dst_path, converted_with_meta)
-    print(f"[OK] wrote {dst_path} (variant={variant})")
+    source = {k: v for k, v in _load_json(src_path).items() if k != _META_KEY}
+    old_text = dst_path.read_text(encoding="utf-8") if dst_path.is_file() else None
+    existing: dict = {}
+    meta = None
+    if old_text is not None and not force:
+        existing = _parse_existing(dst_path, old_text)
+        meta = existing.pop(_META_KEY, None)
+    report = _MergeReport()
+    tree = {
+        _META_KEY: meta if isinstance(meta, dict) else _default_meta(),
+        **_merge_children(source, existing, "", report),
+    }
+    return json.dumps(tree, ensure_ascii=False, indent=2) + "\n", report, old_text
+
+
+def _generate(variant: str = "web", *, force: bool = False) -> None:
+    dst_path = _VARIANTS[variant][1]
+    new_text, report, old_text = _plan(variant, force=force)
+    if new_text == old_text:
+        print(f"[OK] {dst_path} 已是最新 (variant={variant})")
+        return
+    dst_path.write_text(new_text, encoding="utf-8")
+    if force:
+        print(f"[OK] wrote {dst_path} (variant={variant}, --force: 全部重新派生)")
+        return
+    print(
+        f"[OK] wrote {dst_path} (variant={variant}): 保留 {report.kept} 条，"
+        f"派生 {len(report.derived)} 条，删除 {len(report.dropped)} 条"
+    )
+    for key in report.derived:
+        print(f"  + {key}（由 zh-CN 派生，请复核措辞）")
+    for key in report.dropped:
+        print(f"  - {key}（zh-CN 里已没有这个 key）")
 
 
 def _check(variant: str = "web") -> int:
-    """schema diff（不覆盖）：报告 zh-CN 中存在但 zh-TW 缺失的 key。"""
-    src_path, dst_path = _VARIANTS[variant]
+    """schema diff（不写文件）：zh-TW 相对 zh-CN 缺的 / 多的 key，有差异返回 1。"""
+    dst_path = _VARIANTS[variant][1]
     if not dst_path.exists():
         print(
             f"[ERR] {dst_path} 不存在；先跑 "
             f"``python scripts/gen_zhtw_from_zhcn.py --variant {variant}``"
         )
         return 1
-    cn = _load_json(src_path)
-    tw = _load_json(dst_path)
-    missing: list[str] = []
-    _diff_keys(cn, tw, prefix="", missing=missing)
-    if missing:
-        print(f"[WARN] 以下 zh-CN keys 在 zh-TW({variant}) 中缺失：")
-        for k in missing:
-            print(f"  - {k}")
+    _, report, _ = _plan(variant, force=False)
+    if report.derived:
+        print(f"[WARN] 以下 zh-CN keys 在 zh-TW({variant}) 中缺失或类型不同：")
+        for key in report.derived:
+            print(f"  - {key}")
+    if report.dropped:
+        print(f"[WARN] 以下 zh-TW({variant}) keys 在 zh-CN 中已不存在：")
+        for key in report.dropped:
+            print(f"  - {key}")
+    if report.derived or report.dropped:
         return 1
     print(f"[OK] zh-TW.json schema 与 zh-CN.json 同构 (variant={variant})")
     return 0
 
 
-def _diff_keys(a: dict, b: dict, prefix: str, missing: list[str]) -> None:
-    for k, va in a.items():
-        if k.startswith("_"):
-            continue
-        full = f"{prefix}.{k}" if prefix else k
-        if k not in b:
-            missing.append(full)
-            continue
-        vb = b[k]
-        if isinstance(va, dict) and isinstance(vb, dict):
-            _diff_keys(va, vb, full, missing)
-
-
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Generate zh-TW.json from zh-CN.json")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Derive zh-TW.json from zh-CN.json. Existing zh-TW text is kept; "
+            "only keys missing from zh-TW are derived."
+        )
+    )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Schema diff only; do not overwrite zh-TW.json",
+        help=(
+            "Report keys missing from or extra in zh-TW.json (exit 1 on any); "
+            "write nothing"
+        ),
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Re-derive every string from zh-CN and overwrite zh-TW.json, "
+            "discarding hand edits"
+        ),
     )
     parser.add_argument(
         "--variant",
@@ -953,6 +939,8 @@ def main(argv: list[str]) -> int:
         help="Generate (or --check) all variants in one run.",
     )
     args = parser.parse_args(argv)
+    if args.check and args.force:
+        parser.error("--check writes nothing, so --force has no meaning with it")
 
     variants = list(_VARIANTS.keys()) if args.all else [args.variant]
 
@@ -963,7 +951,7 @@ def main(argv: list[str]) -> int:
         return rc
 
     for v in variants:
-        _generate(v)
+        _generate(v, force=args.force)
     return 0
 
 

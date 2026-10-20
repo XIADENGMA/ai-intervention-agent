@@ -3072,6 +3072,8 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         self.assertIn(NotificationType.SYSTEM, types)
         self.assertIn(NotificationType.SOUND, types)
         self.assertIn(NotificationType.BARK, types)
+        # R740: 没有提供者的渠道不是投递失败，不能触发重试和降级告警
+        self.assertIs(call_kwargs.get("skip_unavailable"), True)
 
     @patch("ai_intervention_agent.server_feedback.asyncio.run")
     @patch("ai_intervention_agent.service_manager.get_web_ui_config")
@@ -3506,6 +3508,8 @@ class TestInteractiveFeedback(unittest.TestCase):
         self.assertIn(NotificationType.SYSTEM, types)
         self.assertIn(NotificationType.SOUND, types)
         self.assertIn(NotificationType.BARK, types)
+        # R740: 没有提供者的渠道不是投递失败，不能触发重试和降级告警
+        self.assertIs(call_kwargs.get("skip_unavailable"), True)
 
     @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
     @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")

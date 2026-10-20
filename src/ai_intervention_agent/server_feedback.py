@@ -742,6 +742,7 @@ def launch_feedback_ui(
                         trigger=NotificationTrigger.IMMEDIATE,
                         types=mcp_types,
                         metadata=notif_metadata,
+                        skip_unavailable=True,
                     )
 
                     if event_id:
@@ -749,7 +750,9 @@ def launch_feedback_ui(
                             f"已为任务 {task_id} 发送通知，事件 ID: {event_id}"
                         )
                     else:
-                        logger.debug(f"任务 {task_id} 通知已跳过（通知系统已禁用）")
+                        logger.debug(
+                            f"任务 {task_id} 通知已跳过（通知系统已禁用或没有可用渠道）"
+                        )
 
                 except Exception as e:
                     logger.warning(
@@ -1252,6 +1255,7 @@ async def interactive_feedback(
                         trigger=NotificationTrigger.IMMEDIATE,
                         types=mcp_types,
                         metadata={"task_id": task_id, "source": "interactive_feedback"},
+                        skip_unavailable=True,
                     )
 
                     if event_id:
@@ -1259,7 +1263,9 @@ async def interactive_feedback(
                             f"已为任务 {task_id} 发送通知，事件 ID: {event_id}"
                         )
                     else:
-                        logger.debug(f"任务 {task_id} 通知已跳过（通知系统已禁用）")
+                        logger.debug(
+                            f"任务 {task_id} 通知已跳过（通知系统已禁用或没有可用渠道）"
+                        )
 
                 except Exception as e:
                     logger.warning(

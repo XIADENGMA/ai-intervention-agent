@@ -144,9 +144,13 @@ app), 是 v3.8 第 2 个全工业化 pattern (与 R322 idempotent 同 cycle
 
 触发指定事件的所有回调，异常不中断后续回调
 
-##### `send_notification(self, title: str, message: str, trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE, types: list[NotificationType] | None = None, metadata: dict[str, Any] | None = None, priority: NotificationPriority | str = NotificationPriority.NORMAL) -> str`
+##### `send_notification(self, title: str, message: str, trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE, types: list[NotificationType] | None = None, metadata: dict[str, Any] | None = None, priority: NotificationPriority | str = NotificationPriority.NORMAL, skip_unavailable: bool = False) -> str`
 
 发送通知主入口，返回事件ID。types=None 时根据配置自动选择渠道。
+
+skip_unavailable=True 时，没有已注册提供者的渠道（配置里关闭或当前环境不支持）
+被直接丢弃，而不是算作发送失败并重试；一个渠道都不剩就不创建事件，返回 ""。
+系统通知的提供者只要环境支持就会注册，所以 system_enabled 在这里单独检查。
 
 ##### `shutdown(self, wait: bool = False, grace_period: float = 0.0) -> None`
 
