@@ -378,16 +378,25 @@ def get_log_level_from_config() -> int:
         return logging.WARNING
 
 
-def configure_logging_from_config() -> None:
-    """根据配置设置 root logger 和所有 handler 的级别"""
-    log_level = get_log_level_from_config()
+def _apply_log_level(level: int) -> None:
+    """把 root logger、它的所有 handler 和 werkzeug 切到 ``level``。
 
+    werkzeug 首次写日志时会把自己的 logger 固定为 INFO；root handler 不接受 INFO
+    时它还会自带一个不经过脱敏的 stderr handler，所以它必须跟着全局级别走。
+    """
     root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
+    root_logger.setLevel(level)
 
     for handler in root_logger.handlers:
-        handler.setLevel(log_level)
+        handler.setLevel(level)
 
+    logging.getLogger("werkzeug").setLevel(level)
+
+
+def configure_logging_from_config() -> None:
+    """按环境变量 / 配置文件设置 root logger、所有 handler 和 werkzeug 的级别"""
+    log_level = get_log_level_from_config()
+    _apply_log_level(log_level)
     enhanced_logger.info(f"日志级别已设置为: {logging.getLevelName(log_level)}")
 
 
@@ -403,7 +412,7 @@ def get_current_log_level() -> dict[str, str | list[str]]:
 
 
 def apply_runtime_log_level(level: str) -> dict[str, str]:
-    """运行时把 root logger + 所有 handler 的级别切到 ``level``。"""
+    """运行时把 root logger、所有 handler 和 werkzeug 的级别切到 ``level``。"""
     if not isinstance(level, str):
         raise ValueError(
             f"log level 必须是字符串，收到 {type(level).__name__}; "
@@ -414,11 +423,8 @@ def apply_runtime_log_level(level: str) -> dict[str, str]:
         raise ValueError(f"log level '{level}' 不是有效值; valid={VALID_LOG_LEVELS}")
     new_level_int = LOG_LEVEL_MAP[level_upper]
 
-    root_logger = logging.getLogger()
-    old_level_int = root_logger.getEffectiveLevel()
-    root_logger.setLevel(new_level_int)
-    for handler in root_logger.handlers:
-        handler.setLevel(new_level_int)
+    old_level_int = logging.getLogger().getEffectiveLevel()
+    _apply_log_level(new_level_int)
 
     old_name = logging.getLevelName(old_level_int)
     enhanced_logger.info(

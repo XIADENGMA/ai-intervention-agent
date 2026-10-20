@@ -46,7 +46,10 @@ from flask.typing import ResponseReturnValue
 from flask_compress import Compress
 from flask_cors import CORS
 
-from ai_intervention_agent.enhanced_logging import EnhancedLogger
+from ai_intervention_agent.enhanced_logging import (
+    EnhancedLogger,
+    configure_logging_from_config,
+)
 from ai_intervention_agent.feedback_types import FeedbackResult
 from ai_intervention_agent.i18n import msg
 from ai_intervention_agent.protocol import get_capabilities, get_server_clock
@@ -1808,6 +1811,8 @@ if __name__ == "__main__":
         help="额外允许的 Host，逗号分隔（例如 ai.example.com,10.0.0.5）",
     )
     args = parser.parse_args()
+
+    configure_logging_from_config()
 
     predefined_options = (
         [opt for opt in args.predefined_options.split("|||") if opt]

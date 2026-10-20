@@ -66,7 +66,7 @@ def test_vscode_check_covers_compile_lint_test_and_package() -> None:
     )
     assert root_scripts["vscode:test"] == "npm -w ai-intervention-agent test"
     assert vscode_scripts["pretest"] == "npm run compile && npm run lint"
-    assert vscode_scripts["test"] == "vscode-test --config .vscode-test.mjs"
+    assert vscode_scripts["test"] == "node ../../scripts/run_vscode_host_tests.mjs"
     assert vscode_scripts["package"] == "node ../../scripts/package_vscode_vsix.mjs"
 
 

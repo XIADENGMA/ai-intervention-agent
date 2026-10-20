@@ -130,6 +130,10 @@ diverges.
   burning CPU on every request.
 - [`package_vscode_vsix.mjs`](package_vscode_vsix.mjs) — build the
   VSCode `.vsix` package via `vsce`.
+- [`run_vscode_host_tests.mjs`](run_vscode_host_tests.mjs)
+  _(R745)_ — run the extension host tests (`vscode-test`) and leave out the
+  lines VS Code itself prints when its own marketplace / chat / alert
+  lookups fail; results, failures and the exit code pass through unchanged.
 - [`bump_version.py`](bump_version.py) — bump version across
   `pyproject.toml`, `package.json`, README badges, etc. `--check`
   validates cross-file consistency.
@@ -167,11 +171,13 @@ diverges.
   requirements with `uv export --all-groups --all-extras
   --no-emit-project`, audits the pinned requirements with
   `uvx pip-audit --no-deps --disable-pip`, then runs
-  `npm audit --audit-level=moderate --json`. The only accepted npm
-  findings are the documented VS Code test-runner path in
-  `docs/security/npm-audit-2026-06-21.md`; the script also runs
+  `npm audit --audit-level=moderate --json`. No npm finding is
+  accepted today; the only exception the script still knows is the
+  GHSA-pinned `brace-expansion` dev-toolchain valve triaged in
+  `docs/security/npm-audit-2026-07-26.md`. When that valve accepts
+  something, the script also runs
   `npm pack --workspace ai-intervention-agent --dry-run --json` to
-  verify that accepted packages are not shipped in the extension
+  verify that the accepted packages are not shipped in the extension
   package. Use `--gate local|pr|release` to label the context; all
   modes fail on Python vulnerabilities and unaccepted npm findings.
 

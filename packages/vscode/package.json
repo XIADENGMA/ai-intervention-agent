@@ -147,7 +147,7 @@
     "lint": "eslint .",
     "package": "node ../../scripts/package_vscode_vsix.mjs",
     "pretest": "npm run compile && npm run lint",
-    "test": "vscode-test --config .vscode-test.mjs",
+    "test": "node ../../scripts/run_vscode_host_tests.mjs",
     "check": "npm test && npm run package"
   },
   "devDependencies": {

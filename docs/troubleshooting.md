@@ -637,6 +637,20 @@ The access-denied message in the Web UI is a different thing: it means the serve
 2. Ask the Web UI whether it holds the image (task ids are listed by `/api/tasks`): `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/tasks/<task_id>/images/0` prints `200` when image 0 is stored and `404` when it is not.
 3. If the MCP client does not report workspace folders, the server falls back to its working directory, which is not used when it is `/` or your home directory (common for a server started by an editor). List the workspace explicitly, for example `local_image_dirs = ["auto", "~/work"]`.
 
+## 18. Every start of the MCP server logs a `WARNING` line, `event=server.boot`
+
+**Symptom**: the MCP log has one line like this at every start, with the level `WARNING`:
+
+```text
+2026-10-20 20:11:15,910 - ai_intervention_agent.server - WARNING - event=server.boot version=1.8.12 transport=stdio mcp_name='AI Intervention Agent MCP' python=3.11.15 middleware=ErrorHandlingMiddleware,...
+```
+
+**What it means**: nothing is wrong. It is the start-up banner: the version, the transport, the Python version and the middleware stack that answered. It is written at `WARNING` on purpose. The MCP server logs at `WARNING` unless you change `web_ui.log_level` (or `AI_INTERVENTION_AGENT_LOG_LEVEL`) and restart it, so a banner written at `INFO` would be dropped, and it is the one line that says which build is running.
+
+- It appears once per process start. Several of them close together mean the MCP client started the server several times; the lines before each one say why.
+- Include it when you report a problem: it names the version.
+- `web_ui.log_level = "ERROR"` hides it together with every other warning.
+
 ## Still stuck?
 
 1. Read [`SUPPORT.md`](../.github/SUPPORT.md) for the right channel.

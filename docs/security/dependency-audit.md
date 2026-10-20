@@ -20,19 +20,23 @@ uv run python scripts/dependency_audit.py --gate release
 | Pull requests | `uv run python scripts/dependency_audit.py --gate pr` plus GitHub Dependency Review | Hard-fails unaccepted findings. Dependency Review also blocks new moderate-or-higher vulnerable dependencies introduced by the PR diff. |
 | Release | `uv run python scripts/dependency_audit.py --gate release` | Hard-fails Python vulnerabilities and unaccepted npm findings before publishing artifacts. Accepted npm dev-tool exceptions must remain documented and absent from the VS Code package dry-run. |
 
-## Accepted npm Exception
+## Accepted npm Exceptions
 
-The current accepted npm findings are documented in
-[`npm-audit-2026-06-21.md`](npm-audit-2026-06-21.md):
+No npm finding is accepted at the moment: `npm audit --audit-level=moderate`
+is clean. The 2026-06-21 test-runner exception
+([`npm-audit-2026-06-21.md`](npm-audit-2026-06-21.md): `@vscode/test-cli`,
+`mocha`, `diff`, `serialize-javascript`) was closed on 2026-10-20 and removed
+from the script, so a regression on any of those packages now fails the gate.
 
-- `@vscode/test-cli`
-- `mocha`
-- `diff`
-- `serialize-javascript`
-
-They are accepted only while they remain on the VS Code test-runner path and
-are absent from `npm pack --workspace ai-intervention-agent --dry-run --json`.
-Any other npm audit finding is a hard failure.
+The script keeps one narrow valve, triaged in
+[`npm-audit-2026-07-26.md`](npm-audit-2026-07-26.md). A finding on the
+`brace-expansion` dev-toolchain chain (`brace-expansion`, `minimatch`, `glob`,
+`mocha`, `eslint`, `@eslint/config-array`, `@eslint/eslintrc`) is accepted
+only when every advisory it carries is one of the triaged GHSA ids, or when it
+is a transitive marker pointing at that chain. It also needs
+`npm pack --workspace ai-intervention-agent --dry-run --json` to list no
+`node_modules/`, `mocha`, or `brace-expansion` path. Any other npm audit
+finding is a hard failure.
 
 ## Python Audit
 

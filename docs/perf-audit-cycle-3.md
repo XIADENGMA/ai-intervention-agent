@@ -5250,6 +5250,9 @@ this.content.innerHTML = html
 
 ### 3.114 R571 · WebUI image-upload Object.assign fallback own-key 直接复制
 
+后续：`setupFeatureFallbacks()` 已随旧浏览器兼容垫片一并删除（见 `CHANGELOG.md` 的
+Removed），下文提到的测试文件同时移除；本节仅作历史记录。
+
 `src/ai_intervention_agent/static/js/image-upload.js::setupFeatureFallbacks()` 为旧浏览器
 保留 `Object.assign` fallback。旧 fallback 对每个 source 先创建 own-key array，再用
 nested callback 复制：

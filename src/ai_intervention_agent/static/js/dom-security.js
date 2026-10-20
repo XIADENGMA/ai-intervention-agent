@@ -32,69 +32,11 @@ function __domSecFormatNumber(value, options) {
 
 class DOMSecurity {
 
-  static setTextContent(element, text) {
-    if (!element || typeof text !== 'string') return
-    element.textContent = text
-  }
-
   static clearContent(element) {
     if (!element) return
     while (element.firstChild) {
       element.removeChild(element.firstChild)
     }
-  }
-
-  static createElement(tagName, text = '', attributes = {}) {
-    const element = document.createElement(tagName)
-
-    if (text) {
-      element.textContent = text
-    }
-
-    const attributeEntries = Object.entries(attributes)
-    const attributeEntryCount = attributeEntries.length
-    for (let index = 0; index < attributeEntryCount; index += 1) {
-      if (!(index in attributeEntries)) continue
-      const [key, value] = attributeEntries[index]
-      if (typeof value === 'string' || typeof value === 'number') {
-        element.setAttribute(key, String(value))
-      }
-    }
-
-    return element
-  }
-
-  static createCheckboxOption(id, value, label) {
-    const container = document.createElement('div')
-    container.className = 'option-item'
-
-    const checkbox = document.createElement('input')
-    checkbox.type = 'checkbox'
-    checkbox.id = id
-    checkbox.value = this.sanitizeAttribute(value)
-
-    checkbox.addEventListener('change', function (e) {
-
-      this.checked = e.target.checked
-    })
-
-    const labelElement = document.createElement('label')
-    labelElement.setAttribute('for', id)
-    labelElement.textContent = label
-
-    container.addEventListener('click', function (e) {
-
-      if (e.target !== checkbox && e.target !== labelElement) {
-        checkbox.checked = !checkbox.checked
-
-        checkbox.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-
-    container.appendChild(checkbox)
-    container.appendChild(labelElement)
-
-    return container
   }
 
   static createNotification(title, message, type = 'info') {
@@ -146,7 +88,7 @@ class DOMSecurity {
     } else {
       const img = document.createElement('img')
       img.src = imageItem.previewUrl
-      img.alt = this.sanitizeAttribute(imageItem.name)
+      img.alt = typeof imageItem.name === 'string' ? imageItem.name : ''
       img.className = 'image-preview-thumbnail'
 
       img.addEventListener('click', () => {
@@ -199,65 +141,31 @@ class DOMSecurity {
     button.setAttribute('aria-label', copyLabel)
 
     const originalHTML = button.innerHTML
+    let restoreTimer = null
+
+    const showFeedback = (html, stateClass) => {
+      clearTimeout(restoreTimer)
+      button.innerHTML = html
+      button.classList.remove('copied', 'error')
+      button.classList.add(stateClass)
+      restoreTimer = setTimeout(() => {
+        restoreTimer = null
+        button.innerHTML = originalHTML
+        button.classList.remove('copied', 'error')
+      }, 2000)
+    }
 
     button.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(targetText)
-        button.innerHTML = `${checkIconSvg}${copiedLabel}`
-        button.classList.add('copied')
-        setTimeout(() => {
-          button.innerHTML = originalHTML
-          button.classList.remove('copied')
-        }, 2000)
       } catch (err) {
-        button.innerHTML = `${errorIconSvg}${copyFailedLabel}`
-        button.classList.add('error')
-        setTimeout(() => {
-          button.innerHTML = originalHTML
-          button.classList.remove('error')
-        }, 2000)
+        showFeedback(`${errorIconSvg}${copyFailedLabel}`, 'error')
+        return
       }
+      showFeedback(`${checkIconSvg}${copiedLabel}`, 'copied')
     })
 
     return button
-  }
-
-  static updateButtonState(button, text, className, duration = 2000) {
-    const originalText = button.textContent
-    const originalClasses = button.className
-
-    button.textContent = text
-    button.classList.add(className)
-
-    setTimeout(() => {
-      button.textContent = originalText
-      button.className = originalClasses
-    }, duration)
-  }
-
-  static sanitizeAttribute(value) {
-    if (typeof value !== 'string') return ''
-
-    return value
-      .replace(/[<>'"&]/g, match => {
-        const entities = {
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#x27;',
-          '&': '&amp;'
-        }
-        return entities[match] || match
-      })
-      .trim()
-  }
-
-  static sanitizeText(text) {
-    if (typeof text !== 'string') return ''
-
-    const div = document.createElement('div')
-    div.textContent = text
-    return div.textContent || div.innerText || ''
   }
 
   static replaceContent(element, content) {
@@ -268,27 +176,6 @@ class DOMSecurity {
     if (content instanceof DocumentFragment || content instanceof HTMLElement) {
       element.appendChild(content)
     }
-  }
-
-  static createFragment() {
-    return document.createDocumentFragment()
-  }
-
-  static isValidURL(url) {
-    if (typeof url !== 'string') return false
-
-    try {
-      const urlObj = new URL(url)
-
-      return ['http:', 'https:', 'data:'].includes(urlObj.protocol)
-    } catch {
-      return false
-    }
-  }
-
-  static setSafeSource(element, url) {
-    if (!element || !this.isValidURL(url)) return
-    element.src = url
   }
 }
 

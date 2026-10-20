@@ -95,7 +95,7 @@ class NotificationManager {
       this.syncPermissionState()
 
       if (!this.isSupported) {
-        console.warn('Browser does not support Web Notification API')
+        console.debug('Browser does not support Web Notification API')
       } else {
         this.bindAutoPermissionRequest()
       }
@@ -125,7 +125,7 @@ class NotificationManager {
   async registerServiceWorker() {
     if (!this.supportsServiceWorkerNotifications()) {
       if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
-        console.warn('Not in a secure context; cannot register notification service worker')
+        console.debug('Not in a secure context; cannot register notification service worker')
       }
       return null
     }
@@ -214,7 +214,7 @@ class NotificationManager {
 
   async requestPermission({ requireUserGesture = true } = {}) {
     if (!this.isSupported) {
-      console.warn('Browser does not support Web Notification API')
+      console.debug('Browser does not support Web Notification API')
       return false
     }
 
@@ -228,7 +228,7 @@ class NotificationManager {
     }
 
     if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
-      console.warn('Not in a secure context; browser will not prompt for notification permission')
+      console.debug('Not in a secure context; browser will not prompt for notification permission')
       return false
     }
 
@@ -237,7 +237,7 @@ class NotificationManager {
       navigator.userActivation &&
       navigator.userActivation.isActive === false
     ) {
-      console.warn('Notification permission request requires user gesture; deferred to next interaction')
+      console.debug('Notification permission request requires user gesture; deferred to next interaction')
       this.bindAutoPermissionRequest()
       return false
     }
@@ -281,9 +281,9 @@ class NotificationManager {
     try {
 
       const AudioContextClass =
-        window.AudioContext || window.webkitAudioContext || window.mozAudioContext
+        window.AudioContext || window.webkitAudioContext
       if (!AudioContextClass) {
-        console.warn('Browser does not support Web Audio API')
+        console.debug('Browser does not support Web Audio API')
         return
       }
 
@@ -474,7 +474,7 @@ class NotificationManager {
     }
 
     if (!this.isSupported) {
-      console.warn('Browser does not support notifications; using fallback')
+      console.debug('Browser does not support notifications; using fallback')
       this.showFallbackNotification(title, message, { ...options, reason: 'unsupported' })
       return null
     }
@@ -495,7 +495,7 @@ class NotificationManager {
 
     this.syncPermissionState()
     if (this.permission !== 'granted') {
-      console.warn('No system notification permission granted')
+      console.debug('No system notification permission granted')
       if (this.config.autoRequestPermission) {
         const granted = await this.requestPermission({
           requireUserGesture: !(navigator.userActivation && navigator.userActivation.isActive)

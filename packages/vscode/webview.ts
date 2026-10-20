@@ -1897,14 +1897,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     <link rel="stylesheet" href="${webviewCssUri}">
 </head>
 <body>
-    <!--
-      BM-7：首帧纯 CSS 骨架屏（boot skeleton）
-      - HTML 解析到此处即可显示，不依赖脚本执行
-      - JS init() 成功后通过切换 class + [hidden] 淡出（CSP 友好，无 inline style）
-      - 始终提供 fallback：window.onerror / unhandledrejection 也会隐藏它，
-        避免脚本异常导致永久遮盖真实 UI
-      - 只是装饰性占位：aria-hidden=true + role=presentation 不吸走焦点/朗读
-    -->
     <div id="aiiaBootSkeleton" class="aiia-boot-skeleton" role="presentation" aria-hidden="true">
         <div class="aiia-boot-skeleton__bar aiia-boot-skeleton__bar--title"></div>
         <div class="aiia-boot-skeleton__bar"></div>
@@ -1927,13 +1919,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             </button>
         </div>
 
-        <!-- 统一三态面板（T1 · C10c / @aiia/tri-state-panel）
-             默认 data-state="ready" → CSS 将整个面板 display:none；通过 URL 调试参数
-             ?aiia_tri_state=loading|skeleton|empty|error[&aiia_tri_state_error=network|server_500|timeout|unknown]
-             [&aiia_tri_state_empty=default|filtered] 可手动切换到各分支用于 E2E 演示。
-             正式消费（loading/empty/error 真实业务驱动）由 C10d / S2 接入 window.AIIA_CONTENT_SM。
-             反向闸门（tests/test_runtime_behavior.py::test_pre_reserved_keys_not_yet_consumed）
-             依赖以下 13 个 data-i18n 声明 + tl() SSR 文本以标记 VSCode 端消费完成。 -->
         <div
             id="aiia-tri-state-panel"
             class="aiia-tri-state-panel"
@@ -1997,13 +1982,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
             <div class="feedback-form hidden" id="feedbackForm">
                 <div class="scrollable-content">
-                    <!-- R691（TODO#5 跨端一致性）：任务级 header chip（≤16 字符领域标签），
-                         与 web 端 #task-header-chip 同构；无 header_label 时隐藏。 -->
                     <div class="task-header-chip hidden" id="taskHeaderChip" aria-hidden="false"></div>
-                    <!-- Loop 工程 P4（与 web 端 #task-loop-context 同构）：活动任务的
-                         loop 上下文条。agent 传 loop_id / loop_phase / iteration_label /
-                         loop_objective / success_criteria 时显示；由 updateLoopContext
-                         控制显隐，textContent 填充（XSS 安全）。 -->
                     <div class="task-loop-context hidden" id="taskLoopContext" role="status">
                         <div class="loop-context-chips">
                             <span class="loop-chip hidden" id="loopChipId" title="${tl("ui.loop.idTitle")}" data-i18n-title="ui.loop.idTitle"></span>
@@ -2018,8 +1997,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                             <span class="loop-context-label" data-i18n="ui.loop.criteriaLabel">${tl("ui.loop.criteriaLabel")}</span>
                             <span class="loop-context-value" id="loopCriteriaValue"></span>
                         </div>
-                        <!-- Loop 视图（与 web 端同构）：历史轮次折叠面板。点击拉取
-                             GET /api/loops，按当前 loop_id 渲染已完成轮次时间线。 -->
                         <button type="button" class="loop-history-toggle hidden" id="loopHistoryToggle" aria-expanded="false" aria-controls="loopHistoryList">
                             <svg class="loop-history-caret" width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                                 <polyline points="5 3 11 8 5 13" />
@@ -2039,10 +2016,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 </div>
 
                 <div class="fixed-input-area">
-                    <!-- R690（TODO#5 web/插件功能对齐）：倒计时控制行。
-                         与 web 端 countdown-extend-btn / countdown-freeze-btn 同构：
-                         仅当 active 任务 auto_resubmit_timeout > 0 时显示；
-                         +60s 受服务端 extends_max 配额约束（达到上限置灰）。 -->
                     <div class="countdown-controls hidden" id="countdownControls">
                         <button type="button" class="countdown-ctrl-btn" id="countdownExtendBtn" title="${tl("ui.countdown.extendTitle")}" aria-label="${tl("ui.countdown.extendAriaLabel")}" data-i18n-title="ui.countdown.extendTitle" data-i18n-aria-label="ui.countdown.extendAriaLabel">
                             <span data-i18n="ui.countdown.extendLabel">${tl("ui.countdown.extendLabel")}</span>
@@ -2164,25 +2137,15 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 </label>
                 <label class="settings-field">
                     <span class="settings-label" data-i18n="settings.feedback.resubmitPrompt">${tl("settings.feedback.resubmitPrompt")}</span>
-                    <!-- maxlength 与 server_config.PROMPT_MAX_LENGTH (100_000) +
-                         web 端 templates/web_ui.html#feedback-resubmit-prompt 对齐 (BUG6-跨端).
-                         插件先前硬编码 500 让用户在 VSCode 设置面板里输入超过 500
-                         字符就被静默截断，导致后端实际接收的 resubmit_prompt 和
-                         配置文件持久化的内容长度不一致。 -->
                     <textarea id="feedbackResubmitPrompt" rows="2" maxlength="100000" placeholder="${tl("settings.feedback.resubmitPromptPlaceholder")}" data-i18n-placeholder="settings.feedback.resubmitPromptPlaceholder"></textarea>
                 </label>
                 <label class="settings-field">
                     <span class="settings-label" data-i18n="settings.feedback.promptSuffix">${tl("settings.feedback.promptSuffix")}</span>
-                    <!-- 同上：与 PROMPT_MAX_LENGTH = 100_000 对齐 -->
                     <textarea id="feedbackPromptSuffix" rows="2" maxlength="100000" placeholder="${tl("settings.feedback.promptSuffixPlaceholder")}" data-i18n-placeholder="settings.feedback.promptSuffixPlaceholder"></textarea>
                 </label>
                 <div class="settings-divider"></div>
 
                 <div class="settings-section-title" data-i18n="settings.config.title">${tl("settings.config.title")}</div>
-                <!-- TODO#12: div 而非 label —— label 内的 button 点击会触发
-                     label 默认行为（把焦点转给关联控件），readonly input 也
-                     无需 label 语义。按钮通过 openConfigFile 消息让宿主用
-                     vscode.window.showTextDocument 在当前编辑器打开配置。 -->
                 <div class="settings-field">
                     <span class="settings-label" data-i18n="settings.config.path">${tl("settings.config.path")}</span>
                     <div class="settings-config-path-row">
@@ -2200,18 +2163,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                         <span class="settings-auto-save" title="${tl("settings.autoSaveTooltip")}" data-i18n="settings.autoSave" data-i18n-title="settings.autoSaveTooltip">${tl("settings.autoSave")}</span>
                     </div>
                 </div>
-                <!-- feat-footer-link-plugin: align with web UI footer.
-                     Merge "v1.7.X" text + standalone "GitHub" link into a
-                     single clickable anchor "AI Intervention Agent X.Y.Z".
-                     Now matches the web .version-link capsule pill style
-                     with GitHub octocat icon prefix (currentColor inherits
-                     link text color, so dark / light / hc themes all work).
-                     data-i18n-version lets i18n.js re-interpolate the
-                     extensionVersion on language switch (kept in sync with
-                     the pre-paint tl(...) result). Note: backticks are
-                     intentionally avoided in this comment because the
-                     surrounding TypeScript template literal would otherwise
-                     terminate early. -->
                 <div class="settings-footer" id="settingsFooter">
                     <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer" data-i18n-title="settings.footer.versionLinkTitle" title="${tl("settings.footer.versionLinkTitle")}">
                         <svg viewBox="0 0 24 24" fill="currentColor" class="github-icon" width="14" height="14" aria-hidden="true" focusable="false">
@@ -2225,9 +2176,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         </div>
     </div>
 
-    <!-- Prism.js for code highlighting (no inline scripts; CSP-safe) -->
     <script nonce="${nonce}" src="${prismBootstrapUri}"></script>
-    <!-- prism.min.js / marked.min.js 由 webview-ui.js 按需懒加载（首屏更快） -->
 
         <script nonce="${nonce}" src="${i18nJsUri}"></script>
         <script nonce="${nonce}" src="${webviewStateUri}"></script>
@@ -2236,12 +2185,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         <script nonce="${nonce}" src="${slashCommandsUri}"></script>
         <script nonce="${nonce}" src="${webviewNotifyCoreUri}"></script>
 
-        <!-- T1 · C10c: @aiia/tri-state-panel via Import Maps
-             importmap 必须出现在所有 <script type="module"> 之前（浏览器规范）。
-             业务代码通过 bare specifier \`@aiia/tri-state-panel\` 消费，Web UI 与
-             VSCode webview 双端书写完全一致——真正的物理文件路径差异只在
-             importmap 映射里。CSP 合规：importmap 与 module script 均携带 nonce，
-             受 \`script-src 'nonce-...'\` 约束。 -->
         <script type="importmap" nonce="${nonce}">
         {
           "imports": {

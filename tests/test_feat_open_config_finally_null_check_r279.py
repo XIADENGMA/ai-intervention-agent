@@ -250,7 +250,6 @@ class TestFinallyBlockMetaLint(unittest.TestCase):
             ],
             "app.js": [
                 "if (submitBtn)",  # R268 修复点
-                "COPY_BUTTON_RESTORE_TIMER_PROP",  # copy button 定时器清理
             ],
             "i18n.js": ["seen.delete", "delete _pendingLoads"],  # safe (no DOM)
             "multi_task.js": [

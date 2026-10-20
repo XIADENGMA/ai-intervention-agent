@@ -11,7 +11,7 @@ DOM，应该刷新页面而非重试。
 
 R289 引入分类 helper
 -------------------
-``app.js`` 暴露 ``window._classifyFetchError(error)``，按
+``app.js`` 定义 ``_classifyFetchError(error)``，按
 ``error.name`` + ``error.message`` 分到 5 个 i18n key:
 
 | error.name      | error.message 特征      | 分类 key                     | 用户应该做的事       |
@@ -22,13 +22,12 @@ R289 引入分类 helper
 | ``TypeError``   | 其他                    | ``status.uiRenderingError``  | 刷新页面             |
 | 其他            | —                      | ``status.networkError``      | 通用兜底             |
 
-``submitFeedback()`` (app.js) + ``closeTask()`` (multi_task.js) 两个最
-hot 的 catch 块都改用此 helper。
+``submitFeedback()`` (app.js) 的 catch 块使用此 helper。
 
 本测试锁住：
-1. ``_classifyFetchError`` helper 在 app.js 中定义 + exposed to window
+1. ``_classifyFetchError`` helper 在 app.js 中定义
 2. 5 个分类规则全部覆盖 (5 条 return path)
-3. submitFeedback / multi_task closeTask 的 catch 都用 helper
+3. submitFeedback 的 catch 用 helper
 4. 4 个新 i18n keys 在 4 个 locale 文件中存在且非空
 5. zh-CN 必须真中文 / en 必须真英文 / 4 keys 双语都不能空
 """
@@ -43,7 +42,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC_JS = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 APP_JS = STATIC_JS / "app.js"
-MULTI_TASK_JS = STATIC_JS / "multi_task.js"
 LOCALES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
 
 NEW_I18N_KEYS = [
@@ -102,7 +100,7 @@ def _strip_js_comments(source: str) -> str:
 
 
 class TestClassifyFetchErrorHelperDefined(unittest.TestCase):
-    """``app.js`` 必须定义 ``_classifyFetchError`` 并暴露到 window。"""
+    """``app.js`` 必须定义 ``_classifyFetchError``。"""
 
     def setUp(self) -> None:
         self.source = _read(APP_JS)
@@ -114,15 +112,6 @@ class TestClassifyFetchErrorHelperDefined(unittest.TestCase):
             self.clean,
             "app.js 必须定义 ``function _classifyFetchError(error)``"
             "（R289 错误消息分类 helper）",
-        )
-
-    def test_helper_exported_to_window(self) -> None:
-        self.assertIn(
-            "window._classifyFetchError = _classifyFetchError",
-            self.clean,
-            "_classifyFetchError 必须暴露到 window 让 multi_task.js / "
-            "settings-manager.js 等模块复用同一套分类逻辑（避免散落 "
-            '"网络错误" 兜底）',
         )
 
     def test_helper_handles_5_categories(self) -> None:
@@ -220,32 +209,6 @@ class TestSubmitFeedbackUsesHelper(unittest.TestCase):
             bare_use,
             'submitFeedback 函数体内不应再直接 ``t("status.networkError")``，'
             "必须通过 ``t(_classifyFetchError(error))`` 间接拿到分类 key",
-        )
-
-
-class TestCloseTaskUsesHelper(unittest.TestCase):
-    """``multi_task.js`` 的 close-task catch 也必须用 helper（typeof 兜底）。"""
-
-    def setUp(self) -> None:
-        self.clean = _strip_js_comments(_read(MULTI_TASK_JS))
-
-    def test_close_task_uses_classify_helper(self) -> None:
-        """close task catch 块必须 ``window._classifyFetchError`` 或同 helper。"""
-        self.assertIn(
-            "window._classifyFetchError",
-            self.clean,
-            "multi_task.js 必须复用 app.js 暴露的 window._classifyFetchError "
-            'helper（避免散落 "网络错误" 兜底）',
-        )
-
-    def test_close_task_has_typeof_fallback(self) -> None:
-        """跨模块调用必须 ``typeof === \"function\"`` 兜底（防 app.js 未加载）。"""
-        # 找 typeof window._classifyFetchError === "function" 模式
-        self.assertRegex(
-            self.clean,
-            r'typeof\s+window\._classifyFetchError\s*===\s*["\']function["\']',
-            "multi_task.js 引用 window._classifyFetchError 时必须做 typeof "
-            '===  "function" 兜底，避免极简加载顺序下抛 TypeError',
         )
 
 

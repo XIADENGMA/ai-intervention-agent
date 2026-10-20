@@ -11,6 +11,7 @@ on:
     paths:
       - "packages/vscode/**"
       - "scripts/package_vscode_vsix.mjs"
+      - "scripts/run_vscode_host_tests.mjs"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/vscode.yml"
@@ -20,6 +21,7 @@ on:
     paths:
       - "packages/vscode/**"
       - "scripts/package_vscode_vsix.mjs"
+      - "scripts/run_vscode_host_tests.mjs"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/vscode.yml"

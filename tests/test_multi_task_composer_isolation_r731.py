@@ -198,7 +198,7 @@ def test_a_closed_active_task_is_not_parked_again() -> None:
         setActiveTaskId('a');
         textarea.value = 'text for a';
 
-        // closeTask drops the task from the list and its parked state first
+        // the active task has left the list and nothing is parked for it
         window.currentTasks = [open('b')];
         currentTasks = window.currentTasks;
         delete taskTextareaContents.a;

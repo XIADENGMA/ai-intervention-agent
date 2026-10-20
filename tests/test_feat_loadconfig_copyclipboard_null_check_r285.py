@@ -1,7 +1,6 @@
 """R285 / cycle-26 t26-2 (R268/R279/R280 entry-side 第四轮 audit):
-``loadConfig()`` + ``copyCodeToClipboard()`` 在 await 跨界后的 DOM 访问
-必须 null-guard / isConnected guard，防 stale DOM ref 抛 TypeError 污染
-catch 路径误报错误。
+``loadConfig()`` 在 await 跨界后的 DOM 访问必须 null-guard，防 stale DOM ref
+抛 TypeError 污染 catch 路径误报错误。
 
 R268 → R279 → R280 → R285 evolution
 ------------------------------------
@@ -12,21 +11,15 @@ R268 → R279 → R280 → R285 evolution
 | cycle-25 | R279 | openConfigFileInIde | finally | re-query + null check |
 | cycle-25 | R280 | submitFeedback | entry + success path | direct null check |
 | cycle-26 | R285 | loadConfig | success path (3 nodes) | null check 兜底 |
-| cycle-26 | R285 | copyCodeToClipboard | entry + await result + setTimeout | isConnected check |
-
-R285 引入新 guard pattern: ``isConnected`` 而非 ``getElementById`` re-query。
-``isConnected`` 适用于 caller 已传入引用 (event handler closure) 的场景，
-检查节点是否仍 attached to document。性能比 re-query 更优 (无 DOM 树查询)。
 
 R285 修复目标
 -------------
 
-### #1: ``loadConfig()`` (app.js line ~617)
+``loadConfig()`` 在 await ``/api/config`` 后访问 3 个 DOM 节点：
 
-await ``/api/config`` 后访问 3 个 DOM 节点：
-- ``#description`` (line 635 ``renderMarkdownContent(descriptionElement, ...)``)
-- ``#options-container`` (line 643)
-- ``#separator`` (line 644)
+- ``#description`` (``renderMarkdownContent(descriptionElement, ...)``)
+- ``#options-container``
+- ``#separator``
 
 旧代码任一节点缺失（multi-task 切换中 / DOM 重渲染中）会抛 TypeError
 被 catch 翻成 "Config load failed"——但配置实际成功加载，UI 渲染失败误
@@ -34,40 +27,16 @@ await ``/api/config`` 后访问 3 个 DOM 节点：
 
 R285 修复: 3 处都加 null check 兜底 + ``console.warn`` 留 trace。
 
-### #2: ``copyCodeToClipboard(preElement, button)`` (app.js line ~520)
-
-caller (event handler) 传入 preElement + button 引用。await
-``navigator.clipboard.writeText`` 之后 button 可能因父 message bubble
-unmount → DOM detached。旧代码直接 ``button.innerHTML = ...`` 在 detached
-节点上抛 TypeError → catch 路径同样抛 → 整个 setTimeout restore 链断裂,
-console error 无法被用户感知。
-
-R285 修复: 入口 null check + await 后 ``isConnected`` check (best-effort
-UI feedback, detached 时 silently skip)。
-
 Invariant 锁定
 --------------
 
 1. ``loadConfig()`` 必须 3 处 null check (description / options-container
    / separator)
-2. ``copyCodeToClipboard()`` 必须入口 null check (preElement + button)
-3. ``copyCodeToClipboard()`` 必须 4 处 ``isConnected`` check (success+setTimeout
-   + catch+setTimeout)
-4. ``R285`` anchor 注释存在
-5. R268/R279/R280 preserve sanity (不回退之前修复)
+2. R268/R279/R280 preserve sanity (不回退之前修复)
 
-Pattern 选择 rationale
-----------------------
-
-- ``getElementById`` re-query (R268/R279): 适合 finally 块需要操作 DOM
-  且不确定 element 引用是否新鲜的场景
-- 直接 null check (R280): 适合 entry 阶段 ``getElementById`` 局部变量,
-  失败 early return
-- ``isConnected`` (R285 新引入): 适合 closure 引用 caller 传入的节点,
-  检查 still attached 到 document, 比 re-query 更高效
-
-3 种 pattern 各有适用场景。R285 是 "isConnected pattern" 的第一个
-production 应用，为未来 closure-based DOM refs 提供 reusable template。
+R285 当时还给 ``copyCodeToClipboard()`` 加了 ``isConnected`` guard。这个函数
+没有任何调用点（活着的复制按钮是 ``DOMSecurity.createCopyButton``，它的反馈
+定时器行为由 R744 锁定），已被整个删除，对应的测试一并移除。
 """
 
 from __future__ import annotations
@@ -185,42 +154,6 @@ class TestLoadConfigNullChecksR285(unittest.TestCase):
             r"if\s*\(\s*!\s*optionsContainer\s*\|\|\s*!\s*separator\s*\)",
             "R285: options-container / separator 任一缺失必须 short-circuit "
             "(``if (!optionsContainer || !separator)``) 跳过 options 渲染",
-        )
-
-
-class TestCopyCodeToClipboardNullChecksR285(unittest.TestCase):
-    """R285 #2: ``copyCodeToClipboard()`` 必须入口 null check +
-    ``isConnected`` guards (success path + catch path + setTimeout)。"""
-
-    src = APP_JS.read_text(encoding="utf-8")
-
-    def setUp(self) -> None:
-        self.body = _extract_function_body(
-            self.src,
-            r"async\s+function\s+copyCodeToClipboard\s*\(\s*preElement\s*,\s*button\s*\)\s*",
-        )
-
-    def test_entry_null_check(self) -> None:
-        """入口 ``if (!preElement || !button) return;`` early-return。"""
-        code = _strip_js_comments(self.body)
-        self.assertRegex(
-            code,
-            r"if\s*\(\s*!\s*preElement\s*\|\|\s*!\s*button\s*\)\s*\{[\s\S]{0,200}?return",
-            "R285: copyCodeToClipboard 入口必须 ``if (!preElement || !button) "
-            "{ ... return; }`` early-return 兜底",
-        )
-
-    def test_isconnected_after_await(self) -> None:
-        """await 后必须至少 1 处 ``button.isConnected`` 检查 (success path)。"""
-        code = _strip_js_comments(self.body)
-        # 数 button.isConnected 出现次数：应 ≥ 4 (success + success setTimeout
-        # + catch + catch setTimeout)
-        matches = re.findall(r"button\.isConnected", code)
-        self.assertGreaterEqual(
-            len(matches),
-            4,
-            f"R285: ``button.isConnected`` 必须出现至少 4 处 (success + "
-            f"success setTimeout + catch + catch setTimeout)。当前 {len(matches)} 处",
         )
 
 

@@ -73,7 +73,10 @@ _PROCESS_STARTED_AT_UNIX: float = time.time()
 from fastmcp import FastMCP
 from mcp.types import Icon, ToolAnnotations
 
-from ai_intervention_agent.enhanced_logging import EnhancedLogger
+from ai_intervention_agent.enhanced_logging import (
+    EnhancedLogger,
+    configure_logging_from_config,
+)
 from ai_intervention_agent.server_config import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     AUTO_RESUBMIT_TIMEOUT_MAX,
@@ -973,6 +976,8 @@ def main(argv: list[str] | None = None) -> None:
 
     fastmcp_logger = _stdlib_logging.getLogger("fastmcp")
     fastmcp_logger.setLevel(_stdlib_logging.WARNING)
+
+    configure_logging_from_config()
 
     middleware_names = [type(mw).__name__ for mw in mcp.middleware]
     logger.warning(

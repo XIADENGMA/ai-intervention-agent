@@ -6,10 +6,10 @@ The command is intentionally small and boring:
 * export locked third-party Python requirements with ``uv export``;
 * audit the pinned requirements with ``uvx pip-audit`` without resolver work;
 * run ``npm audit --audit-level=moderate --json`` against the root lockfile;
-* allow only the documented VS Code test-runner npm exception.
+* allow only the documented brace-expansion dev-toolchain exception.
 
 Anything else is a hard failure. The exception is tied to
-``docs/security/npm-audit-2026-06-21.md`` and a package dry-run check so it
+``docs/security/npm-audit-2026-07-26.md`` and a package dry-run check so it
 does not silently become a runtime/package exposure.
 """
 
@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
-NPM_TRIAGE_DOC = ROOT / "docs" / "security" / "npm-audit-2026-06-21.md"
 
 
 NPM_TRIAGE_DOC_BRACE_EXPANSION = ROOT / "docs" / "security" / "npm-audit-2026-07-26.md"
@@ -46,18 +45,9 @@ BRACE_EXPANSION_DEV_CHAIN = {
     "@eslint/config-array",
     "@eslint/eslintrc",
 }
-ACCEPTED_NPM_FINDINGS = {
-    "@vscode/test-cli",
-    "mocha",
-    "diff",
-    "serialize-javascript",
-} | BRACE_EXPANSION_DEV_CHAIN
 FORBIDDEN_PACKAGED_TOKENS = (
     "node_modules/",
-    "@vscode/test-cli",
     "mocha",
-    "diff",
-    "serialize-javascript",
     "brace-expansion",
 )
 
@@ -130,14 +120,6 @@ def _via_names(finding: dict[str, Any]) -> set[str]:
     return names
 
 
-def _effects(finding: dict[str, Any]) -> set[str]:
-    return {str(item) for item in finding.get("effects", [])}
-
-
-def _nodes(finding: dict[str, Any]) -> set[str]:
-    return {str(item) for item in finding.get("nodes", [])}
-
-
 def _via_ghsa_ids(finding: dict[str, Any]) -> set[str]:
     """提取 finding.via 中 advisory 对象的 GHSA id（url 末段）。"""
     ghsas: set[str] = set()
@@ -167,34 +149,6 @@ def _is_accepted_brace_expansion_family(name: str, finding: dict[str, Any]) -> b
 
 
 def _is_accepted_npm_finding(name: str, finding: dict[str, Any]) -> bool:
-    if not NPM_TRIAGE_DOC.exists() or name not in ACCEPTED_NPM_FINDINGS:
-        return False
-
-    via = _via_names(finding)
-    effects = _effects(finding)
-    nodes = _nodes(finding)
-
-    if name == "@vscode/test-cli":
-        return "mocha" in via and "node_modules/@vscode/test-cli" in nodes
-    if name == "mocha":
-        if (
-            "@vscode/test-cli" in effects
-            and {
-                "diff",
-                "serialize-javascript",
-            }
-            <= via
-        ):
-            return True
-
-        return _is_accepted_brace_expansion_family(name, finding)
-    if name == "diff":
-        return "mocha" in effects and "node_modules/mocha/node_modules/diff" in nodes
-    if name == "serialize-javascript":
-        return (
-            "mocha" in effects
-            and "node_modules/mocha/node_modules/serialize-javascript" in nodes
-        )
     return _is_accepted_brace_expansion_family(name, finding)
 
 
@@ -307,7 +261,10 @@ def _main(argv: list[str]) -> int:
             "[dependency-audit] WARN: accepted npm dev-tool findings "
             f"({', '.join(accepted)})"
         )
-        print(f"[dependency-audit] WARN: exception document: {NPM_TRIAGE_DOC}")
+        print(
+            "[dependency-audit] WARN: exception document: "
+            f"{NPM_TRIAGE_DOC_BRACE_EXPANSION}"
+        )
     if npm_ok:
         print("[dependency-audit] PASS: npm audit has no unaccepted findings")
     else:

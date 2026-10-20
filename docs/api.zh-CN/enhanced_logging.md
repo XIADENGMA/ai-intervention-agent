@@ -22,9 +22,16 @@ R72-A：在 root logger 上 idempotently 安装一份 ``InterceptHandler``。
 
 从环境变量 / 配置文件读取日志级别。
 
+### `_apply_log_level(level: int) -> None`
+
+把 root logger、它的所有 handler 和 werkzeug 切到 ``level``。
+
+werkzeug 首次写日志时会把自己的 logger 固定为 INFO；root handler 不接受 INFO
+时它还会自带一个不经过脱敏的 stderr handler，所以它必须跟着全局级别走。
+
 ### `configure_logging_from_config() -> None`
 
-根据配置设置 root logger 和所有 handler 的级别
+按环境变量 / 配置文件设置 root logger、所有 handler 和 werkzeug 的级别
 
 ### `get_current_log_level() -> dict[str, str | list[str]]`
 
@@ -32,7 +39,7 @@ R72-A：在 root logger 上 idempotently 安装一份 ``InterceptHandler``。
 
 ### `apply_runtime_log_level(level: str) -> dict[str, str]`
 
-运行时把 root logger + 所有 handler 的级别切到 ``level``。
+运行时把 root logger、所有 handler 和 werkzeug 的级别切到 ``level``。
 
 ### `_record_to_ring(level_no: int, name: str, message: str) -> None`
 

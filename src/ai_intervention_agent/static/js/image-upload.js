@@ -37,18 +37,6 @@ function forEachClipboardEntry(collection, callback) {
   }
 }
 
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-
 function throttle(func, limit) {
   let inThrottle;
   return function (...args) {
@@ -711,12 +699,6 @@ function renderImagePreview(imageItem, isLoading = false) {
   });
 }
 
-function sanitizeText(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
-
 function prepareImageRemoval(imageId, strictId = false) {
   let nextImages = null;
   let imageToRemove = null;
@@ -1356,9 +1338,6 @@ function checkBrowserCompatibility() {
     dragDrop: "ondragstart" in document.createElement("div"),
     canvas: !!document.createElement("canvas").getContext,
     webWorker: !!window.Worker,
-    requestAnimationFrame: !!(
-      window.requestAnimationFrame || window.webkitRequestAnimationFrame
-    ),
     objectURL: !!(window.URL && window.URL.createObjectURL),
     clipboard: !!(navigator.clipboard && navigator.clipboard.read),
   };
@@ -1377,48 +1356,12 @@ function checkBrowserCompatibility() {
   return true;
 }
 
-function setupFeatureFallbacks() {
-
-  if (!window.requestAnimationFrame) {
-    window.requestAnimationFrame =
-      window.webkitRequestAnimationFrame ||
-      window.mozRequestAnimationFrame ||
-      window.oRequestAnimationFrame ||
-      window.msRequestAnimationFrame ||
-      function (callback) {
-        return setTimeout(callback, 16);
-      };
-  }
-
-  if (!navigator.clipboard) {
-    console.warn("Clipboard API unavailable; falling back to manual paste");
-  }
-
-  if (!Object.assign) {
-    Object.assign = function (target, ...sources) {
-      for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-        const source = sources[sourceIndex];
-        if (source) {
-          for (const key in source) {
-            if (Object.prototype.hasOwnProperty.call(source, key)) {
-              target[key] = source[key];
-            }
-          }
-        }
-      }
-      return target;
-    };
-  }
-}
-
 function initializeImageFeatures() {
 
   if (!checkBrowserCompatibility()) {
     console.error("Browser compatibility check failed");
     return;
   }
-
-  setupFeatureFallbacks();
 
   try {
     initializeDragAndDrop();

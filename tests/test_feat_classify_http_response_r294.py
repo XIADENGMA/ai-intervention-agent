@@ -27,11 +27,9 @@ R294 引入 ``_classifyHttpResponse(response)`` 按 ``status`` 分类:
 
 实现位置:
 
-- ``app.js`` line ~1198 新增 ``_classifyHttpResponse(response)`` helper +
-  window export
+- ``app.js`` line ~1198 新增 ``_classifyHttpResponse(response)`` helper
 - ``app.js::submitFeedback`` ``else`` 分支：``const httpKey =
   _classifyHttpResponse(response); if (httpKey) ... else fallback``
-- ``multi_task.js::closeTask`` ``if (!response.ok)`` 同改造，typeof 兜底
 - ``en/zh-CN/zh-TW/_pseudo`` 各加 ``status.unauthorized`` +
   ``status.serviceUnavailable`` 2 个 key
 - ``_PRE_RESERVED_KEYS`` + ``_WEB_RESERVED_DYNAMIC`` 加 2 个 key (dynamic
@@ -48,7 +46,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC_JS = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 APP_JS = STATIC_JS / "app.js"
-MULTI_TASK_JS = STATIC_JS / "multi_task.js"
 LOCALES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
 
 
@@ -61,7 +58,7 @@ def _load_json(p: Path) -> dict:
 
 
 class TestClassifyHttpResponseHelperDefined(unittest.TestCase):
-    """``_classifyHttpResponse`` 必须在 app.js 定义 + window export。"""
+    """``_classifyHttpResponse`` 必须在 app.js 定义。"""
 
     def test_helper_function_defined(self) -> None:
         src = _read(APP_JS)
@@ -69,14 +66,6 @@ class TestClassifyHttpResponseHelperDefined(unittest.TestCase):
             src,
             r"function\s+_classifyHttpResponse\s*\(\s*response\s*\)",
             "app.js 必须定义 function _classifyHttpResponse(response)",
-        )
-
-    def test_helper_exported_to_window(self) -> None:
-        src = _read(APP_JS)
-        self.assertIn(
-            "window._classifyHttpResponse = _classifyHttpResponse",
-            src,
-            "_classifyHttpResponse 必须 export 到 window (multi_task.js 复用)",
         )
 
     def test_helper_handles_401_403_unauthorized(self) -> None:
@@ -155,28 +144,6 @@ class TestSubmitFeedbackUsesHttpHelper(unittest.TestCase):
             src,
             r'result\.message\s*\|\|\s*t\(\s*"status\.submitFailed"\s*\)',
             "submitFeedback else fallback 必须保留 result.message || t('status.submitFailed')",
-        )
-
-
-class TestCloseTaskUsesHttpHelper(unittest.TestCase):
-    """``closeTask`` 的 ``if (!response.ok)`` 分支也必须复用 helper (typeof 兜底)。"""
-
-    def test_close_task_has_typeof_classify_http_fallback(self) -> None:
-        src = _read(MULTI_TASK_JS)
-        # ``typeof window._classifyHttpResponse === "function"``
-        self.assertRegex(
-            src,
-            r'typeof\s+window\._classifyHttpResponse\s*===\s*"function"',
-            "closeTask 必须 typeof === 'function' 兜底 window._classifyHttpResponse",
-        )
-
-    def test_close_task_uses_classify_http_on_response(self) -> None:
-        src = _read(MULTI_TASK_JS)
-        # 找 ``classifyHttp(response)`` 调用 (var name 可能是 classifyHttp)
-        # 至少 1 处 ``window._classifyHttpResponse`` 或 classifyHttp 调用
-        self.assertTrue(
-            "classifyHttp(response)" in src or "_classifyHttpResponse(response)" in src,
-            "closeTask 必须用 helper(response) 分类，否则会绕过 4xx/5xx 精细化",
         )
 
 
@@ -275,14 +242,6 @@ class TestR289R291LineagePreserved(unittest.TestCase):
             "function _classifyFetchError(error)",
             src,
             "R294 不能砍掉 R289 的 _classifyFetchError helper (互补，不替代)",
-        )
-
-    def test_window_classify_fetch_error_still_exported(self) -> None:
-        src = _read(APP_JS)
-        self.assertIn(
-            "window._classifyFetchError = _classifyFetchError",
-            src,
-            "R294 不能砍掉 R289 的 window._classifyFetchError export",
         )
 
 

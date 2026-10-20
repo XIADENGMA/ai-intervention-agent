@@ -47,14 +47,6 @@ class TestWebSubmitFocus(unittest.TestCase):
             "R692: 提交成功路径必须登记聚焦请求",
         )
 
-    def test_close_task_switch_requests_focus(self) -> None:
-        body = _extract_function_body(_web_source(), "closeTask")
-        self.assertIn(
-            "requestFeedbackInputFocus()",
-            body,
-            "R692: 关闭任务切到下一个的路径必须登记聚焦请求",
-        )
-
     def test_load_task_details_consumes_focus_request(self) -> None:
         body = _extract_function_body(_web_source(), "loadTaskDetails")
         self.assertIn(

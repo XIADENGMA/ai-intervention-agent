@@ -2,9 +2,11 @@
 
 cycle-29 #D (cr58 §5) 续作 R298: `fetchWithTimeout` AbortController
 cleanup 之后, 继续审计 Web Observer API:
-- IntersectionObserver (LazyImageLoader in validation-utils.js)
 - ResizeObserver (feedback_textarea_height.js)
-- MutationObserver (当前未使用, 但需要锁 invariant 防 future 引入)
+- IntersectionObserver / MutationObserver / PerformanceObserver (当前未使用,
+  但需要锁 invariant 防 future 引入)。IntersectionObserver 原先只出现在
+  validation-utils.js 的 LazyLoader 里，那个类没有任何调用点，已随整段死代码
+  删除，对应的 disconnect / unobserve 测试一并移除。
 
 Observer API 的 lifecycle 规范:
 - `new XObserver(callback)` 创建实例 → callback 引用 entries/closure 变量
@@ -22,13 +24,11 @@ R299 锁定:
 ================================================================
 | 维度                                                  | tests |
 |-----------------------------------------------------|-------|
-| 1. IntersectionObserver LazyImageLoader disconnect 路径完备 | 4   |
-| 2. IntersectionObserver entry 加载完必须 unobserve     | 2     |
-| 3. ResizeObserver setupResizeObserver 必须返回 observer 引用 | 2 |
-| 4. ResizeObserver 必须 feature-detect (旧浏览器降级 fallback) | 2 |
-| 5. meta-lint: 全 source 不应出现 MutationObserver (未来如引入应有 cleanup) | 2 |
+| 1. ResizeObserver setupResizeObserver 必须返回 observer 引用 | 2 |
+| 2. ResizeObserver 必须 feature-detect (旧浏览器降级 fallback) | 2 |
+| 3. meta-lint: 全 source 不应出现 Intersection/Mutation/PerformanceObserver (未来如引入应有 cleanup) | 3 |
 ================================================================
-| 合计                                                  | 12    |
+| 合计                                                  | 7     |
 ================================================================
 
 **pattern lineage**: R298 lifecycle-cleanup invariant 的延伸扩展到
@@ -46,7 +46,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC = PROJECT_ROOT / "src" / "ai_intervention_agent"
 JS_DIR = SRC / "static" / "js"
-VALIDATION_UTILS_JS = JS_DIR / "validation-utils.js"
 FEEDBACK_HEIGHT_JS = JS_DIR / "feedback_textarea_height.js"
 
 
@@ -82,88 +81,7 @@ def _strip_js_comments(src: str) -> str:
 
 
 # ============================================================
-# #1: IntersectionObserver LazyImageLoader disconnect 路径完备
-# ============================================================
-class TestIntersectionObserverCleanup(unittest.TestCase):
-    """validation-utils.js LazyImageLoader 必须有完整的 disconnect 路径"""
-
-    def setUp(self) -> None:
-        self.js = _strip_js_comments(_read(VALIDATION_UTILS_JS))
-
-    def test_intersection_observer_created(self) -> None:
-        """必须 new IntersectionObserver。"""
-        self.assertRegex(
-            self.js,
-            r"new\s+IntersectionObserver\(",
-            "validation-utils.js 必须 new IntersectionObserver",
-        )
-
-    def test_observer_assigned_to_class_field(self) -> None:
-        """observer 必须存到 this._observer (或 ClassName._observer) 便于 disconnect。"""
-        m = re.search(r"this\._observer\s*=\s*observer", self.js)
-        self.assertIsNotNone(
-            m,
-            "IntersectionObserver 创建后必须 this._observer = observer 保存引用",
-        )
-
-    def test_disconnect_method_exists(self) -> None:
-        """LazyImageLoader 必须有 static disconnect() 方法。"""
-        m = re.search(
-            r"static\s+disconnect\(\)\s*\{[\s\S]{0,300}?this\._observer\.disconnect\(\)",
-            self.js,
-        )
-        self.assertIsNotNone(
-            m,
-            "LazyImageLoader 必须有 static disconnect() 方法 + 调用 this._observer.disconnect()",
-        )
-
-    def test_disconnect_nulls_observer(self) -> None:
-        """disconnect() 必须置 this._observer = null (避免长期持有)。"""
-        m = re.search(
-            r"this\._observer\.disconnect\(\)\s*;?\s*this\._observer\s*=\s*null",
-            self.js,
-        )
-        self.assertIsNotNone(
-            m,
-            "LazyImageLoader disconnect() 必须 this._observer.disconnect(); "
-            "this._observer = null — observer 实例 GC 不掉则 callback 闭包驻留",
-        )
-
-
-# ============================================================
-# #2: IntersectionObserver entry 加载完必须 unobserve
-# ============================================================
-class TestIntersectionObserverUnobserve(unittest.TestCase):
-    """单图懒加载完成后必须 obs.unobserve(entry.target) 避免重复 fire callback"""
-
-    def setUp(self) -> None:
-        self.js = _strip_js_comments(_read(VALIDATION_UTILS_JS))
-
-    def test_unobserve_called_after_load(self) -> None:
-        """observe callback 内 isIntersecting 分支必须 obs.unobserve(entry.target)。"""
-        m = re.search(
-            r"if\s*\(\s*entry\.isIntersecting\s*\)[\s\S]{0,300}?obs\.unobserve\(\s*entry\.target\s*\)",
-            self.js,
-        )
-        self.assertIsNotNone(
-            m,
-            "IntersectionObserver isIntersecting 分支必须 obs.unobserve(entry.target) "
-            "— 否则 observer 持续 fire callback 但已无意义, 形成 zombie 观察",
-        )
-
-    def test_callback_second_arg_is_obs(self) -> None:
-        """IntersectionObserver callback 必须 (entries, obs) 接收第二参数, 才能 unobserve。"""
-        m = re.search(
-            r"new\s+IntersectionObserver\(\s*\(?entries\s*,\s*obs\)?\s*=>", self.js
-        )
-        self.assertIsNotNone(
-            m,
-            "IntersectionObserver callback 必须 (entries, obs) => 接受第二参数 obs",
-        )
-
-
-# ============================================================
-# #3: ResizeObserver setupResizeObserver 必须返回 observer 引用
+# #1: ResizeObserver setupResizeObserver 必须返回 observer 引用
 # ============================================================
 class TestResizeObserverReturnsHandle(unittest.TestCase):
     """feedback_textarea_height.js setupResizeObserver 必须返回 { observer, mode } 便于 cleanup"""
@@ -195,7 +113,7 @@ class TestResizeObserverReturnsHandle(unittest.TestCase):
 
 
 # ============================================================
-# #4: ResizeObserver 必须 feature-detect (旧浏览器降级)
+# #2: ResizeObserver 必须 feature-detect (旧浏览器降级)
 # ============================================================
 class TestResizeObserverFeatureDetect(unittest.TestCase):
     """ResizeObserver 必须 feature-detect, 旧浏览器走 mouseup fallback"""
@@ -236,11 +154,28 @@ class TestResizeObserverFeatureDetect(unittest.TestCase):
 
 
 # ============================================================
-# #5: meta-lint: 全 source 不应出现 MutationObserver
+# #3: meta-lint: 全 source 不应出现 Intersection/Mutation/PerformanceObserver
 #    (未来如引入须有 cleanup invariant)
 # ============================================================
 class TestNoMutationObserverYet(unittest.TestCase):
-    """整 source tree 当前不应出现 MutationObserver 使用 — 一旦引入必须配 cleanup invariant"""
+    """整 source tree 当前不应出现 Intersection/Mutation/PerformanceObserver 使用
+    — 一旦引入必须配 cleanup invariant"""
+
+    def test_no_intersection_observer_in_static_js(self) -> None:
+        """扫描 static/js/ 全部 .js 文件不应有 new IntersectionObserver。"""
+        violators: list[str] = []
+        for js_file in JS_DIR.glob("*.js"):
+            if not js_file.is_file():
+                continue
+            content = _strip_js_comments(_read(js_file))
+            if re.search(r"new\s+IntersectionObserver\(", content):
+                violators.append(js_file.name)
+        self.assertEqual(
+            violators,
+            [],
+            f"R299: {violators} 引入了 IntersectionObserver 但本测试还没补对应 "
+            f"disconnect / unobserve cleanup invariant — 请扩展 R299 或新 R30x 锁定其 lifecycle",
+        )
 
     def test_no_mutation_observer_in_static_js(self) -> None:
         """扫描 static/js/ 全部 .js 文件不应有 new MutationObserver。"""

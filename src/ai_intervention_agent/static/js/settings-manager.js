@@ -1109,7 +1109,6 @@ class SettingsManager {
         [data-theme="light"] .setting-title,
         [data-theme="light"] .setting-subgroup-title,
         [data-theme="light"] .settings-main-title,
-        [data-theme="light"] .setting-group-title,
         [data-theme="light"] #settings-title {
           color: #141413 !important;
         }
@@ -1118,11 +1117,6 @@ class SettingsManager {
         }
         [data-theme="light"] .setting-group::before {
           background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.08), transparent) !important;
-        }
-        [data-theme="light"] .setting-group-title {
-          -webkit-text-fill-color: #141413 !important;
-          background: none !important;
-          border-bottom-color: rgba(0, 0, 0, 0.1) !important;
         }
         [data-theme="light"] .setting-input {
           background: #ffffff !important;

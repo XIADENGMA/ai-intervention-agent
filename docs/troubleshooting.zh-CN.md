@@ -579,6 +579,20 @@ Web UI 里的“访问被拒绝”提示是另一回事：它表示页面请求�
 2. 直接问 Web UI 是否持有这张图片（任务 ID 可在 `/api/tasks` 里查到）：`curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/tasks/<task_id>/images/0`，存有第 0 张时输出 `200`，没有则输出 `404`。
 3. 如果 MCP 客户端不上报工作区目录，服务端会退回到自己的工作目录；当工作目录是 `/` 或你的主目录时（由编辑器启动的服务端经常如此）不会使用它。请显式列出工作区，例如 `local_image_dirs = ["auto", "~/work"]`。
 
+## 18. MCP 服务端每次启动都会记录一行 `WARNING`：`event=server.boot`
+
+**症状**：MCP 日志里每次启动都有一行这样的内容，级别是 `WARNING`：
+
+```text
+2026-10-20 20:11:15,910 - ai_intervention_agent.server - WARNING - event=server.boot version=1.8.12 transport=stdio mcp_name='AI Intervention Agent MCP' python=3.11.15 middleware=ErrorHandlingMiddleware,...
+```
+
+**含义**：没有任何问题。这是启动横幅：版本、传输方式、Python 版本和正在响应的中间件栈。它故意用 `WARNING` 级别写出：MCP 服务端的日志级别是 `WARNING`，除非你修改 `web_ui.log_level`（或 `AI_INTERVENTION_AGENT_LOG_LEVEL`）并重启它，所以用 `INFO` 级别写的横幅会被丢弃，而它正是说明当前运行哪个版本的那一行。
+
+- 每次进程启动只出现一次。短时间内连续出现多条，说明 MCP 客户端多次启动了服务端；每一条之前的日志会说明原因。
+- 报告问题时请附上这一行：里面有版本号。
+- `web_ui.log_level = "ERROR"` 会把它和其他所有警告一起隐藏。
+
 ## 还是没解决？
 
 1. 看 [`SUPPORT.zh-CN.md`](../.github/SUPPORT.zh-CN.md) 选合适渠道。

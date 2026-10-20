@@ -82,6 +82,7 @@ SECTION_KEYWORDS = [
     (15, "sidebar panel is slow", "侧边栏面板打开或重新加载很慢"),
     (16, "Needs Authentication", "Needs Authentication"),
     (17, "local image", "本地图片"),
+    (18, "event=server.boot", "event=server.boot"),
 ]
 
 

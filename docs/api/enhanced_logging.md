@@ -12,6 +12,8 @@
 
 ### `get_log_level_from_config() -> int`
 
+### `_apply_log_level(level: int) -> None`
+
 ### `configure_logging_from_config() -> None`
 
 ### `get_current_log_level() -> dict[str, str | list[str]]`

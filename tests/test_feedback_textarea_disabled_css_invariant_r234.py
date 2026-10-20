@@ -36,8 +36,9 @@ R234 lock:
   ``background`` + ``color`` + ``border-color`` (visual cue triple).
 
 Companion test in R229's file (``TestFeedbackTextareaInlineStyleRemovedByR234``)
-asserts the JS side: ``disableSubmitButton`` / ``enableSubmitButton``
-no longer write inline color/background/cursor for the textarea.
+asserts the JS side: ``enableSubmitButton`` does not write inline
+color/background/cursor for the textarea (``disableSubmitButton`` was
+later removed outright: nothing called it).
 """
 
 from __future__ import annotations

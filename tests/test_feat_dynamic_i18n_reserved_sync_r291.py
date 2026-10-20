@@ -13,11 +13,10 @@ dead-key check 中被误报为 "未引用"，进而：
    ``test_i18n_orphan_keys::test_strict_exits_zero_when_no_orphans`` 误报
 3. R287 添加 docs example mention 16 / 200 max-length 也触发
    ``test_mcp_tools_doc_consistency::test_no_other_4_or_5_digit_length_constants_lurking``
-4. ``app.js:582`` (R285 cycle-25) catch 路径 ``button.innerHTML = errorIconSvg
-   + t("status.copyFailed")`` 缺 ``AIIA-XSS-SAFE`` 注释（success 路径 line 561
-   有，catch 路径漏写）
+4. ``app.js`` 的 ``copyCodeToClipboard`` catch 路径缺 ``AIIA-XSS-SAFE`` 注释
+   （这个函数没有任何调用点，后来被整个删除，对应的测试一并移除）
 
-R291 修了这 4 处副作用 + 锁住关键 invariant：dynamic-key 豁免必须 2 处同步。
+R291 修了这些副作用 + 锁住关键 invariant：dynamic-key 豁免必须 2 处同步。
 
 为什么必须 2 处同步
 -------------------
@@ -156,35 +155,6 @@ class TestR289FetchErrorKeysExempted(unittest.TestCase):
         self.assertFalse(
             missing,
             f"R289 fetch-error keys 缺失于 script 豁免清单：{sorted(missing)}",
-        )
-
-
-class TestAppJsCopyFailedXssSafeComment(unittest.TestCase):
-    """R285 catch 路径 ``button.innerHTML = errorIconSvg + t('status.copyFailed')``
-    必须带 ``AIIA-XSS-SAFE`` 注释 (与 line 561 success 路径同源安全)。"""
-
-    APP_JS = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "app.js"
-
-    def test_copy_failed_innerhtml_has_xss_safe_comment(self) -> None:
-        src = _read(self.APP_JS)
-        # 找 ``button.innerHTML = errorIconSvg + t("status.copyFailed")`` 这行
-        target_line = re.search(
-            r'button\.innerHTML\s*=\s*errorIconSvg\s*\+\s*t\(\s*["\']status\.copyFailed["\']\s*\)',
-            src,
-        )
-        self.assertIsNotNone(
-            target_line,
-            "未在 app.js 找到 errorIconSvg + t('status.copyFailed') 调用",
-        )
-        assert target_line is not None
-        # 向前找 200 字符内必须出现 AIIA-XSS-SAFE marker
-        ctx_start = max(0, target_line.start() - 400)
-        context = src[ctx_start : target_line.start()]
-        self.assertIn(
-            "AIIA-XSS-SAFE",
-            context,
-            "errorIconSvg + t('status.copyFailed') 上方 400 字符内缺 AIIA-XSS-SAFE 注释；"
-            "应与 line 561 success 路径同样标注（详见 docs/i18n.md § Security）",
         )
 
 

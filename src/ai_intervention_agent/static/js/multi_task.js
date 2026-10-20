@@ -3190,116 +3190,6 @@ function updateOptionsDisplay(options, optionDefaults) {
   }
 }
 
-function removeTaskFromCurrentTasks(tasks, taskId) {
-  const taskCount = tasks && Number.isFinite(tasks.length) ? tasks.length : 0;
-  let keptTasks = null;
-
-  for (let taskIndex = 0; taskIndex < taskCount; taskIndex += 1) {
-    if (!(taskIndex in tasks)) {
-      continue;
-    }
-    const task = tasks[taskIndex];
-    if (task.task_id === taskId) {
-      if (keptTasks === null) {
-        keptTasks = [];
-        for (let copyIndex = 0; copyIndex < taskIndex; copyIndex += 1) {
-          if (copyIndex in tasks) {
-            keptTasks.push(tasks[copyIndex]);
-          }
-        }
-      }
-      continue;
-    }
-    if (keptTasks !== null) {
-      keptTasks.push(task);
-    }
-  }
-
-  return keptTasks === null ? tasks : keptTasks;
-}
-
-async function closeTask(taskId) {
-  if (!confirm(_t("status.confirmCloseTask", { taskId }))) {
-    return;
-  }
-
-  try {
-    const response = await fetchWithTimeout(
-      `/api/tasks/${taskId}/close`,
-      { method: "POST" },
-      10000,
-    );
-    let data = {};
-    try {
-      data = await response.json();
-    } catch (parseError) {
-      if (response.ok) throw parseError;
-    }
-
-    if (!response.ok || !data.success) {
-      console.error("Server-side close task failed:", data.error);
-      if (typeof showStatus === "function") {
-
-        const classifyHttp =
-          typeof window._classifyHttpResponse === "function"
-            ? window._classifyHttpResponse
-            : null;
-        const httpKey = classifyHttp ? classifyHttp(response) : null;
-        if (httpKey) {
-          showStatus(_t(httpKey), "error");
-        } else {
-          showStatus(data.error || _t("status.closeFailed"), "error");
-        }
-      }
-      return;
-    }
-
-    if (taskCountdowns[taskId]) {
-      _clearTaskCountdown(taskId);
-    }
-    if (window.taskDeadlines[taskId] !== undefined) {
-      delete window.taskDeadlines[taskId];
-    }
-    delete taskTextareaContents[taskId];
-    delete taskOptionsStates[taskId];
-    delete taskImages[taskId];
-    if (autoSubmitAttempted) {
-      delete autoSubmitAttempted[taskId];
-    }
-
-    currentTasks = removeTaskFromCurrentTasks(currentTasks, taskId);
-    window.currentTasks = currentTasks;
-    renderTaskTabs();
-
-    if (activeTaskId === taskId) {
-      const nextTask = findFirstOpenTask(currentTasks);
-      if (nextTask) {
-
-        requestFeedbackInputFocus();
-        switchTask(nextTask.task_id);
-      } else {
-        setActiveTaskId(null);
-        if (typeof showNoContentPage === "function") {
-          showNoContentPage();
-        }
-      }
-    }
-
-    _debugLog(`Closed task: ${taskId}`);
-  } catch (error) {
-    console.error("Close task failed:", error);
-    if (typeof showStatus === "function") {
-
-      const classify =
-        typeof window._classifyFetchError === "function"
-          ? window._classifyFetchError
-          : null;
-      const key = classify ? classify(error) : "status.networkError";
-      showStatus(_t(key), "error");
-    }
-  }
-}
-
 function _getOrCacheCountdownDom(tid, entry) {
   if (!entry) return null;
   let cache = entry._domCache;
@@ -3615,13 +3505,6 @@ function startTaskCountdown(taskId, remaining, total = null) {
   _debugLog(
     `Started task countdown: ${taskId}, remaining ${remaining}s / total ${timeout}s`,
   );
-}
-
-function formatCountdown(seconds) {
-  if (seconds > 60) {
-    return `${Math.floor(seconds / 60)}m`;
-  }
-  return `${seconds}s`;
 }
 
 async function autoSubmitTask(taskId) {
@@ -4114,7 +3997,6 @@ if (typeof window !== "undefined") {
     startTasksPolling,
     stopTasksPolling,
     switchTask,
-    closeTask,
     initMultiTaskSupport,
     refreshTasksList,
 

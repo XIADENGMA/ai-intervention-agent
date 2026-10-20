@@ -244,7 +244,6 @@
     "batchComplete": "完成處理：{{successful}}/{{total}} 個檔案成功",
     "fileProcessSuccess": "已處理 {{filename}}",
     "fileProcessFailed": "處理 {{filename}} 失敗：{{reason}}",
-    "confirmCloseTask": "確定要關閉任務 {{taskId}} 嗎？",
     "notifFallbackPermDenied": "通知權限已被拒絕；已改用頁面內提示。請在瀏覽器設定中重新開啟系統通知後即可收到桌面提醒。",
     "notifFallbackPermDefault": "尚未授予通知權限；目前改用頁面內提示。可點擊右上角鈴鐺圖示或頁面任意可互動元素來觸發瀏覽器權限授權要求。",
     "notifFallbackPermDisabled": "系統通知已在設定中關閉；目前顯示頁面內提示。可在設定面板重新開啟。",
@@ -262,14 +261,7 @@
     "filenameIllegalChars": "檔名包含非法字元",
     "filenamePathTraversal": "檔名包含路徑遍歷字元",
     "suspiciousExt": "檢測到可疑檔案類型：{{ext}}",
-    "maskedExecutable": "檢測到偽裝的可執行檔",
-    "emptyField": "輸入內容不能為空",
-    "inputTooShort": "輸入長度不足：{{length}} < {{min}}",
-    "inputTooLong": "輸入內容過長：{{length}} > {{max}}",
-    "defaultFieldName": "值",
-    "notANumber": "{{field}} 必須是數字",
-    "numberBelowMin": "{{field}} 不能小於 {{min}}",
-    "numberAboveMax": "{{field}} 不能大於 {{max}}"
+    "maskedExecutable": "檢測到偽裝的可執行檔"
   },
   "env": {
     "supported": "支援",

@@ -50,6 +50,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Troubleshooting §18 (EN + zh-CN) explains the `WARNING` line
+  `event=server.boot` that every start of the MCP server writes: it is the
+  start-up banner (version, transport, Python, middleware), written at
+  `WARNING` on purpose because the server logs at `WARNING` by default and
+  an `INFO` banner would be dropped. Nothing is wrong when you see it.
 - The zh-TW generator (`scripts/gen_zhtw_from_zhcn.py`) merges by
   default: strings already in `zh-TW.json` are kept, only the keys it
   lacks are derived (and listed for review), keys that zh-CN no longer
@@ -138,9 +143,161 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   ranges, the installed and locked versions, and, through a real fastmcp
   server and client, the protocol names of the tool hints, icons and image
   blocks and the behaviour of `ctx.info`.
+- The VS Code extension host tests (`npm run vscode:test`, and the gate and
+  CI jobs that run it) no longer print VS Code's own failed network lookups.
+  The VS Code they start looks up the marketplace entry of the extension
+  under test, chat entitlement data and alerts, and prints an error line,
+  sometimes with a stack, whenever a request fails; behind a proxy that
+  happened now and then in an otherwise green run (`Failed to fetch`,
+  `ERROR:net/socket/ssl_client_socket_impl.cc ... handshake failed`). A
+  small wrapper, `scripts/run_vscode_host_tests.mjs`, runs `vscode-test`,
+  leaves out exactly those lines and the stack right behind them, says how
+  many it left out, and passes everything else and the exit code through.
+  Settings and log levels could not do this: with `--extensionTestsPath`
+  VS Code sends its own logs and the test results down the same stream, so
+  silencing one silences the other. A new test,
+  `test_vscode_host_noise_filter_r745.py` (18 tests, 23 mutants killed),
+  loads the real script and pins the filter, the wrapper around a stand-in
+  command and the wiring.
+
+### Removed
+
+- Dependency audit: the waivers for the four npm findings of the 2026-06-21
+  triage (`@vscode/test-cli`, `mocha`, `diff`, `serialize-javascript`) in
+  `scripts/dependency_audit.py`. All four are fixed in `package-lock.json`
+  and `npm audit` is clean, so the waivers could only ever accept a
+  regression: one of them matched nested `node_modules/mocha/node_modules/...`
+  paths that the lockfile no longer has. A new finding on any of these
+  packages now fails the gate. The valve for the `brace-expansion`
+  dev-toolchain advisories, pinned to its triaged GHSA ids, stays, and so
+  does the package dry-run check that goes with it. `docs/security/` says so
+  and the 2026-06-21 triage note is closed. `test_dependency_audit_r454.py`
+  grows from 5 to 23 tests, which now also pin the fail-closed behaviour of
+  the remaining valve (11 mutants killed).
+- Web UI: the browser-compatibility shims of `image-upload.js` and
+  `notification-manager.js`. `setupFeatureFallbacks` patched
+  `requestAnimationFrame` (with the `webkit`, `moz`, `o` and `ms` prefixes
+  and a timer) and `Object.assign` when they were missing, and logged
+  "Clipboard API unavailable" on every plain-HTTP page; the compatibility
+  probe no longer reports `requestAnimationFrame`, and the audio setup no
+  longer tries Firefox's `mozAudioContext`. A browser that lacks any of
+  these cannot parse the page scripts (they use `async`/`await` and
+  classes), so none of it could run. Its test,
+  `test_image_upload_object_assign_polyfill_own_keys_r571.py`, goes with it.
+- Web UI: `sanitizeText` in `image-upload.js`, a second HTML escaper that
+  nothing called. A new test, `test_unreferenced_js_symbols_r747.py` (25
+  tests, 28 mutants killed), scans the page scripts and the VS Code webview
+  scripts and fails when a top-level function, class, arrow function or class
+  member has no user other than its own body, an export list or a test, so
+  the dead code removed in this release cannot come back unnoticed. Two
+  documented methods of the notification manager that nothing calls
+  (`getStatus`, `hasCustomSound`) are kept on purpose and listed in the test.
+- Web UI: the `closeTask` function and what only it used. Nothing in the page
+  ever called it: the task tabs have no close button, and the function was
+  added together with styles for one in November 2025 but never wired up. It
+  carried a confirmation prompt, a request to `/api/tasks/<id>/close`, a list
+  helper, the `status.confirmCloseTask` string of the three locales, the
+  `.task-tab-close` styles, the `window._classifyFetchError` and
+  `window._classifyHttpResponse` exports (no other module reads them, and
+  `app.js` still calls both), and the tests that pinned them. A failed close
+  would also have shown the "Failed to stop the service" text. The server
+  route `/api/tasks/<id>/close` stays: the MCP server posts to it when a
+  feedback request times out or is cancelled.
+- Stylesheets: rules for classes that no markup, script or generated HTML can
+  produce any more: 50 rules in the Web UI's `main.css` (and 7 selector lists
+  trimmed), 15 in the VS Code panel's `webview.css`, and one selector in the
+  light-theme block that `settings-manager.js` injects. Among them a
+  keyboard-shortcut hint with its tooltip, the new-task tab, the `btn-enabled`
+  and `textarea-disabled` state classes, a notification toast and a progress
+  bar, the panel's countdown ring and task list, and light-theme overrides for
+  `lang-label` and `copy-btn`, names the code toolbar does not use (it renders
+  `language-label` and `copy-button`, which have their own light-theme rules).
+  The page looks the same: the computed styles of every element, `::before`
+  and `::after` included, match the previous stylesheet in 42 states (3
+  viewports, 2 themes, 7 page states), and none of the removed selectors
+  matches any element. The VS Code stylesheet was checked statically only.
+  `tests/test_css_orphan_selectors_r743.py` keeps new ones out.
+- Web UI: three functions that nothing called. `disableSubmitButton`: its last
+  call, made right after the empty-content page was shown, went away with the
+  multi-task rewrite in December 2025 (`enableSubmitButton` stays, and
+  `showContentPage` calls it). `getShortcutText`: the multi-line text of a
+  shortcut tooltip whose element no longer exists (the settings panel's
+  shortcut list is filled by `updateShortcutDisplay`). `formatCountdown` in
+  `multi_task.js`: a seconds-to-label formatter. The R229 and R234 tests lose
+  the cases that inspected `disableSubmitButton`; the ones for
+  `enableSubmitButton` stay.
+- Web UI: `copyCodeToClipboard` and its five helpers (about 100 lines in
+  `app.js`). The copy button of a code block is built by
+  `DOMSecurity.createCopyButton`, which has its own click handler; this older
+  copy of the logic had no caller, and the tests that pinned it (R285, R291,
+  R452, and a whitelist entry in R279) checked code that never ran.
+- Web UI: about 650 lines of `validation-utils.js` that nothing on the page
+  used: the `APICache`, `RequestDeduplicator`, `LazyLoader` and
+  `VirtualScroller` classes, the `debounce` and `throttle` helpers (the later
+  `image-upload.js` declares its own and replaced them at load time),
+  `validateTextInput`, `sanitizeText`, `validateNumberRange`, `clampValue`, and
+  the `module.exports` block only the tests used. A page load no longer
+  registers three lifecycle listeners for a cache nobody read. The file keeps
+  `ValidationUtils` with the image and file-name checks that `image-upload.js`
+  calls. `image-upload.js` also loses an unused `debounce`, and the seven
+  `validation.*` locale keys only the removed code used are gone from all
+  three locales. Six test files that only exercised the removed classes were
+  deleted; R299 keeps its ResizeObserver checks and now also fails when an
+  `IntersectionObserver` appears without a cleanup test.
+- Web UI: eight static helpers of `DOMSecurity` that nothing calls
+  (`setTextContent`, `createElement`, `createCheckboxOption`,
+  `updateButtonState`, `sanitizeText`, `createFragment`, `isValidURL`,
+  `setSafeSource`), and the R598 test that only exercised `createElement`. The
+  six the page uses (`clearContent`, `createNotification`,
+  `createImagePreview`, `createCopyButton`, `sanitizeAttribute`,
+  `replaceContent`) stay.
+- VS Code extension: the 13 developer comments in the webview HTML template
+  (11 of them in Chinese). `tsc` keeps HTML comments inside a template
+  literal verbatim, so every panel load sent about 3.7 KB of notes to the
+  webview. No code or test reads their text; the markup they sat next to is
+  unchanged.
 
 ### Fixed
 
+- The log level is applied when a process starts. `web_ui.log_level` in
+  `config.toml` and the `AI_INTERVENTION_AGENT_LOG_LEVEL` environment variable
+  were read by a function that nothing called, so setting `DEBUG` as the
+  troubleshooting guide says changed nothing: the MCP server stayed at
+  `WARNING`, and the Web UI process wrote a line for every HTTP request (the
+  health checks included, into `logs/web_ui.log`) whatever the setting was.
+  Both processes apply the level at start now, and the Web UI's request lines
+  follow it: the default `WARNING` no longer logs one line per request, `INFO`
+  brings them back, and the runtime switch `POST /api/system/log-level` moves
+  them too. `ERROR` also hides the one-line `event=server.boot` banner. A new
+  test, `test_log_level_applied_at_startup_r749.py` (16 tests, 16 mutants
+  killed), pins the order at start-up, the request lines of a real werkzeug
+  server in a separate process, and the Web UI script.
+- Web UI: the browser console no longer shows warnings for things that are
+  simply how a browser or a page is: no Notification API (iPhone Safari
+  outside an installed web app), a page that is not a secure context (the Web
+  UI opened over plain HTTP on the LAN), a permission request without a user
+  gesture, no Web Audio, notification permission not granted. Each repeated
+  on every page load or every notification and has its own fallback or status
+  message; they are debug messages now. A failure, such as a service worker
+  that cannot be registered or an audio system that cannot start, is still a
+  warning. A new test, `test_notification_manager_capability_log_level_r748.py`
+  (7 tests, 12 mutants killed), loads the real script into Node and pins both
+  sides.
+- Web UI: the alt text of an image preview showed HTML entities for file
+  names with `&`, `'`, `"`, `<` or `>` (`Tom & Jerry's.png` was read out as
+  `Tom &amp; Jerry&#x27;s.png`): the name was escaped for HTML and then
+  assigned to the `alt` property, which nobody parses as HTML. The name is
+  used as it is now, as in the VS Code panel and the image viewer, and the
+  escaping helper that had no other caller (`DOMSecurity.sanitizeAttribute`)
+  is gone. A new test, `test_image_preview_alt_text_r746.py` (3 tests, 11
+  mutants killed), pins the alt text and the structure of the preview.
+- Web UI and VS Code extension: clicking the copy button of a code block twice
+  within two seconds lost the feedback of the second click, because the first
+  click's timer reset the button early; a failure followed by a success also
+  left both the error and the copied look on the button until that timer ran.
+  Every click now cancels the pending timer and a new state replaces the old
+  one. The same guard had only been written into `copyCodeToClipboard`, a
+  function nothing calls.
 - MCP server: `system_enabled = false`, the shipped default, did not stop
   desktop notifications. The system provider is registered whenever `plyer`
   works (Linux, Windows, macOS with `pyobjus`) and the switch was never
@@ -363,9 +520,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   come from Cursor (a virtual tool added for every server, and a text match on
   `unauthorized` / `401` in a failed request), and the server has no setting
   for either.
-- Web UI: a failed submit or "close task" request is now explained by its HTTP
-  status, whatever the response body is. `submitFeedback` and `closeTask`
-  parsed the body as JSON before looking at the status, but the 403 page of
+- Web UI: a failed submit request is now explained by its HTTP status,
+  whatever the response body is. `submitFeedback` parsed the body as JSON
+  before looking at the status, but the 403 page of
   the network access control and the 502/503/504 pages of a reverse proxy are
   HTML (or empty): the parse threw, the user read "Server returned an invalid
   response", and the 401/403/5xx messages added in R294 could never be shown
@@ -377,7 +534,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   submit fails. Checked in a real browser by replaying the server's real HTML
   403 and 401/502/503/504/500/413 answers against the page; a new invariant
   (R725) runs the shipped functions in Node against 10 kinds of failing
-  response (10 mutations killed).
+  response (8 mutations killed).
 - Web UI: the sprout animation on the waiting page no longer flashes or
   restarts on phones. Three things were wrong. lottie's SVG renderer
   expanded the 72-frame sprout into 514 DOM nodes and rewrote about 265

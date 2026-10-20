@@ -4234,6 +4234,19 @@
     button.innerHTML = COPY_ICON_SVG
 
     let lastClickAt = 0
+    let restoreTimer = null
+
+    const showFeedback = (stateClass, title) => {
+      clearTimeout(restoreTimer)
+      button.classList.remove('copied', 'error')
+      button.classList.add(stateClass)
+      button.title = title
+      restoreTimer = setTimeout(() => {
+        restoreTimer = null
+        button.classList.remove('copied', 'error')
+        button.title = t('ui.copy.label')
+      }, 2000)
+    }
 
     button.addEventListener('click', async () => {
 
@@ -4243,22 +4256,11 @@
 
       try {
         await navigator.clipboard.writeText(String(targetText || ''))
-        button.classList.add('copied')
-        button.classList.remove('error')
-        button.title = t('ui.copy.success')
-        setTimeout(() => {
-          button.classList.remove('copied')
-          button.title = t('ui.copy.label')
-        }, 2000)
       } catch (err) {
-        button.classList.add('error')
-        button.classList.remove('copied')
-        button.title = t('ui.copy.failed')
-        setTimeout(() => {
-          button.classList.remove('error')
-          button.title = t('ui.copy.label')
-        }, 2000)
+        showFeedback('error', t('ui.copy.failed'))
+        return
       }
+      showFeedback('copied', t('ui.copy.success'))
     })
 
     return button

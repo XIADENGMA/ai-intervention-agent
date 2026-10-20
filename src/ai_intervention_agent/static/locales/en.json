@@ -239,7 +239,6 @@
     "batchComplete": "Processed: {{successful}}/{{total}} files successful",
     "fileProcessSuccess": "Processed {{filename}}",
     "fileProcessFailed": "Failed to process {{filename}}: {{reason}}",
-    "confirmCloseTask": "Close task {{taskId}}?",
     "notifFallbackPermDenied": "Notification permission denied; using in-page hint instead. Enable system notifications in your browser settings to receive desktop alerts.",
     "notifFallbackPermDefault": "Notification permission not yet granted; showing in-page hint. Click the bell icon or any UI element to grant permission.",
     "notifFallbackPermDisabled": "System notifications disabled in settings; using in-page hint. Re-enable via the settings panel.",
@@ -257,14 +256,7 @@
     "filenameIllegalChars": "File name contains illegal characters",
     "filenamePathTraversal": "File name contains path traversal characters",
     "suspiciousExt": "Suspicious file type detected: {{ext}}",
-    "maskedExecutable": "Masked executable file detected",
-    "emptyField": "Input cannot be empty",
-    "inputTooShort": "Input too short: {{length}} < {{min}}",
-    "inputTooLong": "Input too long: {{length}} > {{max}}",
-    "defaultFieldName": "Value",
-    "notANumber": "{{field}} must be a number",
-    "numberBelowMin": "{{field}} cannot be less than {{min}}",
-    "numberAboveMax": "{{field}} cannot be greater than {{max}}"
+    "maskedExecutable": "Masked executable file detected"
   },
   "env": {
     "supported": "Supported",

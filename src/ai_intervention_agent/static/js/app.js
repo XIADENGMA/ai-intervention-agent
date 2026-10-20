@@ -632,114 +632,6 @@ function processCodeBlocks(container) {
   }
 }
 
-const COPY_BUTTON_RESTORE_DELAY_MS = 2000;
-const COPY_BUTTON_ORIGINAL_HTML_PROP = "__aiiaCopyOriginalHTML";
-const COPY_BUTTON_RESTORE_TIMER_PROP = "__aiiaCopyRestoreTimer";
-
-function _clearCopyButtonRestoreTimer(button) {
-  if (!button) return;
-  const timerId = button[COPY_BUTTON_RESTORE_TIMER_PROP];
-  if (timerId !== undefined && timerId !== null) {
-    clearTimeout(timerId);
-    button[COPY_BUTTON_RESTORE_TIMER_PROP] = null;
-  }
-}
-
-function _beginCopyButtonTransientFeedback(button) {
-  _clearCopyButtonRestoreTimer(button);
-  if (
-    !Object.prototype.hasOwnProperty.call(
-      button,
-      COPY_BUTTON_ORIGINAL_HTML_PROP,
-    )
-  ) {
-    button[COPY_BUTTON_ORIGINAL_HTML_PROP] = button.innerHTML;
-  }
-}
-
-function _restoreCopyButtonBaseline(button) {
-  button.innerHTML = button[COPY_BUTTON_ORIGINAL_HTML_PROP] || "";
-  button.classList.remove("copied");
-  button.classList.remove("error");
-}
-
-function _scheduleCopyButtonRestore(button, restoreCallback) {
-  const timerId = setTimeout(() => {
-    if (button[COPY_BUTTON_RESTORE_TIMER_PROP] !== timerId) {
-      return;
-    }
-    try {
-      restoreCallback();
-    } finally {
-      button[COPY_BUTTON_RESTORE_TIMER_PROP] = null;
-      delete button[COPY_BUTTON_ORIGINAL_HTML_PROP];
-    }
-  }, COPY_BUTTON_RESTORE_DELAY_MS);
-  button[COPY_BUTTON_RESTORE_TIMER_PROP] = timerId;
-}
-
-async function copyCodeToClipboard(preElement, button) {
-
-  const checkIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.7803 4.21967C14.0732 4.51256 14.0732 4.98744 13.7803 5.28033L6.78033 12.2803C6.48744 12.5732 6.01256 12.5732 5.71967 12.2803L2.21967 8.78033C1.92678 8.48744 1.92678 8.01256 2.21967 7.71967C2.51256 7.42678 2.98744 7.42678 3.28033 7.71967L6.25 10.6893L12.7197 4.21967C13.0126 3.92678 13.4874 3.92678 13.7803 4.21967Z"/></svg>';
-  const errorIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.21967 4.21967C4.51256 3.92678 4.98744 3.92678 5.28033 4.21967L8 6.93934L10.7197 4.21967C11.0126 3.92678 11.4874 3.92678 11.7803 4.21967C12.0732 4.51256 12.0732 4.98744 11.7803 5.28033L9.06066 8L11.7803 10.7197C12.0732 11.0126 12.0732 11.4874 11.7803 11.7803C11.4874 12.0732 11.0126 12.0732 10.7197 11.7803L8 9.06066L5.28033 11.7803C4.98744 12.0732 4.51256 12.0732 4.21967 11.7803C3.92678 11.4874 3.92678 11.0126 4.21967 10.7197L6.93934 8L4.21967 5.28033C3.92678 4.98744 3.92678 4.51256 4.21967 4.21967Z"/></svg>';
-
-  if (!preElement || !button) {
-    console.warn("copyCodeToClipboard: preElement/button missing — abort");
-    return;
-  }
-
-  try {
-    const codeElement = preElement.querySelector("code");
-    const textToCopy = codeElement
-      ? codeElement.textContent
-      : preElement.textContent;
-
-    await navigator.clipboard.writeText(textToCopy);
-
-    if (!button.isConnected) {
-      console.debug(
-        "copyCodeToClipboard: button detached after copy success — skip UI",
-      );
-      return;
-    }
-    _beginCopyButtonTransientFeedback(button);
-    // AIIA-XSS-SAFE: checkIconSvg 是开发者手写 SVG 字面量；t('status.copied')
-
-    button.innerHTML = checkIconSvg + t("status.copied");
-    button.classList.remove("error");
-    button.classList.add("copied");
-
-    _scheduleCopyButtonRestore(button, () => {
-      if (button.isConnected) {
-        _restoreCopyButtonBaseline(button);
-      }
-    });
-  } catch (err) {
-    console.error("Copy failed:", err);
-
-    if (!button.isConnected) {
-      console.debug(
-        "copyCodeToClipboard: button detached during copy failure — skip UI",
-      );
-      return;
-    }
-    _beginCopyButtonTransientFeedback(button);
-    // AIIA-XSS-SAFE: errorIconSvg 是开发者手写 SVG 字面量；t('status.copyFailed')
-
-    button.innerHTML = errorIconSvg + t("status.copyFailed");
-    button.classList.remove("copied");
-    button.classList.add("error");
-
-    _scheduleCopyButtonRestore(button, () => {
-      if (button.isConnected) {
-        _restoreCopyButtonBaseline(button);
-      }
-    });
-  }
-}
-
 function processStrikethrough(container) {
 
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
@@ -917,16 +809,6 @@ function showContentPage() {
 
   _syncHourglassPlayback();
   enableSubmitButton();
-}
-
-function disableSubmitButton() {
-  const submitBtn = document.getElementById("submit-btn");
-  const insertBtn = document.getElementById("insert-code-btn");
-  const feedbackText = document.getElementById("feedback-text");
-
-  if (submitBtn) submitBtn.disabled = true;
-  if (insertBtn) insertBtn.disabled = true;
-  if (feedbackText) feedbackText.disabled = true;
 }
 
 function enableSubmitButton() {
@@ -1506,7 +1388,6 @@ function _classifyFetchError(error) {
   }
   return "status.networkError";
 }
-window._classifyFetchError = _classifyFetchError;
 
 function _classifyHttpResponse(response) {
   if (!response || typeof response.status !== "number") return null;
@@ -1529,7 +1410,6 @@ function _classifyHttpResponse(response) {
   }
   return null;
 }
-window._classifyHttpResponse = _classifyHttpResponse;
 
 async function submitFeedback() {
   captureSubmitBtnOriginalHTML();
@@ -1850,34 +1730,6 @@ function detectPlatform() {
     return "linux";
   }
   return "windows";
-}
-
-function getShortcutText(platform) {
-
-  const strip = (s) => String(s).replace(/[:：]\s*$/, "");
-  const submit = strip(t("settings.shortcutSubmit"));
-  const insertCode = strip(t("settings.shortcutInsertCode"));
-  const pasteImage = strip(t("settings.shortcutPasteImage"));
-  const uploadImage = strip(t("settings.shortcutUploadImage"));
-  const clearImage = strip(t("settings.shortcutClearImage"));
-
-  const lines =
-    platform === "mac"
-      ? [
-          `⌘+Enter  ${submit}`,
-          `⌥+C      ${insertCode}`,
-          `⌘+V      ${pasteImage}`,
-          `⌘+U      ${uploadImage}`,
-          `Delete   ${clearImage}`,
-        ]
-      : [
-          `Ctrl+Enter ${submit}`,
-          `Alt+C      ${insertCode}`,
-          `Ctrl+V     ${pasteImage}`,
-          `Ctrl+U     ${uploadImage}`,
-          `Delete     ${clearImage}`,
-        ];
-  return lines.join("\n");
 }
 
 function initializeShortcutTooltip() {

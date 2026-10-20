@@ -11,14 +11,15 @@ R229 之前，``disableSubmitButton()`` (app.js) 给两个按钮写 inline
 ``!important`` > inline normal)，所以禁用按钮视觉与启用完全一致，用户
 点击没反应才能发现"哦原来是禁用了"。R229 把降级视觉下沉到 CSS 的
 ``:disabled`` pseudo-class，并把 JS 的 inline color 抠掉（只保留
-``.disabled`` 属性切换）。
+``.disabled`` 属性切换）。``disableSubmitButton`` 后来因为没有任何调用点被整个
+删除，JS 一侧只剩 ``enableSubmitButton`` 需要锁。
 
 这条不变量 lock 住 R229 的两个修复点：
 
 1. CSS 必须有 ``#submit-btn:disabled`` / ``#insert-code-btn:disabled``
    规则 (深 + 浅两套主题)，否则禁用状态又会回到"看起来一模一样"的
    bug 状态。
-2. JS 的 ``disableSubmitButton`` / ``enableSubmitButton`` 必须不再给
+2. JS 的 ``enableSubmitButton`` 必须不再给
    ``#submit-btn`` / ``#insert-code-btn`` 写 ``style.backgroundColor``——
    否则即便 CSS 加了 ``:disabled`` 规则，inline 也会 silently 覆盖
    （inline normal < CSS !important，但如果谁日后把 CSS 的
@@ -32,7 +33,7 @@ R229 之前，``disableSubmitButton()`` (app.js) 给两个按钮写 inline
 * ``TestCssDisabledRuleHasOverride``：``:disabled`` 规则用了
   ``!important``，能 override 启用规则的 ``!important``。
 * ``TestJsDoesNotInlineColorForButtons``：``app.js`` 的
-  ``disableSubmitButton`` / ``enableSubmitButton`` 不给
+  ``enableSubmitButton`` 不给
   ``submitBtn`` / ``insertBtn`` 写任何 ``.style.backgroundColor``
   ``.style.color`` ``.style.cursor``。
 * ``TestJsStillTogglesDisabledAttribute``：JS 仍然切换 ``.disabled``
@@ -144,8 +145,8 @@ class TestJsDoesNotInlineColorForButtons(unittest.TestCase):
         assert match is not None, f"无法在 app.js 找到函数 {name}"
         return match.group(1)
 
-    def test_disable_does_not_set_submit_btn_inline_color(self) -> None:
-        body = self._function_body("disableSubmitButton")
+    def test_enable_does_not_set_submit_btn_inline_color(self) -> None:
+        body = self._function_body("enableSubmitButton")
         forbidden_patterns = [
             r"submitBtn\.style\.backgroundColor",
             r"submitBtn\.style\.color",
@@ -156,32 +157,12 @@ class TestJsDoesNotInlineColorForButtons(unittest.TestCase):
                 body,
                 pat,
                 msg=(
-                    f"R229 invariant: disableSubmitButton 不能再写 inline {pat}——"
+                    f"R229 invariant: enableSubmitButton 不能再写 inline {pat}——"
                     "CSS :disabled 规则已接管禁用视觉，inline non-important 在 CSS "
                     "!important 面前永远输，这里写了也只是死代码，但读起来误导后人 "
                     "(让人以为 JS 才是禁用降级的真相)。"
                 ),
             )
-
-    def test_disable_does_not_set_insert_btn_inline_color(self) -> None:
-        body = self._function_body("disableSubmitButton")
-        forbidden_patterns = [
-            r"insertBtn\.style\.backgroundColor",
-            r"insertBtn\.style\.color",
-            r"insertBtn\.style\.cursor",
-        ]
-        for pat in forbidden_patterns:
-            self.assertNotRegex(body, pat)
-
-    def test_enable_does_not_set_submit_btn_inline_color(self) -> None:
-        body = self._function_body("enableSubmitButton")
-        forbidden_patterns = [
-            r"submitBtn\.style\.backgroundColor",
-            r"submitBtn\.style\.color",
-            r"submitBtn\.style\.cursor",
-        ]
-        for pat in forbidden_patterns:
-            self.assertNotRegex(body, pat)
 
     def test_enable_does_not_set_insert_btn_inline_color(self) -> None:
         body = self._function_body("enableSubmitButton")
@@ -206,22 +187,6 @@ class TestJsStillTogglesDisabledAttribute(unittest.TestCase):
         )
         assert match is not None
         return match.group(1)
-
-    def test_disable_sets_submit_disabled_true(self) -> None:
-        body = self._function_body("disableSubmitButton")
-        self.assertRegex(
-            body,
-            r"submitBtn\.disabled\s*=\s*true",
-            msg=(
-                "R229 invariant: disableSubmitButton 必须设置 submitBtn.disabled = true，"
-                "否则用户能点击表面禁用的按钮触发重复提交 (CSS :disabled pseudo-class "
-                "靠 disabled 属性激活, 不设属性则视觉降级和功能禁用全部失效)。"
-            ),
-        )
-
-    def test_disable_sets_insert_disabled_true(self) -> None:
-        body = self._function_body("disableSubmitButton")
-        self.assertRegex(body, r"insertBtn\.disabled\s*=\s*true")
 
     def test_enable_sets_submit_disabled_false(self) -> None:
         body = self._function_body("enableSubmitButton")
@@ -252,8 +217,8 @@ class TestFeedbackTextareaInlineStyleRemovedByR234(unittest.TestCase):
         assert match is not None
         return match.group(1)
 
-    def test_disable_does_not_inline_feedback_text_color(self) -> None:
-        body = self._function_body("disableSubmitButton")
+    def test_enable_does_not_inline_feedback_text_color(self) -> None:
+        body = self._function_body("enableSubmitButton")
         forbidden = [
             r"feedbackText\.style\.backgroundColor",
             r"feedbackText\.style\.color",
@@ -264,34 +229,12 @@ class TestFeedbackTextareaInlineStyleRemovedByR234(unittest.TestCase):
                 body,
                 pat,
                 msg=(
-                    f"R234 invariant: disableSubmitButton 不能再写 inline {pat}——"
+                    f"R234 invariant: enableSubmitButton 不能再写 inline {pat}——"
                     "R234 已把 textarea 的禁用视觉下沉到 CSS .feedback-textarea:disabled "
                     "(深+浅两套), inline 写法会引入 dark-theme-only hex 在浅色主题"
                     "下错位, 等价于 R229 修过的同一类型 bug。"
                 ),
             )
-
-    def test_enable_does_not_inline_feedback_text_color(self) -> None:
-        body = self._function_body("enableSubmitButton")
-        forbidden = [
-            r"feedbackText\.style\.backgroundColor",
-            r"feedbackText\.style\.color",
-            r"feedbackText\.style\.cursor",
-        ]
-        for pat in forbidden:
-            self.assertNotRegex(body, pat)
-
-    def test_disable_still_sets_disabled_attribute(self) -> None:
-        body = self._function_body("disableSubmitButton")
-        self.assertRegex(
-            body,
-            r"feedbackText\.disabled\s*=\s*true",
-            msg=(
-                "R234 invariant: disableSubmitButton 必须仍切换 feedbackText.disabled = "
-                "true, 否则 CSS :disabled pseudo-class 不会激活, 用户能继续往禁用 "
-                "textarea 里打字, 后端不知情。"
-            ),
-        )
 
     def test_enable_still_sets_disabled_false(self) -> None:
         body = self._function_body("enableSubmitButton")

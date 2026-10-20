@@ -98,7 +98,6 @@ def _multi_task_harness(case_js: str) -> str:
               }},
             }},
           }},
-          confirm() {{ return true; }},
           document: {{
             hidden: false,
             readyState: 'complete',
@@ -200,7 +199,6 @@ def test_task_list_lookups_use_direct_helpers() -> None:
     assert "findTaskById(window.currentTasks || [], taskId)" in source
     assert "const cachedTask = findTaskById(currentTasks, taskId)" in source
     assert "const target = findOpenTaskById(tasks, pendingDeepLinkedTaskId)" in source
-    assert "const nextTask = findFirstOpenTask(currentTasks)" in source
     assert "const nextTask = findFirstOpenTask(currentTasks, taskId)" in source
     for helper in lookup_helpers:
         assert ".find(" not in helper
@@ -253,52 +251,6 @@ def test_lookup_helpers_preserve_predicates_without_array_find() -> None:
         "numericHitPrompt": "numeric id",
         "firstOpenId": "target",
         "firstOpenExcludingTargetId": 42,
-    }
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="node runtime unavailable")
-def test_close_task_switches_to_first_open_task_without_array_find() -> None:
-    script = _multi_task_harness(
-        """
-        let switchedTo = null;
-        renderTaskTabs = () => {};
-        switchTask = (taskId) => {
-          switchedTo = taskId;
-          setActiveTaskId(taskId);
-        };
-
-        window.currentTasks = [
-          { task_id: 'done-before', status: 'completed' },
-          { task_id: 'closing', status: 'active' },
-          { task_id: 'next-open', status: 'pending' },
-        ];
-        currentTasks = window.currentTasks;
-        setActiveTaskId('closing');
-
-        const originalFind = Array.prototype.find;
-        Array.prototype.find = function disabledFind() {
-          throw new Error('Array.prototype.find must not be used by closeTask');
-        };
-        try {
-          await api.closeTask('closing');
-        } finally {
-          Array.prototype.find = originalFind;
-        }
-
-        process.stdout.write(JSON.stringify({
-          ids: currentTasks.map((task) => task.task_id),
-          switchedTo,
-          activeTaskId,
-          windowActiveTaskId: window.activeTaskId,
-        }));
-        """
-    )
-
-    assert _run_node(script) == {
-        "ids": ["done-before", "next-open"],
-        "switchedTo": "next-open",
-        "activeTaskId": "next-open",
-        "windowActiveTaskId": "next-open",
     }
 
 
