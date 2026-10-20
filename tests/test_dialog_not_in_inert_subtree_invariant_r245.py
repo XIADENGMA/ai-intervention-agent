@@ -29,6 +29,10 @@ at commit time**, regardless of whether anyone updated R244's test.
 Limitations
 -----------
 
+* This model trusts the safe helper's contract. Whether the helper
+  really keeps a *nested* dialog out of the inert subtree is checked at
+  runtime against the real template by
+  ``test_modal_inert_nested_dialog_r732.py``.
 * This is a static cascade model, not a real browser test (which
   would be Playwright). It cannot catch dynamic DOM mutations
   (e.g., JS injecting a modal at runtime via createElement). For

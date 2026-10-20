@@ -33,6 +33,13 @@ inert, so the cascade doesn't reach the open dialog's subtree.
 
 This matches the recommended HTML5 "modal but not <dialog>" pattern.
 
+Follow-up (R732): that fix assumed the dialog is a *direct* child of
+``.container``. ``#code-paste-panel`` is not (``.container >
+#content-container > .feedback-group``), so its ancestor ``#content-container``
+was still made inert and the dialog stayed dead. The helper now walks from the
+dialog up to ``.container`` and marks the siblings at every level; the real
+guard is the runtime test in ``test_modal_inert_nested_dialog_r732.py``.
+
 What this test guards
 ---------------------
 
@@ -43,9 +50,9 @@ What this test guards
   (top-level function in app.js, instance method in settings-manager.js).
 * The helper takes the modal element as parameter (proves the
   contract: caller specifies which child to exclude).
-* The helper iterates ``container.children`` (NOT just sets
-  container.inert), evidenced by the presence of ``container.children``
-  / ``for ... of`` patterns near the helper definition.
+* The helper iterates siblings (NOT just sets container.inert): the
+  ``container.children`` fallback for a dialog outside the container and the
+  sibling walk from the dialog up to the container (R732).
 * No regression: ``.container.inert = …`` direct writes are GONE
   from both modal open/close paths (Pattern B static grep).
 """
@@ -137,6 +144,18 @@ class TestHelperIteratesChildrenExcludingModal(unittest.TestCase):
             "自己也 inert 掉, 把 R240 bug 重新引入。assertRegex 找的是 "
             "`if (child === openModalEl) continue` 这类 idiomatic 写法。",
         )
+        self.assertIn(
+            "parentElement",
+            body,
+            "R732: helper 必须从 dialog 一路向上走到 .container, 在每一层 inert "
+            "兄弟节点; dialog 不是 .container 的直接子节点时 (如 #code-paste-panel) "
+            "只处理 container.children 会把它的祖先 inert 掉, dialog 随之失效。",
+        )
+        self.assertRegex(
+            body,
+            r"if\s*\(\s*sibling\s*===?\s*pathNode\s*\)\s*continue",
+            "R732: helper 在每一层都必须跳过通向 dialog 的那个节点。",
+        )
 
     def test_settings_js_helper_iterates_children_and_skips_open_modal(self) -> None:
         src = _read(SETTINGS_JS)
@@ -150,6 +169,16 @@ class TestHelperIteratesChildrenExcludingModal(unittest.TestCase):
             body,
             r"if\s*\(\s*child\s*===?\s*openModalEl\s*\)\s*continue",
             "R244: settings-manager helper 必须 skip openModalEl。",
+        )
+        self.assertIn(
+            "parentElement",
+            body,
+            "R732: settings-manager helper 同 app.js 必须沿祖先链向上处理兄弟节点。",
+        )
+        self.assertRegex(
+            body,
+            r"if\s*\(\s*sibling\s*===?\s*pathNode\s*\)\s*continue",
+            "R732: settings-manager helper 在每一层都必须跳过通向 dialog 的节点。",
         )
 
 

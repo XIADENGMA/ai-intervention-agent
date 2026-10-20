@@ -118,6 +118,61 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Web UI: picking more than three images at once in the file dialog
+  attached only the first three; the rest failed with "invalid file
+  object". The browser empties the picker's file list as soon as the page
+  resets the input, and the page read that list again for every batch of
+  three. The list is now copied up front, so every image up to the limit
+  of ten is attached. When a single file is rejected, the message now
+  names the file and keeps the reason ("file too small", "unsupported
+  format", ...) instead of replacing it with a bare "failed", and the
+  success message names the file again.
+- Web UI: the × button of the image preview works again. It was wired
+  with an inline `onclick`, which the page's Content Security Policy
+  refuses to run, so clicking it (or pressing Enter or Space on it) did
+  nothing and the browser console logged a policy violation on every page
+  load; only `Esc` and a click on the backdrop closed the preview. The
+  button is now wired from the script, like the backdrop.
+- Web UI: inserting a code block now updates everything that follows the
+  feedback box. The "insert code" button and the paste-code dialog wrote
+  the text into the box without telling the rest of the page, so the
+  character counter kept the old length, the saved draft (and its
+  in-memory copy) kept the text from before the insert until the next
+  keystroke, and the insert did not count as typing for the auto-submit
+  countdown's typing hold. After a successful submit the counter could
+  likewise keep showing the length of the text that had just been sent
+  whenever the list refresh that follows failed or returned the same task.
+  The insert now behaves like a keystroke and the submit refreshes the
+  counter.
+- Web UI: `Tab` works for keyboard navigation again. The shortcut that
+  switches the task tab on `Tab` / `Shift+Tab` swallowed the key even when
+  there was nothing to switch, so with a single task focus could not move
+  off the page background, a button or a link; and while a dialog (paste
+  code, settings, image preview, shortcut help) was open it kept
+  swallowing the key, so focus stuck on one button of the dialog and, with
+  several tasks, every press switched the task behind it. The shortcut now
+  takes the key only when it really switches a task and stays out of the
+  way while a dialog is open.
+- Web UI: the "paste code" dialog works again. When the page cannot read
+  the clipboard itself (a plain `http://` address on your network, a
+  refused permission), it opens that dialog, but nothing in it responded:
+  the text box could not be focused or typed in and the Insert button could
+  not be clicked, so only `Esc` got you out. The page behind a dialog is
+  made inert so it cannot be reached, and this dialog sat inside one of the
+  parts that were blanked, which blanked the dialog with it. Everything
+  behind the dialog is still blanked, but the dialog itself now stays live.
+- Web UI: every task keeps its own draft. Switching to a task that had
+  none used to show the previous task's text and attached images, store
+  that text as the new task's draft (it came back after a reload) and send
+  the images with the new task's feedback. When the poll, not a click,
+  moved the active task (another client activated one, or the task you were
+  writing in was finished or closed elsewhere), nothing was saved at all
+  and the images were lost. The form now belongs to the active task: on
+  every change the leaving task's text, options and images are parked, the
+  form is emptied, and what was parked for the entering task comes back at
+  once instead of after a network round trip. Text typed before the first
+  task appeared is kept, and the character counter is refreshed with the
+  form (after a switch it could show the previous task's count).
 - Countdown auto-submit carries the options the AI pre-checked as its
   recommendation again. Since v1.8.10 (the yesno-removal commit) an
   untouched recommendation was dropped when the countdown ended and

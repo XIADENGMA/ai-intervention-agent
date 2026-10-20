@@ -1,4 +1,4 @@
-"""R612 regression coverage for switchTask option-state loops."""
+"""R612 regression coverage for the option-state loops of the task composer."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ def _source() -> str:
     return MULTI_TASK_JS.read_text(encoding="utf-8")
 
 
-def test_switch_task_option_save_uses_sparse_safe_indexed_loop() -> None:
-    body = _extract_function_body(_source(), "switchTask")
+def test_composer_option_save_uses_sparse_safe_indexed_loop() -> None:
+    body = _extract_function_body(_source(), "saveComposerState")
 
     assert "checkboxes.forEach((checkbox, index)" not in body
     assert "const optionCheckboxCount = checkboxes.length;" in body
@@ -27,11 +27,11 @@ def test_switch_task_option_save_uses_sparse_safe_indexed_loop() -> None:
     assert "if (!(index in checkboxes)) continue;" in body
     assert "const checkbox = checkboxes[index];" in body
     assert "optionsStates[index] = checkbox.checked;" in body
-    assert "taskOptionsStates[activeTaskId] = optionsStates;" in body
+    assert "taskOptionsStates[taskId] = optionsStates;" in body
 
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
-def test_switch_task_saves_options_without_nodelist_foreach() -> None:
+def test_composer_saves_options_without_nodelist_foreach() -> None:
     script = _poll_harness(
         """
         const textarea = { value: 'draft' };
@@ -44,6 +44,7 @@ def test_switch_task_saves_options_without_nodelist_foreach() -> None:
           },
         };
         const optionsContainer = {
+          dataset: { renderedTaskId: 'old' },
           querySelectorAll(selector) {
             if (selector !== 'input[type="checkbox"]') {
               throw new Error('unexpected selector: ' + selector);

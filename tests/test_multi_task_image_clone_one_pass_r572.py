@@ -49,8 +49,8 @@ def _extract_function(source: str, name: str) -> str:
 def test_multi_task_image_clone_call_sites_use_shared_one_pass_helper() -> None:
     source = MULTI_TASK_JS.read_text(encoding="utf-8")
     helper = _extract_function(source, "cloneTaskImagesForState")
-    switch_task = _extract_function(source, "switchTask")
-    load_details = _extract_function(source, "loadTaskDetails")
+    save_composer = _extract_function(source, "saveComposerState")
+    restore_composer = _extract_function(source, "restoreComposerInputs")
 
     assert "selectedImages.map" not in source
     assert "taskImages[taskId].map" not in source
@@ -60,11 +60,11 @@ def test_multi_task_image_clone_call_sites_use_shared_one_pass_helper() -> None:
     assert "if (!(imageIndex in images)) continue;" in helper
     assert "clonedImages[imageIndex] = { ...images[imageIndex] };" in helper
     assert (
-        "taskImages[activeTaskId] = cloneTaskImagesForState(selectedImages)"
-        in switch_task
+        "taskImages[taskId] = cloneTaskImagesForState(selectedImages)" in save_composer
     )
     assert (
-        "selectedImages = cloneTaskImagesForState(taskImages[taskId])" in load_details
+        "selectedImages = cloneTaskImagesForState(taskImages[taskId])"
+        in restore_composer
     )
 
 

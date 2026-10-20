@@ -86,6 +86,9 @@ def _settings_manager_harness(case_js: str) -> str:
             }},
             appendChild() {{}},
             blur() {{}},
+            contains(other) {{
+              return other === this;
+            }},
             focus() {{
               focusedIds.push(id);
             }},

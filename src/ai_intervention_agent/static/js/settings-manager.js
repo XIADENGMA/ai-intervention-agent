@@ -1142,9 +1142,21 @@ class SettingsManager {
   _setContainerSiblingsInert(openModalEl, value) {
     const container = document.querySelector(".container");
     if (!container) return;
-    for (const child of container.children) {
-      if (child === openModalEl) continue;
-      this._safelySetInert(child, value);
+    if (!openModalEl || !container.contains(openModalEl)) {
+      for (const child of container.children) {
+        if (child === openModalEl) continue;
+        this._safelySetInert(child, value);
+      }
+      return;
+    }
+    let pathNode = openModalEl;
+    while (pathNode !== container) {
+      const parent = pathNode.parentElement;
+      for (const sibling of parent.children) {
+        if (sibling === pathNode) continue;
+        this._safelySetInert(sibling, value);
+      }
+      pathNode = parent;
     }
   }
 

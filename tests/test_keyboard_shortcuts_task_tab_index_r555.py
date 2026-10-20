@@ -99,6 +99,7 @@ def _keyboard_shortcuts_harness(case_js: str) -> str:
               );
             }},
             getElementById() {{ return null; }},
+            querySelector() {{ return null; }},
             querySelectorAll(selector) {{
               if (selector === '.task-tab:not(.hidden)') return currentTabs;
               return [];
@@ -204,5 +205,5 @@ def test_task_tab_shortcuts_preserve_wrap_and_no_active_semantics() -> None:
 
     assert json.loads(_run_node(script)) == {
         "clicks": [2, 0, 0, 2],
-        "prevented": [True, True, True, True, True],
+        "prevented": [True, True, True, True, False],
     }

@@ -253,7 +253,14 @@ class TestFinallyBlockMetaLint(unittest.TestCase):
                 "COPY_BUTTON_RESTORE_TIMER_PROP",  # copy button 定时器清理
             ],
             "i18n.js": ["seen.delete", "delete _pendingLoads"],  # safe (no DOM)
-            "multi_task.js": ["clearTimeout", "tasksPollAbortController", "setTimeout"],
+            "multi_task.js": [
+                "clearTimeout",
+                "tasksPollAbortController",
+                "setTimeout",
+                # R731: ``refreshFeedbackCharCounter`` null-guards the counter API
+                # itself and touches no DOM directly.
+                "refreshFeedbackCharCounter",
+            ],
             "notification-manager.js": ["permissionRequestPromise"],  # safe (state)
         }
 

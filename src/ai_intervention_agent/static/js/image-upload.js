@@ -540,16 +540,24 @@ async function compressImage(file) {
   });
 }
 
+let _lastImageFailureReason = "";
+
+function _reportImageFailure(message) {
+  _lastImageFailureReason = message;
+  showStatus(message, "error");
+}
+
 async function addImageToList(file) {
+  _lastImageFailureReason = "";
 
   if (selectedImages.length >= MAX_IMAGE_COUNT) {
-    showStatus(t("status.maxImages", { count: MAX_IMAGE_COUNT }), "error");
+    _reportImageFailure(t("status.maxImages", { count: MAX_IMAGE_COUNT }));
     return false;
   }
 
   const errors = validateImageFile(file);
   if (errors.length > 0) {
-    showStatus(errors.join("; "), "error");
+    _reportImageFailure(errors.join("; "));
     return false;
   }
 
@@ -560,7 +568,7 @@ async function addImageToList(file) {
       img.lastModified === file.lastModified,
   );
   if (isDuplicate) {
-    showStatus(t("status.imageDuplicate"), "error");
+    _reportImageFailure(t("status.imageDuplicate"));
     return false;
   }
 
@@ -613,7 +621,7 @@ async function addImageToList(file) {
     }
 
     console.error("Image processing failed:", error);
-    showStatus(t("status.imageError", { reason: error.message }), "error");
+    _reportImageFailure(t("status.imageError", { reason: error.message }));
 
     let failureRemoval = null;
     try {
@@ -821,7 +829,12 @@ function updateImagePreviewVisibility() {
   }
 }
 
-async function handleFileUpload(files) {
+async function handleFileUpload(pickedFiles) {
+  const files = [];
+  const pickedCount = pickedFiles ? pickedFiles.length : 0;
+  for (let index = 0; index < pickedCount; index += 1) {
+    files.push(pickedFiles[index]);
+  }
   const fileCount = files.length;
   const maxConcurrent = 3;
   let processed = 0;
@@ -884,12 +897,17 @@ async function handleFileUpload(files) {
   } else if (fileCount === 1) {
     const file = files[0];
     const filename = file && file.name ? file.name : "";
-    showStatus(
-      successful > 0
-        ? t("status.fileProcessSuccess", { filename })
-        : t("status.fileProcessFailed", { filename, reason: "" }),
-      successful > 0 ? "success" : "error",
-    );
+    if (successful > 0) {
+      showStatus(t("status.fileProcessSuccess", { filename }), "success");
+    } else if (_lastImageFailureReason) {
+      showStatus(
+        t("status.fileProcessFailed", {
+          filename,
+          reason: _lastImageFailureReason,
+        }),
+        "error",
+      );
+    }
   }
 }
 
@@ -1211,6 +1229,10 @@ function _initImageModalOnce() {
   const modal = document.getElementById("image-modal");
   if (!modal || modal.dataset.aiiaInited === "1") return;
   modal.addEventListener("click", _imageModalBackgroundClickHandler);
+  const closeBtn = modal.querySelector(".image-modal-close");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", closeImageModal);
+  }
   modal.dataset.aiiaInited = "1";
 }
 if (document.readyState === "loading") {

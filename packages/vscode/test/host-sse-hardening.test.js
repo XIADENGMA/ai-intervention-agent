@@ -10,6 +10,7 @@ function startFakeWebUi(initial = {}) {
     sseMode: 'ok',
     tasksMode: 'ok',
     eventConnects: [],
+    eventConnectInfo: [],
     taskRequests: 0,
     hugeLineStreams: [],
     errorBodies: [],
@@ -20,6 +21,12 @@ function startFakeWebUi(initial = {}) {
     const url = new URL(req.url, 'http://127.0.0.1')
     if (url.pathname === '/api/events') {
       state.eventConnects.push(Date.now())
+      state.eventConnectInfo.push({
+        at: Date.now(),
+        agent: String(req.headers['user-agent'] || 'none').slice(0, 24),
+        lastEventId: req.headers['last-event-id'] || '',
+        remotePort: req.socket.remotePort
+      })
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -179,18 +186,34 @@ suite('Extension host SSE / HTTP hardening (real extension host)', function () {
   })
 
   test('reconnect backoff keeps growing while the stream flaps instead of resetting on every 200', async () => {
-    await withFakeWebUi({ sseMode: 'flap', tasksMode: 'error' }, async (fake, cfg) => {
-      await cfg.update('serverUrl', `http://127.0.0.1:${fake.port}`, vscode.ConfigurationTarget.Global)
-      await waitFor(() => fake.state.eventConnects.length >= 1, 'no SSE connection was opened')
-      const startedAt = fake.state.eventConnects[0]
-      await new Promise(resolve => setTimeout(resolve, 12000 - (Date.now() - startedAt)))
-      const connects = fake.state.eventConnects.filter(t => t - startedAt <= 12000).length
-      assert.ok(connects >= 3, `expected the host to keep retrying, saw ${connects} connects in 12 s`)
-      assert.ok(
-        connects <= 6,
-        `a flapping stream was re-opened ${connects} times in 12 s; the backoff is being reset on every 200`
-      )
+    // Every serverUrl change makes the host reset its backoff and reconnect on purpose, so a
+    // failure must say whether extra connects came from config events or from the stream loop.
+    const urlEvents = []
+    const subscription = vscode.workspace.onDidChangeConfiguration(event => {
+      if (!event.affectsConfiguration('ai-intervention-agent.serverUrl')) return
+      const url = vscode.workspace.getConfiguration('ai-intervention-agent').get('serverUrl')
+      urlEvents.push({ at: Date.now(), url: String(url) })
     })
+    try {
+      await withFakeWebUi({ sseMode: 'flap', tasksMode: 'error' }, async (fake, cfg) => {
+        await cfg.update('serverUrl', `http://127.0.0.1:${fake.port}`, vscode.ConfigurationTarget.Global)
+        await waitFor(() => fake.state.eventConnects.length >= 1, 'no SSE connection was opened')
+        const startedAt = fake.state.eventConnects[0]
+        await new Promise(resolve => setTimeout(resolve, 12000 - (Date.now() - startedAt)))
+        const seen = fake.state.eventConnectInfo.filter(info => info.at - startedAt <= 12000)
+        const timeline =
+          `connects: ${seen.map(info => `${info.at - startedAt}ms port=${info.remotePort}`).join(' | ')}; ` +
+          `serverUrl events: ${urlEvents.map(event => `${event.at - startedAt}ms ${event.url}`).join(' | ')}`
+        const connects = seen.length
+        assert.ok(connects >= 3, `expected the host to keep retrying, saw ${connects} connects in 12 s (${timeline})`)
+        assert.ok(
+          connects <= 6,
+          `a flapping stream was re-opened ${connects} times in 12 s; the backoff is being reset on every 200 (${timeline})`
+        )
+      })
+    } finally {
+      subscription.dispose()
+    }
   })
 
   test('a non-OK /api/tasks response has its body cancelled instead of left open', async () => {

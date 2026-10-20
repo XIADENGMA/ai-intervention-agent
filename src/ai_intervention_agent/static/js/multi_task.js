@@ -351,8 +351,25 @@ function findFirstOpenTask(tasks, excludedTaskId) {
 }
 
 function setActiveTaskId(nextTaskId) {
-  activeTaskId = normalizeTaskIdValue(nextTaskId);
+  const previousTaskId = activeTaskId;
+  const nextActiveTaskId = normalizeTaskIdValue(nextTaskId);
+  const changed = nextActiveTaskId !== previousTaskId;
+  if (changed) {
+    try {
+      parkComposerOf(previousTaskId);
+    } catch (error) {
+      console.warn("Saving the feedback form of the previous task failed:", error);
+    }
+  }
+  activeTaskId = nextActiveTaskId;
   window.activeTaskId = activeTaskId;
+  if (changed) {
+    try {
+      loadComposerOf(nextActiveTaskId, previousTaskId);
+    } catch (error) {
+      console.warn("Loading the feedback form of the active task failed:", error);
+    }
+  }
   return activeTaskId;
 }
 
@@ -364,6 +381,114 @@ function cloneTaskImagesForState(images) {
     clonedImages[imageIndex] = { ...images[imageIndex] };
   }
   return clonedImages;
+}
+
+function refreshFeedbackCharCounter() {
+  const counterApi = window.AIIA_FEEDBACK_CHAR_COUNTER;
+  if (counterApi && typeof counterApi.refresh === "function") {
+    counterApi.refresh();
+  }
+}
+
+function saveComposerState(taskId) {
+  const textarea = document.getElementById("feedback-text");
+  if (textarea) {
+    taskTextareaContents[taskId] = textarea.value;
+    _debugLog(`Saved textarea content for task ${taskId}`);
+  }
+
+  const optionsContainer = document.getElementById("options-container");
+  const optionsRenderedForTask =
+    optionsContainer &&
+    optionsContainer.dataset &&
+    optionsContainer.dataset.renderedTaskId === String(taskId);
+  if (optionsRenderedForTask) {
+    const checkboxes = optionsContainer.querySelectorAll(
+      'input[type="checkbox"]',
+    );
+    const optionsStates = [];
+    const optionCheckboxCount = checkboxes.length;
+    for (let index = 0; index < optionCheckboxCount; index += 1) {
+      if (!(index in checkboxes)) continue;
+      const checkbox = checkboxes[index];
+      optionsStates[index] = checkbox.checked;
+    }
+    taskOptionsStates[taskId] = optionsStates;
+    _debugLog(`Saved option selection state for task ${taskId}`);
+  }
+
+  taskImages[taskId] = cloneTaskImagesForState(selectedImages);
+  _debugLog(
+    `Saved image list for task ${taskId} (${selectedImages.length} images)`,
+  );
+}
+
+function clearComposerInputs() {
+  const textarea = document.getElementById("feedback-text");
+  if (textarea) {
+    textarea.value = "";
+  }
+  selectedImages = [];
+  const previewContainer = document.getElementById("image-previews");
+  if (previewContainer) {
+    previewContainer.innerHTML = "";
+  }
+  if (typeof updateImageCounter === "function") {
+    updateImageCounter();
+  }
+  if (typeof updateImagePreviewVisibility === "function") {
+    updateImagePreviewVisibility();
+  }
+}
+
+function restoreComposerInputs(taskId) {
+  const textarea = document.getElementById("feedback-text");
+  if (textarea && typeof taskTextareaContents[taskId] === "string") {
+    textarea.value = taskTextareaContents[taskId];
+    _debugLog(`Restored textarea content for task ${taskId}`);
+  }
+
+  if (taskImages[taskId] && taskImages[taskId].length > 0) {
+    selectedImages = cloneTaskImagesForState(taskImages[taskId]);
+
+    const previewContainer = document.getElementById("image-previews");
+    if (previewContainer) {
+      previewContainer.innerHTML = "";
+      const restoredImageCount = selectedImages.length;
+      for (
+        let imageIndex = 0;
+        imageIndex < restoredImageCount;
+        imageIndex += 1
+      ) {
+        if (!(imageIndex in selectedImages)) continue;
+        const imageItem = selectedImages[imageIndex];
+        renderImagePreview(imageItem, false);
+      }
+      updateImageCounter();
+      updateImagePreviewVisibility();
+    }
+    _debugLog(
+      `Restored image list for task ${taskId} (${selectedImages.length} images)`,
+    );
+  }
+}
+
+function parkComposerOf(taskId) {
+  if (!taskId || !findOpenTaskById(currentTasks, taskId)) return;
+  saveComposerState(taskId);
+}
+
+function loadComposerOf(taskId, previousTaskId) {
+  try {
+    if (previousTaskId) {
+      clearComposerInputs();
+    }
+    if (taskId) {
+      restoreComposerInputs(taskId);
+    }
+  } finally {
+    refreshFeedbackCharCounter();
+  }
 }
 
 function _buildTaskListDiff(previousTasks, nextTasks) {
@@ -2433,35 +2558,6 @@ function createTaskTab(task) {
 
 async function switchTask(taskId) {
 
-  if (activeTaskId) {
-    const textarea = document.getElementById("feedback-text");
-    if (textarea) {
-      taskTextareaContents[activeTaskId] = textarea.value;
-      _debugLog(`Saved textarea content for task ${activeTaskId}`);
-    }
-
-    const optionsContainer = document.getElementById("options-container");
-    if (optionsContainer) {
-      const checkboxes = optionsContainer.querySelectorAll(
-        'input[type="checkbox"]',
-      );
-      const optionsStates = [];
-      const optionCheckboxCount = checkboxes.length;
-      for (let index = 0; index < optionCheckboxCount; index += 1) {
-        if (!(index in checkboxes)) continue;
-        const checkbox = checkboxes[index];
-        optionsStates[index] = checkbox.checked;
-      }
-      taskOptionsStates[activeTaskId] = optionsStates;
-      _debugLog(`Saved option selection state for task ${activeTaskId}`);
-    }
-
-    taskImages[activeTaskId] = cloneTaskImagesForState(selectedImages);
-    _debugLog(
-      `Saved image list for task ${activeTaskId} (${selectedImages.length} images)`,
-    );
-  }
-
   isManualSwitching = true;
 
   window.dispatchEvent(
@@ -2608,37 +2704,6 @@ async function loadTaskDetails(taskId) {
       updateHeaderChip(task.header_label);
 
       updateLoopContext(task);
-
-      const textarea = document.getElementById("feedback-text");
-      if (textarea && taskTextareaContents[taskId] !== undefined) {
-        textarea.value = taskTextareaContents[taskId];
-        _debugLog(`Restored textarea content for task ${taskId}`);
-      }
-
-      if (taskImages[taskId] && taskImages[taskId].length > 0) {
-
-        selectedImages = cloneTaskImagesForState(taskImages[taskId]);
-
-        const previewContainer = document.getElementById("image-previews");
-        if (previewContainer) {
-          previewContainer.innerHTML = "";
-          const restoredImageCount = selectedImages.length;
-          for (
-            let imageIndex = 0;
-            imageIndex < restoredImageCount;
-            imageIndex += 1
-          ) {
-            if (!(imageIndex in selectedImages)) continue;
-            const imageItem = selectedImages[imageIndex];
-            renderImagePreview(imageItem, false);
-          }
-          updateImageCounter();
-          updateImagePreviewVisibility();
-        }
-        _debugLog(
-          `Restored image list for task ${taskId} (${selectedImages.length} images)`,
-        );
-      }
 
       const detailsTimeoutDisabled =
         typeof task.auto_resubmit_timeout === "number" &&

@@ -84,6 +84,11 @@
     updateCounter(activeBinding.textarea, activeBinding.counter);
   }
 
+  function refresh() {
+    if (!activeBinding) return 0;
+    return updateCounter(activeBinding.textarea, activeBinding.counter);
+  }
+
   function init() {
     const textarea = document.getElementById(TARGET_ID);
     const counter = document.getElementById(COUNTER_ID);
@@ -122,6 +127,7 @@
     _resolveLabel: _resolveLabel,
     _applyThresholdClass: _applyThresholdClass,
     updateCounter: updateCounter,
+    refresh: refresh,
     init: init,
   };
 })();

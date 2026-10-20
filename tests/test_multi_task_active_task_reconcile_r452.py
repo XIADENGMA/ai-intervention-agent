@@ -426,6 +426,7 @@ def test_manual_switch_keeps_window_active_task_id_in_sync() -> None:
         const textarea = document.createElement('textarea');
         textarea.value = 'draft';
         const optionsContainer = {
+          dataset: { renderedTaskId: 'old' },
           querySelectorAll(selector) {
             if (selector !== 'input[type="checkbox"]') return [];
             return [{ checked: true }, { checked: false }];

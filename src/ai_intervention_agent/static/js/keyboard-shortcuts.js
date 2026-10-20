@@ -96,6 +96,13 @@ const KeyboardShortcuts = (function () {
     return -1;
   }
 
+  function isModalDialogOpen() {
+    return (
+      document.querySelector('[aria-modal="true"]:not([hidden]):not(.hidden)') !==
+      null
+    );
+  }
+
   function shouldIgnore(event, options) {
 
     if (!options.allowInInputs) {
@@ -238,6 +245,7 @@ const KeyboardShortcuts = (function () {
       });
 
       this.register('tab', (event) => {
+        if (isModalDialogOpen()) return;
         const tabs = document.querySelectorAll('.task-tab:not(.hidden)');
         if (tabs.length > 1) {
           event.preventDefault();
@@ -245,9 +253,10 @@ const KeyboardShortcuts = (function () {
           const nextIndex = (currentIndex + 1) % tabs.length;
           tabs[nextIndex].click();
         }
-      });
+      }, { preventDefault: false });
 
       this.register('shift+tab', (event) => {
+        if (isModalDialogOpen()) return;
         const tabs = document.querySelectorAll('.task-tab:not(.hidden)');
         if (tabs.length > 1) {
           event.preventDefault();
@@ -255,7 +264,7 @@ const KeyboardShortcuts = (function () {
           const prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
           tabs[prevIndex].click();
         }
-      });
+      }, { preventDefault: false });
     },
 
     showHelp: function () {

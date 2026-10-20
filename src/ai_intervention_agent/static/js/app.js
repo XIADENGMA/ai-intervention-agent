@@ -1176,6 +1176,7 @@ function insertCodeBlockIntoFeedbackTextarea(text) {
   const newCursorPos = textBefore.length + codeBlock.length;
   textarea.setSelectionRange(newCursorPos, newCursorPos);
   textarea.focus();
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 function getClipboardFailureHint(error) {
@@ -1388,9 +1389,21 @@ function closeCodePasteModal() {
 function _setContainerSiblingsInert(openModalEl, value) {
   const container = document.querySelector(".container");
   if (!container) return;
-  for (const child of container.children) {
-    if (child === openModalEl) continue;
-    _safelySetInert(child, value);
+  if (!openModalEl || !container.contains(openModalEl)) {
+    for (const child of container.children) {
+      if (child === openModalEl) continue;
+      _safelySetInert(child, value);
+    }
+    return;
+  }
+  let pathNode = openModalEl;
+  while (pathNode !== container) {
+    const parent = pathNode.parentElement;
+    for (const sibling of parent.children) {
+      if (sibling === pathNode) continue;
+      _safelySetInert(sibling, value);
+    }
+    pathNode = parent;
   }
 }
 
@@ -1621,6 +1634,9 @@ async function submitFeedback() {
         const fbTextEl = document.getElementById("feedback-text");
         if (fbTextEl) {
           fbTextEl.value = "";
+          if (typeof refreshFeedbackCharCounter === "function") {
+            refreshFeedbackCharCounter();
+          }
         }
         const allCheckboxes = document.querySelectorAll(
           'input[type="checkbox"]',

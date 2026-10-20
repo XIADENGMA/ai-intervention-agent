@@ -1,4 +1,4 @@
-"""R613 regression coverage for loadTaskDetails image-restore loops."""
+"""R613 regression coverage for the image-restore loops of the task composer."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ def _source() -> str:
     return MULTI_TASK_JS.read_text(encoding="utf-8")
 
 
-def test_load_task_details_restored_images_use_sparse_safe_indexed_loop() -> None:
-    body = _extract_function_body(_source(), "loadTaskDetails")
+def test_composer_restored_images_use_sparse_safe_indexed_loop() -> None:
+    body = _extract_function_body(_source(), "restoreComposerInputs")
 
     assert "selectedImages.forEach((imageItem)" not in body
     assert "const restoredImageCount = selectedImages.length;" in body
@@ -32,7 +32,7 @@ def test_load_task_details_restored_images_use_sparse_safe_indexed_loop() -> Non
 
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
-def test_load_task_details_restores_images_without_array_foreach() -> None:
+def test_composer_restores_images_without_array_foreach() -> None:
     script = _poll_harness(
         """
         const rendered = [];
@@ -78,13 +78,13 @@ def test_load_task_details_restores_images_without_array_foreach() -> None:
         storedImages[0] = { id: 'first', url: 'blob:first' };
         storedImages[2] = { id: 'third', url: 'blob:third' };
         taskImages['task-a'] = storedImages;
-        setActiveTaskId('task-a');
 
         const originalForEach = Array.prototype.forEach;
         Array.prototype.forEach = function disabledForEach() {
           throw new Error('Array.prototype.forEach must not be used');
         };
         try {
+          setActiveTaskId('task-a');
           await loadTaskDetails('task-a');
         } finally {
           Array.prototype.forEach = originalForEach;
