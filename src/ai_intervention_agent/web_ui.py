@@ -88,7 +88,11 @@ from ai_intervention_agent.web_ui_routes import (
     TaskRoutesMixin,
 )
 from ai_intervention_agent.web_ui_routes._upload_helpers import MAX_TOTAL_UPLOAD_BYTES
-from ai_intervention_agent.web_ui_security import SecurityMixin, build_trusted_hosts
+from ai_intervention_agent.web_ui_security import (
+    SecurityMixin,
+    build_trusted_hosts,
+    ensure_ipv6_trusted_hosts_support,
+)
 from ai_intervention_agent.web_ui_validators import (
     DEFAULT_ALLOWED_NETWORKS,
     VALID_BIND_INTERFACES,
@@ -448,6 +452,7 @@ class WebFeedbackUI(
         self._task_queue_runtime_hooks_registered = False
         self._task_queue_runtime_hooks_lock = threading.Lock()
         self.app = Flask(__name__)
+        ensure_ipv6_trusted_hosts_support()
         self.app.config["TRUSTED_HOSTS"] = build_trusted_hosts(
             host=host,
             mdns_hostname=mdns_hostname,

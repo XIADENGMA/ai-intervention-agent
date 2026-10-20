@@ -28,12 +28,20 @@ import contextlib
 import json
 import threading
 import time
+import warnings
 from pathlib import Path
 from typing import Any, cast
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context as FastMCPContext
-from mcp.types import ClientCapabilities, RootsCapability, TextContent
+from mcp import MCPDeprecationWarning
+from mcp.types import (
+    ClientCapabilities,
+    ListRootsRequest,
+    ListRootsResult,
+    RootsCapability,
+    TextContent,
+)
 from pydantic import Field
 
 import ai_intervention_agent.local_images as local_images
@@ -128,6 +136,25 @@ def get_feedback_counters() -> dict[str, int]:
         return _FEEDBACK_COUNTERS.copy()
 
 
+def _silence_logging_capability_deprecation() -> None:
+    """Hide the one SDK warning that ``ctx.info`` is known to raise.
+
+    ``ctx.info`` sends an MCP log notification. The SDK deprecates the logging
+    capability as of the 2026-07-28 spec (SEP-2577) and says so on stderr the
+    first time it is used. Clients on the handshake protocols still take these
+    notifications, and a failed send is swallowed by ``_emit_ctx_info``, so the
+    call stays and only this message is filtered; any other deprecation shows.
+    """
+    warnings.filterwarnings(
+        "ignore",
+        message="The logging capability is deprecated",
+        category=MCPDeprecationWarning,
+    )
+
+
+_silence_logging_capability_deprecation()
+
+
 async def _emit_ctx_info(
     ctx: FastMCPContext | None,
     message: str,
@@ -175,20 +202,30 @@ async def _client_roots(ctx: FastMCPContext | None) -> list[Path]:
     Empty when there is no ``ctx``, the client does not support roots, the
     request times out or fails: the caller then falls back to the other allowed
     folders instead of failing the tool call.
+
+    The request goes through the session: fastmcp 4 dropped ``Context.list_roots``
+    and mcp 2 deprecates ``ServerSession.list_roots``, while ``send_request`` is
+    the supported way to ask. A connection that cannot carry server-to-client
+    requests (the sessionless 2026-07-28 protocol) raises there and ends up in the
+    same fallback as a client without roots.
     """
     if ctx is None:
         return []
     try:
-        if not ctx.session.check_client_capability(
+        session = ctx.session
+        if not session.check_client_capability(
             ClientCapabilities(roots=RootsCapability())
         ):
             return []
-        declared = await asyncio.wait_for(ctx.list_roots(), _CLIENT_ROOTS_TIMEOUT_S)
+        declared = await asyncio.wait_for(
+            session.send_request(ListRootsRequest(), ListRootsResult),
+            _CLIENT_ROOTS_TIMEOUT_S,
+        )
     except Exception as exc:
         logger.debug(f"roots/list 不可用（已忽略）: {type(exc).__name__}: {exc}")
         return []
     paths: list[Path] = []
-    for root in declared:
+    for root in declared.roots:
         path = local_images.file_uri_to_path(str(root.uri))
         if path is not None:
             paths.append(path)

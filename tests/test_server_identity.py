@@ -100,7 +100,7 @@ class TestServerIcons(unittest.TestCase):
 
     def test_icons_have_correct_mime_types(self) -> None:
         icons = server.mcp.icons or []
-        mime_types = {ic.mimeType for ic in icons}
+        mime_types = {ic.mime_type for ic in icons}
         self.assertIn("image/png", mime_types, "至少需要一个 PNG")
         # SVG 备用，client 支持时优先用矢量
         self.assertIn("image/svg+xml", mime_types, "应当提供 SVG 矢量备用图")

@@ -598,7 +598,7 @@ def _process_image(image: dict, index: int) -> tuple[ImageContent | None, str | 
 
     return (
         _lazy_mcp_types().ImageContent(
-            type="image", data=base64_data, mimeType=str(content_type)
+            type="image", data=base64_data, mime_type=str(content_type)
         ),
         text_desc,
     )
@@ -668,7 +668,7 @@ def parse_structured_response(
             logger.debug(f"  - [{i}] TextContent: '{preview}'")
         elif isinstance(item, image_cls):
             logger.debug(
-                f"  - [{i}] ImageContent: mimeType={item.mimeType}, data_length={len(item.data)}"
+                f"  - [{i}] ImageContent: mime_type={item.mime_type}, data_length={len(item.data)}"
             )
         else:
             logger.debug(f"  - [{i}] 未知类型: {type(item)}")

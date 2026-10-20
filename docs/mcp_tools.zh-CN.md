@@ -27,7 +27,7 @@
 | `openWorldHint`   | `true` | 工具与外部用户和通知服务交互，是开放世界工具                                        |
 
 > 这些字段遵循 MCP 协议规范（最新版本 `2025-11-25`，最早在 `2024-11-05` 引入），
-> FastMCP 3.x 原生支持。spec 历史变更见
+> FastMCP 4.x 原生支持。spec 历史变更见
 > [MCP changelog](https://modelcontextprotocol.io/specification/2025-11-25/changelog)。
 
 ### FastMCP 工具元数据
@@ -42,9 +42,10 @@
 
 MCP `2025-11-25` tools spec 允许 server 声明
 `capabilities.tools.listChanged=true`，并在工具列表变化时发送
-`notifications/tools/list_changed`。FastMCP 3.2.4 也支持运行时
-`add_tool()` / `local_provider.remove_tool()`，并会在 active MCP request
-context 内发生 add/remove/enable/disable 时自动发送工具列表变化通知。
+`notifications/tools/list_changed`。FastMCP 4.1.1 支持运行时
+`add_tool()` / `local_provider.remove_tool()`，但这两者本身都不会发送该通知
+（在一次请求内、两种协议时代下实测）；按会话生效的 `ctx.enable_components()`
+会发送，而在无会话的 `2026-07-28` 协议里，会话的选择撑不到下一次请求。
 
 AI Intervention Agent **不**把动态注册作为主工具面。`interactive_feedback`
 是长时间运行的人机协作入口，必须对所有 client 保持静态可发现。动态注册只作为
@@ -65,7 +66,7 @@ AI Intervention Agent **不**把动态注册作为主工具面。`interactive_fe
   输入、访问控制、速率限制和敏感输出脱敏。
 
 本地 SDK spike 由 `tests/test_mcp_dynamic_tools_spike_r457.py` 锁定：验证
-FastMCP 3.2.4 能动态 add/remove 工具，保留 annotations/tags/version，
+FastMCP 4.1.1 能动态 add/remove 工具，保留 annotations/tags/version，
 在 `on_duplicate="error"` 下拒绝重复 name+version，并确认当前运行时构造参数是
 `on_duplicate`，不是部分旧文档里的 `on_duplicate_tools`。
 

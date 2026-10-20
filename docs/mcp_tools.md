@@ -27,7 +27,7 @@ The `initialize` protocol response advertises the following fields. Clients (Cha
 | `openWorldHint`   | `true`                                | The tool interacts with a real human and notification services — open-world tool    |
 
 > These fields follow the MCP spec (latest `2025-11-25`, originally introduced in
-> `2024-11-05`) and are natively supported by FastMCP 3.x. See
+> `2024-11-05`) and are natively supported by FastMCP 4.x. See
 > [MCP changelog](https://modelcontextprotocol.io/specification/2025-11-25/changelog)
 > for the spec history.
 
@@ -45,10 +45,11 @@ configuration documented below.
 
 The MCP `2025-11-25` tools spec allows a server to declare
 `capabilities.tools.listChanged=true` and send
-`notifications/tools/list_changed` when the tool list changes. FastMCP 3.2.4
-also supports runtime `add_tool()` / `local_provider.remove_tool()` and
-automatically emits list-change notifications when add/remove/enable/disable
-happens inside an active MCP request context.
+`notifications/tools/list_changed` when the tool list changes. FastMCP 4.1.1
+supports runtime `add_tool()` / `local_provider.remove_tool()`, but neither
+sends that notification by itself (checked inside a request on both protocol
+eras); the per-session `ctx.enable_components()` does, and on the sessionless
+`2026-07-28` protocol the session's choice does not survive to the next request.
 
 AI Intervention Agent does **not** use dynamic registration as its primary tool
 surface. `interactive_feedback` is the long-running human-in-the-loop contract
@@ -73,7 +74,7 @@ Before any dynamic tool ships, it must satisfy these boundaries:
   sensitive output redaction.
 
 The local SDK spike is locked by
-`tests/test_mcp_dynamic_tools_spike_r457.py`: it verifies FastMCP 3.2.4 can add
+`tests/test_mcp_dynamic_tools_spike_r457.py`: it verifies FastMCP 4.1.1 can add
 and remove a tool dynamically, preserves annotations/tags/version, rejects
 duplicate name+version with `on_duplicate="error"`, and uses the current
 `on_duplicate` constructor parameter rather than the older

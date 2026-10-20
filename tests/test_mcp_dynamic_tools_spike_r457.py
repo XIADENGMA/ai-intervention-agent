@@ -34,17 +34,17 @@ class TestStaticCoreToolSurface(unittest.TestCase):
 
 
 class TestFastMcpDynamicToolSpike(unittest.TestCase):
-    """Local FastMCP 3.2.4 dynamic add/remove behavior."""
+    """Local FastMCP 4.1.1 dynamic add/remove behavior."""
 
     def _make_spike_tool(self):
         @tool(
             name="diagnostic.echo",
             annotations=ToolAnnotations(
                 title="Diagnostic Echo",
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
+                read_only_hint=True,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=False,
             ),
             tags={"diagnostic", "spike"},
             version="0.1.0",
@@ -73,10 +73,10 @@ class TestFastMcpDynamicToolSpike(unittest.TestCase):
             "dynamic tool annotations should survive add_tool"
         )
         self.assertEqual(annotations.title, "Diagnostic Echo")
-        self.assertTrue(annotations.readOnlyHint)
-        self.assertFalse(annotations.destructiveHint)
-        self.assertTrue(annotations.idempotentHint)
-        self.assertFalse(annotations.openWorldHint)
+        self.assertTrue(annotations.read_only_hint)
+        self.assertFalse(annotations.destructive_hint)
+        self.assertTrue(annotations.idempotent_hint)
+        self.assertFalse(annotations.open_world_hint)
 
         mcp.local_provider.remove_tool("diagnostic.echo")
         self.assertNotIn("diagnostic.echo", _list_tool_names(mcp))

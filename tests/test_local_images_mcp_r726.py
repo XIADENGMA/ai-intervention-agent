@@ -3,7 +3,9 @@
 The MCP process runs next to the files, so it decides what may be read: it asks
 the client for its workspace folders (``roots/list``), resolves the allowed
 folders, ships the bytes with the task and rewrites the prompt. These tests pin
-that wiring end to end with fakes for the MCP client and the Web UI:
+that wiring end to end with fakes for the MCP client and the Web UI, plus a few
+runs through a real fastmcp server and client (a fake of today's API cannot tell
+when the SDK changes it, which is how roots stopped working on fastmcp 4 unseen):
 
 * the configuration and the roots request are only paid for when the prompt
   contains an image reference;
@@ -24,7 +26,9 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from mcp.types import Root
+from fastmcp import Client, FastMCP
+from fastmcp.server.context import Context
+from mcp.types import ListRootsResult, Root
 from pydantic import FileUrl
 
 from ai_intervention_agent import local_images as li
@@ -39,16 +43,39 @@ TASK_ID = "task-r726"
 
 
 class FakeSession:
-    def __init__(self, supports_roots: bool = True, error: Exception | None = None):
+    """The part of ``ServerSession`` the roots request goes through."""
+
+    def __init__(
+        self,
+        supports_roots: bool = True,
+        error: Exception | None = None,
+        roots: list[Any] | None = None,
+        request_error: Exception | None = None,
+        hang: bool = False,
+    ):
         self.supports_roots = supports_roots
         self.error = error
+        self.roots = roots or []
+        self.request_error = request_error
+        self.hang = hang
         self.asked: list[Any] = []
+        self.requests: list[tuple[Any, Any]] = []
 
     def check_client_capability(self, capability: Any) -> bool:
         self.asked.append(capability)
         if self.error is not None:
             raise self.error
         return self.supports_roots
+
+    async def send_request(
+        self, request: Any, result_type: Any, *_: Any, **__: Any
+    ) -> Any:
+        self.requests.append((request, result_type))
+        if self.hang:
+            await asyncio.sleep(3600)
+        if self.request_error is not None:
+            raise self.request_error
+        return SimpleNamespace(roots=self.roots)
 
 
 class FakeContext:
@@ -61,20 +88,14 @@ class FakeContext:
         capability_error: Exception | None = None,
         hang: bool = False,
     ):
-        self.session = FakeSession(supports_roots, capability_error)
-        self.roots = roots or []
-        self.list_error = list_error
-        self.hang = hang
-        self.list_calls = 0
+        self.session = FakeSession(
+            supports_roots, capability_error, roots, list_error, hang
+        )
         self.infos: list[str] = []
 
-    async def list_roots(self) -> list[Any]:
-        self.list_calls += 1
-        if self.hang:
-            await asyncio.sleep(3600)
-        if self.list_error is not None:
-            raise self.list_error
-        return self.roots
+    @property
+    def list_calls(self) -> int:
+        return len(self.session.requests)
 
     async def info(self, message: str, **_: Any) -> None:
         self.infos.append(message)
@@ -136,6 +157,16 @@ def test_the_capability_check_asks_for_roots_support(workspace: Path):
     assert capability.roots is not None
 
 
+def test_the_roots_are_asked_for_with_a_roots_list_request(workspace: Path):
+    ctx = FakeContext([root_for(workspace)])
+
+    client_roots(ctx)
+
+    ((request, result_type),) = ctx.session.requests
+    assert request.method == "roots/list"
+    assert result_type is ListRootsResult
+
+
 def test_the_declared_roots_are_returned_as_local_paths(tmp_path: Path):
     first = tmp_path / "one"
     second = tmp_path / "with space"
@@ -164,7 +195,7 @@ def test_roots_that_are_not_local_paths_are_dropped(tmp_path: Path):
         FakeContext(list_error=RuntimeError("client crashed")),
         FakeContext(capability_error=RuntimeError("no session")),
     ],
-    ids=["list_roots raises", "capability check raises"],
+    ids=["roots request raises", "capability check raises"],
 )
 def test_a_failing_roots_request_degrades_to_no_roots(ctx: FakeContext):
     assert client_roots(ctx) == []
@@ -184,6 +215,43 @@ def test_a_client_that_never_answers_roots_does_not_hang_the_tool(
 
     assert roots == []
     assert time.monotonic() - started < 2
+
+
+def roots_seen_by_a_real_server(**client_options: Any) -> list[str]:
+    """Run ``_client_roots`` in a tool of a real fastmcp server, asked by a real client."""
+    server = FastMCP("roots-probe")
+
+    @server.tool
+    async def declared_roots(ctx: Context) -> list[str]:
+        return [str(path) for path in await server_feedback._client_roots(ctx)]
+
+    async def call() -> list[str]:
+        async with Client(server, **client_options) as client:
+            return list((await client.call_tool("declared_roots", {})).data)
+
+    return asyncio.run(call())
+
+
+def test_a_real_client_hands_its_roots_to_the_server(tmp_path: Path):
+    first = tmp_path / "one"
+    second = tmp_path / "with space"
+
+    seen = roots_seen_by_a_real_server(
+        roots=[first.as_uri(), second.as_uri()], mode="legacy"
+    )
+
+    assert seen == [str(first), str(second)]
+
+
+def test_a_real_client_without_roots_support_is_not_asked(tmp_path: Path):
+    assert roots_seen_by_a_real_server(mode="legacy") == []
+
+
+def test_the_sessionless_protocol_falls_back_to_no_roots(tmp_path: Path):
+    # The 2026-07-28 protocol, which the default "auto" mode negotiates, has no
+    # server-to-client requests (roots are deprecated there): the request cannot
+    # be sent, and the tool call still succeeds with the other allowed folders.
+    assert roots_seen_by_a_real_server(roots=[tmp_path.as_uri()]) == []
 
 
 def test_a_prompt_without_images_does_no_work_at_all(

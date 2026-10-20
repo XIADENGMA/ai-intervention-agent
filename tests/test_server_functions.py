@@ -137,7 +137,7 @@ class TestParseStructuredResponse(unittest.TestCase):
         self.assertTrue(any(isinstance(item, ImageContent) for item in result))
         self.assertTrue(any(isinstance(item, TextContent) for item in result))
         img = next(item for item in result if isinstance(item, ImageContent))
-        self.assertEqual(img.mimeType, "image/png")
+        self.assertEqual(img.mime_type, "image/png")
 
     def test_parse_empty_response(self):
         """测试空响应"""
@@ -278,10 +278,10 @@ class TestContentTypes(unittest.TestCase):
         """测试图片内容创建"""
         from mcp.types import ImageContent
 
-        content = ImageContent(type="image", data="base64data", mimeType="image/png")
+        content = ImageContent(type="image", data="base64data", mime_type="image/png")
 
         self.assertEqual(content.type, "image")
-        self.assertEqual(content.mimeType, "image/png")
+        self.assertEqual(content.mime_type, "image/png")
 
 
 class TestServerFinalPush(unittest.TestCase):

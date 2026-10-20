@@ -8,6 +8,12 @@
 
 ### `build_trusted_hosts() -> list[str]`
 
+### `_bracketed_address(value: str) -> IPv4Address | IPv6Address | None`
+
+### `_host_is_trusted_with_ipv6(original: Callable[..., bool]) -> Callable[..., bool]`
+
+### `ensure_ipv6_trusted_hosts_support() -> bool`
+
 ### `get_config() -> Any`
 
 ## Classes

@@ -10,6 +10,8 @@
 
 ### `get_feedback_counters() -> dict[str, int]`
 
+### `_silence_logging_capability_deprecation() -> None`
+
 ### `async _emit_ctx_info(ctx: FastMCPContext | None, message: str) -> None`
 
 ### `async _client_roots(ctx: FastMCPContext | None) -> list[Path]`

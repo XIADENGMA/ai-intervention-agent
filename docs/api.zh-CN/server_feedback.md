@@ -68,6 +68,16 @@ R352 (cycle-39 #C2) · **Test-only**: 把 ``_FEEDBACK_COUNTERS`` 全
 给 ``server.server_info_resource`` 在 ``aiia://server/info`` 子块里
 渲染，运维侧通过 MCP `resources/read` 拉取即可看到累计值。
 
+### `_silence_logging_capability_deprecation() -> None`
+
+Hide the one SDK warning that ``ctx.info`` is known to raise.
+
+``ctx.info`` sends an MCP log notification. The SDK deprecates the logging
+capability as of the 2026-07-28 spec (SEP-2577) and says so on stderr the
+first time it is used. Clients on the handshake protocols still take these
+notifications, and a failed send is swallowed by ``_emit_ctx_info``, so the
+call stays and only this message is filtered; any other deprecation shows.
+
 ### `async _emit_ctx_info(ctx: FastMCPContext | None, message: str) -> None`
 
 Best-effort 把 task lifecycle 关键节点回写到 MCP client 端日志。
@@ -97,6 +107,12 @@ The workspace folders the MCP client declares via ``roots/list``.
 Empty when there is no ``ctx``, the client does not support roots, the
 request times out or fails: the caller then falls back to the other allowed
 folders instead of failing the tool call.
+
+The request goes through the session: fastmcp 4 dropped ``Context.list_roots``
+and mcp 2 deprecates ``ServerSession.list_roots``, while ``send_request`` is
+the supported way to ask. A connection that cannot carry server-to-client
+requests (the sessionless 2026-07-28 protocol) raises there and ends up in the
+same fallback as a client without roots.
 
 ### `_read_local_images(setting: Any, client_roots: list[Path], message: str, task_id: str) -> local_images.PreparedPrompt`
 

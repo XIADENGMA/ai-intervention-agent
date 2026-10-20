@@ -274,8 +274,8 @@ def self_check_image_return_format() -> bool:
             return False
 
         img0 = converted[0]
-        if img0.mimeType != "image/png":
-            print(f"自检失败：mimeType 不正确：{img0.mimeType!r}")
+        if img0.mime_type != "image/png":
+            print(f"自检失败：mimeType 不正确：{img0.mime_type!r}")
             return False
 
         if img0.data != "Zg==":

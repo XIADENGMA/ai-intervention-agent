@@ -22,6 +22,32 @@ authority values.
 
 Build the concrete host allowlist for Flask ``TRUSTED_HOSTS``.
 
+### `_bracketed_address(value: str) -> IPv4Address | IPv6Address | None`
+
+The address inside a leading ``[...]``; anything after ``]`` is ignored.
+
+### `_host_is_trusted_with_ipv6(original: Callable[..., bool]) -> Callable[..., bool]`
+
+Wrap Werkzeug's ``host_is_trusted`` so a bracketed IPv6 entry can match.
+
+Werkzeug 3.1.9 keeps a ``Host`` header such as ``[::1]:8080`` in one piece
+but still cuts every allowlist entry at its first colon, so a ``[::1]`` entry
+turns into ``[`` and nothing matches it (pallets/werkzeug#3312: fixed on
+main, not released yet). The wrapper only adds a way to be trusted: it
+returns what Werkzeug returns, and when that is a refusal it accepts a
+``Host`` value that Werkzeug itself validates, that is a bracketed IPv6
+literal, and that names the same address as a bracketed entry of the list.
+
+### `ensure_ipv6_trusted_hosts_support() -> bool`
+
+Make ``TRUSTED_HOSTS`` usable for bracketed IPv6 literals; ``True`` if patched.
+
+Probes Werkzeug with the loopback entry this module always trusts and wraps
+``werkzeug.sansio.utils.host_is_trusted`` only when the probe is refused, so
+a release that matches (or that fixed pallets/werkzeug#3312) is left alone,
+and so is our own wrapper: calling this again is a no-op. A helper that is
+missing or fails the probe is left alone too.
+
 ### `get_config() -> Any`
 
 Lazy proxy kept patchable for tests and security helpers.

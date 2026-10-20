@@ -5,14 +5,22 @@
 
   <h2>AI Intervention Agent</h2>
 
-  <p><strong>Real-time user intervention for MCP agents — pause, course-correct, resume.</strong></p>
+  <p><strong>Real-time user intervention for MCP agents: pause, course-correct, resume.</strong></p>
+
+  <p>
+    <a href="./README.md"><img alt="English" height="40" src="https://img.shields.io/badge/English-BCDCF7" /></a>&nbsp;
+    <a href="./README.zh-CN.md"><img alt="简体中文" height="40" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-CDCFD4" /></a>
+  </p>
 
   <p>
     <a href="https://pypi.org/project/ai-intervention-agent/">
       <img src="https://img.shields.io/pypi/v/ai-intervention-agent?style=flat-square&logo=pypi&logoColor=white&label=PyPI" alt="PyPI" />
     </a>
+    <a href="https://github.com/xiadengma/ai-intervention-agent/releases">
+      <img src="https://img.shields.io/github/v/release/xiadengma/ai-intervention-agent?style=flat-square&color=brightgreen" alt="GitHub release" />
+    </a>
     <a href="https://www.python.org/downloads/">
-      <img src="https://img.shields.io/pypi/pyversions/ai-intervention-agent?style=flat-square&logo=python&logoColor=white" alt="Python versions" />
+      <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+" />
     </a>
     <a href="https://modelcontextprotocol.io">
       <img src="https://img.shields.io/badge/MCP-Compatible-d97757?style=flat-square&logo=anthropic&logoColor=white" alt="MCP Compatible" />
@@ -29,13 +37,18 @@
   </p>
 
   <p>
-    English | <a href="./README.zh-CN.md">简体中文</a>
+    <a href="#quick-start">Quick start</a> ·
+    <a href="#screenshots">Screenshots</a> ·
+    <a href="#key-features">Key features</a> ·
+    <a href="#vs-code-extension-optional">VS Code extension</a> ·
+    <a href="#configuration">Configuration</a> ·
+    <a href="#documentation">Documentation</a>
   </p>
 </div>
 
 ---
 
-Ever had your AI agent confidently walk off in the wrong direction mid-task? AI Intervention Agent gives you a Web UI to **pause** the agent at key moments, review what it's about to do, type a course-correction, attach screenshots, and **resume** — all through the MCP `interactive_feedback` tool, without ending the conversation.
+AI Intervention Agent gives you a Web UI to pause the agent at key moments, review what it's about to do, type a course-correction, attach screenshots, and resume it. Everything goes through the MCP `interactive_feedback` tool, without ending the conversation.
 
 Works with `Cursor`, `VS Code`, `Claude Code`, `Augment`, `Windsurf`, `Trae`, and more.
 
@@ -82,7 +95,7 @@ ai-intervention-agent usage details:
 <details>
 <summary>Alternative: install with pip</summary>
 
-Install the package (remember to `pip install --upgrade ai-intervention-agent` periodically):
+Install the package (needs Python 3.11 or newer; remember to `pip install --upgrade ai-intervention-agent` periodically):
 
 ```bash
 pip install ai-intervention-agent
@@ -122,17 +135,24 @@ Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
    - args: `["ai-intervention-agent"]`
    - timeout: 600
    - autoApprove: `["interactive_feedback"]`
-3. Append the project's recommended prompt rules
-   (the "Prompt snippet (copy/paste)" block in this README)
-   to my agent rules / system prompt, so the agent always asks me
-   through `interactive_feedback` instead of ending tasks silently.
-4. Verify by listing MCP servers and confirming `ai-intervention-agent` is loaded.
+   Keep every other server and setting in the file exactly as it is.
+   If an `ai-intervention-agent` entry already exists, show me the
+   difference and ask before replacing it.
+3. Open the link below and append the rules from its
+   "Prompt snippet (copy/paste)" block to my agent rules / system prompt,
+   so the agent always asks me through `interactive_feedback`
+   instead of ending tasks silently:
+   https://raw.githubusercontent.com/xiadengma/ai-intervention-agent/main/README.md
+   If you cannot open that link, ask me to paste the block.
+4. Verify by listing MCP servers and confirming `ai-intervention-agent` is loaded
+   (tell me if I need to restart or reload the tool).
+5. Finish by telling me which files you changed and what the check showed.
 ```
 
 </details>
 
 > [!NOTE]
-> `interactive_feedback` is a **long-running tool**; some clients enforce a hard request timeout. The Web UI ships a countdown + auto re-submit (`feedback.frontend_countdown`, default `240`s, range `0` or `[10, 3600]`) to keep sessions alive — the default stays under the common 300s hard timeout.
+> `interactive_feedback` is a long-running tool, and some clients enforce a hard request timeout. To keep sessions alive, the Web UI ships a countdown with auto re-submit (`feedback.frontend_countdown`, default `240` seconds, range `0` or `[10, 3600]`). The default stays under the common 300-second hard timeout.
 
 ## Screenshots
 
@@ -182,18 +202,18 @@ Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
 
 ## Key features
 
-- **Real-time intervention** — the agent pauses and waits for your input via `interactive_feedback`
-- **Web UI** — Markdown, code highlighting, and math rendering out of the box
-- **Multi-task tabs** — concurrent requests with independent countdowns, per-task draft autosave, and auto re-submit that keeps long sessions alive (your typed text and checked options are submitted at zero, never an empty prompt)
-- **Typing-hold** — the countdown auto-extends while you type and never fires mid-input (web page and VS Code extension alike)
-- **Skill and command picker** — type `/` in the feedback box to insert an installed Agent Skill or custom command (Cursor / Claude Code / Codex layouts, auto-detected or set with `[feedback] skill_dirs`)
-- **Local images in prompts** — write `![alt](path/to/image.png)` in the message and the Web UI shows the file; only images inside your workspace folders and the temp directory are read (adjust with `[feedback] local_image_dirs`)
-- **Agent-loop ergonomics** — per-task `header_label` context chips, `feedback_placeholder` hints, and loop engineering metadata (`loop_id`, `loop_phase`, `success_criteria`)
-- **Notifications** — web / sound / system / Bark (iOS push), plus custom notification sound upload
-- **SSH / LAN friendly** — works behind port forwarding; mDNS publishes a `<host>.local` URL when supported
-- **i18n** — Web UI + VS Code extension shipped in `en` / `zh-CN` / `zh-TW`
-- **PWA, offline-aware, WCAG 2.1 AA accessible** — installable from the browser, with contrast / focus / reduced-motion audited and locked by invariant tests
-- **Stable install** — built on Flask 3.x with conservative dependency pins; immune to the [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) that broke several MCP feedback servers in early 2026
+- Real-time intervention: the agent pauses and waits for your input via `interactive_feedback`
+- Web UI: Markdown, code highlighting, and math rendering out of the box
+- Multi-task tabs: concurrent requests with independent countdowns, per-task draft autosave, and auto re-submit that keeps long sessions alive (your typed text and checked options are submitted at zero, never an empty prompt)
+- Typing-hold: the countdown auto-extends while you type and never fires mid-input (web page and VS Code extension alike)
+- Skill and command picker: type `/` in the feedback box to insert an installed Agent Skill or custom command (Cursor / Claude Code / Codex layouts, auto-detected or set with `[feedback] skill_dirs`)
+- Local images in prompts: write `![alt](path/to/image.png)` in the message and the Web UI shows the file; only images inside your workspace folders and the temp directory are read (adjust with `[feedback] local_image_dirs`)
+- Agent-loop context: per-task `header_label` context chips, `feedback_placeholder` hints, and loop engineering metadata (`loop_id`, `loop_phase`, `success_criteria`)
+- Notifications: web / sound / system / Bark (iOS push), plus custom notification sound upload
+- SSH / LAN friendly: works behind port forwarding; mDNS publishes a `<host>.local` URL when supported
+- i18n: Web UI + VS Code extension shipped in `en` / `zh-CN` / `zh-TW`
+- PWA, offline-aware, WCAG 2.1 AA accessible: installable from the browser, with contrast / focus / reduced-motion audited and locked by invariant tests
+- Stable install: built on Flask 3.x with conservative dependency pins; not affected by the [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) that broke several MCP feedback servers in early 2026
 
 ## Architecture overview
 
@@ -220,13 +240,13 @@ invariant catalogue live in [`docs/architecture.md`](docs/architecture.md).
 
 Embeds the interaction panel into VS Code's sidebar so you never switch to a browser.
 
-- **Install**: [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent), [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=xiadengma.ai-intervention-agent), or download the VSIX from [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)
-- **Key setting**: `ai-intervention-agent.serverUrl` — must match your Web UI URL (e.g. `http://localhost:8080`; change the port via `web_ui.port` in [`config.toml.default`](config.toml.default))
-- **More**: `ai-intervention-agent.logLevel`, macOS native notifications (on by default, toggle in the sidebar's Notification Settings panel) — full settings list and the AppleScript executor security model in [`packages/vscode/README.md`](packages/vscode/README.md)
+- Install: [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent), [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=xiadengma.ai-intervention-agent), or download the VSIX from [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)
+- Key setting: `ai-intervention-agent.serverUrl` must match your Web UI URL (e.g. `http://localhost:8080`; change the port via `web_ui.port` in [`config.toml.default`](config.toml.default))
+- More: `ai-intervention-agent.logLevel` and macOS native notifications (on by default, toggle in the sidebar's Notification Settings panel). The full settings list and the AppleScript executor security model are in [`packages/vscode/README.md`](packages/vscode/README.md)
 
 ## Configuration
 
-On first run, `config.toml` is created from [`config.toml.default`](config.toml.default) in your OS user config directory — the full TOML reference is in [`docs/configuration.md`](docs/configuration.md):
+On first run, `config.toml` is created from [`config.toml.default`](config.toml.default) in your OS user config directory (the full TOML reference is in [`docs/configuration.md`](docs/configuration.md)):
 
 | OS      | User config directory                                  |
 | ------- | ------------------------------------------------------ |
@@ -243,9 +263,9 @@ export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=en       # auto / en / zh-CN / zh-T
 uvx ai-intervention-agent
 ```
 
-CLI inspection: `--version`, `--help`, and `--print-config` (dumps the effective merged config as `jq`-friendly JSON, with secret-like fields redacted — answers "is my port from env or from `config.toml`?" in one pipeline).
+CLI inspection: `--version`, `--help`, and `--print-config`. The last one dumps the effective merged config as `jq`-friendly JSON, with secret-like fields redacted, and answers "is my port from env or from `config.toml`?" in one pipeline.
 
-On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and points Bark notification taps at it — step-by-step guide in [`docs/configuration.md#recommended-iphone-setup-shortcuts--bark`](docs/configuration.md#recommended-iphone-setup-shortcuts--bark).
+On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and points Bark notification taps at it. The step-by-step guide is in [`docs/configuration.md#recommended-iphone-setup-shortcuts--bark`](docs/configuration.md#recommended-iphone-setup-shortcuts--bark).
 
 ## Documentation
 
@@ -256,8 +276,9 @@ On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and po
 - **Troubleshooting / FAQ**: [`docs/troubleshooting.md`](docs/troubleshooting.md) · [`docs/troubleshooting.zh-CN.md`](docs/troubleshooting.zh-CN.md)
 - **Release notes**: [`CHANGELOG.md`](CHANGELOG.md) · VS Code marketplace listing: [`packages/vscode/CHANGELOG.md`](packages/vscode/CHANGELOG.md)
 - **Contributing**: [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](.github/CODE_OF_CONDUCT.md) · scripts index: [`scripts/README.md`](scripts/README.md) · i18n guide: [`docs/i18n.md`](docs/i18n.md)
+- **Support & security**: [`SUPPORT.md`](.github/SUPPORT.md) · [`SECURITY.md`](.github/SECURITY.md)
 - **Release recovery runbook**: [`docs/release-recovery.md`](docs/release-recovery.md) · [`docs/release-recovery.zh-CN.md`](docs/release-recovery.zh-CN.md)
-- **DeepWiki Q&A** — AI-augmented Q&A over the repo: <a href="https://deepwiki.com/xiadengma/ai-intervention-agent"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" valign="middle" /></a>
+- **DeepWiki Q&A** (AI-augmented Q&A over the repo): <a href="https://deepwiki.com/xiadengma/ai-intervention-agent"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" valign="middle" /></a>
 
 ## Related projects
 
@@ -267,19 +288,19 @@ On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and po
 | [cunzhi](https://github.com/imhuso/cunzhi) (imhuso) | ~1.4k | Chinese-language project focused on preventing premature task completion. |
 | [Relay](https://glama.ai/mcp/servers/andeya/ide-relay-mcp) (andeya) | new | Multi-IDE relay, multi-tab session merging, native desktop window, Cursor usage monitoring. |
 | [interactive-feedback-mcp (Node.js)](https://github.com/wellcomemayhem-spec/interactive-feedback-mcp-nodejs) | new | Node.js port with WebSocket UI and Speech-to-Text via OpenAI Whisper. |
-| [interactive-feedback-mcp](https://github.com/junanchn/interactive-feedback-mcp) (junanchn) | ~50 | Win32-native always-on-top window, auto-reply rules. |
+| [interactive-feedback-mcp](https://github.com/junanchn/interactive-feedback-mcp) (junanchn) | ~30 | Win32-native always-on-top window, auto-reply rules. |
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp) (poliva) | ~310 | Direct ancestor fork (see Acknowledgements); minimal Python MCP, single feedback dialog. |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp) (Pursue-LLL) | ~30 | Independent smaller-scale fork emphasising minimal dependencies. |
 
-**Where AIIA sits on the spectrum**: AIIA targets the operationally deep end — Web UI + VS Code extension sharing one backend, production-grade observability (`/metrics` Prometheus endpoint + a [reference Grafana dashboard](docs/observability/README.md)), bilingual i18n + docs, strict invariant test discipline (8,700+ tests + 1,050+ subtests across 40 audit cycles), and a 5-job release pipeline. Want the smallest drop-in? poliva's fork. A desktop app? mcp-feedback-enhanced. Voice / multi-tab UI? Relay or the Node.js fork. Full-stack operational integration? AIIA.
+Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (8,700+ tests + 1,050+ subtests across 40 audit cycles), and releases run through a 5-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
 
-**Feature gap callouts** (contributions welcome): Speech-to-Text input, always-on-top native window, Cursor usage monitoring, multi-tab session merging UI.
+Feature gaps (contributions welcome): Speech-to-Text input, always-on-top native window, Cursor usage monitoring, multi-tab session merging UI.
 
-> Star counts are approximate snapshots (last reviewed 2026-06); check each upstream for current numbers. Submit a PR if you'd like another related project listed.
+> Star counts are approximate snapshots (last reviewed 2026-10); check each upstream for current numbers. Submit a PR if you'd like another related project listed.
 
 ## Acknowledgements
 
-This project's heritage traces back to **Fábio Ferreira** (2024) and **Pau Oliva** (2025), whose original [`noopstudios/interactive-feedback-mcp`](https://github.com/noopstudios/interactive-feedback-mcp) and [`poliva/interactive-feedback-mcp`](https://github.com/poliva/interactive-feedback-mcp) seeded the MCP `interactive_feedback` tool surface. Their copyright notices are preserved in [`LICENSE`](LICENSE) per the MIT license terms. The v1.5.x line is a substantial rewrite — Web UI, VS Code extension, i18n, notification stack, CI/CD pipeline — owned and maintained by [@xiadengma](https://github.com/xiadengma) (PyPI / Open VSX / VS Code Marketplace publisher).
+The MCP `interactive_feedback` tool surface comes from two earlier projects: Fábio Ferreira's original [`noopstudios/interactive-feedback-mcp`](https://github.com/noopstudios/interactive-feedback-mcp) (2024) and Pau Oliva's [`poliva/interactive-feedback-mcp`](https://github.com/poliva/interactive-feedback-mcp) (2025). Their copyright notices are kept in [`LICENSE`](LICENSE), as the MIT license requires. The v1.5.x line is a substantial rewrite (Web UI, VS Code extension, i18n, notification stack, CI/CD pipeline), owned and maintained by [@xiadengma](https://github.com/xiadengma), the publisher on PyPI, Open VSX, and the VS Code Marketplace.
 
 ## License
 

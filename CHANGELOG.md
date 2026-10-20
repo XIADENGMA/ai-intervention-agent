@@ -69,6 +69,52 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   ~60 invariant tests that asserted comment text now lock the
   equivalent code features (selectors, DOM ids, call sites, code
   regexes) instead.
+- README (English and 简体中文), after reading the DeepTutor README:
+  language badges at the top (the current language highlighted), a
+  GitHub release badge, a static Python 3.11+ badge in place of the
+  PyPI-derived one, and a navigation row; the "let your AI set it up"
+  prompt keeps the other servers and settings in the file, shows a
+  difference before replacing an existing entry, links the README it
+  tells the agent to copy rules from (the prompt is pasted into a chat
+  that cannot see the README) and ends with a report of what changed;
+  the pip note states the Python floor (3.11); the documentation list
+  links `SUPPORT` and `SECURITY`; the related-projects star snapshot is
+  refreshed (2026-10). A new test,
+  `test_readme_quick_start_consistency_r728.py` (29 tests, 36 mutants
+  killed), keeps the five copies of the MCP entry (the `uvx` snippet,
+  the Cursor and VS Code install badges, the prompt, the pip snippet),
+  the navigation anchors and the header badges (language, Python
+  floor, license, release repository) in step in both languages.
+- README prose (English and 简体中文) edited with the humanizer and
+  qu-ai-wei guidelines: the opening question, the bold emphasis and the
+  dashes used as connectors are gone (a colon, parentheses or a new
+  sentence in their place); the feature list is plain "label: text"
+  items; "Where AIIA sits on the spectrum" and the Acknowledgements read
+  as statements (sales adjectives and the closing one-liner dropped);
+  "bilingual i18n" now says what the README's own feature list says
+  (three Web UI languages, two documentation languages);
+  "Agent-loop ergonomics" is "Agent-loop context". Commands, code
+  blocks, links, badges, numbers and the sections the invariant tests
+  read are unchanged.
+- MCP SDK stack: the project now declares `fastmcp>=4.1.1,<5` and
+  `mcp>=2.3.0,<3` (it declared `fastmcp>=3.0.0` with no ceiling and never
+  declared `mcp`, which it imports), and `uv.lock` moves from fastmcp 3.2.4 /
+  mcp 1.30.0 to fastmcp 4.1.1 / mcp 2.3.0 (new: `fastmcp-slim`, `mcp-types`,
+  `httpx2` with two helpers, `truststore`; `httpx-sse` is gone).
+  `uvx ai-intervention-agent` re-resolves its dependencies on every start,
+  so users already ran the newer stack while CI tested the older one. Code
+  that built or read SDK objects by their camelCase names now uses the
+  SDK's snake_case ones (`mime_type`, `read_only_hint` and the three other
+  hints), the client's workspace folders are requested through the session
+  (`Context.list_roots` is gone in fastmcp 4), and `ctx.info` stays
+  (clients on the handshake protocols still show it) with only its one known
+  deprecation notice hidden. A client that negotiates the sessionless
+  `2026-07-28` protocol cannot be asked for roots; local images then rely on
+  the working directory, the temporary directory and `local_image_dirs`. A
+  new invariant (R730, 16 tests, 20 mutants killed) pins the declared
+  ranges, the installed and locked versions, and, through a real fastmcp
+  server and client, the protocol names of the tool hints, icons and image
+  blocks and the behaviour of `ctx.info`.
 
 ### Fixed
 
@@ -243,6 +289,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the page on the phone. A new invariant (R727) runs the shipped functions
   in Node with a fake lottie, fetch and ResizeObserver (37 mutations
   killed).
+- Web UI: `http://[::1]:<port>/` (and a bound IPv6 address) answers again
+  instead of `400 Bad Request` on Werkzeug 3.1.9, the release that
+  `uv.lock` and `uvx` install now. 3.1.9 checks the `Host` header as a
+  whole but still cuts every allowed-host entry at its first colon, so the
+  `[::1]` entry became `[` and no IPv6 host matched (pallets/werkzeug#3312:
+  fixed upstream, no patch release yet). Dependabot merged that bump (#123)
+  with the Python 3.11/3.12/3.13 jobs red, so `main` has failed
+  `test_web_ui_security_gaps_r39` ever since. The Web UI now probes
+  Werkzeug at start-up and, only when it refuses the loopback entry, wraps
+  its host check: Werkzeug's answer stands, and a refusal turns into a
+  trust only for a `Host` that Werkzeug itself validates and that names the
+  same IPv6 address as a bracketed entry (another spelling of one address
+  matches, another address never does; domain and IPv4 decisions are not
+  touched). A release that matches, or that fixes the bug, is left alone,
+  so the wrapper retires itself. A new invariant (R729) runs the wrapper
+  against copies of the 3.1.9, 3.1.8 and fixed implementations (18
+  mutations killed).
+- Starting on fastmcp 4 / mcp 2 (what `uvx` installs) no longer writes SDK
+  deprecation notices to stderr: one about the logging capability that
+  `ctx.info` uses and, when feedback came back with an image, one about
+  reading `ImageContent.mimeType` in a debug log line.
 
 ## [1.8.12] - 2026-09-07
 

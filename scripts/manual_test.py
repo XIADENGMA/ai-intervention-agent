@@ -384,7 +384,7 @@ def format_mcp_return_content(feedback_result):
             if isinstance(data, str) and len(data) > 80:
                 data = data[:80] + "..."
             formatted.append(
-                {"type": "image", "mimeType": block.mimeType, "data": data}
+                {"type": "image", "mimeType": block.mime_type, "data": data}
             )
         else:
             formatted.append({"type": "unknown", "repr": repr(block)})

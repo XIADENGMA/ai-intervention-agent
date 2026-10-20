@@ -18,14 +18,14 @@ R37 把 ``fastmcp.server.middleware.error_handling.ErrorHandlingMiddleware``
 
 2. 运行时行为（``TestErrorHandlingMiddlewareRuntime``）
    - 直接调用 ``await middleware(ctx, call_next)``，验证：
-     * ValueError / TypeError → McpError(-32602 Invalid params)
-     * FileNotFoundError / KeyError @ ``tools/call`` → McpError(-32001 Not found)
-     * FileNotFoundError @ ``resources/read`` → McpError(-32002 Resource not found)
-     * PermissionError → McpError(-32000 Permission denied)
-     * TimeoutError → McpError(-32000 Request timeout)
+     * ValueError / TypeError → MCPError(-32602 Invalid params)
+     * FileNotFoundError / KeyError @ ``tools/call`` → MCPError(-32001 Not found)
+     * FileNotFoundError @ ``resources/read`` → MCPError(-32002 Resource not found)
+     * PermissionError → MCPError(-32000 Permission denied)
+     * TimeoutError → MCPError(-32000 Request timeout)
        （Python 3.11+ 起 ``asyncio.TimeoutError is TimeoutError``，仅锁内置类型）
-     * 其它未识别异常 → McpError(-32603 Internal error)
-     * 已经是 McpError 时不被二次转换 / 不丢失原始 error code
+     * 其它未识别异常 → MCPError(-32603 Internal error)
+     * 已经是 MCPError 时不被二次转换 / 不丢失原始 error code
      * 正常路径 (no exception) 返回值原样透传，logger 不被触发
      * error_counts 按 ``{ErrorType}:{method}`` 累加，``get_error_stats()``
        返回的是 *副本*（外部修改不影响内部累加器）
@@ -50,8 +50,7 @@ from unittest.mock import patch
 
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
-from mcp import McpError
-from mcp.types import ErrorData
+from mcp import MCPError
 
 import ai_intervention_agent.server as server
 
@@ -221,15 +220,15 @@ class TestErrorHandlingMiddlewareRuntime(unittest.TestCase):
         *,
         expected_code: int,
         message_contains: str | None = None,
-    ) -> McpError:
-        with self.assertRaises(McpError) as cm:
+    ) -> MCPError:
+        with self.assertRaises(MCPError) as cm:
             asyncio.run(coro)
         err = cm.exception
         self.assertEqual(
             err.error.code,
             expected_code,
             (
-                f"期望 McpError code={expected_code}，实际 {err.error.code}；"
+                f"期望 MCPError code={expected_code}，实际 {err.error.code}；"
                 f"message={err.error.message!r}"
             ),
         )
@@ -297,7 +296,7 @@ class TestErrorHandlingMiddlewareRuntime(unittest.TestCase):
         )
 
     def test_existing_mcperror_passes_through(self) -> None:
-        original = McpError(ErrorData(code=-32099, message="custom"))
+        original = MCPError(-32099, "custom")
         self._assert_mcperror(
             self._drive(original),
             expected_code=-32099,
@@ -317,13 +316,13 @@ class TestErrorHandlingMiddlewareRuntime(unittest.TestCase):
 
     def test_error_counts_accumulate_per_type_and_method(self) -> None:
         with patch.object(self.middleware.logger, "error"):
-            with self.assertRaises(McpError):
+            with self.assertRaises(MCPError):
                 asyncio.run(self._drive(ValueError("a"), method="tools/call"))
-            with self.assertRaises(McpError):
+            with self.assertRaises(MCPError):
                 asyncio.run(self._drive(ValueError("b"), method="tools/call"))
-            with self.assertRaises(McpError):
+            with self.assertRaises(MCPError):
                 asyncio.run(self._drive(KeyError("c"), method="tools/call"))
-            with self.assertRaises(McpError):
+            with self.assertRaises(MCPError):
                 asyncio.run(self._drive(ValueError("d"), method="resources/read"))
         stats = self.middleware.get_error_stats()
         self.assertEqual(stats.get("ValueError:tools/call"), 2)
@@ -332,7 +331,7 @@ class TestErrorHandlingMiddlewareRuntime(unittest.TestCase):
 
     def test_get_error_stats_returns_copy(self) -> None:
         with patch.object(self.middleware.logger, "error"):
-            with self.assertRaises(McpError):
+            with self.assertRaises(MCPError):
                 asyncio.run(self._drive(ValueError("x")))
         snap = self.middleware.get_error_stats()
         snap["should_not_persist"] = 999
@@ -350,7 +349,7 @@ class TestErrorHandlingMiddlewareRuntime(unittest.TestCase):
         handler = _Capture(level=logging.ERROR)
         self.logger.addHandler(handler)
         try:
-            with self.assertRaises(McpError):
+            with self.assertRaises(MCPError):
                 asyncio.run(self._drive(ValueError("compact"), method="tools/call"))
         finally:
             self.logger.removeHandler(handler)

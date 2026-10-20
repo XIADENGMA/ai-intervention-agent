@@ -373,7 +373,7 @@ class TestProcessImage(unittest.TestCase):
         img_content, _ = _process_image(img_data, 0)
         self.assertIsNotNone(img_content)
         assert img_content is not None
-        self.assertEqual(img_content.mimeType, "image/png")
+        self.assertEqual(img_content.mime_type, "image/png")
 
     def test_mime_with_semicolon(self):
         img_data = {
@@ -383,14 +383,14 @@ class TestProcessImage(unittest.TestCase):
         img_content, _ = _process_image(img_data, 0)
         self.assertIsNotNone(img_content)
         assert img_content is not None
-        self.assertEqual(img_content.mimeType, "image/png")
+        self.assertEqual(img_content.mime_type, "image/png")
 
     def test_jpg_to_jpeg(self):
         img_data = {"data": self._make_png_b64(), "content_type": "image/jpg"}
         img_content, _ = _process_image(img_data, 0)
         self.assertIsNotNone(img_content)
         assert img_content is not None
-        self.assertEqual(img_content.mimeType, "image/jpeg")
+        self.assertEqual(img_content.mime_type, "image/jpeg")
 
     def test_non_image_mime_fallback(self):
         img_data = {
@@ -400,7 +400,7 @@ class TestProcessImage(unittest.TestCase):
         img_content, _ = _process_image(img_data, 0)
         self.assertIsNotNone(img_content)
         assert img_content is not None
-        self.assertTrue(img_content.mimeType.startswith("image/"))
+        self.assertTrue(img_content.mime_type.startswith("image/"))
 
 
 class TestParseStructuredResponse(unittest.TestCase):

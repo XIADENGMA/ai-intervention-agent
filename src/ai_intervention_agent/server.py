@@ -289,7 +289,7 @@ def _build_server_icons() -> list[Icon]:
             continue
         try:
             data_uri = Image(path=str(path)).to_data_uri()
-            icons.append(Icon(src=data_uri, mimeType=mime, sizes=sizes))
+            icons.append(Icon(src=data_uri, mime_type=mime, sizes=sizes))
         except Exception:
             continue
     return icons
@@ -336,10 +336,10 @@ from ai_intervention_agent.server_feedback import (
 
 _INTERACTIVE_FEEDBACK_ANNOTATIONS = ToolAnnotations(
     title="Interactive Feedback (人机协作反馈)",
-    readOnlyHint=False,
-    destructiveHint=False,
-    idempotentHint=False,
-    openWorldHint=True,
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=False,
+    open_world_hint=True,
 )
 
 interactive_feedback = mcp.tool(

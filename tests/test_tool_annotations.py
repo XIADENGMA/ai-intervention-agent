@@ -63,7 +63,7 @@ class TestInteractiveFeedbackAnnotations(unittest.TestCase):
         """
         ann = _resolved_annotations()
         self.assertIs(
-            ann.destructiveHint,
+            ann.destructive_hint,
             False,
             "interactive_feedback 不会破坏数据，destructiveHint 必须显式 False",
         )
@@ -72,7 +72,7 @@ class TestInteractiveFeedbackAnnotations(unittest.TestCase):
         """每次调用产生新任务事件，明确非幂等。"""
         ann = _resolved_annotations()
         self.assertIs(
-            ann.idempotentHint,
+            ann.idempotent_hint,
             False,
             "每次调用都会创建新任务事件，必须显式 idempotentHint=False",
         )
@@ -85,7 +85,7 @@ class TestInteractiveFeedbackAnnotations(unittest.TestCase):
         """
         ann = _resolved_annotations()
         self.assertIs(
-            ann.readOnlyHint,
+            ann.read_only_hint,
             False,
             "会写 task queue + 发通知，readOnlyHint 必须显式 False",
         )
@@ -94,7 +94,7 @@ class TestInteractiveFeedbackAnnotations(unittest.TestCase):
         """与外部用户和通知服务交互，是开放世界工具。"""
         ann = _resolved_annotations()
         self.assertIs(
-            ann.openWorldHint,
+            ann.open_world_hint,
             True,
             "工具与外部用户/通知服务交互，必须 openWorldHint=True",
         )
@@ -135,10 +135,10 @@ class TestAnnotationsRoundTripViaProtocol(unittest.TestCase):
         """
         ann = _resolved_annotations()
         self.assertEqual(ann.title, "Interactive Feedback (人机协作反馈)")
-        self.assertFalse(ann.readOnlyHint)
-        self.assertFalse(ann.destructiveHint)
-        self.assertFalse(ann.idempotentHint)
-        self.assertTrue(ann.openWorldHint)
+        self.assertFalse(ann.read_only_hint)
+        self.assertFalse(ann.destructive_hint)
+        self.assertFalse(ann.idempotent_hint)
+        self.assertTrue(ann.open_world_hint)
 
     def test_get_tool_also_exposes_annotations(self) -> None:
         """`mcp.get_tool('name')` 路径同样要暴露 annotations，覆盖另一个公共 API。"""
@@ -146,7 +146,7 @@ class TestAnnotationsRoundTripViaProtocol(unittest.TestCase):
         assert tool is not None, "get_tool 必须能拿到 interactive_feedback"
         ann = tool.annotations
         assert ann is not None, "get_tool 路径下 annotations 不能丢"
-        self.assertFalse(ann.destructiveHint)
+        self.assertFalse(ann.destructive_hint)
 
 
 if __name__ == "__main__":

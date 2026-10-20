@@ -6,8 +6,17 @@
 
 from __future__ import annotations
 
+import functools
 import secrets
-from ipaddress import AddressValueError, ip_address, ip_network
+import warnings
+from collections.abc import Callable, Collection
+from ipaddress import (
+    AddressValueError,
+    IPv4Address,
+    IPv6Address,
+    ip_address,
+    ip_network,
+)
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
 
@@ -111,6 +120,78 @@ def build_trusted_hosts(
         trusted_hosts.append(normalized)
         seen.add(normalized)
     return trusted_hosts
+
+
+def _bracketed_address(value: str) -> IPv4Address | IPv6Address | None:
+    """The address inside a leading ``[...]``; anything after ``]`` is ignored."""
+    if not value.startswith("["):
+        return None
+    end = value.find("]")
+    if end == -1:
+        return None
+    try:
+        return ip_address(value[1:end])
+    except ValueError:
+        return None
+
+
+def _host_is_trusted_with_ipv6(original: Callable[..., bool]) -> Callable[..., bool]:
+    """Wrap Werkzeug's ``host_is_trusted`` so a bracketed IPv6 entry can match.
+
+    Werkzeug 3.1.9 keeps a ``Host`` header such as ``[::1]:8080`` in one piece
+    but still cuts every allowlist entry at its first colon, so a ``[::1]`` entry
+    turns into ``[`` and nothing matches it (pallets/werkzeug#3312: fixed on
+    main, not released yet). The wrapper only adds a way to be trusted: it
+    returns what Werkzeug returns, and when that is a refusal it accepts a
+    ``Host`` value that Werkzeug itself validates, that is a bracketed IPv6
+    literal, and that names the same address as a bracketed entry of the list.
+    """
+
+    @functools.wraps(original)
+    def host_is_trusted(
+        hostname: str | None, trusted_list: Collection[str] | None = None
+    ) -> bool:
+        if original(hostname, trusted_list):
+            return True
+        if not hostname:
+            return False
+        host_address = _bracketed_address(hostname)
+        if host_address is None or not original(hostname, None):
+            return False
+        entries = [trusted_list] if isinstance(trusted_list, str) else trusted_list
+        return any(_bracketed_address(entry) == host_address for entry in entries or ())
+
+    return host_is_trusted
+
+
+_WERKZEUG_HOST_CHECK = "host_is_trusted"
+
+
+def ensure_ipv6_trusted_hosts_support() -> bool:
+    """Make ``TRUSTED_HOSTS`` usable for bracketed IPv6 literals; ``True`` if patched.
+
+    Probes Werkzeug with the loopback entry this module always trusts and wraps
+    ``werkzeug.sansio.utils.host_is_trusted`` only when the probe is refused, so
+    a release that matches (or that fixed pallets/werkzeug#3312) is left alone,
+    and so is our own wrapper: calling this again is a no-op. A helper that is
+    missing or fails the probe is left alone too.
+    """
+    from werkzeug.sansio import utils as werkzeug_utils
+
+    current: Any = getattr(werkzeug_utils, _WERKZEUG_HOST_CHECK, None)
+    try:
+        with warnings.catch_warnings():
+            # Werkzeug 3.2 deprecates this helper; probing it must stay silent.
+            warnings.simplefilter("ignore")
+            if current("[::1]:80", ["[::1]"]):
+                return False
+    except Exception:
+        return False
+    setattr(werkzeug_utils, _WERKZEUG_HOST_CHECK, _host_is_trusted_with_ipv6(current))
+    logger.info(
+        "Werkzeug 拒绝带方括号的 IPv6 受信主机，已启用兼容包装（pallets/werkzeug#3312）"
+    )
+    return True
 
 
 def get_config() -> Any:
