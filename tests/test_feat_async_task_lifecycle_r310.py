@@ -10,6 +10,8 @@ cycle-30 cr60 §5 #B2 提议 — async task lifecycle invariant。R298+R299
 |---------------------------------------------------------------|
 | server_feedback.py:438  sse_task = asyncio.create_task(_sse_listener()) |
 | server_feedback.py:439  poll_task = asyncio.create_task(_poll_fallback()) |
+| server_feedback.py (R820) keepalive = asyncio.create_task(beat(), ...) —  |
+|   ``_client_keepalive`` 的进度心跳, 同样在 finally 里 cancel + await       |
 ================================================================
 
 ================================================================
@@ -30,15 +32,17 @@ finally:
 ```
 
 ================================================================
-| Invariant 锁定 (5 条)                                              |
+| Invariant 锁定 (6 条)                                              |
 ================================================================
 1. ``server_feedback.py`` 中的 sse_task 必须有 ``.cancel()`` + ``await``
 2. ``server_feedback.py`` 中的 poll_task 必须有 ``.cancel()`` + ``await``
 3. cancel 之后的 await 必须包在 ``contextlib.suppress(asyncio.CancelledError)``
 4. R310 marker 必须出现在 server_feedback.py (防 lineage 丢失)
 5. **future-guard meta-lint**: 全仓 ``src/`` 中 ``asyncio.create_task``
-   总数必须 == 2 (R310 commit 时点的 baseline) — 未来新增必须 review
-   cleanup pattern 后才能更新此数字
+   总数必须 == 3 (R310 时点 2 个, R820 的进度心跳加 1 个) — 未来新增必须
+   review cleanup pattern 后才能更新此数字
+6. (R820) ``_client_keepalive`` 的 ``keepalive`` task 在 ``finally`` 里
+   ``cancel()`` + ``with contextlib.suppress(asyncio.CancelledError): await``
 
 ================================================================
 | Tests | 维度                                                    |
@@ -46,8 +50,9 @@ finally:
 | 3     | sse_task / poll_task lifecycle (cancel + await + suppress) |
 | 1     | R310 marker / contextlib.suppress 用法                  |
 | 1     | future-guard: create_task 总数 baseline                 |
+| 2     | (R820) keepalive task lifecycle                         |
 ================================================================
-| 5 总计                                                            |
+| 7 总计                                                            |
 ================================================================
 
 **pattern lineage**: v3.6 lifecycle-cleanup (R298 AbortController +
@@ -136,6 +141,49 @@ class TestAsyncioTaskLifecycle(unittest.TestCase):
 
 
 # ============================================================
+# keepalive task lifecycle (R820)
+# ============================================================
+class TestKeepaliveTaskLifecycle(unittest.TestCase):
+    """R820: ``_client_keepalive`` 的进度心跳 task 必须 cancel + await + suppress"""
+
+    def setUp(self) -> None:
+        self.src = _read(SERVER_FEEDBACK)
+
+    def test_keepalive_has_create_cancel_await(self) -> None:
+        """``keepalive`` 必须有 create + cancel + await 三段。"""
+        self.assertRegex(
+            self.src,
+            r"keepalive\s*=\s*asyncio\.create_task\(",
+            "R820: keepalive 必须由 asyncio.create_task() 创建",
+        )
+        self.assertRegex(
+            self.src,
+            r"keepalive\.cancel\(\)",
+            "R820: keepalive 必须有 .cancel() 调用 (finally 中)",
+        )
+        self.assertRegex(
+            self.src,
+            r"await keepalive",
+            "R820: keepalive 必须有 await (cancel 后等待真正结束, 防 task 泄漏)",
+        )
+
+    def test_keepalive_cancel_and_await_in_one_finally(self) -> None:
+        """cancel 和被 suppress 包住的 await 必须在同一个 ``finally:`` 里,
+        且 ``yield`` 之后的每条退出路径 (返回 / 异常 / 取消) 都会走到。"""
+        m = re.search(
+            r"try:\s*\n\s+yield\s*\n\s+finally:\s*\n\s+keepalive\.cancel\(\)\s*\n"
+            r"\s+with contextlib\.suppress\(asyncio\.CancelledError\):\s*\n\s+"
+            r"await keepalive",
+            self.src,
+        )
+        self.assertIsNotNone(
+            m,
+            "R820: try: yield / finally: keepalive.cancel() + "
+            "with contextlib.suppress(asyncio.CancelledError): await keepalive",
+        )
+
+
+# ============================================================
 # suppress(CancelledError) 用法
 # ============================================================
 class TestSuppressCancelledError(unittest.TestCase):
@@ -190,7 +238,7 @@ class TestCreateTaskBaselineCount(unittest.TestCase):
     """全仓 src/ 内 asyncio.create_task 总数必须 = R310 commit 时 baseline"""
 
     def test_total_create_task_count_baseline(self) -> None:
-        """全 ``src/`` 中 ``asyncio.create_task`` 总数 = 2 (R310 baseline)。
+        """全 ``src/`` 中 ``asyncio.create_task`` 总数 = 3 (R310 的 2 个 + R820 的 1 个)。
 
         未来新增 asyncio.create_task 必须:
         1. 同步实现 cancel + await + suppress cleanup pattern
@@ -207,9 +255,9 @@ class TestCreateTaskBaselineCount(unittest.TestCase):
         total = sum(c for _, c in all_matches)
         self.assertEqual(
             total,
-            2,
-            f"R310: 全 src/ 中 asyncio.create_task 总数必须 = 2 "
-            f"(R310 commit 时 baseline)。当前找到 {total}: {all_matches}\n"
+            3,
+            f"R310: 全 src/ 中 asyncio.create_task 总数必须 = 3 "
+            f"(R310 时 2 个 + R820 进度心跳 1 个)。当前找到 {total}: {all_matches}\n"
             f"如果新增了 create_task: ① 实现 cancel + await + suppress cleanup "
             f"② R310 测试列入新 task ③ 更新此 baseline 数字。",
         )

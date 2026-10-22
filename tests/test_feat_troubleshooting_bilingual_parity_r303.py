@@ -84,6 +84,7 @@ SECTION_KEYWORDS = [
     (17, "local image", "本地图片"),
     (18, "event=server.boot", "event=server.boot"),
     (19, "cross_origin_write_blocked", "cross_origin_write_blocked"),
+    (20, "MCP error -32001", "MCP error -32001"),
 ]
 
 

@@ -380,10 +380,16 @@ class TestAgainstTheTypeScriptScanner(unittest.TestCase):
             and not any(part in skip for part in path.relative_to(REPO_ROOT).parts)
         )
         self.assertGreater(len(paths), 40)
-        files = [
-            {"name": str(path), "text": path.read_text(encoding="utf-8")}
-            for path in paths
-        ]
+        files = []
+        for path in paths:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                # 另一个 worker 里的测试放进这个目录的临时文件：列出来之后、读之前
+                # 就被它删了。它不是仓库的源码，不在这个测试要比对的范围里。
+                continue
+            files.append({"name": str(path), "text": text})
+        self.assertGreater(len(files), 40)
         expected = self._oracle(files)
         mismatched = []
         for file in files:

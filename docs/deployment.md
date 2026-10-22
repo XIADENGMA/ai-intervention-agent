@@ -96,6 +96,10 @@ curl -N http://127.0.0.1:8080/api/events
 uv run pytest -q tests/test_web_ui_wsgi_profile_r452.py tests/test_sse_last_event_id_r41.py
 ```
 
+A healthy stream prints `: connected` at once and, while nothing happens, one
+`event: heartbeat` every 25 seconds. If not even the comment shows up within a few
+seconds, something in front of the app is buffering the response.
+
 For browser-heavy sessions, the Web UI shares one EventSource across same-origin
 tabs when `BroadcastChannel` is available. This avoids the HTTP/1.x per-browser /
 per-domain SSE connection limit documented by MDN, while retaining direct SSE as

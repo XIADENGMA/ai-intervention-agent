@@ -14,6 +14,8 @@
 
 ### `async _emit_ctx_info(ctx: FastMCPContext | None, message: str) -> None`
 
+### `async _client_keepalive(ctx: FastMCPContext | None) -> AsyncIterator[None]`
+
 ### `async _client_roots(ctx: FastMCPContext | None) -> list[Path]`
 
 ### `_read_local_images(setting: Any, client_roots: list[Path], message: str, task_id: str) -> local_images.PreparedPrompt`

@@ -100,6 +100,30 @@ Cursor / Claude Desktop / ChatGPT Desktop 在 chat sidebar 渲染一行
   三条管线各自独立，互不影响——服务器端日志一定有，client 看到的可能
   因为协议错误丢失，这是预期行为。
 
+### `async _client_keepalive(ctx: FastMCPContext | None) -> AsyncIterator[None]`
+
+R820: while the block runs, tell the client every 20 s that the call is still alive.
+
+``interactive_feedback`` waits for a person, which takes longer than the idle timeout
+clients put on a tool call (Cursor: 120 s). The server sent nothing in the meantime, so a
+question that was not answered, or auto-submitted by an open panel, within two minutes
+ended in ``MCP error -32001: Request timed out`` and the reply that came later went to a
+request nobody waited for. A client that sent a progress token restarts its idle timer on
+every ``notifications/progress``; one that did not, gets nothing (``report_progress`` is a
+no-op without a token); one that does not restart on progress is unaffected.
+
+Design:
+
+- ``ctx`` is ``None`` (pytest, direct calls): nothing is scheduled.
+- A send that fails is logged at debug level and retried at the next beat; it never
+  reaches the wait, which is what the human is on.
+- Leaving the block, by return, error or cancellation, cancels the beat and waits for it,
+  so no notification can follow the tool's result and no task outlives the call. Under an
+  anyio cancel scope that wait is itself cancelled; the beat is already cancelled by then.
+- The first beat comes one interval after the block starts, ``progress`` is the elapsed
+  seconds (strictly increasing, as the spec requires) and there is no ``total``: the wait
+  can be extended, so its end is not known.
+
 ### `async _client_roots(ctx: FastMCPContext | None) -> list[Path]`
 
 The workspace folders the MCP client declares via ``roots/list``.

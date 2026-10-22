@@ -379,6 +379,8 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 
 两种情况下后端最终都至少等待 260 秒，所以小于 260 的 `backend_max_wait` 按 260 处理（该键仍接受 `[10, 7200]`）。这个下限是有意的：过小的超时会在用户来得及回答之前就结束任务（见 [troubleshooting.zh-CN.md](troubleshooting.zh-CN.md)）。
 
+调用等待期间，MCP 服务端每 20 秒发送一次进度通知（`progress` 是已等待的秒数，不带总量）。收到进度就重置空闲超时的客户端（例如默认空闲超时为 120 秒的 Cursor）因此会一直等到后端等待结束，而不是以 `MCP error -32001: Request timed out` 失败（见 [troubleshooting.zh-CN.md](troubleshooting.zh-CN.md#20-调用在大约两分钟后以-mcp-error--32001-request-timed-out-结束)）。
+
 **`/` 选择器（`skill_dirs`）**：
 
 在反馈输入框的行首（或空格之后）输入 `/`，会弹出运行 Web UI 的这台机器上已安装的 agent skill 与命令列表；选中后插入 `/<名称> `。

@@ -29,7 +29,7 @@ import json
 import threading
 import time
 import warnings
-from collections.abc import Coroutine
+from collections.abc import AsyncIterator, Coroutine
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
@@ -191,6 +191,69 @@ async def _emit_ctx_info(
             await ctx.info(message)
     except Exception as ctx_exc:
         logger.debug(f"ctx.info 失败（已忽略）: {type(ctx_exc).__name__}: {ctx_exc}")
+
+
+_PROGRESS_KEEPALIVE_INTERVAL_S = 20.0
+"""Seconds between two progress notifications while a person is being waited for (R820).
+
+Cursor gives a tool call an idle timeout (120 s by default) that every ``notifications/progress``
+for the call restarts, for up to an hour in total; the TypeScript MCP SDK's own default is 60 s.
+At 20 s a client with a 60 s idle timeout can lose one beat and still hold on, and the cost is
+three tiny messages a minute.
+"""
+
+
+@contextlib.asynccontextmanager
+async def _client_keepalive(ctx: FastMCPContext | None) -> AsyncIterator[None]:
+    """R820: while the block runs, tell the client every 20 s that the call is still alive.
+
+    ``interactive_feedback`` waits for a person, which takes longer than the idle timeout
+    clients put on a tool call (Cursor: 120 s). The server sent nothing in the meantime, so a
+    question that was not answered, or auto-submitted by an open panel, within two minutes
+    ended in ``MCP error -32001: Request timed out`` and the reply that came later went to a
+    request nobody waited for. A client that sent a progress token restarts its idle timer on
+    every ``notifications/progress``; one that did not, gets nothing (``report_progress`` is a
+    no-op without a token); one that does not restart on progress is unaffected.
+
+    Design:
+
+    - ``ctx`` is ``None`` (pytest, direct calls): nothing is scheduled.
+    - A send that fails is logged at debug level and retried at the next beat; it never
+      reaches the wait, which is what the human is on.
+    - Leaving the block, by return, error or cancellation, cancels the beat and waits for it,
+      so no notification can follow the tool's result and no task outlives the call. Under an
+      anyio cancel scope that wait is itself cancelled; the beat is already cancelled by then.
+    - The first beat comes one interval after the block starts, ``progress`` is the elapsed
+      seconds (strictly increasing, as the spec requires) and there is no ``total``: the wait
+      can be extended, so its end is not known.
+    """
+    if ctx is None:
+        yield
+        return
+
+    started = time.monotonic()
+
+    async def beat() -> None:
+        while True:
+            await asyncio.sleep(_PROGRESS_KEEPALIVE_INTERVAL_S)
+            elapsed = time.monotonic() - started
+            try:
+                await ctx.report_progress(
+                    progress=round(elapsed, 3),
+                    message=f"Waiting for human feedback ({int(elapsed)} s)",
+                )
+            except Exception as exc:
+                logger.debug(
+                    f"progress keepalive failed (ignored): {type(exc).__name__}: {exc}"
+                )
+
+    keepalive = asyncio.create_task(beat(), name="interactive-feedback-keepalive")
+    try:
+        yield
+    finally:
+        keepalive.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await keepalive
 
 
 _CLIENT_ROOTS_TIMEOUT_S = 3.0
@@ -1371,7 +1434,8 @@ async def interactive_feedback(
         logger.info(
             f"后端等待时间: {backend_timeout}秒 (前端倒计时: {auto_resubmit_timeout}秒)"
         )
-        result = await wait_for_task_completion(task_id, timeout=backend_timeout)
+        async with _client_keepalive(ctx):
+            result = await wait_for_task_completion(task_id, timeout=backend_timeout)
 
         if "error" in result:
             logger.error(f"任务执行失败: {result['error']}, 任务 ID: {task_id}")

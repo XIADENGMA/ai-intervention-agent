@@ -87,6 +87,9 @@ curl -N http://127.0.0.1:8080/api/events
 uv run pytest -q tests/test_web_ui_wsgi_profile_r452.py tests/test_sse_last_event_id_r41.py
 ```
 
+健康的流会立刻打印 `: connected`，之后空闲时每 25 秒一条 `event: heartbeat`。如果几秒内
+连这条注释都没有出现，说明应用前面有东西在缓冲响应。
+
 对于多浏览器标签的 heavy user，Web UI 在 `BroadcastChannel` 可用时会让同源标签页
 共享一条 EventSource。这样能避开 MDN 记录的 HTTP/1.x 每浏览器 / 每域名 SSE 连接
 上限，同时在 `BroadcastChannel` 不可用时仍回退到直连 SSE。

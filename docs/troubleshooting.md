@@ -672,6 +672,21 @@ The access-denied message in the Web UI is a different thing: it means the serve
 
 Over HTTPS, a browser that sends `Sec-Fetch-Site` (Chrome 76, Firefox 90, Safari 16.4 and later) says `same-origin`, so an HTTPS proxy needs neither. If the log shows a request you did not make, with an `Origin` of a site you do not recognise, that is the protection working: close that page.
 
+## 20. A call ends with `MCP error -32001: Request timed out` after about two minutes
+
+**Symptom**: the agent calls `interactive_feedback` and, about 120 seconds later, the tool result (or Cursor's MCP log) says `MCP error -32001: Request timed out`. The question was still on the page, or had already gone from it, and an answer you typed afterwards never reached the agent.
+
+**What it means**: the client gave up on a call that had been silent for too long. Waiting for a person is slow, and a client puts an idle timeout on every tool call (Cursor 3.27: 120 seconds). While it waits, the server sends a progress notification every 20 seconds (`progress` is the number of seconds waited, the message reads `Waiting for human feedback (N s)`). A client that restarts its idle timer on progress, as Cursor does, then keeps waiting until the call ends: when you answer, when an open panel's countdown submits (`frontend_countdown`), or when the server's own limit is reached and it returns the resubmit prompt (`frontend_countdown` + 40 seconds, at least 260, at most `backend_max_wait`).
+
+- Versions up to 1.8.12 send nothing while they wait. Update to a newer release and restart the MCP server.
+- A client that does not ask for progress (it sends no progress token) gets none and keeps its own idle timeout. Raise that timeout in the client if it has such a setting, or lower `frontend_countdown` so that an open panel answers before it.
+- When no panel or browser tab shows the question, nothing counts down, so the call ends at the server's limit; the agent then calls the tool again.
+
+**Triage**:
+
+1. Find the failure in the MCP log (section 16 says where) and note the time. Set `web_ui.log_level = "INFO"` and restart the server, then look for `等待任务完成:` in its log: the line names the task and the limit (`超时: 260秒`). A failure about 120 seconds after the call, with a larger limit in that line, is the client's idle timeout.
+2. At `DEBUG` level, `progress keepalive failed (ignored)` marks a notification that could not be sent, which means the client was not reading its end of the connection.
+
 ## Still stuck?
 
 1. Read [`SUPPORT.md`](../.github/SUPPORT.md) for the right channel.

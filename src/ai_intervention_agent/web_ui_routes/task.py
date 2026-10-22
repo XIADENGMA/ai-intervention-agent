@@ -801,7 +801,7 @@ class TaskRoutesMixin:
               - text/event-stream
             responses:
               200:
-                description: SSE 事件流（task_changed 事件 + 25s 心跳）
+                description: SSE 事件流（连接后立即发一个注释帧，之后是 task_changed 事件 + 25s 心跳）
             """
             _ensure_sse_callback_registered()
 
@@ -824,6 +824,11 @@ class TaskRoutesMixin:
 
             def generate():
                 try:
+                    # A WSGI server sends the status line and headers with the first chunk, so
+                    # on an idle bus a client heard nothing for 25 s: EventSource.onopen, the
+                    # VS Code host's response callback and httpx's stream() all fired late.
+                    # A comment frame is invisible to them and ends that wait (R796).
+                    yield ": connected\n\n"
                     while True:
                         try:
                             event = q.get(timeout=25)

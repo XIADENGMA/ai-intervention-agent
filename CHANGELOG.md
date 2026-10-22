@@ -456,6 +456,44 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- A question that was not answered within two minutes ended in `MCP error -32001: Request timed out`
+  and the answer that came later went nowhere (R820). `interactive_feedback` waits for a person and
+  the server sent nothing while it waited, but Cursor's MCP client gives every tool call an idle
+  timeout (120 s by default) that it restarts each time a `notifications/progress` for the call
+  arrives, up to an hour in total. A person who needed longer than two minutes, or a panel that was
+  not on screen and so never counted down to its automatic submit, got the error, and the task the
+  call had made was cleaned up behind it; in a real Cursor session three questions in a row failed
+  after 120 s. While the call waits, the server now sends a progress notification every 20 s
+  (`progress` = seconds waited, no `total`, message "Waiting for human feedback (N s)") for the
+  call's own progress token. The beat stops when the wait ends, by return, error or cancel, so
+  nothing follows the result, even when a client has stopped reading; a client that sent no token
+  gets nothing, and one that ignores progress is unaffected. Real MCP SDK 1.32.1 client with
+  Cursor's call options (120 s idle timeout, restart on progress, 1 h total) against the real stdio
+  server and Web UI, old tree against new: with the answer sent 150 s after the call, old failed
+  with `-32001` at 120.5 s (0 notifications), new returned the answer at 150.5 s (7 notifications);
+  with no answer at all and a 20 s countdown, new returned the resubmit prompt at 264 s, the
+  backend's own 260 s limit (13 notifications), instead of failing at 120 s. A call can now stay
+  open for as long as the backend wait (countdown + 40 s, at least 260 s, at most
+  `backend_max_wait`) instead of ending at the client's idle timeout. 18 tests (14 red on the old
+  code; each runs under a deadline, so a regression fails instead of hanging the suite) and 17 of
+  17 one-point mutants caught.
+- The event stream said nothing for 25 s after a client connected to an idle server, so everything
+  that treats "the response started" as "connected" was 25 s late (R796). A WSGI server sends the
+  status line and the headers together with the first chunk, and `/api/events` produced its first
+  chunk only when the bus had an event or the 25 s idle wait ended in a heartbeat; on an idle
+  server the headers arrived after 25 037 ms. The page's `EventSource.onopen` waited (the status
+  dot stayed "reconnecting" after a restart and the task polling kept its fast 2 s pace instead of
+  the 30 s safety net), and so did the VS Code host's response callback (`sse.connected`, the
+  language sync) and the MCP server's `stream()` context (`sse_connected`, which moves its HTTP
+  safety net from 2 s to 30 s). Real Chrome 153, old tree against new: after a page load on an
+  idle server the page counted the stream as open after about 25 s, now at once; after the server
+  was killed and came back the dot stayed "reconnecting" for 27.9 s after the server was healthy,
+  now 3.0 s (the page's own back-off). The stream now opens with the comment frame `: connected`,
+  which `EventSource`, the extension's parser and the MCP server's `data:` reader all skip;
+  events, `Last-Event-ID` replays, `gap_warning` and the 25 s `event: heartbeat` are unchanged,
+  and the comment is not counted as a heartbeat. A script that reads the first line of
+  `curl -N /api/events` now sees that comment first. 10 tests on a real loopback server (all red
+  on the old route) and 13 of 13 one-point mutants caught.
 - In a narrow VS Code side bar the task tabs could cover the settings button, and scrolling the
   strip carried the button out of the bar (R817). The bar was the scroller and the gear an
   absolutely positioned child of it, with 34 px of right padding that only exists at the end of
@@ -2266,6 +2304,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   deprecation notices to stderr: one about the logging capability that
   `ctx.info` uses and, when feedback came back with an image, one about
   reading `ImageContent.mimeType` in a debug log line.
+
+### Security
+
+- Refresh `uv.lock` so the pull-request dependency gate
+  (`scripts/dependency_audit.py --gate pr`) passes again; it was red on
+  seven findings published between 2026-10-20 and 2026-10-22.
+  `certifi` 2025.4.26 → 2026.10.19 (GHSA-6q48-6c7w-9gw2: the bundle
+  trusted an `emSign` root whose intermediate CA keys are compromised, so
+  a forged certificate for any host could pass TLS verification, which
+  matters to the HTTPS Bark push). `opentelemetry-api` 1.40.0 → 1.45.1
+  (GHSA-xcq7-p3pf-p88h: quadratic-time `tracestate` parsing). `virtualenv`
+  21.7.13 → 21.14.12 (GHSA-5vjq-rrrf-7h2q, GHSA-8rjx-v5ww-45pp,
+  GHSA-c947-3pg5-gm8q, GHSA-vxj4-q4g9-crj7 and GHSA-c978-59m8-c77v: shell
+  activation scripts and console launchers that run code from a crafted
+  environment name or path; development tooling only, reached through
+  `pre-commit`). Releases from 21.14.9 on need `packaging` 26.3, which
+  `limits` 5.4.0 (the rate-limit library behind Flask-Limiter) capped
+  below 26, so `limits` moved to 5.8.0 with `packaging` 26.3,
+  `platformdirs` 4.13.5 and `distlib` 0.4.4. Only `uv.lock` changes: the
+  version ranges in `pyproject.toml` and the wheel's requirements are
+  untouched, so an environment that already exists keeps the `certifi` it
+  has until it is refreshed or upgraded.
 
 ## [1.8.12] - 2026-09-07
 

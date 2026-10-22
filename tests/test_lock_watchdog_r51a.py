@@ -118,6 +118,17 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
 
     用 ``_scan_pending_and_dump_slow()`` 直接触发，而不是依赖 daemon 周期；这样
     测试不受 daemon 当前 sleep 进度的影响，也不用真的等 ``_LOCK_WATCHDOG_SCAN_INTERVAL_S``。
+
+    daemon 是每 5 s 醒一次的后台线程，按**名字**调用模块级的
+    ``_scan_pending_and_dump_slow``。本类把阈值调到 0.1 s 并让临界区睡 0.2 s，所以
+    daemon 恰好在这 0.2 s 里醒来，就会把测试的 record 当成"超时"扫一遍：先标记
+    ``dumped=True``，再花一段时间抓全线程栈（冷 ``linecache`` 或负载高的 CI 上可达
+    上百毫秒），最后才 ``logger.error``。这条迟到的 ``logger.error`` 落在测试的
+    ``fake_err.reset_mock()`` 之后，``call_count`` 就是 2（``AssertionError: 2 != 1``，
+    完整 gate 里出现过）；daemon 在 reset 与测试自己的第一次 scan 之间抢先 dump，则
+    测试自己的 scan 返回 0。``_reset_dumped_for_label`` 只能挡住其中很小的一部分，
+    所以 ``setUp`` 在本类运行期间把 ``_scan_pending_and_dump_slow`` 换成"只有测试线程
+    才真的扫描"的版本，daemon（以及其他测试遗留的 watchdog 线程）扫描时什么也不做。
     """
 
     def setUp(self) -> None:
@@ -131,6 +142,23 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
         # 干净的 dedup 状态起。
         with task_queue._pending_acquisitions_lock:
             task_queue._pending_acquisitions.clear()
+        self._fence_off_watchdog_daemon()
+
+    def _fence_off_watchdog_daemon(self) -> None:
+        """本类运行期间，只有测试线程的 ``_scan_pending_and_dump_slow`` 才真的扫描。"""
+        real_scan = task_queue._scan_pending_and_dump_slow
+        test_thread_id = threading.get_ident()
+
+        def scan_from_test_thread_only() -> int:
+            if threading.get_ident() != test_thread_id:
+                return 0
+            return real_scan()
+
+        patcher = patch.object(
+            task_queue, "_scan_pending_and_dump_slow", scan_from_test_thread_only
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self) -> None:
         task_queue._LOCK_WATCHDOG_TIMEOUT_S = self._orig_timeout

@@ -8,14 +8,16 @@
   2. 喂 control fixture（``t('validation.invalidFile')``，真实 key）→
      该规则 0 报错。
 
-Hermetic：``--stdin`` + ``--stdin-filename`` 指向 ``packages/vscode/`` 下
-临时文件（flat-config 要求 input path 在 config root 里）；``--format json``
-解析。``npx eslint`` 不在 PATH（纯 Python 环境）时 SKIP。
+Hermetic：``--stdin`` + ``--stdin-filename`` 给一个 ``packages/vscode/`` 下并不
+存在的文件名（flat-config 要求 input path 在 config root 里），源码从系统临时目录里
+的一份文件重定向进去，仓库里不写任何东西；``--format json`` 解析。``npx eslint`` 不在
+PATH（纯 Python 环境）时 SKIP。
 """
 
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -52,12 +54,23 @@ def _eslint_available() -> bool:
     return proc is not None and proc.returncode == 0 and bool(proc.stdout.strip())
 
 
+# ESLint 只拿这个名字去匹配 flat config 的 ``files`` 和忽略规则，这个文件并不存在。
+_STDIN_FILENAME = "aiia_i18n_fixture.js"
+
+
 def _run_eslint(js_source: str) -> list[dict]:
-    """Run ESLint against ``js_source`` using the real project config."""
+    """Run ESLint against ``js_source`` using the real project config.
+
+    源码从 stdin 进去：在系统临时目录里放一份，用 shell 重定向喂给 ``--stdin``，
+    ``--stdin-filename`` 让 flat config 把它当成 ``packages/vscode/`` 下的一个 JS 文件。
+    以前这里在 ``packages/vscode/`` 里写一个 ``tmpXXXX.js`` 再让 ESLint 去读：它存在的
+    约 0.3 秒里，别的 xdist worker 里遍历这个目录的测试（R753 的全仓库扫描）会碰上
+    一个已经列出来、读的时候却没了的文件，``FileNotFoundError``——整套测试里偶发一次
+    失败，和任何改动都无关（一次完整运行里这样的文件出现三次）。
+    """
     with tempfile.NamedTemporaryFile(
         mode="w",
         suffix=".js",
-        dir=VSCODE_DIR,
         delete=False,
         encoding="utf-8",
     ) as tmp:
@@ -65,7 +78,8 @@ def _run_eslint(js_source: str) -> list[dict]:
         tmp_path = Path(tmp.name)
     try:
         proc = _run_via_shell(
-            f"cd {VSCODE_DIR!s} && npx --no-install eslint --format json {tmp_path.name}",
+            f"cd {VSCODE_DIR!s} && npx --no-install eslint --format json "
+            f"--stdin --stdin-filename {_STDIN_FILENAME} < {shlex.quote(str(tmp_path))}",
             timeout=90,
         )
         if proc is None:

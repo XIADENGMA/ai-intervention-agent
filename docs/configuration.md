@@ -414,6 +414,8 @@ Otherwise:
 
 Either way the backend then waits at least 260 seconds, so a `backend_max_wait` below 260 acts as 260 (the key still accepts `[10, 7200]`). The floor is deliberate: a too-small timeout would end a task before the user can answer (see [troubleshooting.md](troubleshooting.md)).
 
+While the call waits, the MCP server sends a progress notification every 20 seconds (`progress` is the number of seconds waited, there is no total). A client that restarts its idle timeout on progress, as Cursor does with its 120-second default, therefore keeps waiting for the whole backend wait instead of failing with `MCP error -32001: Request timed out` (see [troubleshooting.md](troubleshooting.md#20-a-call-ends-with-mcp-error--32001-request-timed-out-after-about-two-minutes)).
+
 **Slash picker (`skill_dirs`)**:
 
 Typing `/` at the start of a line (or after a space) in the feedback box opens a picker of the agent skills and commands installed on the machine that runs the Web UI; choosing one inserts `/<name> `.
