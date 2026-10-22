@@ -442,7 +442,6 @@ def test_reopening_settings_panel_does_not_leak_keydown_listener_or_focus_origin
         manager.initialized = true;
         manager.loadSettings = () => Promise.resolve({});
         manager.loadFeedbackConfig = () => Promise.resolve({ frontend_countdown: 30 });
-        manager.applySettingsTheme = () => {};
         manager.updateUI = () => {};
         manager.updateFeedbackUI = () => {};
         manager.updateStatus = () => {};
@@ -570,7 +569,6 @@ def test_show_settings_deferred_focus_uses_prevent_scroll_with_plain_fallback() 
         manager.initialized = true;
         manager.loadSettings = () => Promise.resolve({});
         manager.loadFeedbackConfig = () => Promise.resolve({ frontend_countdown: 30 });
-        manager.applySettingsTheme = () => {};
         manager.updateUI = () => {};
         manager.updateFeedbackUI = () => {};
         manager.updateStatus = () => {};
@@ -622,7 +620,6 @@ def test_show_settings_deferred_focus_skips_detached_control() -> None:
         manager.initialized = true;
         manager.loadSettings = () => Promise.resolve({});
         manager.loadFeedbackConfig = () => Promise.resolve({ frontend_countdown: 30 });
-        manager.applySettingsTheme = () => {};
         manager.updateUI = () => {};
         manager.updateFeedbackUI = () => {};
         manager.updateStatus = () => {};
@@ -672,7 +669,6 @@ def test_show_settings_deferred_focus_skips_hidden_panel_after_quick_close() -> 
         manager.initialized = true;
         manager.loadSettings = () => Promise.resolve({});
         manager.loadFeedbackConfig = () => Promise.resolve({ frontend_countdown: 30 });
-        manager.applySettingsTheme = () => {};
         manager.updateUI = () => {};
         manager.updateFeedbackUI = () => {};
         manager.updateStatus = () => {};

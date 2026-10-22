@@ -61,6 +61,9 @@ def _functions() -> str:
         _extract(source, "function collectTypedFeedbackForAutoSubmit("),
         _extract(source, "function collectSelectedOptionsForAutoSubmit("),
         _extract(source, "async function submitWithData("),
+        # the success branch of ``submitWithData`` (it empties the form of a task that is
+        # still on screen and drops the saved state of the one that was submitted)
+        _extract(source, "function finishSuccessfulSubmit("),
     ]
     if "function isSubmitTargetStillCurrent(" in source:
         parts.append(_extract(source, "function isSubmitTargetStillCurrent("))

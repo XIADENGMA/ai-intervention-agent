@@ -103,6 +103,8 @@
     },
     "form": {
       "optionsLabel": "选项（可多选）",
+      "optionsResize": "调整选项区高度",
+      "optionsResizeHint": "拖动调整高度，或按 ↑ ↓；双击恢复默认。",
       "placeholder": "请输入反馈内容（支持粘贴图片）…",
       "insertCode": "插入代码（从剪贴板）",
       "uploadImage": "上传图片",

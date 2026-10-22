@@ -77,21 +77,26 @@ body {
     var(--vscode-sideBar-background)
   );
   border-bottom: 1px solid var(--vscode-panel-border);
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   flex-shrink: 0;
   position: relative;
   min-height: 34px;
   gap: 6px;
-  padding: 4px 34px 4px 8px;
+  padding: 4px 6px 4px 8px;
+}
+
+.tabs-scroll {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
 .settings-btn {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
   width: 22px;
   height: 22px;
   display: inline-flex;
@@ -104,7 +109,6 @@ body {
   cursor: pointer;
   opacity: 0.85;
   flex-shrink: 0;
-  z-index: 2;
 }
 
 .settings-btn svg {
@@ -114,9 +118,10 @@ body {
 }
 
 .no-content-settings-btn {
+  position: absolute;
   top: 8px;
   right: 8px;
-  transform: none;
+  z-index: 2;
 }
 
 .settings-btn:hover {
@@ -399,6 +404,7 @@ body.vscode-light .no-content-progress-bar {
 
 .markdown-content {
   line-height: 1.7;
+  overflow-wrap: anywhere;
   margin: 0 0 8px 0 !important;
   background: var(--vscode-editorWidget-background);
   padding: 14px 12px;
@@ -481,11 +487,12 @@ body.vscode-light .no-content-progress-bar {
 
 .markdown-content a {
   color: var(--vscode-textLink-foreground);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .markdown-content a:hover {
-  text-decoration: underline;
+  text-decoration-thickness: 2px;
 }
 
 .markdown-content img {
@@ -510,7 +517,16 @@ body.vscode-light .no-content-progress-bar {
   display: block;
   max-width: 100%;
   overflow-x: auto;
+  overflow-wrap: normal;
   border-collapse: collapse;
+}
+
+.markdown-content mjx-container[jax][display="true"] {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0.9em 0;
+  padding: 0.1em 0;
 }
 
 .markdown-content th,
@@ -532,7 +548,12 @@ body.vscode-light .no-content-progress-bar {
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.feedback-form:has(> .options-dock:not(.hidden)) > .scrollable-content {
+  min-height: 96px;
 }
 
 .scrollable-content {
@@ -565,15 +586,54 @@ body.vscode-light .no-content-progress-bar {
   background: transparent;
 }
 
-.form-section {
+.options-dock {
+  flex: 0 1 auto;
+  min-height: 96px;
+  max-height: min(var(--aiia-options-height, 40vh), 70vh);
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 14px 12px;
-  margin: 0 0 8px 0 !important;
+  margin: 0 10px 4px 10px;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.035);
   border: 1px solid rgba(127, 127, 127, 0.15);
   border-radius: 6px;
+}
+
+.options-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.options-resize-handle::before {
+  content: "";
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--vscode-foreground);
+  opacity: 0.25;
+}
+
+.options-resize-handle:focus-visible {
+  outline-offset: -2px;
+}
+
+.options-resize-handle:hover::before,
+.options-resize-handle:focus-visible::before,
+.options-resize-handle.is-dragging::before {
+  background: var(--vscode-focusBorder);
+  opacity: 0.8;
 }
 
 .form-label {
@@ -1054,8 +1114,31 @@ body.vscode-light .no-content-progress-bar {
 .options-container {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 8px;
   margin-top: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+.options-container::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+
+.options-container::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--vscode-scrollbarSlider-background, rgba(127, 127, 127, 0.4));
+}
+
+.options-container::-webkit-scrollbar-thumb:hover {
+  background: var(
+    --vscode-scrollbarSlider-hoverBackground,
+    rgba(127, 127, 127, 0.7)
+  );
 }
 
 .option-item {
@@ -1090,12 +1173,15 @@ body.vscode-light .no-content-progress-bar {
 }
 
 .option-checkbox {
+  flex: none;
   width: 16px;
   height: 16px;
 }
 
 .option-label {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 13px;
 }
 

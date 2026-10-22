@@ -172,10 +172,64 @@
     return themeKind
   }
 
+  const OPTIONS_HEIGHT_MIN_PX = 96
+  const OPTIONS_HEIGHT_STORED_MAX_PX = 4000
+  const OPTIONS_HEIGHT_ARROW_STEP_PX = 24
+  const OPTIONS_HEIGHT_PAGE_STEP_PX = 96
+
+  function finiteNumberOrNull(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
+  }
+
+  function clampOptionsHeight(value, min, max) {
+    const n = finiteNumberOrNull(value)
+    if (n === null) return null
+    const minValue = finiteNumberOrNull(min)
+    const maxValue = finiteNumberOrNull(max)
+    const lo = minValue === null ? OPTIONS_HEIGHT_MIN_PX : Math.max(0, minValue)
+    const hi = maxValue === null ? Math.max(n, lo) : Math.max(maxValue, lo)
+    return Math.round(Math.min(Math.max(n, lo), hi))
+  }
+
+  function normalizeStoredOptionsHeight(value) {
+    const n = finiteNumberOrNull(value)
+    if (n === null || n < OPTIONS_HEIGHT_MIN_PX) return null
+    return Math.round(Math.min(n, OPTIONS_HEIGHT_STORED_MAX_PX))
+  }
+
+  function resolveOptionsHeightKey(key, shiftKey, current, min, max) {
+    const unhandled = { handled: false, height: null }
+    const now = finiteNumberOrNull(current)
+    if (now === null) return unhandled
+    const arrowStep = shiftKey ? OPTIONS_HEIGHT_PAGE_STEP_PX : OPTIONS_HEIGHT_ARROW_STEP_PX
+    switch (key) {
+      case 'ArrowUp':
+        return { handled: true, height: clampOptionsHeight(now + arrowStep, min, max) }
+      case 'ArrowDown':
+        return { handled: true, height: clampOptionsHeight(now - arrowStep, min, max) }
+      case 'PageUp':
+        return { handled: true, height: clampOptionsHeight(now + OPTIONS_HEIGHT_PAGE_STEP_PX, min, max) }
+      case 'PageDown':
+        return { handled: true, height: clampOptionsHeight(now - OPTIONS_HEIGHT_PAGE_STEP_PX, min, max) }
+      case 'Home':
+        return { handled: true, height: clampOptionsHeight(0, min, max) }
+      case 'End':
+        return { handled: true, height: clampOptionsHeight(Number.MAX_SAFE_INTEGER, min, max) }
+      case 'Enter':
+        return { handled: true, height: null }
+      default:
+        return unhandled
+    }
+  }
+
   return {
+    OPTIONS_HEIGHT_MIN_PX,
     applyThemeKindToDocument,
+    clampOptionsHeight,
     collectImageFilesFromClipboard,
     detectMacLikePlatform,
+    normalizeStoredOptionsHeight,
+    resolveOptionsHeightKey,
     resolveThemeKind
   }
 })

@@ -1014,8 +1014,6 @@ class SettingsManager {
       panel.classList.remove("hidden");
       panel.style.display = "flex";
 
-      this.applySettingsTheme();
-
       this._attachSettingsKeydownHandler(panel);
 
       const firstFocusable = panel.querySelector(
@@ -1048,84 +1046,6 @@ class SettingsManager {
       this.updateFeedbackUI();
     }
     this.updateStatus();
-  }
-
-  applySettingsTheme() {
-    if (!document.getElementById("settings-light-theme-styles")) {
-      const style = document.createElement("style");
-      style.id = "settings-light-theme-styles";
-      style.textContent = `
-        [data-theme="light"] .settings-panel {
-          background: rgba(0, 0, 0, 0.7) !important;
-        }
-        [data-theme="light"] .settings-content {
-          background: #faf9f5 !important;
-          border: 1px solid rgba(0, 0, 0, 0.12) !important;
-          box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2), 0 10px 20px rgba(0, 0, 0, 0.1) !important;
-        }
-        [data-theme="light"] .settings-body {
-          background: #faf9f5 !important;
-        }
-        [data-theme="light"] .setting-group {
-          background: #ffffff !important;
-          border: 1px solid rgba(0, 0, 0, 0.1) !important;
-        }
-        [data-theme="light"] .setting-subgroup {
-          background: #f8f8f5 !important;
-        }
-        [data-theme="light"] .settings-header {
-          border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
-          background: #f2f1ec !important;
-        }
-        [data-theme="light"] .status-row {
-          background: rgba(0, 0, 0, 0.02) !important;
-          border-color: rgba(0, 0, 0, 0.08) !important;
-          color: #141413 !important;
-        }
-        [data-theme="light"] .status-row span:first-child {
-          color: rgba(20, 20, 19, 0.85) !important;
-        }
-        [data-theme="light"] .status-row span:last-child {
-          color: #141413 !important;
-        }
-        [data-theme="light"] .setting-description {
-          color: rgba(20, 20, 19, 0.65) !important;
-        }
-        [data-theme="light"] .setting-item:hover .setting-description {
-          color: rgba(20, 20, 19, 0.75) !important;
-        }
-        [data-theme="light"] .setting-label:hover .setting-title {
-          color: rgba(20, 20, 19, 0.9) !important;
-        }
-        [data-theme="light"] .setting-input::placeholder {
-          color: rgba(20, 20, 19, 0.5) !important;
-        }
-        [data-theme="light"] .setting-label,
-        [data-theme="light"] .setting-title,
-        [data-theme="light"] .setting-subgroup-title,
-        [data-theme="light"] .settings-main-title,
-        [data-theme="light"] #settings-title {
-          color: #141413 !important;
-        }
-        [data-theme="light"] .settings-main-title {
-          border-bottom-color: rgba(0, 0, 0, 0.1) !important;
-        }
-        [data-theme="light"] .setting-group::before {
-          background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.08), transparent) !important;
-        }
-        [data-theme="light"] .setting-input {
-          background: #ffffff !important;
-          border-color: rgba(0, 0, 0, 0.15) !important;
-          color: #141413 !important;
-        }
-        [data-theme="light"] .setting-select {
-          background: #ffffff !important;
-          border-color: rgba(0, 0, 0, 0.15) !important;
-          color: #141413 !important;
-        }
-      `;
-      document.head.appendChild(style);
-    }
   }
 
   _setContainerSiblingsInert(openModalEl, value) {
@@ -1162,34 +1082,6 @@ class SettingsManager {
     }
   }
 
-  _settingsFocusTrap(panel, event) {
-    if (!panel) return;
-    const focusables = panel.querySelectorAll(
-      'button:not([disabled]),[href],input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
-    );
-    let first = null;
-    let last = null;
-    const focusableCount =
-      focusables && Number.isFinite(focusables.length) ? focusables.length : 0;
-    for (let i = 0; i < focusableCount; i += 1) {
-      const el = focusables[i];
-      if (!el || el.offsetParent === null || el.hasAttribute("aria-hidden")) {
-        continue;
-      }
-      if (!first) first = el;
-      last = el;
-    }
-    if (!first || !last) return;
-    const active = document.activeElement;
-    if (event.shiftKey && active === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
   _attachSettingsKeydownHandler(panel) {
     if (this._settingsEscHandler) return;
     this._settingsEscHandler = (e) => {
@@ -1197,7 +1089,7 @@ class SettingsManager {
         this.hideSettings();
         return;
       }
-      if (e.key === "Tab") this._settingsFocusTrap(panel, e);
+      window.DOMSecurity.trapTabFocus(panel, e);
     };
     document.addEventListener("keydown", this._settingsEscHandler);
   }

@@ -24,10 +24,12 @@ What this test guards
 For the 2 existing modals (`#code-paste-panel` + `#settings-panel`):
 
 1. Their keydown handlers include a Tab handler (not just Escape).
-   Specifically, `app.js` `handleCodePasteModalKeydown` calls
-   `_modalFocusTrap`, and `settings-manager.js`
-   `_settingsEscHandler` invokes `_settingsFocusTrap` for Tab.
-2. The focus-trap helper queries focusable elements with the
+   Specifically, `app.js` `handleCodePasteModalKeydown` and
+   `settings-manager.js` `_settingsEscHandler` hand every key but
+   Escape to `DOMSecurity.trapTabFocus` (R811: one shared helper in
+   `dom-security.js` instead of the two private copies
+   `_modalFocusTrap` / `_settingsFocusTrap`).
+2. The shared focus-trap helper queries focusable elements with the
    standard selector and pivots between first/last.
 3. The close handlers restore focus to the opener (or sensible
    fallback): `closeCodePasteModal` focuses `#feedback-text`;
@@ -60,6 +62,19 @@ SETTINGS_JS = (
     / "js"
     / "settings-manager.js"
 )
+DOM_SECURITY_JS = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "dom-security.js"
+)
+
+
+def _trap_tab_focus_body() -> str:
+    match = re.search(
+        r"static\s+trapTabFocus\s*\([^)]*\)\s*\{(.+?)\n  \}",
+        _read(DOM_SECURITY_JS),
+        re.DOTALL,
+    )
+    assert match is not None, "DOMSecurity.trapTabFocus missing in dom-security.js"
+    return match.group(1)
 
 
 def _read(path: Path) -> str:
@@ -77,30 +92,23 @@ class TestCodePasteModalHasFocusTrap(unittest.TestCase):
         assert match is not None, "Cannot find handleCodePasteModalKeydown"
         body = match.group(1)
         self.assertIn(
-            "_modalFocusTrap",
+            "window.DOMSecurity.trapTabFocus(panel, event)",
             body,
             msg=(
                 "R238 invariant: handleCodePasteModalKeydown 必须调用 "
-                "_modalFocusTrap (R238 加的 Tab 焦点陷阱)。如果只处理 Escape, "
-                "键盘用户 Tab 时会跑到背景元素, 失去模态隔离。"
+                "DOMSecurity.trapTabFocus (Tab 焦点陷阱, R811 起全站共用一份)。"
+                "如果只处理 Escape, 键盘用户 Tab 时会跑到背景元素, 失去模态隔离。"
             ),
         )
 
     def test_focus_trap_helper_uses_standard_focusable_selector(self) -> None:
-        src = _read(APP_JS)
-        match = re.search(
-            r"function\s+_modalFocusTrap\s*\([^)]*\)\s*\{(.+?)\n\}",
-            src,
-            re.DOTALL,
-        )
-        assert match is not None, "_modalFocusTrap helper missing in app.js"
-        body = match.group(1)
+        body = _trap_tab_focus_body()
         for selector in ("button", "input", "textarea", "tabindex"):
             self.assertIn(
                 selector,
                 body,
                 msg=(
-                    f"R238 invariant: _modalFocusTrap 焦点选择器必须覆盖 "
+                    f"R238 invariant: DOMSecurity.trapTabFocus 焦点选择器必须覆盖 "
                     f"{selector!r} (W3C ARIA Authoring Practices 1.2 标准)。"
                     "缺失会让某类可聚焦元素被遗漏, 导致 Tab 跳过或卡住。"
                 ),
@@ -150,26 +158,14 @@ class TestSettingsPanelHasFocusTrap(unittest.TestCase):
         src = _read(SETTINGS_JS)
         self.assertRegex(
             src,
-            r'if\s*\(e\.key\s*===\s*"Tab"\)\s*this\._settingsFocusTrap',
+            r"window\.DOMSecurity\.trapTabFocus\(panel,\s*e\)",
             msg=(
                 "R238 invariant: settings-manager.js _settingsEscHandler 必须"
-                "在 Tab 键时调用 _settingsFocusTrap。当前匹配的 pattern: "
-                "if (e.key === 'Tab') this._settingsFocusTrap。"
+                "把 Escape 以外的按键交给 DOMSecurity.trapTabFocus (Tab 焦点陷阱, "
+                "R811 起与 code-paste 对话框共用一份)。当前匹配的 pattern: "
+                "window.DOMSecurity.trapTabFocus(panel, e)。"
             ),
         )
-
-    def test_settings_focus_trap_method_exists(self) -> None:
-        src = _read(SETTINGS_JS)
-        match = re.search(
-            r"_settingsFocusTrap\s*\([^)]*\)\s*\{(.+?)\n  \}",
-            src,
-            re.DOTALL,
-        )
-        assert match is not None, "_settingsFocusTrap method missing"
-        body = match.group(1)
-        for selector in ("button", "input", "textarea", "tabindex"):
-            self.assertIn(selector, body)
-        self.assertIn("preventDefault()", body)
 
     def test_hide_settings_restores_focus_to_settings_btn(self) -> None:
         src = _read(SETTINGS_JS)
@@ -206,35 +202,16 @@ class TestSettingsPanelHasFocusTrap(unittest.TestCase):
 class TestFocusTrapDoesNotMatchHiddenElements(unittest.TestCase):
     """trap 必须用 offsetParent !== null 之类的可见性判定, 避免把 hidden 元素当焦点。"""
 
-    def test_app_js_trap_filters_visible(self) -> None:
-        src = _read(APP_JS)
-        match = re.search(
-            r"function\s+_modalFocusTrap\s*\([^)]*\)\s*\{(.+?)\n\}",
-            src,
-            re.DOTALL,
-        )
-        assert match is not None
-        body = match.group(1)
+    def test_shared_trap_filters_visible(self) -> None:
         self.assertIn(
             "offsetParent",
-            body,
+            _trap_tab_focus_body(),
             msg=(
-                "R238 invariant: app.js _modalFocusTrap 必须用 offsetParent !== "
+                "R238 invariant: DOMSecurity.trapTabFocus 必须用 offsetParent !== "
                 "null 过滤掉 display:none / 父级 hidden 的元素, 否则 Tab 会跳到"
                 "不可见的元素上, 用户看不到焦点指示。"
             ),
         )
-
-    def test_settings_trap_filters_visible(self) -> None:
-        src = _read(SETTINGS_JS)
-        match = re.search(
-            r"_settingsFocusTrap\s*\([^)]*\)\s*\{(.+?)\n  \}",
-            src,
-            re.DOTALL,
-        )
-        assert match is not None
-        body = match.group(1)
-        self.assertIn("offsetParent", body)
 
 
 if __name__ == "__main__":

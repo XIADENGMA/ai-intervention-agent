@@ -120,6 +120,8 @@ export type I18nKey =
   | "ui.countdown.remaining"
   | "ui.form.insertCode"
   | "ui.form.optionsLabel"
+  | "ui.form.optionsResize"
+  | "ui.form.optionsResizeHint"
   | "ui.form.placeholder"
   | "ui.form.submit"
   | "ui.form.uploadImage"
@@ -288,6 +290,8 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "ui.countdown.remaining",
   "ui.form.insertCode",
   "ui.form.optionsLabel",
+  "ui.form.optionsResize",
+  "ui.form.optionsResizeHint",
   "ui.form.placeholder",
   "ui.form.submit",
   "ui.form.uploadImage",

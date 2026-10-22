@@ -54,11 +54,13 @@ def _extract_function(source: str, name: str) -> str:
 
 def _submit_with_data_source() -> str:
     source = _read_source()
-    # ``submitWithData`` asks ``isSubmitTargetStillCurrent`` (R809) whether the form on
-    # screen still belongs to the task it just submitted, so the real helper goes along.
+    # ``submitWithData`` hands a successful response to ``finishSuccessfulSubmit``, which
+    # asks ``isSubmitTargetStillCurrent`` (R809) whether the form on screen still belongs
+    # to the task it just submitted, so the real helpers go along.
     return "\n".join(
         (
             _extract_function(source, "isSubmitTargetStillCurrent"),
+            _extract_function(source, "finishSuccessfulSubmit"),
             _extract_async_function(source, "submitWithData"),
         )
     )

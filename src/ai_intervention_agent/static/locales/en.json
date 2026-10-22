@@ -26,6 +26,8 @@
     "clearAllShort": "Clear all",
     "closeCodePaste": "Close",
     "imagePreview": "Image preview",
+    "optionsResize": "Resize options panel",
+    "optionsResizeHint": "Drag to resize, or press ↑ ↓. Double-click to reset.",
     "closeSettings": "Close settings",
     "versionLinkTitle": "Open AI Intervention Agent on GitHub",
     "sseStatus": {

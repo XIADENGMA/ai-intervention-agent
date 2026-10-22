@@ -213,7 +213,13 @@ class TestSourceContract(unittest.TestCase):
 
     def test_vscode_submit_success_resets_text_images_and_options(self) -> None:
         source = _vscode_source()
-        body = _extract_function(source, "submitWithData")
+        # The success branch lives in ``finishSuccessfulSubmit`` (taken out of the
+        # 253-line ``submitWithData``); the submit path must still end in it.
+        self.assertIn(
+            "return finishSuccessfulSubmit(",
+            _extract_function(source, "submitWithData"),
+        )
+        body = _extract_function(source, "finishSuccessfulSubmit")
         self.assertIn("textarea.value = ''", body)
         self.assertIn("uploadedImages = []", body)
         self.assertIn("checkbox.checked = false", body)

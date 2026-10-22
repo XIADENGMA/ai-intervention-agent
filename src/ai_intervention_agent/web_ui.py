@@ -1442,6 +1442,9 @@ class WebFeedbackUI(
             "feedback_textarea_height_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_textarea_height.js")
             ),
+            "feedback_options_dock_version": _compute_file_version(
+                str(static_dir / "js" / "feedback_options_dock.js")
+            ),
             "feedback_char_counter_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_char_counter.js")
             ),

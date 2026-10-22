@@ -1884,6 +1884,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             <div class="status-indicator">
                 <div class="breathing-light" id="statusLight" title="${tl("ui.status.serverStatus")}" data-i18n-title="ui.status.serverStatus"></div>
             </div>
+            <div class="tabs-scroll" id="tasksTabsScroll"></div>
             <button class="settings-btn" id="settingsBtn" title="${tl("ui.settingsBtn")}" aria-label="${tl("ui.settingsBtn")}" data-i18n-title="ui.settingsBtn" data-i18n-aria-label="ui.settingsBtn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -1980,12 +1981,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                         <div class="loop-history-list hidden" id="loopHistoryList" role="list"></div>
                     </div>
                     <div class="markdown-content" id="markdownContent"></div>
+                </div>
 
-                    <div class="form-section hidden" id="optionsSection">
-                        <div class="form-label" data-i18n="ui.form.optionsLabel">${tl("ui.form.optionsLabel")}</div>
-                        <div class="options-container" id="optionsContainer"></div>
-                    </div>
-
+                <div class="options-dock hidden" id="optionsSection">
+                    <div class="options-resize-handle" id="optionsResizeHandle" role="separator" aria-orientation="horizontal" aria-controls="optionsContainer" tabindex="0" title="${tl("ui.form.optionsResizeHint")}" aria-label="${tl("ui.form.optionsResize")}" data-i18n-title="ui.form.optionsResizeHint" data-i18n-aria-label="ui.form.optionsResize"></div>
+                    <div class="form-label" data-i18n="ui.form.optionsLabel">${tl("ui.form.optionsLabel")}</div>
+                    <div class="options-container" id="optionsContainer"></div>
                 </div>
 
                 <div class="fixed-input-area">

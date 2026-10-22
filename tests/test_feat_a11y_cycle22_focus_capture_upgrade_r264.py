@@ -70,7 +70,7 @@ class TestSettingsPanelFocusCapture(unittest.TestCase):
     def test_show_settings_captures_active_element(self) -> None:
         """``showSettings()`` 必须在打开 panel 前快照 ``document.activeElement``."""
         body_match = re.search(
-            r"async\s+showSettings\s*\(\s*\)\s*\{[\s\S]*?(?=\n  applySettingsTheme\b)",
+            r"async\s+showSettings\s*\(\s*\)\s*\{[\s\S]*?(?=\n  _setContainerSiblingsInert\b)",
             self.js,
         )
         self.assertIsNotNone(body_match, "找不到 async showSettings() 函数体")

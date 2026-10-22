@@ -108,6 +108,8 @@
     },
     "form": {
       "optionsLabel": "選項（可多選）",
+      "optionsResize": "調整選項區高度",
+      "optionsResizeHint": "拖動調整高度，或按 ↑ ↓；雙擊恢復預設。",
       "placeholder": "請輸入回饋內容（支援貼上圖片）…",
       "insertCode": "插入程式碼（從剪貼簿）",
       "uploadImage": "上傳圖片",

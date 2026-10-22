@@ -31,6 +31,8 @@
     "clearAllShort": "清除全部",
     "closeCodePaste": "關閉",
     "imagePreview": "圖片預覽",
+    "optionsResize": "調整選項區高度",
+    "optionsResizeHint": "拖動調整高度，或按 ↑ ↓；雙擊恢復預設。",
     "closeSettings": "關閉設定",
     "versionLinkTitle": "在 GitHub 打開 AI Intervention Agent",
     "sseStatus": {

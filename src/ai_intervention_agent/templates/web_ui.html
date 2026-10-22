@@ -747,7 +747,21 @@
             </div>
           </div>
 
-          <div class="options-container hidden" id="options-container">
+          <div class="options-dock" id="options-dock">
+            <div class="options-container hidden" id="options-container">
+            </div>
+            <div
+              class="options-resize-handle"
+              id="options-resize-handle"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-controls="options-container"
+              tabindex="0"
+              title="Drag to resize, or press ↑ ↓. Double-click to reset."
+              aria-label="Resize options panel"
+              data-i18n-title="page.optionsResizeHint"
+              data-i18n-aria-label="page.optionsResize"
+            ></div>
           </div>
 
           <div class="separator hidden" id="separator"></div>
@@ -2083,6 +2097,12 @@
     <script
       defer
       src="/static/js/feedback_textarea_height.js?v={{ feedback_textarea_height_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
+    <script
+      defer
+      src="/static/js/feedback_options_dock.js?v={{ feedback_options_dock_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 

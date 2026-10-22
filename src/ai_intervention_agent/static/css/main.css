@@ -255,6 +255,7 @@ body.no-content-mode {
   padding: 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   overflow: hidden;
+  overflow: clip;
   position: relative;
 }
 
@@ -1166,6 +1167,11 @@ h1 {
   cursor: pointer;
 }
 
+.volume-slider:focus-visible {
+  outline: 2px solid var(--focus-ring-color, var(--primary-500, currentColor));
+  outline-offset: 7px;
+}
+
 .volume-slider::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: 3px;
@@ -1881,11 +1887,103 @@ h1 {
   border-radius: 24px 24px 0 0;
 }
 
+/* feedback_options_dock.js writes these two onto <html>: how tall the options
+   list may be (until the reader drags the grip) and how much of the window the
+   tray covers, so a link focused behind it scrolls clear. The values here are
+   what applies on a page the script has not touched. */
+:root {
+  --aiia-options-height: 40vh;
+  --aiia-options-reserve: 0px;
+}
+
+.description :is(a[href], button, summary, [tabindex]) {
+  scroll-margin-bottom: var(--aiia-options-reserve, 0px);
+}
+
+.options-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+}
+
 .options-container {
   margin-bottom: 1.25rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  max-height: min(var(--aiia-options-height, 40vh), 70vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.25rem 1rem 0.5rem;
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: 24px;
+  box-shadow: var(--shadow-md);
+}
+
+.options-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.options-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.options-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 4px;
+}
+
+.options-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="light"] .options-container::-webkit-scrollbar-thumb {
+  background: rgba(20, 20, 19, 0.5);
+}
+
+[data-theme="light"] .options-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(20, 20, 19, 0.7);
+}
+
+.options-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 16px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.options-resize-handle::before {
+  content: "";
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.options-resize-handle:focus-visible {
+  outline-offset: -2px;
+  border-radius: 24px 24px 0 0;
+}
+
+.options-resize-handle:hover::before,
+.options-resize-handle:focus-visible::before,
+.options-resize-handle.is-dragging::before {
+  background: var(--primary-500);
+  opacity: 1;
+}
+
+.options-container.hidden + .options-resize-handle {
+  display: none;
 }
 
 .option-item {
@@ -1966,6 +2064,7 @@ h1 {
 }
 
 .option-item input[type="checkbox"] {
+  flex: none;
   margin-right: 1rem;
   width: 18px;
   height: 18px;
@@ -1979,6 +2078,8 @@ h1 {
   cursor: pointer;
   color: #f5f5f7;
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-weight: 400;
   letter-spacing: -0.022em;
   line-height: 1.5;
@@ -2557,6 +2658,14 @@ h1 {
   box-shadow: 0 0 0 1px rgba(106, 155, 204, 0.45);
 }
 
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  .setting-input,
+  .setting-select,
+  .code-paste-textarea {
+    font-size: 16px;
+  }
+}
+
 .code-paste-actions {
   margin-top: 0.75rem;
   display: flex;
@@ -2645,6 +2754,7 @@ h1 {
 .markdown-content {
   line-height: 1.5;
   color: #f5f5f7;
+  overflow-wrap: anywhere;
   contain: layout style;
   will-change: auto;
   transform: translateZ(0);
@@ -2764,7 +2874,7 @@ h1 {
 
 .markdown-content code {
   background: rgba(255, 255, 255, 0.12);
-  color: #ff453a;
+  color: #ffc9c4;
   padding: 0.125rem 0.375rem;
   font-family: var(--font-mono);
   font-size: 0.875rem;
@@ -2843,6 +2953,11 @@ h1 {
   border-top: none !important;
   outline: none !important;
   box-shadow: none !important;
+}
+
+.markdown-content pre:focus-visible {
+  outline: 2px solid var(--focus-ring-color, var(--primary-500, currentColor)) !important;
+  outline-offset: -2px !important;
 }
 
 .code-block-container *,
@@ -3009,10 +3124,22 @@ code,
 }
 
 .markdown-content table {
-  width: 100%;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-wrap: normal;
   border-collapse: collapse;
   margin: 1rem 0;
   background: rgba(255, 255, 255, 0.03);
+}
+
+.markdown-content mjx-container[jax][display="true"] {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0.9em 0;
+  padding: 0.1em 0;
 }
 
 .markdown-content th,
@@ -3029,12 +3156,13 @@ code,
 }
 
 .markdown-content a {
-  color: #d97757;
-  text-decoration: none;
+  color: #ee9f85;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .markdown-content a:hover {
-  text-decoration: underline;
+  text-decoration-thickness: 2px;
 }
 
 .markdown-content del,
@@ -3126,7 +3254,6 @@ code,
     padding: 1rem 1.25rem;
     background: transparent;
     flex: 1;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
   }
@@ -3135,6 +3262,16 @@ code,
     display: flex;
     flex-direction: column;
     height: 100%;
+  }
+
+  /*
+   * The group is a flex column here, so the options list keeps its 1.25rem
+   * bottom margin inside the dock instead of collapsing through it (as it
+   * does in block layout). Pull the sticky edge down by that margin so the
+   * tray itself, not the empty margin, sits flush with the viewport bottom.
+   */
+  .options-dock {
+    bottom: -1.25rem;
   }
 
   .description {
@@ -3426,7 +3563,6 @@ code,
     padding: 0.75rem 1rem;
     background: transparent;
     flex: 1;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
   }
@@ -4305,12 +4441,12 @@ code,
 }
 
 [data-theme="light"] .markdown-content a {
-  color: var(--primary-600);
+  color: #9a4929;
 }
 
 [data-theme="light"] .markdown-content code {
   background: var(--bg-tertiary);
-  color: #c7442a;
+  color: #9a4929;
   border: 1px solid var(--border-primary);
 }
 
@@ -4708,7 +4844,7 @@ code,
 
 [data-theme="light"] code {
   background: var(--bg-tertiary, #e8e6dc) !important;
-  color: var(--accent-primary, #d97757) !important;
+  color: #9a4929 !important;
   border-color: var(--border-primary) !important;
 }
 
@@ -5157,4 +5293,90 @@ code,
   .aiia-kshelp-label {
     font-size: 0.78rem;
   }
+}
+
+[data-theme="light"] .settings-panel {
+  background: rgba(0, 0, 0, 0.7) !important;
+}
+
+[data-theme="light"] .settings-content {
+  background: #faf9f5 !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2), 0 10px 20px rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-theme="light"] .settings-body {
+  background: #faf9f5 !important;
+}
+
+[data-theme="light"] .setting-group {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-theme="light"] .setting-subgroup {
+  background: #f8f8f5 !important;
+}
+
+[data-theme="light"] .settings-header {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
+  background: #f2f1ec !important;
+}
+
+[data-theme="light"] .status-row {
+  background: rgba(0, 0, 0, 0.02) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  color: #141413 !important;
+}
+
+[data-theme="light"] .status-row span:first-child {
+  color: rgba(20, 20, 19, 0.85) !important;
+}
+
+[data-theme="light"] .status-row span:last-child {
+  color: #141413 !important;
+}
+
+[data-theme="light"] .setting-description {
+  color: rgba(20, 20, 19, 0.65) !important;
+}
+
+[data-theme="light"] .setting-item:hover .setting-description {
+  color: rgba(20, 20, 19, 0.75) !important;
+}
+
+[data-theme="light"] .setting-label:hover .setting-title {
+  color: rgba(20, 20, 19, 0.9) !important;
+}
+
+[data-theme="light"] .setting-input::placeholder {
+  color: rgba(20, 20, 19, 0.5) !important;
+}
+
+[data-theme="light"] .setting-label,
+[data-theme="light"] .setting-title,
+[data-theme="light"] .setting-subgroup-title,
+[data-theme="light"] .settings-main-title,
+[data-theme="light"] #settings-title {
+  color: #141413 !important;
+}
+
+[data-theme="light"] .settings-main-title {
+  border-bottom-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-theme="light"] .setting-group::before {
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.08), transparent) !important;
+}
+
+[data-theme="light"] .setting-input {
+  background: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.15) !important;
+  color: #141413 !important;
+}
+
+[data-theme="light"] .setting-select {
+  background: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.15) !important;
+  color: #141413 !important;
 }

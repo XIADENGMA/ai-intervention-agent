@@ -233,6 +233,38 @@ class DOMSecurity {
     return button
   }
 
+  // Tab / Shift+Tab focus trap of a modal panel (WAI-ARIA dialog pattern): on the last
+  // visible control Tab wraps to the first, on the first Shift+Tab wraps to the last. One
+  // pass over the NodeList, no Array.prototype.filter (R586 / R587); a control counts when
+  // it is rendered (offsetParent !== null) and not aria-hidden. Any other key is ignored.
+  // The code-paste dialog and the settings panel share this one implementation (R238, R811).
+  static trapTabFocus(panel, event) {
+    if (!panel || !event || event.key !== 'Tab') return
+    const focusables = panel.querySelectorAll(
+      'button:not([disabled]),[href],input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+    )
+    let first = null
+    let last = null
+    const focusableCount = focusables && Number.isFinite(focusables.length) ? focusables.length : 0
+    for (let i = 0; i < focusableCount; i += 1) {
+      const el = focusables[i]
+      if (!el || el.offsetParent === null || el.hasAttribute('aria-hidden')) {
+        continue
+      }
+      if (!first) first = el
+      last = el
+    }
+    if (!first || !last) return
+    const active = document.activeElement
+    if (event.shiftKey && active === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
   static replaceContent(element, content) {
     if (!element) return
 

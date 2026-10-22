@@ -1273,6 +1273,7 @@
   let uploadedImages = []
   let pendingImageUploadCounts = {}
   let textareaManualRows = null
+  let optionsManualHeight = null
   let countdownTimer = null
 
   let autoSubmitAttempted = {}
@@ -1373,6 +1374,9 @@
       if (typeof s.textareaManualRows === 'number' && Number.isFinite(s.textareaManualRows)) {
         textareaManualRows = Math.max(2, Math.floor(s.textareaManualRows))
       }
+      if (WEBVIEW_HELPERS && typeof WEBVIEW_HELPERS.normalizeStoredOptionsHeight === 'function') {
+        optionsManualHeight = WEBVIEW_HELPERS.normalizeStoredOptionsHeight(s.optionsManualHeight)
+      }
     } catch (e) {
 
     }
@@ -1392,6 +1396,10 @@
         textareaManualRows:
           typeof textareaManualRows === 'number' && Number.isFinite(textareaManualRows)
             ? Math.max(2, Math.floor(textareaManualRows))
+            : null,
+        optionsManualHeight:
+          typeof optionsManualHeight === 'number' && Number.isFinite(optionsManualHeight)
+            ? optionsManualHeight
             : null,
         savedAt: Date.now()
       })
@@ -2021,6 +2029,119 @@
     hideBootSkeleton()
   }
 
+  function initOptionsResize() {
+    const dock = document.getElementById('optionsSection')
+    const handle = document.getElementById('optionsResizeHandle')
+    const list = document.getElementById('optionsContainer')
+    const helpers = WEBVIEW_HELPERS
+    if (!dock || !handle || !list || !helpers || typeof helpers.clampOptionsHeight !== 'function') {
+      return
+    }
+
+    const VIEWPORT_MAX_PERCENT = 70
+    let drag = null
+
+    const currentHeight = () => Math.round(dock.getBoundingClientRect().height)
+    const heightBounds = () => {
+      const min = helpers.OPTIONS_HEIGHT_MIN_PX
+      const naturalHeight = dock.offsetHeight - list.clientHeight + list.scrollHeight
+      const viewportMax = Math.floor(((window.innerHeight || 0) * VIEWPORT_MAX_PERCENT) / 100)
+      return { min, max: Math.max(min, Math.min(naturalHeight, viewportMax)) }
+    }
+    const syncAria = () => {
+      const bounds = heightBounds()
+      const now = helpers.clampOptionsHeight(currentHeight(), bounds.min, bounds.max)
+      handle.setAttribute('aria-valuemin', String(bounds.min))
+      handle.setAttribute('aria-valuemax', String(bounds.max))
+      handle.setAttribute('aria-valuenow', String(now === null ? bounds.min : now))
+    }
+    const applyHeight = height => {
+      optionsManualHeight = height
+      if (height === null) {
+        dock.style.removeProperty('--aiia-options-height')
+      } else {
+        dock.style.setProperty('--aiia-options-height', height + 'px')
+      }
+    }
+    const endDrag = e => {
+      if (!drag || (e && e.pointerId !== drag.pointerId)) return
+      const finished = drag
+      drag = null
+      handle.classList.remove('is-dragging')
+      try {
+        handle.releasePointerCapture(finished.pointerId)
+      } catch (err) {
+
+      }
+      if (Math.abs(currentHeight() - finished.startHeight) < 1) {
+        applyHeight(finished.startValue)
+      }
+      syncAria()
+      schedulePersistUiState()
+    }
+
+    applyHeight(optionsManualHeight)
+    syncAria()
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(syncAria).observe(dock)
+    }
+
+    handle.addEventListener('pointerdown', e => {
+      if (typeof e.button === 'number' && e.button !== 0) return
+      const bounds = heightBounds()
+      drag = {
+        pointerId: e.pointerId,
+        startY: e.clientY,
+        startHeight: currentHeight(),
+        startValue: optionsManualHeight,
+        min: bounds.min,
+        max: bounds.max
+      }
+      handle.classList.add('is-dragging')
+      try {
+        handle.setPointerCapture(e.pointerId)
+      } catch (err) {
+
+      }
+      e.preventDefault()
+    })
+    handle.addEventListener('pointermove', e => {
+      if (!drag || e.pointerId !== drag.pointerId) return
+      const next = helpers.clampOptionsHeight(
+        drag.startHeight + (drag.startY - e.clientY),
+        drag.min,
+        drag.max
+      )
+      if (next !== null) applyHeight(next)
+    })
+    handle.addEventListener('pointerup', endDrag)
+    handle.addEventListener('pointercancel', endDrag)
+    handle.addEventListener('lostpointercapture', endDrag)
+    handle.addEventListener('keydown', e => {
+      const bounds = heightBounds()
+      const result = helpers.resolveOptionsHeightKey(
+        e.key,
+        !!e.shiftKey,
+        currentHeight(),
+        bounds.min,
+        bounds.max
+      )
+      if (!result.handled) return
+      e.preventDefault()
+      if (result.height !== null && result.height === currentHeight()) return
+      applyHeight(result.height)
+      syncAria()
+      schedulePersistUiState()
+    })
+    handle.addEventListener('dblclick', e => {
+      e.preventDefault()
+      applyHeight(null)
+      syncAria()
+      schedulePersistUiState()
+    })
+    handle.addEventListener('focus', syncAria)
+  }
+
   function setupEventListeners() {
     try {
       const submitBtn = document.getElementById('submitBtn')
@@ -2152,6 +2273,8 @@
           schedulePersistUiState()
         }
       })
+
+      initOptionsResize()
 
       log('Event listeners installed')
     } catch (error) {
@@ -3035,6 +3158,7 @@
 
     const activeTasks = taskTabsState.activeTasks
     const activeTaskIdSet = taskTabsState.activeTaskIdSet
+    const tabsScroll = document.getElementById('tasksTabsScroll') || container
 
     if (activeTaskChanged || pruneTaskLocalState(activeTaskIdSet)) {
       schedulePersistUiState()
@@ -3124,7 +3248,7 @@
 
       tab.addEventListener('click', () => switchToTask(task.task_id))
 
-      container.appendChild(tab)
+      tabsScroll.appendChild(tab)
     })
 
     log('Rendered ' + activeTasks.length + ' task tab(s) (completed tasks filtered)')
@@ -5155,6 +5279,64 @@
     }
   }
 
+  function finishSuccessfulSubmit(taskIdToSubmit, responsePath) {
+    log('Feedback submitted successfully')
+    try {
+      vscode.postMessage({
+        type: 'log',
+        level: 'info',
+        message: '[submit] ok taskId=' + (taskIdToSubmit || '') + ' path=' + responsePath
+      })
+    } catch (e) {
+
+    }
+
+    if (isSubmitTargetStillCurrent(taskIdToSubmit)) {
+      try {
+        const textarea = document.getElementById('feedbackText')
+        if (textarea) {
+          textarea.value = ''
+          autoResizeFeedbackTextarea(textarea)
+        }
+      } catch (e) {
+
+      }
+      uploadedImages = []
+      renderUploadedImages()
+
+      document.querySelectorAll('.option-item').forEach(item => {
+        item.classList.remove('selected')
+        const checkbox = item.querySelector('input')
+        if (checkbox) {
+          checkbox.checked = false
+        }
+      })
+    } else {
+      log('Submitted ' + taskIdToSubmit + ' but ' + activeTaskId + ' is on screen; form left untouched')
+    }
+
+    if (taskIdToSubmit) {
+      if (taskTextareaContents[taskIdToSubmit] !== undefined) {
+        delete taskTextareaContents[taskIdToSubmit]
+      }
+      if (taskOptionsStates[taskIdToSubmit] !== undefined) {
+        delete taskOptionsStates[taskIdToSubmit]
+      }
+      if (taskImages[taskIdToSubmit] !== undefined) {
+        delete taskImages[taskIdToSubmit]
+      }
+    }
+
+    showToast(t('ui.submit.success'), {
+      kind: 'success',
+      timeoutMs: 1400,
+      dedupeKey: 'submit:ok'
+    })
+
+    setTimeout(() => requestImmediateRefresh(), 200)
+    return true
+  }
+
   async function submitWithData(text, options, taskIdOverride) {
 
     try {
@@ -5289,61 +5471,7 @@
       }
 
       if (response.ok) {
-        log('Feedback submitted successfully')
-        try {
-          vscode.postMessage({
-            type: 'log',
-            level: 'info',
-            message: '[submit] ok taskId=' + (taskIdToSubmit || '') + ' path=' + responsePath
-          })
-        } catch (e) {
-
-        }
-
-        if (isSubmitTargetStillCurrent(taskIdToSubmit)) {
-          try {
-            const textarea = document.getElementById('feedbackText')
-            if (textarea) {
-              textarea.value = ''
-              autoResizeFeedbackTextarea(textarea)
-            }
-          } catch (e) {
-
-          }
-          uploadedImages = []
-          renderUploadedImages()
-
-          document.querySelectorAll('.option-item').forEach(item => {
-            item.classList.remove('selected')
-            const checkbox = item.querySelector('input')
-            if (checkbox) {
-              checkbox.checked = false
-            }
-          })
-        } else {
-          log('Submitted ' + taskIdToSubmit + ' but ' + activeTaskId + ' is on screen; form left untouched')
-        }
-
-        if (taskIdToSubmit) {
-          if (taskTextareaContents[taskIdToSubmit] !== undefined) {
-            delete taskTextareaContents[taskIdToSubmit]
-          }
-          if (taskOptionsStates[taskIdToSubmit] !== undefined) {
-            delete taskOptionsStates[taskIdToSubmit]
-          }
-          if (taskImages[taskIdToSubmit] !== undefined) {
-            delete taskImages[taskIdToSubmit]
-          }
-        }
-
-        showToast(t('ui.submit.success'), {
-          kind: 'success',
-          timeoutMs: 1400,
-          dedupeKey: 'submit:ok'
-        })
-
-        setTimeout(() => requestImmediateRefresh(), 200)
-        return true
+        return finishSuccessfulSubmit(taskIdToSubmit, responsePath)
       } else {
 
         if (response.status === 429) {

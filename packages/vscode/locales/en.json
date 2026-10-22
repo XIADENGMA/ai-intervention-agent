@@ -103,6 +103,8 @@
     },
     "form": {
       "optionsLabel": "Options (multi-select)",
+      "optionsResize": "Resize options panel",
+      "optionsResizeHint": "Drag to resize, or press ↑ ↓. Double-click to reset.",
       "placeholder": "Enter feedback (paste images supported)…",
       "insertCode": "Insert code (from clipboard)",
       "uploadImage": "Upload image",

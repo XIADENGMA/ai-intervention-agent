@@ -11,6 +11,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- The multi-select options of a request no longer get lost under a long
+  message: in the Web UI they sit in a tray that stays pinned to the
+  bottom of the window while you read the message, and in the VS Code
+  panel they sit in a dock between the message and the feedback box.
+  Both scroll with a visible scroll bar and can be resized, so with a
+  long feedback you can pick the options one by one without scrolling
+  back and forth (twelve options were 996 px tall and sat 2 843 px down
+  the page at 1280 x 800; now the list is a 320 px tray, 325 px on a
+  phone). The tray is as tall as its options up to 40 % of the window;
+  drag the grip on its top edge, press `↑`/`↓` (24 px, 96 px with
+  `Shift` or on `Page Up`/`Page Down`), `Home`/`End`, or double-click or
+  press `Enter` to go back to the default. The size is remembered
+  (browser storage in the Web UI, the panel state in VS Code), never
+  goes above 70 % of the window, and a drag or key that moves nothing
+  stores nothing. In the Web UI, resizing keeps the tray's top edge under
+  the pointer and tabbing to a link in the message scrolls it clear of
+  the pinned tray. A request without options looks exactly as before.
+  Trade-offs: two options now sit in a framed card that is 42 px taller
+  (30 px on a phone), so a short prompt may now scroll by a few pixels;
+  the Web UI pinning needs `overflow: clip` (Chrome 90, Firefox 81,
+  Safari 16; older browsers keep a framed, scrolling tray in the page);
+  a VS Code panel shorter than about 355 px with options on screen gives
+  the message and the dock 96 px each and scrolls the form as a whole.
 - Type `/` in the feedback box (Web UI and VS Code extension) to pick an
   installed agent skill or custom command. The list filters as you type
   (names first, then display names and descriptions), `↑`/`↓` move,
@@ -270,6 +293,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `test_vscode_host_noise_filter_r745.py` (18 tests, 23 mutants killed),
   loads the real script and pins the filter, the wrapper around a stand-in
   command and the wiring.
+- The Tab focus trap of the Web UI's two dialogs and the "feedback was submitted" tail
+  of the VS Code panel now exist once (R811). The code-paste dialog (`app.js`,
+  `_modalFocusTrap`) and the settings panel (`settings-manager.js`,
+  `_settingsFocusTrap`) carried the same ~25-line loop, so R586 and R587 were one bug
+  fixed twice; the loop is now `DOMSecurity.trapTabFocus(panel, event)` in
+  `dom-security.js`, which loads before both, and each dialog's keydown handler hands it
+  every key but Esc (the helper itself ignores anything but Tab). In
+  `packages/vscode/webview-ui.js` the success branch of `submitWithData` (253 lines before,
+  199 now) is `finishSuccessfulSubmit` (57 lines: log line, clearing the form of the
+  submitted task, dropping that task's cached draft, toast, refresh), called from one place.
+  Nothing changes for the user: in real Chrome 153, old and new tree side by side, with
+  trusted key events, both dialogs behave identically (Tab on the last control goes to
+  the first, Shift+Tab on the first goes to the last, Tab elsewhere and other keys stay
+  with the browser, Esc closes and gives the focus back). A new test,
+  `test_front_end_single_home_r811.py` (5 tests, 16 mutants killed together with R238,
+  R586, R587, R716, R809 and R452), guards that no third copy of the loop grows back,
+  that `dom-security.js` loads first and that the success tail stays one function; R586
+  and R587 now run the shared function and both handlers in Node, and R238 reads the new
+  location.
 
 ### Removed
 
@@ -414,6 +456,127 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- In a narrow VS Code side bar the task tabs could cover the settings button, and scrolling the
+  strip carried the button out of the bar (R817). The bar was the scroller and the gear an
+  absolutely positioned child of it, with 34 px of right padding that only exists at the end of
+  the scrollable content: at the start of the strip the tabs ran under the gear, and a child of a
+  scroll container that is positioned absolutely scrolls with the content, so on the later tabs
+  the settings were out of reach until the strip was scrolled back. Real Chrome 153 on the panel's
+  real template, script and stylesheet (7 tasks, 4 of them with a countdown ring, 200, 260, 300,
+  360 and 480 px, both themes, the strip at its start, its middle and its end: 30 states): the
+  gear was under a tab in 18 of them and outside the bar in 14; now in none. The tabs scroll in an
+  element of their own (`#tasksTabsScroll`) between the status light and the gear, the gear is an
+  ordinary flex item that does not shrink, the bar neither scrolls nor reserves room on the right,
+  and the empty state's own gear keeps its absolute position. A comparison of the old tree with
+  the new one in 12 scenarios (one task and five, both themes, 220, 300 and 480 px) finds all 177
+  elements outside the bar where they were, the bar still 39 px high, the tabs at the same heights
+  and tops, and the empty state's gear identical. The Web UI's tab bar, measured at 320 to
+  1 280 px with seven tasks, was never affected. New invariant R817 (10 tests, 9 red on the old
+  tree, 22 one-point mutants all caught) reads the template, the stylesheet and `renderTaskTabs`,
+  which it runs in Node against a small DOM stand-in, and pins the scroller between the status
+  light and the gear, a bar that does not scroll, a scroller that takes the remaining room and can
+  shrink, a 22 px gear in the flow that does not shrink, the empty state's absolute gear, and the
+  tabs ending up in the scroller (in the bar when a page has none).
+- Links and inline code in the agent's message were hard to read, and a link was told apart from
+  its text by colour alone (R816). Real Chrome 153 (computed styles, composited backgrounds, both
+  themes, 1 280 px and 375 px, a sample with a link and an inline code span in a paragraph, a list
+  item, a block quote, a table header and cell, and a heading): the link was 3.35 : 1 in the light
+  theme (2.99 : 1 on a table header) and 4.00 : 1 in the dark one (3.22 : 1); the inline code was
+  2.76 : 1 in the light theme, because `[data-theme="light"] code` carries
+  `color: var(--accent-primary) !important` and the darker `#c7442a` of
+  `[data-theme="light"] .markdown-content code` never won, and 2.52 : 1 in the dark one (2.06 : 1
+  on a table header). A link also had `text-decoration: none` until it was hovered, in the Web UI
+  and in the VS Code panel, and in the dark theme its colour was only 2.87 : 1 from the text's
+  (WCAG 1.4.1 asks for 3 : 1 when colour is the only cue). Now the light link and the light inline
+  code are `#9a4929` (5.53 : 1, 4.93 : 1 on a table header), the dark link is `#ee9f85` (5.90 : 1,
+  4.76 : 1) and the dark inline code `#ffc9c4` (5.90 : 1, 4.82 : 1), and both stylesheets underline
+  a link at rest (`text-underline-offset: 0.15em`, 2 px on hover). The first candidates for the
+  dark colours, `#e8957a` and `#ffb4ae`, reached only 4.32 : 1 and 4.15 : 1 on a dark table
+  header, so that surface decided. A pixel check finds the underline under a link that contains a
+  code span and one per line of a wrapped link. Code blocks and the VS Code panel's own link and
+  code colours are unchanged. A comparison of every computed property of the 496 elements of the
+  page, old tree against new, both themes, desktop and 375 px, finds no difference outside links
+  and inline code, and on those only the colour, the underline and its offset (the VS Code
+  panel's 231 elements: links only). New invariant R816 (21 tests, 19 red on the old stylesheets,
+  26 one-point mutants all caught) composites the surfaces from the stylesheet and pins the
+  4.5 : 1 of both colours on a paragraph, a block quote, a table cell and a table header in both
+  themes, that the two light inline code rules agree, the underline at rest in both stylesheets,
+  that no later rule takes it away, and that code blocks keep their own colours.
+- The "Insert code" dialog was dark with unreadable text in the light theme until the settings
+  panel had been opened once (R815). The settings panel and that dialog are one component, but
+  the light theme of the component was not in `main.css`: `applySettingsTheme()` in
+  `settings-manager.js` built a `<style>` element with 18 rules and `showSettings()` was its only
+  caller. On a fresh page the dialog kept its dark surface under the light theme's dark text. Real
+  Chrome 153, computed styles: the title was 1.14 : 1 on its header at 1 280 px and 1.22 : 1 at
+  375 px (the width the Bark notification opens the page at), the hint 2.99 : 1 and 2.16 : 1 (axe-core
+  called the 320 px case a serious `color-contrast` violation); with the settings opened first, 16.3 : 1
+  and 6.66 : 1. The 18 rules, unchanged, are now the end of `main.css` (where the injected `<style>`
+  sat in the cascade) and the injector is gone, 80 lines of `settings-manager.js` with it. A comparison
+  of every computed property of every element of both dialogs, old tree against new, desktop and
+  375 px, light and dark: identical with the settings opened (light and dark) and on a fresh dark page,
+  and a fresh light page now equals the old tree's page after opening the settings; the old tree's own
+  fresh page differed from its opened one on 64 elements, which is the bug. New invariant R815 (26
+  tests, 17 one-point mutants all caught) pins every selector, the light surfaces, the 4.5 : 1
+  contrast of the dialog's text, that no later `!important` rule competes with the block, and that
+  no first-party script creates a `<style>` element.
+- A keyboard user could not see where the focus was on a code block or on the volume slider
+  (R814). The page draws its focus ring in one place, `:focus-visible` inside `@layer a11y`,
+  and a layered rule loses to any unlayered one. Real Chrome 153 with trusted Tab presses
+  (computed outline of every stop, both themes, 1 280 px and 375 px): Prism gives every fenced
+  code block `tabindex="0"`, which makes it a Tab stop, and `.markdown-content pre { outline: none
+  !important }` (the rule that keeps the block clean) took its ring away, so Tab landed there and
+  nothing showed where; `.volume-slider { outline: none }` of the settings panel did the same, and
+  in the light theme the slider showed only a 3 px halo at 20 % opacity. Both now get a 2 px ring
+  in the colour of every other ring (`--focus-ring-color`). The code block's ring is `!important`
+  and more specific than the rule that removes it, and it is drawn *inside* the block
+  (`outline-offset: -2px`) because `.code-block-container` is `overflow: hidden` and would cut an
+  outset ring; the slider's ring sits 7 px away, more than the 5 px its thumb sticks out of the
+  box, so it goes around the thumb and not through it. Only `main.css` changes: the VS Code
+  panel's code blocks are not Tab stops (all 13 of its stops had an indicator in the R812 pass)
+  and it has no slider. New invariant R814 (10 tests, 13 one-point mutants all caught) pins the
+  ring, its specificity against the rule that removes the outline, the inset, the shared colour
+  variable and the thumb clearance.
+- Tapping a field of the settings panel or the code-paste box on a phone or a tablet zoomed the
+  page in (R813). iOS Safari zooms when a text field with a font size under 16 px gets the focus
+  and does not zoom back. `.feedback-textarea` was already 16 px; the settings panel's text, URL
+  and number fields and selects were 15.2 px (`0.95rem`) and the code-paste textarea 13 px, so
+  the first tap on the Bark URL field - the setting that makes the notification open this page on
+  the phone - zoomed the panel. `main.css` now sets 16 px on them in
+  `@media (max-width: 768px), (hover: none) and (pointer: coarse)`: phones, and touch devices
+  of any width (an iPad is 1 024 px wide and zooms just the same). Real Chrome 153, computed
+  `font-size`: 16 px at 375 px, at 768 px with touch and at 1 024 px with touch, unchanged
+  (15.2 px / 13 px) with a mouse at 769 px and 1 280 px; the geometry does not move (URL field
+  44 px, textarea 220 px, nothing overflows at 375 px or 320 px). New invariant R813 (7 tests,
+  14 one-point mutants all caught) pins the block, its two conditions and, by scanning
+  `web_ui.html`, that every text-like control carries a class that is 16 px on a phone.
+- Long tokens, long URLs, wide tables, wide formulas and long option labels ran past the
+  message card on a phone and in the VS Code side panel (R812). Real Chrome 153 at 375 px
+  (the width the Bark notification opens the page at): an unbroken token was 1 574 px wide
+  inside a 301 px paragraph and a long URL 731 px, so most of them was clipped and could
+  not be read; a ten-column table ended at 570 px in a 375 px page; a `$$ ... $$` formula
+  was 714 px wide; an option with a long unbroken label squeezed its checkbox from 20 px
+  to 13 px and pushed its label to x = 821. The VS Code panel at 300 px had the same
+  (1 485 px token, 701 px URL, 646 px formula, 13 px checkbox); only its table already
+  scrolled. `.markdown-content` now sets `overflow-wrap: anywhere`, a table is a
+  `display: block` scroll box no wider than the card (and resets `overflow-wrap` to
+  `normal`, otherwise its columns would shrink to a few characters and break words in
+  half), a *display* formula scrolls inside the card, and an option's checkbox cannot
+  shrink while its label can and wraps, in `main.css` and `webview.css`. At 375 px the
+  token and the URL wrap to 301 px, the table and the formula scroll inside the card,
+  and the long option wraps (its row grows from 55 px to 98 px) with its 20 px checkbox
+  kept. Two things to know. A table is now as wide as its content, as on GitHub, instead
+  of always stretching to the card (a three-column table: 604 px to 249 px on a desktop
+  card). A scroll box also clips, and MathJax's glyph tips (integral tails, bracket
+  ends) reach up to 1 px past its box, so the formula gets `0.1em` of vertical padding
+  paid for with `0.1em` less margin than MathJax's `1em 0`: over a 15-formula corpus in
+  both surfaces all the ink lies inside the new box and none of it touches the clip edge
+  (closest 0.4 px), and the paragraphs after the formulas move by at most 0.5 px (Web
+  UI) and 0.6 px per formula (panel).
+  Inline formulas are untouched on purpose: `overflow` on an inline-block moves its
+  baseline to the bottom margin edge. New invariant R812 (21 tests, 29 one-point mutants
+  all caught) pins the wrapping, the table reset, the scroll boxes, the specificity that
+  lets the formula rule beat MathJax's own `margin`, the no-inline-formula-scroll rule
+  and the option row, in both stylesheets.
 - The copy buttons of the task tabs and of the settings panels could say "Copied" for
   something that was not copied, stay on "Copied" for good, or do nothing at all. R808 had
   moved the code-block button to `DOMSecurity.writeTextToClipboard` (Clipboard API first,

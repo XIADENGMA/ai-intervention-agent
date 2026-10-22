@@ -1407,41 +1407,13 @@ function _safelySetInert(el, value) {
   }
 }
 
-function _modalFocusTrap(panel, event) {
-  if (event.key !== "Tab" || !panel) return;
-  const focusables = panel.querySelectorAll(
-    'button:not([disabled]),[href],input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
-  );
-  let first = null;
-  let last = null;
-  const focusableCount =
-    focusables && Number.isFinite(focusables.length) ? focusables.length : 0;
-  for (let i = 0; i < focusableCount; i += 1) {
-    const el = focusables[i];
-    if (!el || el.offsetParent === null || el.hasAttribute("aria-hidden")) {
-      continue;
-    }
-    if (!first) first = el;
-    last = el;
-  }
-  if (!first || !last) return;
-  const active = document.activeElement;
-  if (event.shiftKey && active === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && active === last) {
-    event.preventDefault();
-    first.focus();
-  }
-}
-
 function handleCodePasteModalKeydown(event) {
   if (event.key === "Escape") {
     closeCodePasteModal();
     return;
   }
   const panel = document.getElementById("code-paste-panel");
-  _modalFocusTrap(panel, event);
+  window.DOMSecurity.trapTabFocus(panel, event);
 }
 
 let SUBMIT_BTN_ORIGINAL_HTML = null;
