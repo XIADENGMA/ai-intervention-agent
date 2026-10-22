@@ -732,7 +732,12 @@ var _sseSource = null;
 var _sseConnected = false;
 var _sseReconnectTimer = null;
 var _sseReconnectDelay = 1000;
+var _sseOpenedAtMs = 0;
 var _sseDebounceTimer = null;
+
+// A stream that the server accepts and then drops at once must not restart the back-off: it goes
+// back to 1 s only after a stream that lived this long (the VS Code host uses the same 10 s).
+var SSE_STABLE_CONNECTION_MS = 10000;
 
 var SSE_SHARED_CHANNEL_NAME = "aiia:sse:v1";
 var SSE_SHARED_ELECTION_DELAY_MS = 160;
@@ -1160,6 +1165,7 @@ function _connectDirectSSE(sharedLeaderMode) {
 
     }
     _sseSource = null;
+    _sseOpenedAtMs = 0;
   }
 
   var sseUrl = "/api/events";
@@ -1173,7 +1179,7 @@ function _connectDirectSSE(sharedLeaderMode) {
   source.onopen = function () {
     if (_sseSource !== source) return;
     _sseConnected = true;
-    _sseReconnectDelay = 1000;
+    _sseOpenedAtMs = _sseNowMs();
     _debugLog("SSE connected; polling degraded to safety-net mode (30s)");
     tasksPollBackoffMs = TASKS_POLL_SSE_FALLBACK_MS;
     if (tasksPollingTimer) {
@@ -1296,6 +1302,7 @@ function _connectDirectSSE(sharedLeaderMode) {
   source.onerror = function () {
     if (_sseSource !== source) return;
     _sseConnected = false;
+    _settleSseBackoff();
     try {
       source.close();
     } catch (_) {
@@ -1339,6 +1346,14 @@ function _sseNowMs() {
     return Date.now();
   }
   return new Date().getTime();
+}
+
+function _settleSseBackoff() {
+  var openedAt = _sseOpenedAtMs;
+  _sseOpenedAtMs = 0;
+  if (openedAt > 0 && _sseNowMs() - openedAt >= SSE_STABLE_CONNECTION_MS) {
+    _sseReconnectDelay = 1000;
+  }
 }
 
 function _makeSseSharedClientId() {
@@ -1389,6 +1404,7 @@ function _closeSseSource() {
     }
     _sseSource = null;
   }
+  _sseOpenedAtMs = 0;
 }
 
 function _markSharedSseConnected() {

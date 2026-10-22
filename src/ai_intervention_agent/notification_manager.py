@@ -209,13 +209,20 @@ class NotificationConfig(BaseModel):
         except (TypeError, ValueError):
             return 10
 
+    @field_validator("bark_url", "bark_device_key", "bark_icon", mode="before")
+    @classmethod
+    def strip_bark_text(cls, v: Any) -> Any:
+        """首尾空白去掉（R823）：从聊天/笔记里复制来的地址和密钥常带一个空格或换行，
+        设置页、配置文件和 ``update_config_without_save`` 都是原样交给这里的。"""
+        return v.strip() if isinstance(v, str) else v
+
     @field_validator("bark_action")
     @classmethod
     def validate_bark_action(cls, v: str) -> str:
         v = v.strip()
         if v in cls.BARK_ACTIONS_VALID:
             return v
-        if v.startswith(("http://", "https://")):
+        if v.lower().startswith(("http://", "https://")):
             return v
         return validate_enum_value(v, cls.BARK_ACTIONS_VALID, "bark_action", "none")
 
@@ -233,8 +240,8 @@ class NotificationConfig(BaseModel):
 
     @staticmethod
     def _is_valid_url(url: str) -> bool:
-        """验证 URL 格式是否有效"""
-        return url.startswith(("http://", "https://"))
+        """验证 URL 格式是否有效（协议头不区分大小写）"""
+        return url.lower().startswith(("http://", "https://"))
 
     @classmethod
     def from_config_file(cls) -> "NotificationConfig":

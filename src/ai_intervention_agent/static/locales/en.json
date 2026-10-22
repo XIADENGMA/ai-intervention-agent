@@ -283,7 +283,8 @@
   "notify": {
     "testTitle": "Settings Test",
     "testBody": "This is a test notification to verify your current settings are working correctly",
-    "titleFlash": "[Notification] {{message}}"
+    "titleFlash": "[Notification] {{message}}",
+    "newTask": "New task added: {id}"
   },
   "theme": {
     "auto": "Theme: Auto (follow system)",

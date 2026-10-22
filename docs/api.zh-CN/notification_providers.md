@@ -10,6 +10,10 @@
 
 判断字符串是否可作为 Bark 点击跳转 URL（任意 ``scheme://`` 形式）。
 
+### `_stripped(value: Any) -> Any`
+
+字符串去掉首尾空白；不是字符串的值原样返回。
+
 ### `_bark_url_is_loopback(url: str) -> bool`
 
 Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。

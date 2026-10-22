@@ -1,10 +1,15 @@
-function t(key, params) {
+// The i18n module answers with the key itself when it has no entry. A caller that cannot show a
+// raw key (a desktop notification) passes the sentence to use instead as ``fallback``.
+function t(key, params, fallback) {
   try {
     if (window.AIIA_I18N && typeof window.AIIA_I18N.t === 'function') {
-      return window.AIIA_I18N.t(key, params)
+      const text = window.AIIA_I18N.t(key, params)
+      if (fallback === undefined || (typeof text === 'string' && text !== '' && text !== key)) {
+        return text
+      }
     }
   } catch (_e) { }
-  return key
+  return fallback === undefined ? key : fallback
 }
 
 const DEFAULT_NOTIFICATION_SOUND_URL = '/sounds/deng.wav'
@@ -474,16 +479,10 @@ class NotificationManager {
     }
 
     if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
-      const origin =
-        window.location && typeof window.location.origin === 'string' ? window.location.origin : ''
-      const host =
-        window.location && typeof window.location.host === 'string' ? window.location.host : ''
-      const where = origin || host || 'current page'
-      this.showFallbackNotification(
-        'Browser native notifications unavailable',
-        `Current origin (${where}) is not a secure context. Please access over HTTPS or localhost/127.0.0.1 and retry.`,
-        { ...options, reason: 'insecure_context' }
-      )
+      // A page opened over plain HTTP from another machine has no Notification API. The fallback
+      // gets the event itself, as for every other reason; its translated hint says why the event
+      // is only shown in the page.
+      this.showFallbackNotification(title, message, { ...options, reason: 'insecure_context' })
       return null
     }
 
@@ -877,8 +876,12 @@ class NotificationManager {
 
     const title =
       typeof event.title === 'string' && event.title ? event.title : 'AI Intervention Agent'
+    // In the page's language, like the in-page hint (``showNewTaskVisualHint``) that the same
+    // event raises while the page is in front; English only when the i18n module did not load.
     const message =
-      count === 1 && taskIdCount === 1 ? `New task added: ${taskIds[0]}` : `Received ${count} new task(s)`
+      count === 1 && taskIdCount === 1
+        ? t('notify.newTask', { id: taskIds[0] }, `New task added: ${taskIds[0]}`)
+        : t('page.noContent.newTasks', { count }, `Received ${count} new task(s)`)
 
     let pageAway = false
     try {

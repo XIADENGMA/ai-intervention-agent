@@ -1439,7 +1439,12 @@
   let _sseConnected = false
   let _sseReconnectTimer = null
   let _sseReconnectDelay = 1000
+  let _sseOpenedAtMs = 0
   let _sseDebounceTimer = null
+
+  // A stream that the server accepts and then drops at once must not restart the back-off: it goes
+  // back to 1 s only after a stream that lived this long (the extension host uses the same 10 s).
+  const SSE_STABLE_CONNECTION_MS = 10000
 
   let _lastEventId = null
 
@@ -1455,6 +1460,14 @@
     return next + jitter
   }
 
+  function _settleSseBackoff() {
+    const openedAt = _sseOpenedAtMs
+    _sseOpenedAtMs = 0
+    if (openedAt > 0 && Date.now() - openedAt >= SSE_STABLE_CONNECTION_MS) {
+      _sseReconnectDelay = 1000
+    }
+  }
+
   function _connectSSE() {
     if (typeof EventSource === 'undefined') return
     if (_sseSource) {
@@ -1464,6 +1477,7 @@
 
       }
       _sseSource = null
+      _sseOpenedAtMs = 0
     }
 
     let sseUrl = SERVER_URL + '/api/events'
@@ -1477,7 +1491,7 @@
     source.onopen = function () {
       if (_sseSource !== source) return
       _sseConnected = true
-      _sseReconnectDelay = 1000
+      _sseOpenedAtMs = Date.now()
       log('SSE connected, polling degraded to fallback mode (30s)')
       pollBackoffMs = POLL_SSE_FALLBACK_MS
       if (pollingTimer) {
@@ -1537,6 +1551,7 @@
     source.onerror = function () {
       if (_sseSource !== source) return
       _sseConnected = false
+      _settleSseBackoff()
       try {
         source.close()
       } catch (_) {
@@ -1576,6 +1591,7 @@
       }
       _sseSource = null
     }
+    _sseOpenedAtMs = 0
     _sseConnected = false
   }
 

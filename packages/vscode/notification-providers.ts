@@ -88,6 +88,23 @@ function toNonEmptyString(value: unknown, fallback = ''): string {
   return t ? t : fallback
 }
 
+/**
+ * terminal-notifier 2.0.0 把 `-title` / `-message` 的值交给 NSUserDefaults 的命令行参数解析器，
+ * 值以 `[ ( { < " -` 开头时，它被当成属性列表或选项，而不是文本：
+ *   - `-message` 被读成"没有"：terminal-notifier 转去读标准输入，而 execFile 给它的是一根不会关的管道，
+ *     进程就卡住，直到 2.5 秒超时被杀，横幅由 AppleScript 回退晚 2.5 秒发出（另一条通知路径、另一个提示音）；
+ *   - 整个值只是一个属性列表（`()` `{}` `(x)`）：同样卡住；
+ *   - `-title` 被读成"没有"：标题变成默认的 "Terminal"；
+ *   - 值以 `\` 开头：terminal-notifier 把第一个 `\` 当作转义符去掉，正文少一个字符。
+ * 提问摘要（AI 问题的前 120 个字符）常常恰好这样开头：`- 事项`、`[x] 已完成`、`(1) 第一步`、`"引用"`。
+ * 在值前补一个 `\`：解析器看到 `\` 就不再按属性列表处理，terminal-notifier 去掉这个 `\` 后拿到的就是原文。
+ * 随包的 2.0.0 上逐字符实测过（每个可打印 ASCII 字符作首字符，各 4 种写法，共 404 条）：
+ * 不补时以上 7 个字符开头的 21 条读错，补了之后 0 条，其余 380 条前后一致。
+ */
+export function escapeTerminalNotifierValue(value: string): string {
+  return '\\' + value
+}
+
 function stringifyArrayValues(values: unknown): string[] {
   if (!Array.isArray(values)) return []
   const out: string[] = []
@@ -1024,7 +1041,14 @@ export class MacOSNativeNotificationProvider {
     }
 
     if (process.platform === 'darwin' && tnBin) {
-      const baseArgs = ['-title', title, '-message', message, '-sound', 'default']
+      const baseArgs = [
+        '-title',
+        escapeTerminalNotifierValue(title),
+        '-message',
+        escapeTerminalNotifierValue(message),
+        '-sound',
+        'default'
+      ]
       if (diagnosticMode && isTest) baseArgs.push('-ignoreDnD')
       const args = [...baseArgs]
       if (bundleId) {
@@ -1126,5 +1150,6 @@ export class MacOSNativeNotificationProvider {
 module.exports = {
   VSCodeApiNotificationProvider,
   AppleScriptNotificationProvider,
-  MacOSNativeNotificationProvider
+  MacOSNativeNotificationProvider,
+  escapeTerminalNotifierValue
 }

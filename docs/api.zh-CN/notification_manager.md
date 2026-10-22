@@ -65,6 +65,11 @@ R114 的二次确认认不出这是退出竞态。主线程在 ``threading._shut
 
 ##### `coerce_bark_timeout(cls, v: Any) -> int`
 
+##### `strip_bark_text(cls, v: Any) -> Any`
+
+首尾空白去掉（R823）：从聊天/笔记里复制来的地址和密钥常带一个空格或换行，
+设置页、配置文件和 ``update_config_without_save`` 都是原样交给这里的。
+
 ##### `validate_bark_action(cls, v: str) -> str`
 
 ##### `warn_bark_config(self) -> 'NotificationConfig'`

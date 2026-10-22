@@ -6,6 +6,8 @@
 
 ### `_is_acceptable_bark_click_url(url: str) -> bool`
 
+### `_stripped(value: Any) -> Any`
+
 ### `_bark_url_is_loopback(url: str) -> bool`
 
 ### `_coerce_bark_format_value(value: Any) -> str`

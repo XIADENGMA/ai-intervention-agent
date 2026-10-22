@@ -29,6 +29,11 @@ def _is_acceptable_bark_click_url(url: str) -> bool:
     return bool(_BARK_CLICK_URL_SCHEME_RE.match(url))
 
 
+def _stripped(value: Any) -> Any:
+    """字符串去掉首尾空白；不是字符串的值原样返回。"""
+    return value.strip() if isinstance(value, str) else value
+
+
 def _bark_url_is_loopback(url: str) -> bool:
     """Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。"""
     if not isinstance(url, str) or not url:
@@ -287,15 +292,16 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 logger.debug("Bark通知已禁用")
                 return False
 
-            if not self.config.bark_url or not self.config.bark_device_key:
+            # 地址多半是从聊天、笔记里复制来的，末尾带一个空格或换行很常见：空格会变成
+            # ``POST /push%20``（404），换行直接让 httpx 抛 InvalidURL；而协议头本来就不区分
+            # 大小写（RFC 3986 §3.1），``HTTPS://`` 同样有效（R823）。
+            bark_url = _stripped(self.config.bark_url)
+            if not bark_url or not self.config.bark_device_key:
                 logger.warning("Bark配置不完整，跳过发送")
                 return False
 
-            if not (
-                self.config.bark_url.startswith("http://")
-                or self.config.bark_url.startswith("https://")
-            ):
-                logger.error(f"Bark URL 格式无效: {self.config.bark_url}")
+            if not bark_url.lower().startswith(("http://", "https://")):
+                logger.error(f"Bark URL 格式无效: {bark_url}")
                 return False
 
             device_key_stripped = self.config.bark_device_key.strip()
@@ -320,8 +326,9 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 "device_key": device_key_stripped,
             }
 
-            if self.config.bark_icon:
-                bark_data["icon"] = self.config.bark_icon
+            bark_icon = _stripped(self.config.bark_icon)
+            if bark_icon:
+                bark_data["icon"] = bark_icon
 
             bark_action = (self.config.bark_action or "").strip()
             if bark_action and bark_action != "none":
@@ -408,7 +415,7 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                     break
                         bark_data["copy"] = copy_value or message_stripped
                 else:
-                    if bark_action.startswith(("http://", "https://")):
+                    if bark_action.lower().startswith(("http://", "https://")):
                         if _bark_url_is_loopback(bark_action):
                             logger.warning(
                                 f"bark_action 是回环地址 {bark_action!r}，已抑制 url 字段；"
@@ -436,7 +443,7 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 timeout_seconds = 10
 
             response = self.session.post(
-                self.config.bark_url,
+                bark_url,
                 json=bark_data,
                 timeout=timeout_seconds,
             )

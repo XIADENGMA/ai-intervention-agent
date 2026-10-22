@@ -283,7 +283,8 @@
   "notify": {
     "testTitle": "设置测试",
     "testBody": "这是一个测试通知，用于验证当前设置是否正常工作",
-    "titleFlash": "[通知] {{message}}"
+    "titleFlash": "[通知] {{message}}",
+    "newTask": "新任务已添加：{id}"
   },
   "theme": {
     "auto": "主题：自动（跟随系统）",

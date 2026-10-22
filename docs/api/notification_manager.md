@@ -28,6 +28,8 @@
 
 ##### `coerce_bark_timeout(cls, v: Any) -> int`
 
+##### `strip_bark_text(cls, v: Any) -> Any`
+
 ##### `validate_bark_action(cls, v: str) -> str`
 
 ##### `warn_bark_config(self) -> 'NotificationConfig'`

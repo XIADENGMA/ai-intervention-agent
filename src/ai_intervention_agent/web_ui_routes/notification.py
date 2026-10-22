@@ -318,6 +318,12 @@ class NotificationRoutesMixin:
                     logger.warning(f"Bark 测试请求被拒绝，字段不是字符串: {not_text}")
                     return _invalid_value_response(not_text)
 
+                # R823: a key that is only blanks is an empty key (400 "enter the key"),
+                # not a send that fails for a reason the page cannot name. ``null`` passed
+                # the check above (it counts as absent). The provider trims the address
+                # and the icon itself.
+                bark_device_key = (bark_device_key or "").strip()
+
                 if not bark_device_key:
                     return jsonify(
                         {"status": "error", "message": msg("notify.deviceKeyEmpty")}
@@ -742,6 +748,10 @@ class NotificationRoutesMixin:
                     def normalize_string(raw_value: Any) -> str:
                         return "" if raw_value is None else str(raw_value)
 
+                    def normalize_pasted_string(raw_value: Any) -> str:
+                        # R823: what is saved is what works - no blank at either end.
+                        return normalize_string(raw_value).strip()
+
                     def first_present(*keys: str) -> tuple[bool, Any]:
                         for key in keys:
                             if key in data:
@@ -838,22 +848,22 @@ class NotificationRoutesMixin:
                             ("barkUrl", "bark_url"),
                             "bark_url",
                             "bark_url",
-                            normalize_string,
-                            normalize_string,
+                            normalize_pasted_string,
+                            normalize_pasted_string,
                         ),
                         (
                             ("barkDeviceKey", "bark_device_key"),
                             "bark_device_key",
                             "bark_device_key",
-                            normalize_string,
-                            normalize_string,
+                            normalize_pasted_string,
+                            normalize_pasted_string,
                         ),
                         (
                             ("barkIcon", "bark_icon"),
                             "bark_icon",
                             "bark_icon",
-                            normalize_string,
-                            normalize_string,
+                            normalize_pasted_string,
+                            normalize_pasted_string,
                         ),
                         (
                             ("barkAction", "bark_action"),

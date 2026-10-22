@@ -288,7 +288,8 @@
   "notify": {
     "testTitle": "設定測試",
     "testBody": "這是一個測試通知，用於驗證目前設定是否正常工作",
-    "titleFlash": "[通知] {{message}}"
+    "titleFlash": "[通知] {{message}}",
+    "newTask": "新任務已新增：{id}"
   },
   "theme": {
     "auto": "主題：自動（跟隨系統）",

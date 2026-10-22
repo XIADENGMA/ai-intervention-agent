@@ -456,6 +456,104 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- A request whose first words were a bullet, a bracket, a parenthesis or a quote reached the macOS
+  desktop two and a half seconds late (R824). The VS Code extension raises its banner with the
+  `terminal-notifier` 2.0.0 binary it bundles, and the banner for a new request carries the first
+  120 characters of what the AI asked, which very often start with `- item`, `[x] done`, `(1)
+  first`, `"quoted"` or `<think>`. The binary does not take `-title` and `-message` as they are: it
+  hands them to the argument parser of `NSUserDefaults`, which reads a value that starts with
+  `[ ( { < " -` as a property list or an option, so the binary has "no message", waits for one on
+  its standard input, and `execFile` gives it a pipe that never closes. Nothing happened until the
+  provider's 2.5 s timeout killed it; then the AppleScript fallback raised the banner by another
+  path, with another sound. A value that starts with a backslash lost it, a title read as "no
+  title" became `Terminal`, and a value that is nothing but a property list (`()`, `{}`, `(x)`)
+  hung the process whatever its stdin was. Every printable ASCII character as the first character
+  of a value, four shapes each, title and message alike, on the bundled binary: 21 of 404 texts
+  read wrong (the six characters above and the backslash, three shapes each), 380 right, and three
+  that start with a no-break space (which the provider trims before the text gets there). Real
+  provider, real `execFile`, real binary, the banner read back with `-list`, 13 summaries, old tree
+  against new: ten of them (`- finished the refactor, please check item 2`, `[x] all tests pass;
+  shall I commit?`, `(1) rename the helper (2) update the docs`, `"quoted" first words of a
+  question`, `<think> should I continue? </think>`, `{"ok": true} was the response, is that
+  expected?`, `()`, `{}`, `(x)` and `-`) waited 2 504 to 2 510 ms and fell back to AppleScript,
+  `\path\to\file needs a decision` was shown as `path\to\file needs a decision`, and a plain sentence
+  and a Chinese one were shown at once; now all 13 are shown at once (89 to 214 ms), word for word.
+  `escapeTerminalNotifierValue` puts one backslash in front of the title and the message: the parser
+  sees a backslash first and stops treating the value as a property list, and the binary removes
+  exactly that backslash (401 of 404 right, the three left being the no-break-space ones). `-sound`,
+  `-activate` and `-execute` are left alone, and the AppleScript fallback gets the text as it was.
+  86 Python tests (80 red on the old provider; the TypeScript is transpiled and run in Node with a
+  fake `vscode`, `child_process.execFile` and `process.platform`, so the arguments the provider
+  builds can be read on any machine) and 5 host tests that run on macOS (4 red on the old
+  provider), plus 2 that run the real binary the way the provider does, post and remove a banner
+  per text, and only run when asked (`AIIA_REAL_TERMINAL_NOTIFIER=1`): they are what to run again
+  when the bundled binary is replaced. 21 one-point mutants, all caught.
+- A Bark address pasted with a blank after it, or written in capitals, did not work, and nothing
+  said why (R823). Nothing between the settings field, `config.toml`, the config model and the
+  HTTP call ever trimmed `bark_url`: the VS Code panel's Bark fields are plain text inputs that
+  send what is in them (the Web UI page's address field is `type="url"`, which the browser trims;
+  its key field is not), and an address copied from a chat, a note or a terminal carries a space
+  or a line break at its end all the time. Real stdio MCP server and real Web UI child against a
+  fake Bark that answers `200` to `POST /push` and `404` to anything else, the address in
+  `config.toml`, old tree against new: `http://host/push␠` posted to `/push%20` and was answered
+  `404 page not found` (then retried three times); `␠http://host/push` and `HTTP://host/push` were
+  refused before any request (`Bark URL 格式无效`, 0 requests, retried three times as well);
+  `http://host/push⏎` ended in `Invalid non-printable ASCII character in URL` (0 requests); now
+  all four reach `/push`, and the clean address behaves as before. The provider trims the address
+  and the icon address and accepts `http://` and `https://` in any letter case (a scheme is
+  case-insensitive, RFC 3986 §3.1; the same goes for a `bark_action` given as an address);
+  `NotificationConfig` trims `bark_url`, `bark_device_key` and `bark_icon` on every construction
+  and assignment (the file loader, the hot reload and the settings route all assign), and its
+  "format invalid" warning agrees with the provider. In the settings routes, the test button
+  answers `400 "enter the device key"` for a key that is only blanks (it was `500 "send failed,
+  check configuration"`, for a reason the page could not name), and `POST
+  /api/update-notification-config` saves the three values trimmed. Left as typed: a path (case
+  and trailing slash), a query string, a blank inside the address, every other text field. 73
+  tests (35 red on the old tree; the provider talks to a Bark server of its own on a loopback
+  port, so a test sees the path on the wire, which a mocked `post` never shows) and 33
+  one-point mutants all caught.
+- The desktop notification for a new request was in English on a page in any other language,
+  and on a page opened over plain HTTP from another machine it never said that a request had
+  arrived (R822). When the Web UI page is hidden or has lost focus, a browser notification
+  tells the user (the moment a notification is for: they are in the editor and the page is
+  somewhere else). Its body was the fixed sentence `Received 1 new task(s)`, while the hint
+  that the same event raises when the page is in front was already translated. Real Chrome 153
+  against a real Web UI, page in Chinese, permission granted: the notification read
+  `Received 1 new task(s)`; it now reads `收到 1 个新的交互反馈请求` (`Received 1 new feedback
+  request` in English), the sentence of the hint, and a request named by id reads
+  `New task added: <id>` through a new `notify.newTask` entry in the three locales. The English
+  sentence stays only for a page whose i18n module did not load, and a missing entry never
+  shows a raw key. On `http://192.168.x.x:8081` or `http://ai.local:8081` (the documented ways
+  to open the page from a phone or another machine; not a secure context, so no Notification
+  API) the fallback was given an English *explanation* in place of the event: the warning
+  toast read `Browser native notifications unavailable: Current origin (http://...) is not a
+  secure context. Please access over HTTPS or localhost/127.0.0.1 and retry.` followed by the
+  translated hint, on every new request, in a Chinese page too, and nothing in it said that a
+  request had arrived. Every other reason (permission denied, unsupported) hands the fallback
+  the real title and message and lets the translated hint say why; this one now does the
+  same: `AI Intervention Agent: 收到 1 个新的交互反馈请求 — 通知功能需要 HTTPS 或
+  localhost；当前页面为不安全上下文，已降级为页面内提示。` 25 tests (18 red on the old script
+  and locales; the real script runs in Node against a fake browser) and 31 one-point mutants
+  all caught. Left as it was: a page in front keeps the in-page hint, and the title of the
+  Bark and system push, `新的反馈请求`, is fixed Chinese in the server.
+- A stream that the server accepted and then dropped at once was reconnected once a second for as
+  long as the page was open (R821). The Web UI page and the VS Code panel's webview set their
+  reconnect delay back to 1 s in `EventSource.onopen`, so the back-off (1, 2, 4 ... 30 s) only
+  grew for a server that could not be reached at all; a server, proxy or captive portal that
+  answers `/api/events` with `200` and then ends the stream started every cycle at the base, and
+  since R796 the stream opens with a comment frame, so `onopen` fires at once and nothing told
+  "accepted" from "working". Real Chrome 153 against a proxy that ended the stream 300 ms after
+  it opened it, old tree against new: 23 connections in 30 s, 1.3 s apart (each one also flipping
+  the status dot and the task polling between their 30 s and 2 s paces), now 5, at 0.6, 2.0, 4.3,
+  8.6 and 16.9 s. The delay now goes back to 1 s only when the stream that ended had lived 10 s,
+  the rule the extension host has had since R718; a shorter one keeps doubling up to the 30 s
+  cap, and the status indicator reaches "disconnected" after about 30 s of that instead of
+  flickering for ever. A healthy stream that lives 12 s and drops reconnects after 1 s as before
+  (4 connections in 40 s on both trees). A source that the page drops itself (`_disconnectSSE`,
+  a replacement) ends the clock too, so an attempt that never opened is not credited with an
+  older stream, and the leader of a group of tabs announces the delay it really uses. 30 tests
+  (22 red on the old scripts; both scripts run in Node against a fake `EventSource`, a fake
+  clock and recorded timers) and 49 one-point mutants all caught.
 - A question that was not answered within two minutes ended in `MCP error -32001: Request timed out`
   and the answer that came later went nowhere (R820). `interactive_feedback` waits for a person and
   the server sent nothing while it waited, but Cursor's MCP client gives every tool call an idle
