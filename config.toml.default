@@ -181,6 +181,7 @@ service_name = "AI Intervention Agent"
 # 超时计算规则 / Timeout calculation:
 # - frontend_countdown <= 0: backend_wait = max(backend_max_wait, 260s)
 # - otherwise: backend_wait = min(max(frontend_countdown + 40s, 260s), backend_max_wait)
+# - 两种情况下后端都至少等待 260s，backend_max_wait < 260 时按 260 处理 / Either way the backend waits at least 260s: a backend_max_wait below 260 acts as 260
 # ──────────────────────────────────────────────
 [feedback]
 # 后端最大等待时间(秒) / Backend max wait time (seconds) - range [10, 7200]

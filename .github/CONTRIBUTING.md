@@ -168,7 +168,7 @@ preference")` + `navigator.language` fallback.
 > cycle-4 R259c (the `_resolveLabel` orphan-key
 > false-positive incident).
 
-The project has 7 i18n wrapper functions, all
+The project has these i18n wrapper functions; all
 **must** be registered in the call-site regex:
 
 | Wrapper | Where defined | Used for |
@@ -178,7 +178,7 @@ The project has 7 i18n wrapper functions, all
 | `hostT` | `packages/vscode/extension.ts` | VSCode extension host |
 | `__vuT` | `static/js/validation-utils.js` | local helper (avoid import cycle) |
 | `__domSecT` | `static/js/dom-security.js` | local helper |
-| `__ncT` | `static/js/webview-notify-core.js` | local helper (P8) |
+| `__ncT` | `packages/vscode/webview-notify-core.js` | local helper (P8) |
 | `AIIA_I18N.t` | `static/js/i18n.js` (namespace) | multi_task.js dot-access |
 | `_resolveLabel` | `static/js/ios_a2hs_hint.js` | fallback-aware i18n |
 
@@ -192,7 +192,7 @@ i18n orphan/dead-key detection:
 **Regex pattern**:
 
 ```
-(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
+(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
 ```
 
 Add your function name to the `(?:...)` alternation.

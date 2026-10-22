@@ -36,8 +36,32 @@ def _extract_async_function(source: str, name: str) -> str:
     raise AssertionError(f"Could not extract {name}()")
 
 
+def _extract_function(source: str, name: str) -> str:
+    marker = f"function {name}("
+    start = source.index(marker)
+    brace = source.index("{", start)
+    depth = 0
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    raise AssertionError(f"Could not extract {name}()")
+
+
 def _submit_with_data_source() -> str:
-    return _extract_async_function(_read_source(), "submitWithData")
+    source = _read_source()
+    # ``submitWithData`` asks ``isSubmitTargetStillCurrent`` (R809) whether the form on
+    # screen still belongs to the task it just submitted, so the real helper goes along.
+    return "\n".join(
+        (
+            _extract_function(source, "isSubmitTargetStillCurrent"),
+            _extract_async_function(source, "submitWithData"),
+        )
+    )
 
 
 def _run_node(script: str) -> dict[str, object]:
@@ -117,7 +141,7 @@ def test_submit_fallback_gets_fresh_timeout_controller() -> None:
         let submitBackoffTimer = null;
         let submitBtnDefaultHtml = 'Submit';
         let currentConfig = null;
-        let activeTaskId = null;
+        let activeTaskId = 'task-a';
         let uploadedImages = [];
         let taskTextareaContents = {{ 'task-a': 'draft' }};
         let taskOptionsStates = {{ 'task-a': ['A'] }};

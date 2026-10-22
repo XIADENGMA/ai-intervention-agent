@@ -17,6 +17,14 @@ Return a prompt byte size suitable for the R53-A threshold guard.
 
 Loop engineering P1 — 可选自由文本字段的统一 normalize。
 
+### `_as_utc(moment: datetime) -> datetime`
+
+Naive datetimes are read as UTC so aware and naive values can be compared.
+
+### `_parse_utc_timestamp(value: Any) -> datetime | None`
+
+ISO-8601 text (as the ledger stores it) -> aware datetime; ``None`` if unreadable.
+
 ### `_capture_all_thread_stacks() -> str`
 
 采集进程内所有线程的当前调用栈，拼成可读字符串。

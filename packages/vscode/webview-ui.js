@@ -4464,9 +4464,14 @@
     const objective = clean(task && task.loop_objective)
     const criteria = clean(task && task.success_criteria)
 
+    const taskKey = task && typeof task.task_id === 'string' ? task.task_id : ''
     if (typeof updateLoopHistoryToggle === 'function') {
       updateLoopHistoryToggle(loopId)
     }
+    if (taskKey && taskKey !== currentLoopTaskId) {
+      refreshLoopHistory()
+    }
+    if (taskKey) currentLoopTaskId = taskKey
 
     if (!loopId && !loopPhase && !iterLabel && !objective && !criteria) {
       container.classList.add('hidden')
@@ -4507,6 +4512,8 @@
   }
 
   let currentLoopId = null
+  let currentLoopTaskId = ''
+  let loopHistoryGen = 0
 
   function updateLoopHistoryToggle(loopId) {
     const toggle = document.getElementById('loopHistoryToggle')
@@ -4601,6 +4608,13 @@
     return row
   }
 
+  function refreshLoopHistory() {
+    const toggle = document.getElementById('loopHistoryToggle')
+    if (!toggle || toggle.getAttribute('aria-expanded') !== 'true') return
+    collapseLoopHistory()
+    toggleLoopHistory()
+  }
+
   async function toggleLoopHistory() {
     const toggle = document.getElementById('loopHistoryToggle')
     const list = document.getElementById('loopHistoryList')
@@ -4613,6 +4627,8 @@
 
     const loopId = currentLoopId
     if (!loopId) return
+    loopHistoryGen += 1
+    const generation = loopHistoryGen
 
     toggle.setAttribute('aria-expanded', 'true')
     toggle.classList.add('expanded')
@@ -4620,6 +4636,7 @@
     list.classList.remove('hidden')
 
     let loop = null
+    let failed = false
     try {
       const resp = await fetch(SERVER_URL + '/api/loops', { cache: 'no-store' })
       if (!resp.ok) throw new Error('HTTP ' + resp.status)
@@ -4628,12 +4645,17 @@
         loop = data.loops.find(l => l && l.loop_id === loopId) || null
       }
     } catch (e) {
+      failed = true
+    }
+
+    if (generation !== loopHistoryGen) return
+    if (currentLoopId !== loopId) return
+    if (toggle.getAttribute('aria-expanded') !== 'true') return
+
+    if (failed) {
       renderLoopHistoryMessage(list, t('ui.loop.historyError'))
       return
     }
-
-    if (currentLoopId !== loopId) return
-    if (toggle.getAttribute('aria-expanded') !== 'true') return
 
     const rounds = loop && Array.isArray(loop.rounds) ? loop.rounds : []
     const countEl = document.getElementById('loopHistoryCount')
@@ -4912,10 +4934,20 @@
     lastCountdownTaskId = null
   }
 
+  function isSubmitTargetStillCurrent(taskId) {
+    if (!taskId) return !activeTaskId
+    return activeTaskId === taskId
+  }
+
   async function autoSubmit() {
     const taskId = lastCountdownTaskId
     log('Countdown ended, auto-resubmitting')
     stopCountdown()
+
+    if (taskId && activeTaskId && taskId !== activeTaskId) {
+      log('Skip auto-submit for ' + taskId + ': ' + activeTaskId + ' is on screen')
+      return
+    }
 
     const now = Date.now()
     const RETRY_INTERVAL_MS = 30 * 1000
@@ -5268,25 +5300,29 @@
 
         }
 
-        try {
-          const textarea = document.getElementById('feedbackText')
-          if (textarea) {
-            textarea.value = ''
-            autoResizeFeedbackTextarea(textarea)
-          }
-        } catch (e) {
+        if (isSubmitTargetStillCurrent(taskIdToSubmit)) {
+          try {
+            const textarea = document.getElementById('feedbackText')
+            if (textarea) {
+              textarea.value = ''
+              autoResizeFeedbackTextarea(textarea)
+            }
+          } catch (e) {
 
+          }
+          uploadedImages = []
+          renderUploadedImages()
+
+          document.querySelectorAll('.option-item').forEach(item => {
+            item.classList.remove('selected')
+            const checkbox = item.querySelector('input')
+            if (checkbox) {
+              checkbox.checked = false
+            }
+          })
+        } else {
+          log('Submitted ' + taskIdToSubmit + ' but ' + activeTaskId + ' is on screen; form left untouched')
         }
-        uploadedImages = []
-        renderUploadedImages()
-
-        document.querySelectorAll('.option-item').forEach(item => {
-          item.classList.remove('selected')
-          const checkbox = item.querySelector('input')
-          if (checkbox) {
-            checkbox.checked = false
-          }
-        })
 
         if (taskIdToSubmit) {
           if (taskTextareaContents[taskIdToSubmit] !== undefined) {

@@ -251,6 +251,10 @@ class TestFinallyBlockMetaLint(unittest.TestCase):
             "app.js": [
                 "if (submitBtn)",  # R268 修复点
             ],
+            # R808: the selection-copy fallback of the code block's copy button removes
+            # its helper textarea (null-guarded: it is only set once created) and puts
+            # focus and the page selection back (each guarded, inside its own try).
+            "dom-security.js": ["if (helper && helper.parentNode)"],
             "i18n.js": ["seen.delete", "delete _pendingLoads"],  # safe (no DOM)
             "multi_task.js": [
                 "clearTimeout",

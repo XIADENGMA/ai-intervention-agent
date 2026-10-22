@@ -2,7 +2,9 @@
 
 覆盖：
 - ``copyTaskIdToClipboard`` helper 存在 + 双路径 (clipboard API +
-  ``document.execCommand`` fallback) 都被引用
+  ``document.execCommand`` fallback) 都被引用；R810 起这两条路径只在
+  ``dom-security.js`` 的 ``DOMSecurity.writeTextToClipboard`` 里实现，
+  ``multi_task.js`` 通过它写剪贴板
 - ``createTaskTab`` 内 ``textSpan`` 上挂 ``dblclick`` listener
 - ``data-copyable-task-id`` 属性写在 textSpan 上（供 UI 测试 hook 和
   截图回归 grep）
@@ -21,6 +23,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MULTI_TASK_JS = (
     REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "multi_task.js"
 )
+DOM_SECURITY_JS = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "dom-security.js"
+)
 EN_JSON = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales" / "en.json"
 ZH_CN_JSON = (
     REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales" / "zh-CN.json"
@@ -37,18 +42,26 @@ class TestHelperExists(unittest.TestCase):
             "必须定义 async copyTaskIdToClipboard(taskId)",
         )
 
+    dom_security_src = DOM_SECURITY_JS.read_text(encoding="utf-8")
+
     def test_helper_uses_clipboard_api(self) -> None:
+        # R810: the page's single clipboard write path is DOMSecurity.
         self.assertIn(
-            "navigator.clipboard.writeText",
+            "DOMSecurity.writeTextToClipboard",
             self.src,
-            "helper 必须 try clipboard API primary path",
+            "helper 必须通过 DOMSecurity.writeTextToClipboard 写剪贴板",
+        )
+        self.assertIn(
+            "clipboard.writeText",
+            self.dom_security_src,
+            "DOMSecurity.writeTextToClipboard 必须 try clipboard API primary path",
         )
 
     def test_helper_has_execcommand_fallback(self) -> None:
         self.assertIn(
-            'document.execCommand("copy")',
-            self.src,
-            "helper 必须有 ``document.execCommand('copy')`` legacy fallback",
+            "document.execCommand('copy')",
+            self.dom_security_src,
+            "DOMSecurity.writeTextToClipboard 必须有 ``document.execCommand('copy')`` fallback",
         )
 
     def test_helper_uses_status_i18n_keys(self) -> None:

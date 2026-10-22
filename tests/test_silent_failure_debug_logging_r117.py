@@ -11,7 +11,7 @@ R117 修复了项目中**最高影响**的两处 ``except Exception: pass`` 静�
    HTTP/2 stream 状态泄漏却没有任何信号。
 2. ``NotificationManager._mark_event_finalized()``（``notification_manager.py``）
    — ``self._stats["events_succeeded" / "events_failed"]`` 与
-   ``_finalized_event_ids`` LRU 集合是 ``get_stats()`` 计算
+   ``_finalized_event_ids`` LRU 集合是 ``get_status()`` 计算
    ``delivery_success_rate`` 的唯一来源，静默失败导致统计数字永久偏移。
 
 修复策略：保持 try/except 不让异常扩散打断调用方（resp. shutdown chain

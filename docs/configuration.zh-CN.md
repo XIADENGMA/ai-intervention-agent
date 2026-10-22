@@ -377,6 +377,8 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 
 `后端等待 = min(max(前端倒计时 + 40, 260), backend_max_wait)`
 
+两种情况下后端最终都至少等待 260 秒，所以小于 260 的 `backend_max_wait` 按 260 处理（该键仍接受 `[10, 7200]`）。这个下限是有意的：过小的超时会在用户来得及回答之前就结束任务（见 [troubleshooting.zh-CN.md](troubleshooting.zh-CN.md)）。
+
 **`/` 选择器（`skill_dirs`）**：
 
 在反馈输入框的行首（或空格之后）输入 `/`，会弹出运行 Web UI 的这台机器上已安装的 agent skill 与命令列表；选中后插入 `/<名称> `。

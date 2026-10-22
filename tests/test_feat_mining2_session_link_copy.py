@@ -109,14 +109,17 @@ class TestLowLevelHelperExtracted(unittest.TestCase):
         )
 
     def test_no_duplicated_execcommand(self) -> None:
-        """``document.execCommand("copy")`` 在重构后应该**只出现一次**
-        （在 ``_writeToClipboard`` 内），不再在每个高层 helper 内重复。
+        """``document.execCommand("copy")`` 不再在 ``multi_task.js`` 里出现。
+
+        mining-2 时它**只出现一次**（在 ``_writeToClipboard`` 内）；R810 起
+        ``_writeToClipboard`` 也委托给 ``DOMSecurity.writeTextToClipboard``，
+        整个页面只剩 ``dom-security.js`` 里这一份选区复制实现。
         """
-        count = len(re.findall(r'document\.execCommand\("copy"\)', self.src))
+        count = len(re.findall(r"""execCommand\(\s*['"]copy['"]""", self.src))
         self.assertEqual(
             count,
-            1,
-            f"document.execCommand('copy') 应该只在 _writeToClipboard 内出现一次，实际 {count} 次",
+            0,
+            f"multi_task.js 不应再自带 execCommand('copy')，实际 {count} 次",
         )
 
 

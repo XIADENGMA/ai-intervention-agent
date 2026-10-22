@@ -123,6 +123,64 @@ class DOMSecurity {
     return previewElement
   }
 
+  static async writeTextToClipboard(text) {
+    const value = String(text)
+    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : null
+    if (clipboard && typeof clipboard.writeText === 'function') {
+      try {
+        await clipboard.writeText(value)
+        return true
+      } catch (_e) {
+        // Refused (permission, document not focused): the selection copy may still work.
+      }
+    }
+    return DOMSecurity.copyThroughSelection(value)
+  }
+
+  static copyThroughSelection(value) {
+    const previouslyFocused = document.activeElement
+    const selection = typeof document.getSelection === 'function' ? document.getSelection() : null
+    const savedRanges = []
+    let helper = null
+    try {
+      if (selection) {
+        for (let index = 0; index < selection.rangeCount; index += 1) {
+          savedRanges.push(selection.getRangeAt(index))
+        }
+      }
+      helper = document.createElement('textarea')
+      helper.value = value
+      helper.setAttribute('readonly', '')
+      helper.setAttribute('aria-hidden', 'true')
+      helper.style.position = 'fixed'
+      helper.style.top = '-1000px'
+      helper.style.left = '-1000px'
+      helper.style.opacity = '0'
+      document.body.appendChild(helper)
+      helper.select()
+      return document.execCommand('copy') === true
+    } catch (_e) {
+      return false
+    } finally {
+      if (helper && helper.parentNode) {
+        helper.parentNode.removeChild(helper)
+      }
+      try {
+        if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+          previouslyFocused.focus({ preventScroll: true })
+        }
+        if (selection && savedRanges.length > 0) {
+          selection.removeAllRanges()
+          for (const range of savedRanges) {
+            selection.addRange(range)
+          }
+        }
+      } catch (_e2) {
+        // Restoring focus and selection is best effort; the copy itself already has its result.
+      }
+    }
+  }
+
   static createCopyButton(targetText) {
     const button = document.createElement('button')
     button.className = 'copy-button'
@@ -133,14 +191,23 @@ class DOMSecurity {
 
     const errorIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.21967 4.21967C4.51256 3.92678 4.98744 3.92678 5.28033 4.21967L8 6.93934L10.7197 4.21967C11.0126 3.92678 11.4874 3.92678 11.7803 4.21967C12.0732 4.51256 12.0732 4.98744 11.7803 5.28033L9.06066 8L11.7803 10.7197C12.0732 11.0126 12.0732 11.4874 11.7803 11.7803C11.4874 12.0732 11.0126 12.0732 10.7197 11.7803L8 9.06066L5.28033 11.7803C4.98744 12.0732 4.51256 12.0732 4.21967 11.7803C3.92678 11.4874 3.92678 11.0126 4.21967 10.7197L6.93934 8L4.21967 5.28033C3.92678 4.98744 3.92678 4.51256 4.21967 4.21967Z"/></svg>`
 
-    const copyLabel = __domSecT('page.copyCode')
-    const copiedLabel = __domSecT('page.copied')
-    const copyFailedLabel = __domSecT('page.copyFailed')
+    const escapeText = value =>
+      String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
 
-    button.innerHTML = `${copyIconSvg}${copyLabel}`
-    button.setAttribute('aria-label', copyLabel)
+    const idleHtml = () => {
+      const label = __domSecT('page.copyCode')
+      const text = label === 'page.copyCode' ? '' : escapeText(label)
+      return `${copyIconSvg}<span data-i18n="page.copyCode">${text}</span>`
+    }
 
-    const originalHTML = button.innerHTML
+    button.innerHTML = idleHtml()
+    button.setAttribute('aria-label', __domSecT('page.copyCode'))
+    button.setAttribute('data-i18n-aria-label', 'page.copyCode')
+
     let restoreTimer = null
 
     const showFeedback = (html, stateClass) => {
@@ -150,19 +217,17 @@ class DOMSecurity {
       button.classList.add(stateClass)
       restoreTimer = setTimeout(() => {
         restoreTimer = null
-        button.innerHTML = originalHTML
+        button.innerHTML = idleHtml()
         button.classList.remove('copied', 'error')
       }, 2000)
     }
 
     button.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(targetText)
-      } catch (err) {
-        showFeedback(`${errorIconSvg}${copyFailedLabel}`, 'error')
+      if (!(await DOMSecurity.writeTextToClipboard(targetText))) {
+        showFeedback(`${errorIconSvg}${escapeText(__domSecT('page.copyFailed'))}`, 'error')
         return
       }
-      showFeedback(`${checkIconSvg}${copiedLabel}`, 'copied')
+      showFeedback(`${checkIconSvg}${escapeText(__domSecT('page.copied'))}`, 'copied')
     })
 
     return button

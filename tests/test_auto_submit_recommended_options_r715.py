@@ -372,6 +372,7 @@ VSCODE_PRELUDE = """
 const submissions = [];
 let promptsFetched = 0;
 let lastCountdownTaskId = 't1';
+let activeTaskId = 't1';
 let autoSubmitAttempted = {};
 let submitInFlight = false;
 let submitBackoffUntilMs = 0;

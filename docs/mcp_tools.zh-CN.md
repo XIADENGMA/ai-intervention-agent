@@ -106,11 +106,11 @@ FastMCP 4.1.1 能动态 add/remove 工具，保留 annotations/tags/version，
 
 #### Agent 模式专用参数（Cursor / Composer / Cline / Augment / Trae）
 
-以下 4 个可选参数**专为 Agent / Glass 模式高频调用场景设计**——LLM
-在长时间自主流程中会反复 invoke `interactive_feedback`，这 4 个参数让
-agent 能按任务预先调整 UI，让用户在 5 秒内完成审阅决策，而不必上下文
-切换回去读完整提示。LLM 通过 `tools/list` 的 JSON-Schema description 已
-经能看到这些字段；本节是给人类阅读的对照参考。
+以下可选参数连同上文的 `predefined_options`，**专为 Agent / Glass 模式
+高频调用场景设计**——LLM 在长时间自主流程中会反复 invoke
+`interactive_feedback`，它们让 agent 能按任务预先调整 UI，让用户在 5 秒内
+完成审阅决策，而不必上下文切换回去读完整提示。LLM 通过 `tools/list` 的
+JSON-Schema description 已经能看到这些字段；本节是给人类阅读的对照参考。
 
 - `header_label`（string，可选，**最长 16 字符**）
   - 作为任务标签页的显示名称（R700 起优先于机器味的任务 ID；完整 ID
@@ -125,16 +125,14 @@ agent 能按任务预先调整 UI，让用户在 5 秒内完成审阅决策，�
   - 每任务级别的 textarea placeholder 提示（覆盖全局 i18n
     `page.feedbackPlaceholder` 字符串）。示例：`"粘贴错误堆栈"`、
     `"描述视觉异常"`、`"回复 'ok' 批准 或 'no' + 原因 拒绝"`。仅
-    支持单行（超长会静默截断，但响应会带 `placeholder_truncated: true`
-    标识，让调用方知道发生了 clamp）。借鉴自 `gemini-cli` 的
-    `ask_user` schema。
+    支持单行（超长会静默截断，工具返回值里不会提示）。借鉴自
+    `gemini-cli` 的 `ask_user` schema。
 
-- `auto_resubmit_timeout`（int，可选，单位秒，默认走
-  `feedback.frontend_countdown` = `240`）
-  - 每任务级别的前端倒计时覆盖——对低风险确认类任务，agent 不想等
-    完整 4 分钟时可以传 `60`；想完全禁用单任务自动重调时传 `0`
-    （不影响全局配置）。范围跟随服务端配置（`[0, 3600]`），越界值
-    静默 clamp 而非报错。
+**没有按次调用的倒计时参数。** 自动重调倒计时只有一个服务端配置
+`feedback.frontend_countdown`（默认 `240` 秒，范围 `[10, 3600]`，`0` 表示
+关闭），所有任务都遵循它。`timeout` / `timeout_seconds` 会被接受但忽略。
+传入 schema 里没有的参数名——例如 `auto_resubmit_timeout=120`——会被严格
+schema（`additionalProperties: false`）拒绝，且不会创建任务。
 
 这 3 个参数可组合使用：典型 Agent 模式调用 = `header_label`（上下文）
 + `feedback_placeholder`（提示） + `predefined_options`（多选 checkbox）。
@@ -164,11 +162,33 @@ agent 能按任务预先调整 UI，让用户在 5 秒内完成审阅决策，�
 `None`、超长服务端截断、非字符串静默忽略。普通（非循环）调用完全
 省略即可——工具行为与之前逐字节一致。
 
+`loop_objective` 与 `success_criteria` 属于整个 loop，而不是某一轮：首轮
+传入即可（之后只在内容变化时再传）。同一 `loop_id` 的后续轮次省略其中
+一个时，服务端会存入该 loop 最近的值（队列里仍在的最新一轮与台账中
+最后一次给出的值，取较新者），审阅者因此在每一轮的提示上方都能看到目标
+与判据。`loop_phase` 和 `iteration_label` 只描述单独一轮，永远不会沿用。
+
 已完成的循环轮次会额外记入有界的内存台账（20 个 loop × 每个 50 轮；
 verdict 文本截断 200 字符、图片只记数量），台账不受常规「完成任务
 10 秒清理」影响且跨服务重启保留。`GET /api/loops` 按 `loop_id` 聚合
 返回台账与该 loop 仍在队列中的任务，让审阅者可以回放「这个目标经历
 了哪几轮、每轮人说了什么」。
+
+#### 兼容性参数
+
+schema 是严格的，没有列出的参数名会直接报错。下面这些名字被列入 schema，
+是为了让为其他 feedback MCP 服务写的调用不用改也能工作：
+
+- `summary`、`prompt`——`message` 的别名；仅在 `message` 缺失或为空白时
+  才会采用。
+- `options`——`predefined_options` 的别名；仅在未提供 `predefined_options`
+  时才会采用。
+- `project_directory`、`submit_button_text`、`feedback_type`、`priority`、
+  `language`、`tags`、`user_id`、`task_id`——接受但忽略。项目上下文、UI 文案
+  与语言取自正在运行的 Web UI 及其配置；任务 ID 始终由服务端生成。
+- `timeout`、`timeout_seconds`——接受但忽略。等待时长由
+  `feedback.frontend_countdown` 与 `feedback.backend_max_wait` 决定
+  （见[关于超时](#关于超时)）。
 
 #### 返回值
 
@@ -245,7 +265,7 @@ interactive_feedback(message="请确认下一步怎么做。")
 #### Agent 模式示例（Cursor / Glass）
 
 长时间运行的 Cursor agent 正在重构 auth 模块，需要在跑集成测试之前
-征求用户同意。组合 **4 个 Agent 模式参数**，让用户在 5 秒内决策：
+征求用户同意。组合 **3 个 Agent 模式参数**，让用户在 5 秒内决策：
 
 ```text
 interactive_feedback(
@@ -263,13 +283,13 @@ interactive_feedback(
   ],
   feedback_placeholder=                     # 用户回复文本框提示
     "回复 'ok' 跑测试，或 'no' + 原因 回滚",
-  auto_resubmit_timeout=120,                # 单任务 2 分钟代替默认 4 分钟
 )
 ```
 
 UX 效果：用户看到 `Auth` chip + 1 段清晰摘要 + 预选 checkbox +
-自由文本框。若用户超过 2 分钟未响应，agent 会拿到 resubmit prompt
-（而非被卡满 4 分钟）。`header_label` /
-`feedback_placeholder` / `auto_resubmit_timeout` 完整语义见上方
+带任务专属提示的自由文本框。若用户离开，倒计时
+（`feedback.frontend_countdown`，默认 4 分钟）结束后 agent 会自动拿到
+配置好的 resubmit prompt，而不是一直被卡住。`header_label` /
+`feedback_placeholder` 的完整语义见上方
 [Agent 模式专用参数](#agent-模式专用参数cursor--composer--cline--augment--trae)
 小节。

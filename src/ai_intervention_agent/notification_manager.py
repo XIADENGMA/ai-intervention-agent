@@ -848,7 +848,7 @@ class NotificationManager:
 
         **R117**：原 ``except Exception: pass`` 把 stats 一致性失败完全静默——
         ``self._stats["events_succeeded" / "events_failed"]`` 与
-        ``self._finalized_event_ids`` 集合是 ``get_stats()`` 计算
+        ``self._finalized_event_ids`` 集合是 ``get_status()`` 计算
         ``delivery_success_rate`` / ``events_in_flight`` 的唯一来源，一旦
         这里 raise（例如 LRU dict 内部状态被并发污染、或 ``next(iter())``
         在罕见的 ``OrderedDict`` mutation race 下抛 ``StopIteration`` /

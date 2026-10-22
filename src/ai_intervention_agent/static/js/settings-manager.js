@@ -958,36 +958,26 @@ class SettingsManager {
       });
     }
     if (copyBtn) {
+      let feedbackTimer = null;
       copyBtn.addEventListener("click", async () => {
         const url = copyBtn.dataset.lanUrl || "";
         if (!url) return;
+        let copied = false;
         try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(url);
-          } else {
-            const ta = document.createElement("textarea");
-            ta.value = url;
-            ta.style.position = "fixed";
-            ta.style.opacity = "0";
-            document.body.appendChild(ta);
-            ta.select();
-            try {
-              document.execCommand("copy");
-            } finally {
-              document.body.removeChild(ta);
-            }
-          }
-          const span = copyBtn.querySelector("span");
-          if (span) {
-            const original = span.textContent;
-            span.textContent = _tl("settings.baseUrlCopied", "Copied");
-            setTimeout(() => {
-              span.textContent = original;
-            }, 1500);
-          }
+          copied = await window.DOMSecurity.writeTextToClipboard(url);
         } catch (e) {
           console.warn("Copy LAN url failed:", e);
         }
+        const span = copyBtn.querySelector("span");
+        if (!span) return;
+        span.textContent = copied
+          ? _tl("settings.baseUrlCopied", "Copied")
+          : _tl("status.copyFailed", "Copy failed");
+        clearTimeout(feedbackTimer);
+        feedbackTimer = setTimeout(() => {
+          feedbackTimer = null;
+          span.textContent = _tl("settings.baseUrlCopyLan", "Copy LAN URL");
+        }, 1500);
       });
     }
 

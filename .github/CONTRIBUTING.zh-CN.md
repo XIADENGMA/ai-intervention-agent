@@ -157,7 +157,7 @@ locale 处理，照搬 anti-FOUC 模式：`localStorage.getItem
 > 源自 a11y-audit-cycle-5 §2.2 P3 / cycle-4 R259c
 > （`_resolveLabel` 被误判 orphan 事件）。
 
-项目有 7 个 i18n wrapper，**必须**在 call-site 正则
+项目有下列 i18n wrapper，**必须**在 call-site 正则
 里全部注册：
 
 | Wrapper | 定义位置 | 用途 |
@@ -167,7 +167,7 @@ locale 处理，照搬 anti-FOUC 模式：`localStorage.getItem
 | `hostT` | `packages/vscode/extension.ts` | VSCode 扩展主进程 |
 | `__vuT` | `static/js/validation-utils.js` | 本地 helper (避 import 循环) |
 | `__domSecT` | `static/js/dom-security.js` | 本地 helper |
-| `__ncT` | `static/js/webview-notify-core.js` | 本地 helper (P8) |
+| `__ncT` | `packages/vscode/webview-notify-core.js` | 本地 helper (P8) |
 | `AIIA_I18N.t` | `static/js/i18n.js`（命名空间） | multi_task.js dot-access |
 | `_resolveLabel` | `static/js/ios_a2hs_hint.js` | 带 fallback 的 i18n |
 
@@ -180,7 +180,7 @@ locale 处理，照搬 anti-FOUC 模式：`localStorage.getItem
 **正则模式**：
 
 ```
-(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
+(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
 ```
 
 在 `(?:...)` alternation 里加你的函数名。运行：

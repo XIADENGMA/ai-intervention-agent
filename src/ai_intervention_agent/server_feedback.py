@@ -1004,10 +1004,8 @@ async def interactive_feedback(
             "Examples: 'Paste the error stack trace', 'Describe the visual glitch', "
             "'Reply 'ok' to approve or 'no' + reason to reject'. "
             "Length: clamped to 200 characters server-side (single-line "
-            "placeholders only; longer text is silently truncated; the response "
-            "includes ``placeholder_truncated: true`` + ``placeholder_original_length`` "
-            "+ ``placeholder_max_length`` when clamping activates so callers can "
-            "warn). "
+            "placeholders only; longer text is silently truncated and the tool "
+            "result does not report it). "
             "If omitted or empty, the UI uses its default i18n placeholder. "
             "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user`` schema.)"
         ),

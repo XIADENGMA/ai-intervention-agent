@@ -86,12 +86,12 @@ sequenceDiagram
 
     Agent->>MCP: interactive_feedback(message,<br/>header_label, predefined_options, ...)
     MCP->>AIIA: POST /api/tasks
-    AIIA->>UI: SSE task.created
+    AIIA->>UI: SSE task_changed (new task)
     UI->>Human: Browser/system notification<br/>+ countdown timer
     Note over Human: Reads chip + prompt,<br/>clicks Yes/No or types reply
     Human->>UI: Submit
-    UI->>AIIA: POST /api/tasks/{id}/complete
-    AIIA->>MCP: SSE task.completed (+ ctx.info)
+    UI->>AIIA: POST /api/tasks/{id}/submit
+    AIIA->>MCP: SSE task_changed (completed) (+ ctx.info)
     MCP->>Agent: Returns text + images + selected options
     Note over Agent: Resumes execution<br/>with human input
 ```
@@ -112,26 +112,26 @@ sequenceDiagram
     participant Human as Human reviewer
 
     Note over Agent,Human: ① Auto-resubmit (human stepped away)
-    Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=120)
-    AIIA->>UI: SSE task.created (countdown=120s)
+    Agent->>AIIA: interactive_feedback
+    AIIA->>UI: SSE task_changed (new task)<br/>countdown = feedback.frontend_countdown
     Note over UI: countdown hits 0<br/>(human not typing)
-    UI->>AIIA: POST /api/tasks/{id}/auto-resubmit
-    AIIA->>Agent: SSE task.completed<br/>(with "auto-resubmit" marker)
+    UI->>AIIA: POST /api/tasks/{id}/submit<br/>(what the human typed or ticked,<br/>else the configured resubmit_prompt)
+    AIIA->>Agent: SSE task_changed (completed)<br/>the agent gets the resubmit prompt back
 
     Note over UI,AIIA: ② SSE drop → degraded poll → reconnect
     UI--xAIIA: SSE disconnect (sleep/network jitter)
-    UI->>AIIA: GET /api/tasks (fallback poll, every 5s)
+    UI->>AIIA: GET /api/tasks (fallback poll: 2s,<br/>backing off to 30s on errors)
     UI->>AIIA: SSE reconnect (exponential backoff)
     AIIA-->>UI: SSE resumed
 
     Note over Agent,Human: ③ Typing-hold (human typing — never interrupt)
-    Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=60)
-    UI->>Human: countdown shows 60s
+    Agent->>AIIA: interactive_feedback
+    UI->>Human: countdown ring
     Human->>UI: starts typing feedback
-    Note over UI: countdown auto-extends while typing<br/>never fires mid-input (typing-hold)
+    Note over UI: ≤15s left and typed in the last 10s:<br/>POST /api/tasks/{id}/extend (+60s, max 3 per task)<br/>at 0 while still typing: waits (typing-hold)
     Human->>UI: stops typing + submits
-    UI->>AIIA: POST /api/tasks/{id}/complete
-    AIIA->>Agent: SSE task.completed (full reply)
+    UI->>AIIA: POST /api/tasks/{id}/submit
+    AIIA->>Agent: SSE task_changed (completed) (full reply)
 ```
 
 ### Agent-side parameters (LLM passes these via MCP)
@@ -139,9 +139,7 @@ sequenceDiagram
 | Parameter | Purpose | Max | Source |
 |---|---|---|---|
 | `header_label` | One-word context chip in task pane (`Auth`, `DB`, `i18n`) | 16 chars | gemini-cli `ask_user.header` |
-| `predefined_options` | Multi-select checkboxes with optional defaults | list[str\|dict] | AIIA native |
 | `feedback_placeholder` | Per-task textarea hint (overrides global i18n) | 200 chars | gemini-cli `ask_user` |
-| `auto_resubmit_timeout` | Per-task countdown override (0 = disable) | `[0, 3600]` sec | AIIA native |
 | `predefined_options` | Multi-select chips with optional `default: true` recommendation | 10000 chars/each | AIIA + upstream parity |
 | `loop_id` + 4 loop fields | Group multi-round feedback into one loop: objective, phase, success criteria, iteration label | 32–500 chars | AIIA loop engineering |
 

@@ -15,9 +15,11 @@ right channel.
 
 ## 1. Web UI does not start (port already in use)
 
-**Symptom**: MCP tool calls hang; VS Code Output shows
-`Address already in use` or `Errno 48`; browser cannot reach
-`http://127.0.0.1:8080`.
+**Symptom**: the agent keeps getting the re-call prompt and no question
+ever shows up (the tool returns within seconds instead of waiting for you);
+the MCP log shows `端口 127.0.0.1:8080 已被占用（health-check 未识别为本服务）`
+(error code `port_in_use`), or the Web UI log shows `Address already in use` /
+`Errno 48`; the browser cannot reach `http://127.0.0.1:8080`.
 
 **Cause**: another process owns port `8080` (the default for
 `web_ui.port`). Common culprits: a previous orphaned `ai-intervention-agent`

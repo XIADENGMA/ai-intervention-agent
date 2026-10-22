@@ -1,7 +1,7 @@
 r"""端到端诊断日志链回归 (R40 P0-S3)
 
 R40 引入 ``EnhancedLogger.event(name, **ctx)`` API，并在 ``server.py`` 的
-启动入口、``server_feedback._interactive_feedback_impl`` 的关键节点打
+启动入口、``server_feedback.interactive_feedback`` 的关键节点打
 event-style 单行日志。这套日志专为 ``grep '^.*event=task\.created'`` 等
 "按 event 名拉时间线"的运维场景设计。
 
@@ -176,7 +176,7 @@ class TestServerBootBanner(unittest.TestCase):
 
 
 class TestInteractiveFeedbackEventLog(unittest.TestCase):
-    """``server_feedback._interactive_feedback_impl`` 关键节点的 event 日志。
+    """``server_feedback.interactive_feedback`` 关键节点的 event 日志。
 
     用 patch.object(server_feedback, 'logger', ...) 监视所有 event 调用，
     通过 mock 切断真正的 web_ui HTTP 路径（ensure_web_ui_running / client.post /

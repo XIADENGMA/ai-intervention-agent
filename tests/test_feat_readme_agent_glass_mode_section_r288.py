@@ -14,7 +14,9 @@ H2 section，内含：
 
 1. 一句话定位 (long-running autonomous agent loops, < 5s per task)
 2. mermaid sequence diagram (Agent → MCP → AIIA → User → Agent)
-3. Agent-side parameters 表格 (5 行 — 4 Agent-mode + predefined_options)
+3. Agent-side parameters 表格 (header_label / feedback_placeholder /
+   predefined_options / loop 字段；R804 删去了并不存在的
+   ``auto_resubmit_timeout`` 行和重复的 predefined_options 行)
 4. User-side workflow features 列表 (7 项 — multi-task tabs, drafts, freeze,
    quick replies, sound, images, SSE badge)
 5. Recommended LLM system prompt link
@@ -22,7 +24,7 @@ H2 section，内含：
 本测试锁住：
 - 双语 H2 section heading 必须存在
 - mermaid diagram 必须存在 + 包含 5 个 participant
-- 5 个 Agent 端参数都必须在表格中
+- Agent 端参数都必须在表格中（是否是真实参数由 R804 对照 schema 校验）
 - 6 个 user-side features 都必须 mention（quick_phrases 功能已按用户决策整体移除）
 - mermaid 跨语言一致 (复用同一份 diagram block)
 """
@@ -37,11 +39,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 README_EN = REPO_ROOT / "docs" / "architecture.md"
 README_ZH = REPO_ROOT / "docs" / "architecture.zh-CN.md"
 
-# 4 个 Agent-mode 关键参数（必须在表格中）
+# Agent-mode 关键参数（必须在表格中）
 AGENT_MODE_PARAMS_FOR_TABLE = [
     "header_label",
     "feedback_placeholder",
-    "auto_resubmit_timeout",
     "predefined_options",
 ]
 
@@ -145,7 +146,7 @@ class TestEnReadmeAgentGlassSection(unittest.TestCase):
                 param,
                 body,
                 f"Agent / Glass section must list `{param}` in the Agent-side "
-                f"parameters table (5 params total: 4 Agent-mode + predefined_options)",
+                f"parameters table",
             )
 
     def test_all_user_side_features_listed(self) -> None:
@@ -218,7 +219,7 @@ class TestZhReadmeAgentGlassSection(unittest.TestCase):
                 f"中文 README mermaid must declare `participant {p}`",
             )
 
-    def test_all_5_agent_params_in_table(self) -> None:
+    def test_all_agent_params_in_table(self) -> None:
         body = self._extract_section_body()
         for param in AGENT_MODE_PARAMS_FOR_TABLE:
             self.assertIn(param, body, f"中文 README must list `{param}`")

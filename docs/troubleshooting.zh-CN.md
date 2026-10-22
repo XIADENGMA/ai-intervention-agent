@@ -13,9 +13,11 @@
 
 ## 1. Web UI 启动失败（端口被占用）
 
-**症状**：MCP 工具调用一直挂起；VS Code Output 里出现
-`Address already in use` 或 `Errno 48`；浏览器打不开
-`http://127.0.0.1:8080`。
+**症状**：agent 一直拿到重调提示、始终没有问题弹出来（工具几秒内就返回，
+不会等你）；MCP 日志里出现
+`端口 127.0.0.1:8080 已被占用（health-check 未识别为本服务）`（错误码
+`port_in_use`），或者 Web UI 日志里出现 `Address already in use` /
+`Errno 48`；浏览器打不开 `http://127.0.0.1:8080`。
 
 **原因**：默认端口 `8080`（`web_ui.port`）被其他进程占用。常见有：
 之前残留的 `ai-intervention-agent` 进程、其他本地开发服务器、

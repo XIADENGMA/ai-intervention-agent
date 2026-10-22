@@ -124,34 +124,16 @@ if (typeof window.__aiiaTypingAutoExtendInFlight === "undefined") {
 var TYPING_HOLD_IDLE_MS = 10 * 1000;
 var TYPING_HOLD_TRIGGER_S = 15;
 
+// The page has ONE clipboard write path: DOMSecurity.writeTextToClipboard (Clipboard
+// API, then a selection copy that cleans up after itself).  It must be called before
+// any await here - Safari honours the selection copy only while the click is on the
+// stack.
 async function _writeToClipboard(text) {
   const s = String(text || "");
   if (!s) return false;
   try {
-    if (
-      typeof navigator !== "undefined" &&
-      navigator.clipboard &&
-      typeof navigator.clipboard.writeText === "function"
-    ) {
-      await navigator.clipboard.writeText(s);
-      return true;
-    }
+    return (await window.DOMSecurity.writeTextToClipboard(s)) === true;
   } catch (_e) {
-
-  }
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = s;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.top = "-1000px";
-    ta.style.left = "-1000px";
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
-    return ok;
-  } catch (_e2) {
     return false;
   }
 }
@@ -2884,10 +2866,14 @@ function updateLoopContext(task) {
     typeof window !== "undefined" &&
     typeof updateLoopHistoryToggle === "function"
   ) {
+    var taskKey = task && typeof task.task_id === "string" ? task.task_id : "";
     if (window.__aiiaCurrentLoopId !== loopId) {
       window.__aiiaCurrentLoopId = loopId;
       collapseLoopHistory();
+    } else if (loopId && taskKey && taskKey !== _loopContextTaskId) {
+      refreshLoopHistory();
     }
+    if (taskKey) _loopContextTaskId = taskKey;
     updateLoopHistoryToggle(loopId);
   }
 
@@ -2929,6 +2915,9 @@ function updateLoopContext(task) {
   container.style.display = "";
 }
 
+var _loopContextTaskId = "";
+var _loopHistoryGen = 0;
+
 function updateLoopHistoryToggle(loopId) {
   var toggle = document.getElementById("loop-history-toggle");
   if (!toggle) return;
@@ -2958,6 +2947,13 @@ function collapseLoopHistory() {
   if (count) count.textContent = "";
 }
 
+function refreshLoopHistory() {
+  var toggle = document.getElementById("loop-history-toggle");
+  if (!toggle || toggle.getAttribute("aria-expanded") !== "true") return;
+  collapseLoopHistory();
+  toggleLoopHistory();
+}
+
 async function toggleLoopHistory() {
   var toggle = document.getElementById("loop-history-toggle");
   var list = document.getElementById("loop-history-list");
@@ -2970,6 +2966,7 @@ async function toggleLoopHistory() {
 
   var loopId = window.__aiiaCurrentLoopId;
   if (!loopId) return;
+  var generation = (_loopHistoryGen += 1);
 
   var t =
     typeof window !== "undefined" &&
@@ -2986,6 +2983,7 @@ async function toggleLoopHistory() {
   list.style.display = "";
 
   var loop = null;
+  var failed = false;
   try {
     var resp = await fetchWithTimeout("/api/loops", { cache: "no-store" }, 8000);
     if (resp && resp.ok) {
@@ -2999,22 +2997,23 @@ async function toggleLoopHistory() {
         }
       }
     } else {
-      renderLoopHistoryMessage(
-        list,
-        t("page.loopHistoryError") || "Failed to load loop history",
-      );
-      return;
+      failed = true;
     }
   } catch (e) {
+    failed = true;
+  }
+
+  if (generation !== _loopHistoryGen) return;
+  if (window.__aiiaCurrentLoopId !== loopId) return;
+  if (toggle.getAttribute("aria-expanded") !== "true") return;
+
+  if (failed) {
     renderLoopHistoryMessage(
       list,
       t("page.loopHistoryError") || "Failed to load loop history",
     );
     return;
   }
-
-  if (window.__aiiaCurrentLoopId !== loopId) return;
-  if (toggle.getAttribute("aria-expanded") !== "true") return;
 
   var rounds = loop && Array.isArray(loop.rounds) ? loop.rounds : [];
   var countEl = document.getElementById("loop-history-count");
@@ -3225,6 +3224,12 @@ function updateOptionsDisplay(options, optionDefaults) {
   } else {
     optionsContainer.classList.add("hidden");
     optionsContainer.classList.remove("visible");
+
+    const separator = document.getElementById("separator");
+    if (separator) {
+      separator.classList.add("hidden");
+      separator.classList.remove("visible");
+    }
   }
 }
 

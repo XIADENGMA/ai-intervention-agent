@@ -774,40 +774,28 @@
       });
     }
     if (copyBtn) {
+      let feedbackTimer = null;
       copyBtn.addEventListener("click", async () => {
         const url =
           copyBtn.dataset && copyBtn.dataset.lanUrl
             ? copyBtn.dataset.lanUrl
             : "";
         if (!url) return;
+        let copied = false;
         try {
-          if (
-            navigator &&
-            navigator.clipboard &&
-            navigator.clipboard.writeText
-          ) {
-            await navigator.clipboard.writeText(url);
-          } else {
-            const ta = document.createElement("textarea");
-            ta.value = url;
-            ta.style.position = "fixed";
-            ta.style.opacity = "0";
-            document.body.appendChild(ta);
-            ta.select();
-            try {
-              document.execCommand("copy");
-            } finally {
-              document.body.removeChild(ta);
-            }
-          }
-          const original = copyBtn.textContent;
-          copyBtn.textContent = t("settings.bark.baseUrlCopied");
-          setTimeout(() => {
-            copyBtn.textContent = original;
-          }, 1500);
+          await navigator.clipboard.writeText(url);
+          copied = true;
         } catch (_e) {
-
+          copied = false;
         }
+        copyBtn.textContent = copied
+          ? t("settings.bark.baseUrlCopied")
+          : t("ui.copy.failed");
+        clearTimeout(feedbackTimer);
+        feedbackTimer = setTimeout(() => {
+          feedbackTimer = null;
+          copyBtn.textContent = t("settings.bark.baseUrlCopyLan");
+        }, 1500);
       });
     }
 

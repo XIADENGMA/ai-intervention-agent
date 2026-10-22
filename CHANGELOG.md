@@ -414,6 +414,105 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- The copy buttons of the task tabs and of the settings panels could say "Copied" for
+  something that was not copied, stay on "Copied" for good, or do nothing at all. R808 had
+  moved the code-block button to `DOMSecurity.writeTextToClipboard` (Clipboard API first,
+  then a selection copy that cleans up after itself); three other copy paths kept
+  hand-written versions of that logic. The task id / task link copy (`_writeToClipboard`)
+  left its helper textarea in the page when `execCommand` threw and never gave focus and
+  selection back. The LAN-URL button of the Web UI settings tried the selection copy only
+  when the Clipboard API was missing, so a refused write (permission, document not focused)
+  ended in silence; it flashed "Copied" after a selection copy whose result it never read;
+  and it restored its label from the text it found at click time, so a second click inside
+  the 1.5 s window made "Copied" permanent (a language switch in between brought the old
+  language back). The LAN-URL button of the VS Code settings panel had the same stuck label
+  and said nothing when the write failed. Real Chrome, old and new tree side by side: on an
+  insecure origin (`http://ai.test:<port>`, `window.isSecureContext === false`, no
+  `navigator.clipboard`) the old label was still "Copied" 2.3 s after a second click and
+  keyboard focus had fallen to `<body>`, the new label is "Copy LAN URL" again with focus on
+  the button; on `http://localhost:<port>`, where headless Chrome refused
+  `navigator.clipboard.writeText`, the old click did nothing (no copy, no label) while the
+  new one falls back to the selection copy and shows "Copied". `_writeToClipboard` and the
+  Web UI LAN-URL button now call `window.DOMSecurity.writeTextToClipboard` before any
+  `await` and believe its answer ("Copied" only when something was copied, the
+  `status.copyFailed` text otherwise); the label is put back by translation key
+  (`settings.baseUrlCopyLan`), never from a captured string, and a click inside the window
+  restarts it. The VS Code panel has no `DOMSecurity` and a webview is always a secure
+  context, so its button writes through `navigator.clipboard` alone, like that panel's
+  code-block button, with the same honest label (`ui.copy.failed`) and the same restart
+  rule; its dead selection-copy branch is gone. New invariant R810 (29 tests, 17 fail on the
+  old code and 12 pin behaviour that must not change; 18 one-point mutants, all caught)
+  scans the sources (the Web UI's only `execCommand('copy')` and `clipboard.writeText(`
+  live in `dom-security.js`; the extension has no selection copy) and runs the real scripts
+  in Node against a fake DOM: a working, refusing, throwing or missing Clipboard API crossed
+  with a refusing and a throwing `execCommand`, the selection copy before the first `await`,
+  a read-only, fixed, off-screen helper that never stays in the page, focus and selection
+  restored, empty text not copied, a page without `DOMSecurity` answering `false`, the label
+  restored in the current language and never stuck for any success/failure pair of clicks.
+  Left as it was: the code-block button of the VS Code panel (`webview-ui.js`) still uses
+  `navigator.clipboard` alone.
+- In the VS Code panel, finishing one task's submit could wipe what the reviewer was
+  typing for another task, and an auto-submit countdown could send the wrong task's draft.
+  The panel shows one feedback form (text box, pasted images, option check-boxes) and swaps
+  its contents the moment another task's tab is clicked, before the server has confirmed
+  the switch. Two paths still treated "the form" as if it belonged to the task they had
+  been started for. `submitWithData` emptied the live form after every successful submit:
+  a slow upload (screenshots to a remote server) finishing while the reviewer had moved to
+  task B and started typing cleared B's note, B's images and B's ticked options; the browser
+  page has guarded this since R452 (`isSubmitTargetStillCurrent`), the panel never had the
+  guard. `autoSubmit` sent the live form as the answer of the task whose countdown had
+  ended: a countdown reaching zero for task A just after B's tab was clicked posted B's
+  draft, B's images and B's ticked options as A's answer (and used up A's retry throttle).
+  Found with a real-Chrome harness around the unmodified `webview-ui.js` and the Web UI
+  server (mocked `acquireVsCodeApi`, the real `webview.ts` template and stylesheet, fetch
+  interception to delay `/api/*`): the old script stored `B-DRAFT-…` as task A's
+  `user_input` and, in a second scenario, emptied B's note and ticked option when A's slow
+  submit finished; the new script skips A's auto-submit (A stays pending) and leaves B's
+  form untouched. `isSubmitTargetStillCurrent(taskId)` (no id: current when no task is
+  active; otherwise `activeTaskId === taskId`, the contract of the page) now decides
+  whether `submitWithData` empties the live form (the submitted task's saved text, images
+  and option state are still dropped, the other task's are kept), and `autoSubmit` stops
+  the countdown and returns, before the retry throttle, when the countdown's task is not
+  the one on screen. New invariant R809 (8 tests, 2 fail on the old script and 6 pin
+  behaviour that must not change; 15 one-point mutants, all caught) runs the real function
+  sources in Node against stand-ins: a finished submit leaves the on-screen task's text,
+  images, options and cache entries alone and still empties its own task's form, a form
+  without any task id (legacy single-task servers) and a task the poll already picked; a
+  countdown for a task that left the screen sends nothing, stops the countdown and keeps
+  the retry throttle unspent; a countdown for the on-screen task still sends the typed text
+  and ticked options, or the resubmit prompt when nothing was typed, and behaves as before
+  when no active task is known. Left as it was: when the per-task route answers 404 the
+  panel falls back to the legacy `/api/submit`, which answers whichever task is active.
+- The "Copy code" button of a code block never worked on a page opened from another
+  machine. The README documents the Web UI as reachable from other machines
+  (`web_ui.host = "0.0.0.0"`, an mDNS `<host>.local` URL, the iPhone Shortcuts setup), and
+  `http://192.168.x.x:8081` or `http://ai.local:8081` is not a secure context: there
+  `navigator.clipboard` is `undefined`.
+  `DOMSecurity.createCopyButton` called `navigator.clipboard.writeText` directly, so every
+  click ended in the "Copy failed" look and nothing else was tried (real Chrome on
+  `http://<LAN IP>:port`: `window.isSecureContext === false`, `typeof navigator.clipboard`
+  `"undefined"`, button class `copy-button error`, no `execCommand` call), while the task-id
+  and LAN-URL copy buttons of the same page already fell back to a selection copy, which
+  made the failure look random. The button now tries the Clipboard API when there is one
+  and falls back to `execCommand('copy')` on a read-only, fixed, off-screen textarea when
+  the API is missing or refuses (permission, document not focused); only when both fail
+  does it show the error look. With no API the fallback runs synchronously inside the click
+  handler (Safari only honours `execCommand('copy')` while the user gesture is on the
+  stack), the helper textarea is removed on every path including a throwing `execCommand`,
+  and keyboard focus and the page's text selection are put back where they were. New
+  invariant R808 (13 tests, 6 fail on the old code; 16 one-point mutants, all caught) loads
+  the real `dom-security.js` into Node with a fake DOM: the code reaches the selection copy
+  verbatim (newlines, tabs, CJK, emoji), the Clipboard API still comes first and alone when
+  it works, a refused write falls back, a missing `writeText` counts as no API, both
+  failing shows the error look, a throwing `execCommand` is an error look and not an
+  exception, nothing is left in the page, focus and selection return. Real Chrome with a
+  trusted click (CDP mouse events, real user activation): on the insecure LAN origin the old
+  code showed "Copy failed" with no `execCommand` call, the new code shows "Copied" after one
+  `execCommand('copy')` that returned `true` on a textarea holding the code, with focus back
+  on the button and no leftover textarea; on loopback (secure) the headless profile refuses
+  the Clipboard API and the fallback copies there too. The VS Code webview has its own copy
+  button in a secure context and is unchanged; the task-id and LAN-URL buttons keep their
+  own, slightly different fallbacks.
 - Code inside a fenced block wore the inline-code border in the dark theme.
   `.markdown-content code` gives inline code a tinted background, a `1px` border and a
   `6px` radius; the rule meant to undo that for fenced blocks (`.markdown-content pre
@@ -459,6 +558,87 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   markup, CSS, C-like, JavaScript) colour tokens; other languages keep the `language-*`
   class and the focusable `<pre>` but stay uncoloured, as they always did after a tab
   switch.
+- A task without options inherited the separator line of the previous task. The Web UI
+  keeps one page for every task; `updateOptionsDisplay` (the single renderer of the options
+  region since R705) hid the options container for a task without options but left the
+  hairline `#separator` (the rule with `1.25rem` margins between the options and the text
+  box) on screen with the `visible` class of the previous task, so the same prompt looked
+  different depending on what had been on the page before (real Chrome, same options-less
+  task: the textarea started at y=315.5 after a switch from a task with options and at
+  y=295 on a fresh load, with a stray hairline in between). A tab that stays open all day
+  goes through exactly this sequence whenever an agent asks a question with options and
+  the next one without. The function now hides and shows the two together (`hidden` added
+  and `visible` removed, and a template without the separator element is tolerated). Found
+  by a history-independence audit (the page for task B must look the same whether B was
+  active at load or was reached from another task or from the "no request" screen,
+  compared by the rendered-element signatures in real Chrome): with R806 the old tree gave
+  18 differences over 20 task-switch pairs and 22 over 25 "no request, then task" pairs,
+  the new tree 0 and 0 (0 over 20 switch pairs on a 390 px viewport). New invariant R805 (9
+  tests, 4 fail on the old tree; 9 one-point mutants, 7 caught, the other two drop only
+  the `hidden` removal or only the `visible` addition when options appear, which render
+  identically because `.visible` overrides `.hidden`, and are caught together) drives the
+  real `updateOptionsDisplay` against a DOM whose `hidden` / `visible` classes resolve the
+  way `main.css` resolves them (anchored by stylesheet tests: both rules `!important`,
+  equal specificity, `visible` declared later): a plain task after an options task, a fresh
+  page as the reference, six spellings of "no options", alternating tasks, options after a
+  plain task and a missing separator element.
+- The documentation promised an `interactive_feedback` parameter that does not exist.
+  `docs/mcp_tools.md` (and zh-CN) documented a per-call `auto_resubmit_timeout` ("pass `0`
+  to disable auto-resubmit for a single critical task") and ended with a complete Agent-mode
+  example that passes it; `docs/architecture.md` (and zh-CN) drew it into two sequence
+  diagrams and the parameter table. The tool's schema is strict (`additionalProperties:
+  false`), so an agent that copied the documented example got `Unexpected keyword argument`
+  and no task at all (real stdio MCP, old docs: the Agent-mode example of both languages
+  fails, the six other examples work). The same diagrams named two endpoints no route
+  answers (`POST /api/tasks/{id}/complete`, `POST /api/tasks/{id}/auto-resubmit`), called the
+  SSE event `task.created` / `task.completed` (those are `ctx.info` labels; the event is
+  `task_changed`), said the offline poll runs "every 5 s" (it runs every 2 s and backs off
+  to 30 s on errors) and promised an "auto-resubmit marker" the agent never receives. The
+  `feedback_placeholder` description (the schema text the agent reads, and the docs) promised
+  `placeholder_truncated` "in the response", but only the internal `POST /api/tasks` reply
+  carries it; the MCP tool result never does. All corrected: the countdown is documented as
+  the one server-side setting `feedback.frontend_countdown` (default 240 s, `[10, 3600]`, `0`
+  disables) that every task follows, with `timeout` / `timeout_seconds` accepted but ignored;
+  a new "Compatibility parameters" section lists every accepted alias and ignored name (a
+  name outside the schema is a hard error, so the accepted ones have to be listed); the
+  diagrams show `POST /api/tasks/{id}/submit`, `task_changed`, the real poll cadence and what
+  typing-hold really does (`POST .../extend` +60 s when 15 s or less remain and the human
+  typed in the last 10 s, at most 3 per task; at 0 while typing it waits). Why the guards
+  missed it: R287 verified "the parameter exists" with `__code__.co_varnames`, which also
+  lists local variables (the function has a local called `auto_resubmit_timeout`), and
+  R288 / R311 pinned the shape of the diagrams, never their endpoints. R287 now reads the live
+  `tools/list` schema, and the new invariant R804 (26 tests; 17 one-point mutants, all
+  caught) compares the docs with the running thing: every `interactive_feedback(...)`
+  example in the user-facing markdown (names, and values validated with the tool's own JSON
+  Schema), every parameter bullet and table row, every `METHOD /api/...` endpoint (against
+  the live Flask URL map) and the SSE event / poll wording. Real stdio MCP, new docs: every
+  example of both languages creates a task (the Agent-mode one with header `Auth`, its
+  placeholder and `[True, False]` defaults); all six architecture diagrams render in mermaid
+  11 in real Chrome (a deliberately broken one is rejected by the same harness).
+- A loop kept its objective for one round, and the "Rounds" list could be wrong.
+  `interactive_feedback` tells the agent to pass `loop_objective` on the first round of a
+  loop ("later rounds may omit it") and says the objective and `success_criteria` are
+  shown above the prompt, but the strip is drawn from each task's own fields: from round 2
+  on the reviewer saw the loop id, phase and iteration label and nothing to judge the
+  evidence against (a real stdio MCP session with three rounds of one `loop_id` returned
+  rounds 2 and 3 with an empty `loop_objective` and `success_criteria` from
+  `GET /api/tasks` and `GET /api/config`, in the browser and in the VS Code webview alike).
+  `add_task` now stores a missing objective / criteria of a round that belongs to a loop
+  with the loop's most recent value (the newest round still in the queue or the ledger,
+  whichever was supplied last: a round nobody answered does not outvote a newer ledger
+  value; text without a `loop_id` is not a loop). The phase and the iteration label
+  describe one round and are never carried. The "Rounds" panel of both front ends had two
+  defects of its own: expand, collapse and expand again within the response time of
+  `GET /api/loops` drew every round twice (and a failed response wrote its error row into
+  the newer list), and an open panel never refreshed, so submitting round N brought up
+  round N+1 under a list that still said "No completed rounds yet". Each expansion is now
+  a generation that a response has to own before it draws, and a new task of the same loop
+  redraws an open panel (a closed one is not fetched for, and polling the same task does
+  not refetch). New invariant R803: 51 tests (33 fail on the old tree; 21 one-point
+  mutants, all caught), the panel code of the browser and of the webview run in Node with
+  a hand-written DOM and a controllable `fetch`. Real Chrome 153, old vs new: 2 of 6
+  checks passed, now 6 of 6; real stdio MCP, three rounds: objective and criteria now
+  present on rounds 2 and 3.
 - A formula in the agent's message could take over the approval page. With R771 every
   TeX extension MathJax can autoload became loadable, and with the `html` extension
   (`\href`, `\class`, `\style`, `\cssId`) and the CSS option of `\bbox[...]` working, a
@@ -1187,6 +1367,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   previous code (two of the three calls raise `port_in_use`).
   The lock-order guard of R329 (`test_feat_service_manager_lock_order_r329.py`)
   now lists the new lock and why it is outermost.
+- The "port already in use" entry of the troubleshooting guide (EN + zh-CN)
+  no longer says that MCP tool calls hang. They do not: with another process
+  on the Web UI port, a real stdio MCP server returned the re-call prompt at
+  once when that process answers HTTP, and after 7 seconds when it accepts the
+  connection and never answers, and no question appeared in either case. The
+  symptom now says that and quotes the log line to search for
+  (`port_in_use`).
+- The configuration guide (EN + zh-CN) and the template comment of
+  `config.toml.default` described the backend wait as
+  `min(max(frontend_countdown + 40, 260), backend_max_wait)`, which says a
+  `backend_max_wait` of 20 ends the wait after 20 seconds. It never did:
+  `wait_for_task_completion` raises any timeout to `BACKEND_MIN` (260 seconds)
+  on purpose, so the key accepts `[10, 7200]` but a value below 260 acts as
+  260. A real stdio MCP server run with `backend_max_wait = 20` returned its
+  re-call prompt after 263.7 seconds. Both documents now say so (behaviour
+  unchanged).
+- The i18n wrapper table of `CONTRIBUTING.md` and `CONTRIBUTING.zh-CN.md`
+  (§3.quater) is true again. It put `__ncT` in `static/js/webview-notify-core.js`,
+  a file that does not exist (it is `packages/vscode/webview-notify-core.js`),
+  said "7 wrappers" above a table of nine names, and its regular-expression
+  example lacked `_resolveLabel`, which `JS_T_CALL_RE` has had since R259c, so a
+  contributor copying the example would have dropped it.
 - `scripts/precompress_static.py` no longer leaves the `.gz` and `.br` copies
   it writes readable only by the person who ran it. It writes through
   `tempfile.mkstemp`, which creates the file with mode 0600, and `os.replace`
@@ -1196,6 +1398,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   records only the executable bit, so the repository itself never showed it).
   The copies are 0644 now; `test_brotli_precompress_r21_4.py` has a test for
   it that fails with the previous script (mode 0600).
+- The "Copy code" button on a code block no longer shows an internal key. The
+  button is built while the agent's message is rendered, and on a page whose
+  language is detected (the default) that can happen before `AIIA_I18N.init()`
+  has fetched the language file; `t()` then answers with the key itself, and
+  the old button wrote it into its own markup for good. The label read
+  `page.copyCode`, the accessible name was the key too, and neither the
+  translation pass that runs when the language file arrives nor a later
+  language switch could repair it, because nothing on the button said which
+  key it stood for. The same snapshot was what the button went back to two
+  seconds after a click, and "Copied" and "Copy failed" were read when the
+  button was built, so a button built too early also answered with
+  `page.copied`. The label is now a `data-i18n` span (empty until the
+  translation exists, never the key) and the name is bound with
+  `data-i18n-aria-label`, like the VS Code panel's copy button already did;
+  the idle look is rebuilt when it is needed, the feedback labels are read
+  when the button is clicked, and all three are inserted as escaped text.
+  Measured in headless Chromium with the language file delayed by 1.5 s and
+  two code blocks in the message: before, both buttons read `page.copyCode`
+  for good (`page.copyFailed` while a failed click showed its feedback, and
+  `page.copyCode` again afterwards, and a switch to 简体中文 changed nothing);
+  after, they are empty for the first 1.5 s, then read `Copy code`, show
+  `Copy failed` and go back to `Copy code`, and read `复制代码` after the
+  switch. The new `test_copy_button_label_i18n_r773.py` runs the real
+  `i18n.js` and `dom-security.js` in Node (nine tests, seven of them fail on
+  the previous code).
 - A failed request for a static file is no longer cached for a day or a year.
   `add_security_headers` gave every response under `/static/js/`,
   `/static/css/`, `/static/locales/`, `/static/lottie/`, `/fonts/`, `/sounds/`

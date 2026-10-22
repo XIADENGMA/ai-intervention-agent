@@ -8,6 +8,10 @@
 
 ### `_normalize_optional_text(value: Any, max_length: int) -> str | None`
 
+### `_as_utc(moment: datetime) -> datetime`
+
+### `_parse_utc_timestamp(value: Any) -> datetime | None`
+
 ### `_capture_all_thread_stacks() -> str`
 
 ### `_scan_pending_and_dump_slow() -> int`

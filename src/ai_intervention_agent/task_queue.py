@@ -82,6 +82,21 @@ def _normalize_optional_text(value: Any, max_length: int) -> str | None:
     return stripped[:max_length]
 
 
+def _as_utc(moment: datetime) -> datetime:
+    """Naive datetimes are read as UTC so aware and naive values can be compared."""
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
+def _parse_utc_timestamp(value: Any) -> datetime | None:
+    """ISO-8601 text (as the ledger stores it) -> aware datetime; ``None`` if unreadable."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return _as_utc(datetime.fromisoformat(value))
+    except ValueError:
+        return None
+
+
 _LOCK_WATCHDOG_TIMEOUT_S: float = 30.0
 """单次 ``_watched_write_lock`` 的 acquire+hold 上限。超过这个时长 watchdog
 扫到一次就 dump 全线程栈到 ``logger.error``。
@@ -446,6 +461,23 @@ class TaskQueue:
                 if s:
                     normalized_header_label = s[:HEADER_LABEL_MAX_LENGTH]
 
+            normalized_loop_id = _normalize_optional_text(loop_id, LOOP_ID_MAX_LENGTH)
+            normalized_objective = _normalize_optional_text(
+                loop_objective, LOOP_TEXT_MAX_LENGTH
+            )
+            normalized_criteria = _normalize_optional_text(
+                success_criteria, LOOP_TEXT_MAX_LENGTH
+            )
+            if normalized_loop_id:
+                if normalized_objective is None:
+                    normalized_objective = self._carried_loop_text(
+                        normalized_loop_id, "loop_objective", "objective"
+                    )
+                if normalized_criteria is None:
+                    normalized_criteria = self._carried_loop_text(
+                        normalized_loop_id, "success_criteria", "success_criteria"
+                    )
+
             task = Task(
                 task_id=task_id,
                 prompt=prompt,
@@ -455,14 +487,10 @@ class TaskQueue:
                 auto_resubmit_timeout_explicit=auto_resubmit_timeout_explicit,
                 feedback_placeholder=normalized_placeholder,
                 header_label=normalized_header_label,
-                loop_id=_normalize_optional_text(loop_id, LOOP_ID_MAX_LENGTH),
-                loop_objective=_normalize_optional_text(
-                    loop_objective, LOOP_TEXT_MAX_LENGTH
-                ),
+                loop_id=normalized_loop_id,
+                loop_objective=normalized_objective,
                 loop_phase=_normalize_optional_text(loop_phase, LOOP_LABEL_MAX_LENGTH),
-                success_criteria=_normalize_optional_text(
-                    success_criteria, LOOP_TEXT_MAX_LENGTH
-                ),
+                success_criteria=normalized_criteria,
                 iteration_label=_normalize_optional_text(
                     iteration_label, LOOP_LABEL_MAX_LENGTH
                 ),
@@ -709,6 +737,37 @@ class TaskQueue:
 
         self._persist()
         return True
+
+    def _carried_loop_text(
+        self, loop_id: str, task_field: str, bucket_key: str
+    ) -> str | None:
+        """R803: a round that leaves ``loop_objective`` / ``success_criteria`` out keeps the
+        loop's most recent value, so the reviewer still sees them from round 2 on.
+
+        The candidates are the newest round still in the queue that has the value and the
+        ledger's value; whichever was supplied last wins (a round that nobody answered must
+        not outvote a value recorded after it was created). Caller holds the write lock.
+        """
+        newest: Task | None = None
+        for task in self._tasks.values():
+            if task.loop_id != loop_id or not getattr(task, task_field):
+                continue
+            if newest is None or _as_utc(task.created_at) >= _as_utc(newest.created_at):
+                newest = task
+
+        bucket = self._loop_history.get(loop_id) or {}
+        recorded = bucket.get(bucket_key)
+        if not isinstance(recorded, str) or not recorded:
+            recorded = None
+
+        if newest is None:
+            return recorded
+        if recorded is not None:
+            recorded_at = _parse_utc_timestamp(bucket.get("updated_at"))
+            if recorded_at is not None and recorded_at > _as_utc(newest.created_at):
+                return recorded
+        carried = getattr(newest, task_field)
+        return carried if isinstance(carried, str) else None
 
     def _record_loop_round(self, task: Task, result: dict[str, Any]) -> None:
         """把完成的 loop 成员任务压缩为台账轮次条目（调用方必须已持写锁）。"""

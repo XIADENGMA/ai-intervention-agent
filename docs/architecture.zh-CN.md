@@ -81,12 +81,12 @@ sequenceDiagram
 
     Agent->>MCP: interactive_feedback(message,<br/>header_label, predefined_options, ...)
     MCP->>AIIA: POST /api/tasks
-    AIIA->>UI: SSE task.created
+    AIIA->>UI: SSE task_changed（新任务）
     UI->>Human: 浏览器/系统通知<br/>+ 倒计时
     Note over Human: 看 chip + prompt，<br/>点 Yes/No 或打字回复
     Human->>UI: Submit
-    UI->>AIIA: POST /api/tasks/{id}/complete
-    AIIA->>MCP: SSE task.completed (+ ctx.info)
+    UI->>AIIA: POST /api/tasks/{id}/submit
+    AIIA->>MCP: SSE task_changed（completed） (+ ctx.info)
     MCP->>Agent: 返回 text + images + 已选选项
     Note over Agent: 带着人类输入<br/>继续执行
 ```
@@ -106,26 +106,26 @@ sequenceDiagram
     participant Human as 人类审阅者
 
     Note over Agent,Human: ① Auto-resubmit（人离开了）
-    Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=120)
-    AIIA->>UI: SSE task.created（倒计时=120s）
+    Agent->>AIIA: interactive_feedback
+    AIIA->>UI: SSE task_changed（新任务）<br/>倒计时 = feedback.frontend_countdown
     Note over UI: 倒计时归零<br/>（人未在输入）
-    UI->>AIIA: POST /api/tasks/{id}/auto-resubmit
-    AIIA->>Agent: SSE task.completed<br/>（带 "auto-resubmit" 标记）
+    UI->>AIIA: POST /api/tasks/{id}/submit<br/>（人已输入/勾选的内容，否则配置的 resubmit_prompt）
+    AIIA->>Agent: SSE task_changed（completed）<br/>agent 收到 resubmit prompt
 
     Note over UI,AIIA: ② SSE 断流 → 降级 polling → 重连
     UI--xAIIA: SSE 断开（休眠/网络抖动）
-    UI->>AIIA: GET /api/tasks（降级 polling，每 5s）
+    UI->>AIIA: GET /api/tasks（降级 polling：2s，<br/>出错时退避到 30s）
     UI->>AIIA: SSE 重连（指数退避）
     AIIA-->>UI: SSE 恢复
 
     Note over Agent,Human: ③ typing-hold（人在输入，绝不打断）
-    Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=60)
-    UI->>Human: 倒计时显示 60s
+    Agent->>AIIA: interactive_feedback
+    UI->>Human: 倒计时圆环
     Human->>UI: 开始输入反馈
-    Note over UI: 输入中自动延长倒计时<br/>归零也不提交（typing-hold）
+    Note over UI: 剩余 ≤15s 且 10s 内有输入：<br/>POST /api/tasks/{id}/extend（+60s，每任务最多 3 次）<br/>归零时仍在输入：继续等待（typing-hold）
     Human->>UI: 停止输入 + 提交
-    UI->>AIIA: POST /api/tasks/{id}/complete
-    AIIA->>Agent: SSE task.completed（完整回复）
+    UI->>AIIA: POST /api/tasks/{id}/submit
+    AIIA->>Agent: SSE task_changed（completed）（完整回复）
 ```
 
 ### Agent 端参数（LLM 通过 MCP 传入）
@@ -133,9 +133,7 @@ sequenceDiagram
 | 参数 | 作用 | 上限 | 来源 |
 |---|---|---|---|
 | `header_label` | 任务面板上方的 1 词上下文 chip（`Auth`、`DB`、`i18n`） | 16 字符 | gemini-cli `ask_user.header` |
-| `predefined_options` | 多选 checkbox，支持默认选中 | list[str\|dict] | AIIA 原生 |
 | `feedback_placeholder` | 每任务文本框 placeholder（覆盖全局 i18n） | 200 字符 | gemini-cli `ask_user` |
-| `auto_resubmit_timeout` | 每任务倒计时覆盖（0 = 禁用） | `[0, 3600]` 秒 | AIIA 原生 |
 | `predefined_options` | 多选 chip，可选 `default: true` 标记推荐项 | 10000 字符/条 | AIIA + 上游 parity |
 | `loop_id` + 4 个 loop 字段 | 把多轮反馈串成一个循环：目标、阶段、完成标准、轮次标签 | 32–500 字符 | AIIA loop 工程 |
 
