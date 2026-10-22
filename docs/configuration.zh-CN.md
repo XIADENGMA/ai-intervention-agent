@@ -239,6 +239,12 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 >   `~/.config/ai-intervention-agent` 软链到标准目录的 dotfiles 用户），跳过
 >   退休/迁移逻辑直接使用该文件，绝不改名唯一真身。
 
+### 文件权限
+
+`config.toml` 里可能放着密钥——`notification.bark_device_key` 和 `network_security.api_token`——所以代理新建它时只给属主读写（`0600`），不看进程的 `umask`。它写的其他可能带密钥或提示词正文的文件也一样：由旧的 `config.jsonc` / `config.json` 迁移出来的 `config.toml`、`backup_config()` 写出的备份（里面有 `api_token`）、`notification_inflight.json`（还没送达的通知的标题和正文）。
+
+已经存在的文件保持原来的模式：编辑和保存都不会放宽或收紧它（R827）。旧版本给你的 `config.toml` 建成了 `0644` 或 `0666` 的话，执行一次 `chmod 600 config.toml`——在别人也能登录的机器上，否则其他账号都读得到你的 Bark device key 和 API token。备份和 `notification_inflight.json` 是代理自己生成的，每次重写都会顺带收紧。
+
 ## 向后兼容
 
 项目会兼容旧版配置项（便于升级）：

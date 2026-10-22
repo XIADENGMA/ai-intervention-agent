@@ -2,7 +2,7 @@
 
 > 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/config_utils.md`](../api/config_utils.md)
 
-配置工具模块：边界值验证、向后兼容配置读取、类型转换辅助。
+配置工具模块：边界值验证、向后兼容配置读取、类型转换辅助、仅属主可读的文件写入。
 
 ## 函数
 
@@ -45,3 +45,27 @@ config 是从配置文件里读出来、还没有合并默认值的各段；每�
 ### `truncate_string(value: str | None, max_length: int, field_name: str, default: str | None = None, log_warning: bool = True) -> str`
 
 截断字符串到指定长度，空值时使用默认值
+
+### `restrict_to_owner(path: str | os.PathLike[str]) -> None`
+
+把 ``path`` 收紧到 0600；尽力而为，做不到只留一条 DEBUG。
+
+FAT / 部分网络盘不支持 chmod（Windows 上它只管只读位），文件不存在也一样：
+这些情况下文件照用，只是没法收紧，不该让第一次运行或一次保存失败。
+
+### `_restrict_descriptor_to_owner(fd: int) -> bool`
+
+``fchmod(fd, 0600)``，尽力而为；成功返回 ``True``。
+
+### `write_text_owner_only(path: str | os.PathLike[str], text: str) -> None`
+
+写文本文件；文件还不存在时直接以 0600 创建，不会先以 0644 / 0666 出现再收紧。
+
+``open(path, "w")`` 建出来的模式是 ``0666 & ~umask``：umask 022 时同机所有账号可读，
+umask 0（容器、``UMask=0000``）时还可写。这里把模式交给 ``os.open``，umask 只会再
+拿掉几位，不会放宽。
+
+文件已经存在时默认保持它的模式——那可能是用户有意放宽的（组共享），不该悄悄收回。
+代理自己生成的文件（备份、``.tmp``）每次都会写进当前的密钥，传 ``tighten_existing=True``
+让旧版本留下的 0644 文件在被覆盖时一并收紧：在已打开的描述符上 ``fchmod``，第一个字节
+写进去之前就是 0600；没有 ``fchmod`` 的平台（Windows）或它失败时，写完再按路径 chmod。

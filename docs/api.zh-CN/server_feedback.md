@@ -166,6 +166,14 @@ R778 · ``metadata["base_url"]`` 是 Bark 点击跳转链接（``bark_url_templa
 ``url`` 字段，点通知什么也不发生。解析结果是回环地址（手机够不着）时不带，由
 Bark 渠道记下"没有可用链接"。
 
+### `async _revive_web_ui(config: server_config.WebUIConfig, task_id: str, watch: _WebUILossWatch) -> None`
+
+R825：Web UI 进程没了，重新起它；失败只记日志，等待照旧。
+
+``ensure_web_ui_running`` 先做健康检查再起进程：另一个窗口抢先起好了就直接用。
+新进程启动时会把持久化的任务恢复出来（``TaskQueue._restore``），所以正在等的
+任务通常还在。``CancelledError`` 照常往外抛。
+
 ### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int, client: Any | None = None) -> None`
 
 R13·B1 · timeout / cancel 路径的 ghost-task 兜底清理。
@@ -239,6 +247,14 @@ R775：清理经 ``_run_to_completion`` 在独立 task 里跑。MCP runner 用 a
 cancel scope 取消 handler 时，直接写在 ``finally`` 里 ``await`` 的清理会
 被再次取消，close 请求发不出去，被放弃的任务就留在 Web UI 上。
 
+【R825 Web UI 中途没了】两个 IDE 窗口共用一个 Web UI，起它的那个窗口一关，
+``ServiceManager.cleanup_all`` 就把它终止；``kill`` 掉、崩溃同理。以前这里
+只是每 2 s 轮询一次、每次吞掉 ``ConnectError``，页面打不开，调用却要等到后端
+超时（默认 280 s，``timeout=0`` 则永远）才返回。现在轮询连续
+``_WEB_UI_LOST_PROBES`` 次被拒绝连接，就调用 ``ensure_web_ui_running`` 重新
+起 Web UI，它会把持久化的任务恢复出来，等待照常继续；没被恢复就是 404，
+马上拿到“请重新调用”的提示。每次中断最多 ``_WEB_UI_REVIVE_MAX`` 次尝试。
+
 ### `launch_feedback_ui(summary: str, predefined_options: list[str] | None = None, task_id: str | None = None, timeout: int = 300) -> dict[str, Any]`
 
 废弃：旧版 Python API，推荐使用 interactive_feedback() MCP 工具。
@@ -295,6 +311,34 @@ sidebar 渲染一行进度日志，让人类用户能"看到工具确实在工�
 ctx 而崩；具体安全语义见 ``_emit_ctx_info`` 的 docstring。
 
 ## 类
+
+### `class _WebUILossWatch`
+
+R825：数轮询“连续被拒绝连接”的次数，决定该不该把 Web UI 重新起起来。
+
+只有 ``ConnectError`` 算一次拒绝（端口上没有进程在监听）；超时、读错误、HTTP 5xx
+都说明 Web UI 还活着，重启它只会添乱。Web UI 回应了任何 HTTP 状态就整个清零，
+这次中断里已经用掉的尝试次数也重新计。一次中断里每累计 ``_WEB_UI_LOST_PROBES``
+次拒绝才尝试一次（第 3、6、9 次轮询），最多 ``_WEB_UI_REVIVE_MAX`` 次。
+
+单独成类是为了让 ``wait_for_task_completion`` 里只多出两个分支：策略本身（几次
+算没了、试几次）可以直接单测，不必每次都起一个会死的 Web UI。
+
+#### 方法
+
+##### `__init__(self) -> None`
+
+##### `answered(self) -> None`
+
+Web UI 回应了（不论 HTTP 状态）：它还活着，重新开始数。
+
+##### `refusal(self) -> None`
+
+一次连接被拒绝。
+
+##### `revive_due(self) -> bool`
+
+现在该不该重启 Web UI；返回 True 时已把这次尝试记上。
 
 ### `class FeedbackServiceContext`
 

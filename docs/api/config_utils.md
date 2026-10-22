@@ -21,3 +21,9 @@
 ### `validate_enum_value(value: str, valid_values: tuple, field_name: str, default: str) -> str`
 
 ### `truncate_string(value: str | None, max_length: int, field_name: str, default: str | None = None, log_warning: bool = True) -> str`
+
+### `restrict_to_owner(path: str | os.PathLike[str]) -> None`
+
+### `_restrict_descriptor_to_owner(fd: int) -> bool`
+
+### `write_text_owner_only(path: str | os.PathLike[str], text: str) -> None`

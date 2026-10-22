@@ -50,6 +50,8 @@ from ai_intervention_agent.config_utils import clamp_value
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.i18n import msg
 from ai_intervention_agent.web_ui_routes._request_body import (
+    fields_that_are_not_text,
+    invalid_value_response,
     optional_json_object,
     require_json_object,
 )
@@ -161,38 +163,6 @@ if TYPE_CHECKING:
 logger = EnhancedLogger(__name__)
 
 
-def _invalid_value_response(fields: list[str]) -> ResponseReturnValue:
-    """``400 invalid_value`` naming the request fields whose value cannot be used.
-
-    Same envelope ``/api/update-notification-config`` has answered since R790:
-    ``{"status": "error", "error": "invalid_value", "fields": [...], "message": ...}``.
-    The message names the fields and never echoes the values (``bark_device_key``
-    sits beside the rest of the notification settings).
-    """
-    named = sorted(set(fields))
-    return jsonify(
-        {
-            "status": "error",
-            "error": "invalid_value",
-            "fields": named,
-            "message": msg("notify.invalidFieldValue", fields=", ".join(named)),
-        }
-    ), 400
-
-
-def _fields_that_are_not_text(**values: Any) -> list[str]:
-    """Names of the given request values that are present but are not strings.
-
-    ``None`` (JSON ``null``) counts as absent: every caller treats it like a missing
-    or empty value already.
-    """
-    return [
-        name
-        for name, value in values.items()
-        if value is not None and not isinstance(value, str)
-    ]
-
-
 def _float_even_when_too_big(value: Any) -> float:
     """``float(value)``, with an integer too large for a float read as the infinity it is.
 
@@ -273,7 +243,7 @@ class NotificationRoutesMixin:
                     error:
                       type: string
                       enum: [invalid_json, invalid_body, invalid_value]
-                      description: 仅请求体不合法时出现：invalid_json=无法解析/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=bark_url / bark_device_key / bark_icon / bark_action 不是字符串
+                      description: 仅请求体不合法时出现：invalid_json=无法解析（含嵌套超过 32 层）/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=bark_url / bark_device_key / bark_icon / bark_action 不是字符串
                     fields:
                       type: array
                       items:
@@ -308,7 +278,7 @@ class NotificationRoutesMixin:
                 # R797: the provider calls ``.strip()`` / ``.startswith()`` on these;
                 # a number or list reached it, raised ``AttributeError`` and came back
                 # as ``500 "send failed"`` although nothing had been sent.
-                not_text = _fields_that_are_not_text(
+                not_text = fields_that_are_not_text(
                     bark_url=bark_url,
                     bark_device_key=bark_device_key,
                     bark_icon=bark_icon,
@@ -316,7 +286,7 @@ class NotificationRoutesMixin:
                 )
                 if not_text:
                     logger.warning(f"Bark 测试请求被拒绝，字段不是字符串: {not_text}")
-                    return _invalid_value_response(not_text)
+                    return invalid_value_response(not_text)
 
                 # R823: a key that is only blanks is an empty key (400 "enter the key"),
                 # not a send that fails for a reason the page cannot name. ``null`` passed
@@ -483,7 +453,7 @@ class NotificationRoutesMixin:
                     error:
                       type: string
                       enum: [invalid_json, invalid_body]
-                      description: invalid_json=无法解析/缺 JSON Content-Type，invalid_body=不是 JSON 对象
+                      description: invalid_json=无法解析（含嵌套超过 32 层）/缺 JSON Content-Type，invalid_body=不是 JSON 对象
                     message:
                       type: string
                       description: 请求体不合法的人类可读说明
@@ -686,7 +656,7 @@ class NotificationRoutesMixin:
                     error:
                       type: string
                       enum: [invalid_json, invalid_body, invalid_value]
-                      description: invalid_json=无法解析/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=某个字段的值类型不对
+                      description: invalid_json=无法解析（含嵌套超过 32 层）/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=某个字段的值类型不对
                     fields:
                       type: array
                       items:
@@ -880,6 +850,24 @@ class NotificationRoutesMixin:
                             normalize_string,
                         ),
                     ]
+
+                    # 文本字段（Bark 密钥 / URL / 图标 …）原来对任何值做 str()：JSON 列表或对象
+                    # 被存成它的 Python repr（"['abc']"），接口还回"已更新"（R828）。结构化的值
+                    # 不是文本；数字照旧按原样转成文字，null 照旧清空。
+                    structured = sorted(
+                        {
+                            config_key
+                            for request_keys, _, config_key, manager_cast, _ in field_specs
+                            if manager_cast
+                            in (normalize_string, normalize_pasted_string)
+                            and isinstance(first_present(*request_keys)[1], list | dict)
+                        }
+                    )
+                    if structured:
+                        logger.warning(
+                            f"通知配置更新被拒绝，字段值不是文本: {structured}"
+                        )
+                        return invalid_value_response(structured)
 
                     manager_updates: dict[str, Any] = {}
                     changed_keys: list[str] = []
@@ -1153,7 +1141,7 @@ class NotificationRoutesMixin:
                     error:
                       type: string
                       enum: [invalid_json, invalid_body, invalid_value]
-                      description: invalid_json=无法解析/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=某个字段的值不能用（倒计时不是有限整数，提示语不是字符串）
+                      description: invalid_json=无法解析（含嵌套超过 32 层）/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=某个字段的值不能用（倒计时不是有限整数，提示语不是字符串）
                     fields:
                       type: array
                       items:
@@ -1195,7 +1183,7 @@ class NotificationRoutesMixin:
                 # raises ``OverflowError`` (``1e999`` is valid JSON for it) and
                 # ``truncate_string`` calls ``.strip()``: both used to surface as
                 # ``500 "Update failed"`` for what is the caller's mistake.
-                unusable = _fields_that_are_not_text(
+                unusable = fields_that_are_not_text(
                     **{
                         key: data[key]
                         for key in ("resubmit_prompt", "prompt_suffix")
@@ -1212,7 +1200,7 @@ class NotificationRoutesMixin:
                     logger.warning(
                         f"反馈配置更新被拒绝，字段值无效: {sorted(unusable)}"
                     )
-                    return _invalid_value_response(unusable)
+                    return invalid_value_response(unusable)
 
                 if "frontend_countdown" in data:
                     if val == 0:

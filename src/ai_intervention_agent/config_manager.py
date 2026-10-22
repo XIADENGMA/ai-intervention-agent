@@ -19,7 +19,11 @@ from typing import Any, cast
 import tomlkit
 from pydantic import BaseModel, ValidationError
 
-from ai_intervention_agent.config_utils import apply_legacy_key_aliases
+from ai_intervention_agent.config_utils import (
+    apply_legacy_key_aliases,
+    restrict_to_owner,
+    write_text_owner_only,
+)
 from ai_intervention_agent.exceptions import ConfigValidationError
 from ai_intervention_agent.rw_lock import ReadWriteLock as ReadWriteLock
 from ai_intervention_agent.shared_types import SECTION_MODELS
@@ -694,8 +698,8 @@ class ConfigManager(
                 toml_content = tomlkit.dumps(doc)
             else:
                 toml_content = tomlkit.dumps(tomlkit.item(config_data))
-            with open(new_file, "w", encoding="utf-8") as f:
-                f.write(toml_content)
+            # 旧文件里的密钥会原样进到新文件：新文件只有属主读得到（R827）
+            write_text_owner_only(new_file, toml_content)
             backup = old_file.with_suffix(old_file.suffix + ".bak")
             old_file.rename(backup)
             logger.info(
@@ -826,6 +830,9 @@ class ConfigManager(
 
             if self._is_toml_file() and toml_template is not None:
                 shutil.copyfile(toml_template, self.config_file)
+                # copyfile 建出来的模式是 0666 & ~umask（0644，容器里常常是 0666），而这个文件之后会装
+                # Bark device key、API token；之后保存时沿用原文件的模式，所以得从一开始就收紧（R827）
+                restrict_to_owner(self.config_file)
                 with open(toml_template, encoding="utf-8") as f:
                     self._original_content = f.read()
                 logger.info(f"已从 TOML 模板创建默认配置文件: {self.config_file}")
@@ -839,8 +846,7 @@ class ConfigManager(
                     content = tomlkit.dumps(tomlkit.item(default_config))
                 else:
                     content = json.dumps(default_config, indent=2, ensure_ascii=False)
-                with open(self.config_file, "w", encoding="utf-8") as f:
-                    f.write(content)
+                write_text_owner_only(self.config_file, content)
                 self._original_content = content
                 logger.info(f"已创建默认配置文件: {self.config_file}")
 
@@ -851,8 +857,7 @@ class ConfigManager(
                     self._get_default_config()
                 )
                 content = json.dumps(default_config, indent=2, ensure_ascii=False)
-                with open(self.config_file, "w", encoding="utf-8") as f:
-                    f.write(content)
+                write_text_owner_only(self.config_file, content)
                 self._original_content = content
                 logger.info(f"回退创建 JSON 配置文件成功: {self.config_file}")
             except Exception as fallback_error:

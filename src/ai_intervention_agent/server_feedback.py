@@ -415,6 +415,80 @@ _POLL_INTERVAL_SAFETY_NET_S = 30.0
 _FETCH_RETRY_BACKOFF_S: tuple[float, ...] = (0.0, 0.1, 0.25, 0.5, 1.0)
 
 
+_WEB_UI_LOST_PROBES: int = 3
+"""R825：轮询连续这么多次被拒绝连接（端口上没有任何进程在监听），就认定 Web UI 没了。
+
+三次足以把一次瞬间的失败（重启间隙、系统睡眠唤醒后的第一个包）和进程真的退出了区分开；
+再大就是在白白拖长用户的等待——这段时间里页面打不开，问题没处回答。轮询每 2 s 一次，
+默认配置的 ``http_max_retries=3`` 让每次被拒绝的请求再多花约 1.5 s（httpx 连接重试的
+退避），实测从 Web UI 退出到开始重启 8 到 9 s。"""
+
+_WEB_UI_REVIVE_MAX: int = 3
+"""R825：一次中断里最多重启 Web UI 几次。Web UI 回应过（任何 HTTP 状态）就重新计数。
+
+重启失败的常见原因是端口被别的程序占了，再试也不会好；有上限，日志里最多三条错误，
+调用照常等到后端超时然后拿到“请重新调用”的提示。"""
+
+
+class _WebUILossWatch:
+    """R825：数轮询“连续被拒绝连接”的次数，决定该不该把 Web UI 重新起起来。
+
+    只有 ``ConnectError`` 算一次拒绝（端口上没有进程在监听）；超时、读错误、HTTP 5xx
+    都说明 Web UI 还活着，重启它只会添乱。Web UI 回应了任何 HTTP 状态就整个清零，
+    这次中断里已经用掉的尝试次数也重新计。一次中断里每累计 ``_WEB_UI_LOST_PROBES``
+    次拒绝才尝试一次（第 3、6、9 次轮询），最多 ``_WEB_UI_REVIVE_MAX`` 次。
+
+    单独成类是为了让 ``wait_for_task_completion`` 里只多出两个分支：策略本身（几次
+    算没了、试几次）可以直接单测，不必每次都起一个会死的 Web UI。
+    """
+
+    __slots__ = ("refused", "revives")
+
+    def __init__(self) -> None:
+        self.refused = 0
+        self.revives = 0
+
+    def answered(self) -> None:
+        """Web UI 回应了（不论 HTTP 状态）：它还活着，重新开始数。"""
+        self.refused = 0
+        self.revives = 0
+
+    def refusal(self) -> None:
+        """一次连接被拒绝。"""
+        self.refused += 1
+
+    def revive_due(self) -> bool:
+        """现在该不该重启 Web UI；返回 True 时已把这次尝试记上。"""
+        if self.revives >= _WEB_UI_REVIVE_MAX:
+            return False
+        if self.refused < _WEB_UI_LOST_PROBES * (self.revives + 1):
+            return False
+        self.revives += 1
+        return True
+
+
+async def _revive_web_ui(
+    config: server_config.WebUIConfig, task_id: str, watch: _WebUILossWatch
+) -> None:
+    """R825：Web UI 进程没了，重新起它；失败只记日志，等待照旧。
+
+    ``ensure_web_ui_running`` 先做健康检查再起进程：另一个窗口抢先起好了就直接用。
+    新进程启动时会把持久化的任务恢复出来（``TaskQueue._restore``），所以正在等的
+    任务通常还在。``CancelledError`` 照常往外抛。
+    """
+    logger.warning(
+        f"Web UI 没有响应（连续 {watch.refused} 次连接被拒绝），"
+        f"任务 {task_id} 仍在等待，正在重新启动"
+        f"（第 {watch.revives}/{_WEB_UI_REVIVE_MAX} 次）"
+    )
+    try:
+        await service_manager.ensure_web_ui_running(config)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.warning(f"重新启动 Web UI 失败: {e}")
+
+
 _DEADLINE_EXTENSION_PROBE_MAX: int = 50
 """R689（TODO#13）：backend 超时前允许探测"任务倒计时是否被用户延长"的
 最大次数。
@@ -531,7 +605,17 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     R775：清理经 ``_run_to_completion`` 在独立 task 里跑。MCP runner 用 anyio
     cancel scope 取消 handler 时，直接写在 ``finally`` 里 ``await`` 的清理会
     被再次取消，close 请求发不出去，被放弃的任务就留在 Web UI 上。
+
+    【R825 Web UI 中途没了】两个 IDE 窗口共用一个 Web UI，起它的那个窗口一关，
+    ``ServiceManager.cleanup_all`` 就把它终止；``kill`` 掉、崩溃同理。以前这里
+    只是每 2 s 轮询一次、每次吞掉 ``ConnectError``，页面打不开，调用却要等到后端
+    超时（默认 280 s，``timeout=0`` 则永远）才返回。现在轮询连续
+    ``_WEB_UI_LOST_PROBES`` 次被拒绝连接，就调用 ``ensure_web_ui_running`` 重新
+    起 Web UI，它会把持久化的任务恢复出来，等待照常继续；没被恢复就是 404，
+    马上拿到“请重新调用”的提示。每次中断最多 ``_WEB_UI_REVIVE_MAX`` 次尝试。
     """
+    import httpx
+
     if timeout > 0:
         timeout = max(timeout, server_config.BACKEND_MIN)
 
@@ -557,6 +641,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     sse_connected = asyncio.Event()
     sse_ended = asyncio.Event()
     result_box: list[Any] = [None]
+    watch = _WebUILossWatch()
 
     async def _fetch_result() -> dict[str, Any] | None:
         """获取已完成任务的结果，404 返回重调提示。
@@ -564,9 +649,13 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         R685：client 在每次调用时通过 ``_pooled_client()`` 即时获取——
         配置热更新关闭旧 client 后，下一次 fetch 自动拿到重建的新 client，
         不会陷入 "closed client 永远抛错" 的死区。
+
+        R825：Web UI 回应了任何 HTTP 状态就 ``watch.answered()``，连接被拒绝才
+        ``watch.refusal()``——哪些情况算“没了”见 ``_WebUILossWatch``。
         """
         try:
             resp = await _pooled_client().get(api_url, timeout=2)
+            watch.answered()
             if resp.status_code == 404:
                 return server_config._make_resubmit_response(as_mcp=False)
             if resp.status_code == 200:
@@ -579,6 +668,11 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
                         and task.get("result")
                     ):
                         return task["result"]
+        except httpx.ConnectError as e:
+            watch.refusal()
+            logger.debug(
+                f"获取任务结果失败（连接被拒绝，连续 {watch.refused} 次）: {e}"
+            )
         except Exception as e:
             logger.debug(f"获取任务结果失败: {e}")
         return None
@@ -674,6 +768,9 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         睡满才回来；已完成的任务只在 Web UI 里保留约 10s，这段盲区里提交的反馈
         就拿不到了。``_sse_listener`` 退出时 set ``sse_ended`` 叫醒睡眠，轮询立刻
         补一次 fetch 并回到 2s 节奏。
+
+        R825: 连续被拒绝连接到了 ``_WebUILossWatch`` 认定 Web UI 没了的次数，就重启
+        它（``_revive_web_ui``）；重启失败不影响等待，下一个轮询周期照常继续。
         """
         while not completion.is_set():
             r = await _fetch_result()
@@ -681,6 +778,8 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
                 result_box[0] = r
                 completion.set()
                 return
+            if watch.revive_due():
+                await _revive_web_ui(config, task_id, watch)
             sse_ended.clear()
             interval = (
                 _POLL_INTERVAL_SAFETY_NET_S

@@ -92,6 +92,7 @@ from ai_intervention_agent.web_ui_routes import (
     TaskRoutesMixin,
 )
 from ai_intervention_agent.web_ui_routes._request_body import (
+    BoundedJSONProvider,
     request_too_large_response,
     require_json_object,
 )
@@ -521,6 +522,9 @@ class WebFeedbackUI(
         # （``python web_ui.py``，MCP 服务拉起子进程的方式）时 Flask 找不到包路径，
         # 会退回 ``os.getcwd()`` 去推算它；启动者的工作目录被删掉后子进程就在这里崩溃。
         self.app = Flask(__name__, instance_path=str(self._project_root / "instance"))
+        # 请求体嵌套超过 MAX_JSON_NESTING 层一律当"不是 JSON"（R828）：3.14 的 json.loads 不再
+        # 在几千层处自己拒绝，之后对它做 str() 是平方级的。
+        self.app.json = BoundedJSONProvider(self.app)
         ensure_ipv6_trusted_hosts_support()
         ensure_bind_without_reverse_dns()
         self.app.config["TRUSTED_HOSTS"] = build_trusted_hosts(

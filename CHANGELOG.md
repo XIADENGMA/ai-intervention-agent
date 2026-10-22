@@ -456,6 +456,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- A question waiting for its answer hung until the backend timeout when the Web UI died under it
+  (R825). Two IDE windows share one Web UI on the same port: whichever MCP server called
+  `interactive_feedback` first started the child, the other found it healthy and used it without
+  owning it. Close the window that started it and its server terminates the Web UI on the way out
+  (a `kill` or a crash has the same effect); the other window's `wait_for_task_completion` went on
+  polling every 2 s, took every refused connection for "not answered yet" and started nothing, so
+  the page did not open and the question had nowhere to be answered. The call returned at the
+  backend timeout, 280 s with the default 240 s countdown, and never with `timeout=0`, although the
+  task was still in `tasks.json`, from where a new Web UI restores it. Real stdio MCP servers and a
+  real Web UI child, two windows, the one that started the Web UI closes, old tree against new:
+  old, the Web UI stayed down for the 80 s the script looked and the second call stayed pending (an
+  earlier `kill -9` of the child: the resubmit prompt after 272 s); new, the Web UI is back about
+  11 s after the window closed with the second window's task restored, and the answer submitted
+  there reaches the call 1.2 s later. After three polls in a row that are refused (nothing listens
+  on the port; a timeout, a read error or any HTTP answer, a 500 included, means a process is there
+  and does not count) the wait now calls `ensure_web_ui_running`, which health-checks and starts the
+  Web UI (another window may have started it first), and goes on waiting: a restored task is
+  answered as before, one the new Web UI does not know comes back at once with the resubmit prompt.
+  At most three attempts per outage, three refused polls apart; a failed attempt (the port taken by
+  another program) is logged and the wait carries on to its timeout; the Web UI answering sets the
+  count back; a cancel is never swallowed. Detection takes 8 to 9 s with the default
+  `http_max_retries = 3`: three polls 2 s apart, and each refused request also waits through the
+  1.5 s back-off of the connection retries. Left as it was: a Web UI that is alive but does not
+  answer is not touched. The policy (how many refusals, how many attempts, when the count starts
+  over) is a small class and the restart a module-level function, so `wait_for_task_completion`,
+  already past McCabe 20, gains two branches and not six. Two calls waiting in parallel in one
+  server both recover, and one Web UI is started (checked on the real stack with a `kill -9` and
+  with a `SIGTERM` of the child: one new process, one warning per call, no error line). A page
+  left open through the outage keeps the question on screen with the live indicator on
+  "reconnecting", is connected again 4 s after the Web UI is back (real Chrome; the page's own
+  reconnect back-off doubles from 1 s), and the answer typed there reaches the call. 23 tests
+  (13 run the wait against a real loopback HTTP server that is killed the way a process exit
+  does, or a client that fails on a script, 9 of them red on the old code; 10 ask the policy and
+  the restart directly) and 19 one-point mutants all caught.
 - A request whose first words were a bullet, a bracket, a parenthesis or a quote reached the macOS
   desktop two and a half seconds late (R824). The VS Code extension raises its banner with the
   `terminal-notifier` 2.0.0 binary it bundles, and the banner for a new request carries the first
@@ -2402,6 +2436,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   deprecation notices to stderr: one about the logging capability that
   `ctx.info` uses and, when feedback came back with an image, one about
   reading `ImageContent.mimeType` in a debug log line.
+- A list or an object sent for one of the text settings of `POST /api/update-notification-config`
+  (`barkUrl`, `barkDeviceKey`, `barkIcon`, `barkAction`, `barkUrlTemplate`, `webIcon`) is refused
+  instead of being saved as its Python `repr` (R828). The route turned every value into text with
+  `str()`, so `{"barkDeviceKey": ["abc"]}` was written to `config.toml` as `['abc']` and answered
+  `success`, although the route's own OpenAPI says that a value of the wrong type is `400
+  invalid_value` and that nothing is changed; the next Bark push then failed on a key nobody typed.
+  The answer is that `400` now, naming the field (`"fields": ["bark_device_key"]`, the `snake_case`
+  spelling too) and applying nothing, even when the other fields of the request were fine. A number
+  is still stored as its text (`12345` → `"12345"`) and `null` still clears the field. Python 3.14
+  made the same mistake expensive: five bodies of 60 000 nested arrays were stored as five 120 kB
+  strings, `config.toml` went from 1.4 kB to 601 kB and the next settings save took 4.8 s instead of
+  46 ms (see the entry on nesting depth under *Security*).
+- A request to `POST /api/submit` whose JSON body cannot be used no longer ends the question the
+  user is looking at with an empty answer (R829). Only the JSON branch is concerned; the page and
+  the VS Code panel send a form. An empty body, a body without the JSON content type, a syntax
+  error, a JSON string, number, array or `null`, or a body nested deeper than 32 levels was read as
+  "no text, nothing selected" and completed the active task with `200`, so one broken script was
+  enough for the AI to go on with "the user said nothing". It is a `400` now, with the answer its
+  neighbours give (`invalid_json`, `invalid_body`), and the task keeps waiting. A text field that is
+  not text (`task_id`, `feedback_text` or `user_input` as a number, a list or an object) used to be
+  turned into text with `str()` (`"5"`, `"['a']"`); it is `400 invalid_value` naming the field now.
+  JSON `null` means "not given" instead of the word `None`: `{"feedback_text": null}` delivered the
+  answer `None`, and `{"task_id": null}` looked for a task called `None` and was a `404`. A JSON
+  object (an empty one included), a form and a multipart upload behave as before. The OpenAPI block
+  said "`task_id` does not exist" under `400` while the code answers `404`; it now lists the three
+  codes of the `400` and the `404`.
 
 ### Security
 
@@ -2424,6 +2484,68 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   version ranges in `pyproject.toml` and the wheel's requirements are
   untouched, so an environment that already exists keeps the `certifi` it
   has until it is refreshed or upgraded.
+- Log tracebacks no longer print the values of the variables they pass through (R826). The stderr
+  sink was added without `diagnose`, and loguru's default is `True`: under every code line of a
+  traceback it prints the values of the variables that line uses. `LogSanitizer` rewrites only the
+  message, so none of that went through it, and the convention of logging lengths and never content
+  (`task.created … message_len=22`) stopped at the traceback. A Bark push that fails on the network
+  (offline, DNS, a timeout: the commonest failure) logs `exc_info=True`, and the traceback, extended
+  up the call stack, printed the whole `NotificationEvent` with the title and the text the AI had
+  asked the user; an `interactive_feedback` failure printed the prompt. Those lines go to the MCP
+  server's stderr (Cursor's MCP log panel, pasted whole into issues) and to the Web UI child's
+  `web_ui.log` on disk (up to 5 MB). Real stdio MCP server whose Web UI cannot start because another
+  program holds the port, old tree against new: 606 stderr lines, the prompt text in 8 of them and
+  320 variable-dump lines; now 264 lines with none of either. A Bark push to a refused port: 114
+  lines with the notification text once, now 50 and none. The traceback itself (frames, line numbers,
+  code lines) is still logged. The option belongs to the sink, so a sink added later has to pass
+  `diagnose=False` too; a scan over `src/` checks it. 7 tests (3 red on the old code; the other 4
+  check that the scripts ran, that loguru's own defaults do print the values, that the traceback is
+  still there and that the scan sees the sink; a real subprocess, because the sink binds
+  `sys.__stderr__` at import) and 5 one-point mutants all caught.
+- `config.toml` and the other files that can hold a secret are created readable by their owner only
+  (R827). The first run copied the template with `shutil.copyfile`, which creates the file with
+  mode `0666 & ~umask`: `0644` under the usual `umask 022`, `0666` under `umask 0` (containers,
+  `UMask=0000`). Later saves keep the mode of the file they replace, which is right (a mode the user
+  chose is not the agent's to take back), so the file stayed that way while the user's Bark device
+  key and the API token were written into it: readable by every other account on the machine, and
+  under `umask 0` writable by them too, every setting including the network-security rules open to
+  an edit. macOS hides this because `~/Library` is `0700`; on Linux `~/.config` is often `0755`.
+  Three more writers had the same shape: the TOML written when an old `config.jsonc` /
+  `config.json` is migrated, the `backup_config()` JSON (`include_network_security=True`, so it
+  carries `api_token`) and `notification_inflight.json` (titles and bodies of notifications not yet
+  delivered). New files are now created `0600` whatever the `umask`
+  (`config_utils.write_text_owner_only`, `restrict_to_owner`). A file that already exists keeps its
+  mode, except the backup and the `.tmp` of the in-flight file, which the agent generates itself and
+  tightens whenever it rewrites them, on the open descriptor before the first byte is written; an
+  older version's `0644` `config.toml` needs one `chmod 600` from its owner (said in
+  `docs/configuration.md`). A filesystem that refuses `chmod` (FAT, some network shares) only costs
+  the tightening, never the first run. Real Web UI process with a fresh `HOME` and a Bark key saved
+  through the HTTP API, old tree against new: created and saved as `0644` → `0644` (`0666` → `0666`
+  under `umask 0`, writable by everyone), now `0600` → `0600` in both. 33 tests and 21 one-point
+  mutants (every call site, the helpers, and the two atomic writers that must go on keeping the
+  mode) all caught.
+- A JSON body nested more than 32 levels deep is answered `400 invalid_json` on every Python
+  version (R828). Until Python 3.13, `json.loads` gave up by itself at a few thousand levels
+  (`RecursionError`) and the routes counted on it: what cannot be parsed is not a body. Python 3.14
+  (what `uvx` picks on a machine that has it) reads documents about 100 000 levels deep, so a body of
+  120–200 kB reached the code that turns values into text, where `str()` / `repr()` of such a
+  document is quadratic in the depth and ends in `RecursionError: Stack overflow`. On a real
+  thread-per-request server (Python 3.14.9, idle machine) one body of 60 000 levels kept a thread
+  busy for 1.1 s and a `/api/health` request sent meanwhile waited 0.56 s (the C code keeps the GIL,
+  so the SSE keep-alives wait the same); one of 100 000 levels made `update-language`,
+  `update-notification-config`, `test-bark`, `notify-new-tasks`, `notifications/test` and
+  `open-config-file` answer `500`. Even on 3.12 and 3.13 a document 1 000 levels deep was read and
+  acted on (`update-notification-config` answered `success` and stored its `repr`). The app's JSON
+  provider now checks the depth right after parsing (`MAX_JSON_NESTING`; the deepest body a client
+  sends has 5 levels) and turns the interpreter's own `RecursionError` into the same refusal, so
+  `require_json_object()` answers `400 invalid_json` and `optional_json_object()` means "no body"
+  whatever the interpreter; the JSON text in the `selected_options` form field of `/api/submit` is
+  held to the same limit (a 33-level array was kept as the `repr` of its first element). The same
+  bodies, old tree against new: `500` or `200` after 0.6–1.1 s → `400` after 5–16 ms, and the health
+  probe never waited more than 15 ms. Every write route with 147 bodies each (a deep array, a deep
+  object, a deep value under each key a handler reads) at 100 000 levels: 13 answers `5xx` on 3.14
+  before, none on 3.11, 3.12, 3.13 and 3.14 now, and the same answers on all four. 86 tests (63 red
+  on the old code on 3.11, 70 on 3.14) and 23 one-point mutants all caught.
 
 ## [1.8.12] - 2026-09-07
 

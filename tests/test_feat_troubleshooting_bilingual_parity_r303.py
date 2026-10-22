@@ -85,6 +85,7 @@ SECTION_KEYWORDS = [
     (18, "event=server.boot", "event=server.boot"),
     (19, "cross_origin_write_blocked", "cross_origin_write_blocked"),
     (20, "MCP error -32001", "MCP error -32001"),
+    (21, "stops answering while a question is waiting", "页面不响应了"),
 ]
 
 

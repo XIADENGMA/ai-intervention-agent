@@ -27,7 +27,11 @@ try:
 except ImportError:
     CONFIG_FILE_AVAILABLE = False
 
-from ai_intervention_agent.config_utils import clamp_value, validate_enum_value
+from ai_intervention_agent.config_utils import (
+    clamp_value,
+    validate_enum_value,
+    write_text_owner_only,
+)
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.notification_models import (
     NotificationEvent,
@@ -1012,7 +1016,10 @@ class NotificationManager:
             }
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(path.suffix + ".tmp")
-            tmp.write_text(
+            # 里面是还没送达的通知的标题和正文：只有属主读得到（R827）。replace 之后新 inode 的模式就是
+            # tmp 的模式，所以旧版本留下的 0644 文件会在下一次写入时换成 0600 的；崩溃留下的旧 .tmp 同理
+            write_text_owner_only(
+                tmp,
                 json.dumps(
                     payload,
                     ensure_ascii=False,
@@ -1021,6 +1028,7 @@ class NotificationManager:
                 # 读的一侧（_load_persisted_inflight_events）按 UTF-8 解码；不写 encoding 就跟本机
                 # 语言环境走：西文 Windows / LANG=C 上写不出中文，中文 Windows 上写成 GBK（R785）
                 encoding="utf-8",
+                tighten_existing=True,
             )
             os.replace(tmp, path)
         except Exception as exc:

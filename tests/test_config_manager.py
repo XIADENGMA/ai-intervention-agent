@@ -2915,7 +2915,11 @@ class TestCreateDefaultConfigFallbackFailure(unittest.TestCase):
                 "ai_intervention_agent.config_manager.shutil.copy2",
                 side_effect=PermissionError("no"),
             ),
-            patch("builtins.open", side_effect=PermissionError("no write")),
+            # 回退写文件失败：R827 起新建配置文件走 write_text_owner_only（os.open，不经过 builtins.open）
+            patch(
+                "ai_intervention_agent.config_manager.write_text_owner_only",
+                side_effect=PermissionError("no write"),
+            ),
             self.assertRaises(PermissionError),
         ):
             mgr._create_default_config_file()

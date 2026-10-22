@@ -687,6 +687,25 @@ Over HTTPS, a browser that sends `Sec-Fetch-Site` (Chrome 76, Firefox 90, Safari
 1. Find the failure in the MCP log (section 16 says where) and note the time. Set `web_ui.log_level = "INFO"` and restart the server, then look for `等待任务完成:` in its log: the line names the task and the limit (`超时: 260秒`). A failure about 120 seconds after the call, with a larger limit in that line, is the client's idle timeout.
 2. At `DEBUG` level, `progress keepalive failed (ignored)` marks a notification that could not be sent, which means the client was not reading its end of the connection.
 
+## 21. The Web UI page stops answering while a question is waiting, and the MCP log says `Web UI 没有响应`
+
+**Symptom**: the page that shows the question loses its connection or will not load (`ERR_CONNECTION_REFUSED`), and about ten seconds later with the default settings (a little more when the restart itself is slow) it answers again with the question still on it. The log of one MCP server has a `WARNING` line like this:
+
+```text
+Web UI 没有响应（连续 3 次连接被拒绝），任务 <task_id> 仍在等待，正在重新启动（第 1/3 次）
+```
+
+**What it means**: the Web UI process was stopped while a call was waiting for it. The usual reason is two editor windows that share one Web UI (the same `web_ui.port`): the MCP server that started it belongs to the window that was just closed, and a server stops the Web UI it started when it exits. A `kill` or a crash of the Web UI does the same. A window that is still waiting sees three refused polls in a row, starts the Web UI again (at most three attempts per outage, three polls apart) and goes on waiting. The new process restores the task list from `tasks.json`, so the question comes back with its countdown as it was; a question that the closed window left behind comes back as well, and stays until it is answered, closed or counted down.
+
+- If the restart fails, the log then shows `重新启动 Web UI 失败` with the reason. A port that another program holds is the common one: see section 1. The call keeps waiting until its limit and then returns the resubmit prompt; the agent calls the tool again, and that call tries to start the Web UI once more.
+- Only a refused connection counts. A Web UI that is alive but slow, or that answers with an error, is left alone.
+- Nothing needs doing in the normal case: reload the page once it answers.
+
+**Triage**:
+
+1. In the log of the window that was still waiting, look for `Web UI 没有响应` followed by `Web服务已启动`. The first line names the task and the attempt. When another window got there first, the second line is missing from this log and the page simply answers again.
+2. If the page stays down and the second line never comes, read the reason in `重新启动 Web UI 失败`, then see which process holds the port: `lsof -nP -iTCP:8080 -sTCP:LISTEN` (use your `web_ui.port`).
+
 ## Still stuck?
 
 1. Read [`SUPPORT.md`](../.github/SUPPORT.md) for the right channel.

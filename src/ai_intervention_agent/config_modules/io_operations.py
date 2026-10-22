@@ -8,6 +8,7 @@ import tempfile
 import time
 from typing import TYPE_CHECKING, Any, cast
 
+from ai_intervention_agent.config_utils import write_text_owner_only
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 
 if TYPE_CHECKING:
@@ -136,8 +137,13 @@ class IOOperationsMixin:
 
         export_data = self.export_config(include_network_security=True)
 
-        with open(backup_path, "w", encoding="utf-8") as f:
-            json.dump(export_data, f, indent=2, ensure_ascii=False)
+        # include_network_security=True：备份里有 api_token，所以只有属主读得到；这是代理自己生成、
+        # 每次覆盖都写进当前密钥的文件，旧版本留下的 0644 备份在这里一并收紧（R827）
+        write_text_owner_only(
+            backup_path,
+            json.dumps(export_data, indent=2, ensure_ascii=False),
+            tighten_existing=True,
+        )
 
         logger.info(f"配置已备份到: {backup_path}")
         return backup_path

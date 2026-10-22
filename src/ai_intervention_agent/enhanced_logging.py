@@ -159,12 +159,18 @@ _stderr_stream = sys.__stderr__ if getattr(sys, "__stderr__", None) else sys.std
 
 _loguru_logger = _loguru_logger.patch(_sanitize_and_escape)  # ty: ignore[invalid-argument-type]
 
+# ``diagnose=False``（R826）：loguru 默认会在 traceback 的每一帧下面印出该行代码里
+# 变量的值。``LogSanitizer`` 只处理 ``record["message"]``，这些值不经过它，Bark 通知的
+# 正文、用户的答案、密钥都可能随一条网络错误落进 stderr 和 ``web_ui.log``。
+# 这是 sink 自己的选项，所以以后再加 sink 也要写，``tests/test_log_traceback_hides_variable_values_r826.py``
+# 会扫。
 _sink_id = _loguru_logger.add(  # ty: ignore[no-matching-overload]
     _stderr_stream,
     format="{time:YYYY-MM-DD HH:mm:ss,SSS} - {extra[logger_name]} - {level} - {message}",
     level="DEBUG",
     enqueue=False,
     colorize=False,
+    diagnose=False,
 )
 
 

@@ -28,17 +28,85 @@
 
 ``Content-Type`` 仍然必须是 JSON：``force=True`` 会让 ``text/plain`` / 表单提交也能携带 JSON，
 削弱"写接口只收 ``application/json``（跨站表单发不出来）"这层纵深防御（R787 之外的第二道门）。
+
+嵌套深度（R828）
+~~~~~~~~~~~~~~~~
+"嵌套过深的文档按不可解析处理"原来靠的是解释器自己的上限：3.11–3.13 的 ``json.loads``
+在几千层处抛 ``RecursionError``。Python 3.14 把 C 解析器的上限改成跟 C 栈走，十万层的
+文档照样读得进来，这张网就没了：对它做 ``str()`` / ``repr()`` 是平方级的、最后还会撑爆 C 栈。
+120–200 kB 的体让处理它的线程空转 0.6–1.1 秒（闲着的机器上量的；C 代码握着 GIL，同时进来的别的
+请求，SSE 心跳也一样，只能等：``/api/health`` 被拖了 0.66 秒），十万层的体有的路由直接答
+``500 RecursionError: Stack overflow``。
+
+所以深度在读体的地方统一限住：``MAX_JSON_NESTING`` 层（客户端最深发 5 层）。app 的 JSON provider
+（``BoundedJSONProvider``）读完文档后检查深度，过深就抛 Werkzeug 本来就当作"不是 JSON"的
+``ValueError``，解释器自己的 ``RecursionError`` 也转成同一个 ``ValueError``——于是
+``require_json_object()`` 在每个解释器上都答 ``400 invalid_json``，``optional_json_object()`` 都当
+"没带体"。表单字段里的 JSON 文本（``selected_options``）自己 ``json.loads``，用
+``json_nesting_exceeds`` 检查解析出来的值。
 """
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, Final
 
 from flask import Response, current_app, jsonify, request
+from flask.json.provider import DefaultJSONProvider
 from flask.typing import ResponseReturnValue
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 
 from ai_intervention_agent.i18n import msg
+
+# 容器（对象 / 数组）最多嵌套几层。第一方客户端最深 5 层（任务 → prompt_images → 条目 …）；
+# 32 层留足余地，又远在会让 str() / repr() 变慢的深度之下。
+MAX_JSON_NESTING: Final = 32
+
+
+def json_nesting_exceeds(value: object, limit: int = MAX_JSON_NESTING) -> bool:
+    """解析出来的 JSON 值嵌套的容器是否超过 ``limit`` 层（标量 0 层，``[]`` 1 层）。
+
+    用显式栈而不是递归：被检查的就是"深到递归会出事"的值。栈里放的是每一层的迭代器，
+    所以内存只和深度成正比，不和宽度成正比：一个 10 MB、330 万个 ``[]`` 的体检查时不多占
+    内存（把每个子容器连同深度压栈的写法要多占 160 MB）。一超过 ``limit`` 立刻返回，
+    不必走完整个文档。"""
+    if not isinstance(value, dict | list):
+        return False
+    if limit < 1:
+        return True
+    stack: list[Iterator[object]] = [
+        iter(value.values() if isinstance(value, dict) else value)
+    ]
+    while stack:
+        for child in stack[-1]:
+            if isinstance(child, dict | list):
+                if len(stack) >= limit:
+                    return True
+                stack.append(iter(child.values() if isinstance(child, dict) else child))
+                break
+        else:
+            stack.pop()
+    return False
+
+
+class BoundedJSONProvider(DefaultJSONProvider):
+    """``request.get_json()`` 读体用的 provider：嵌套过深一律当"不是 JSON"（``ValueError``）。
+
+    Werkzeug 的 ``get_json(silent=True)`` 只吞 ``ValueError``、``silent=False`` 把它变成
+    ``400``；解释器自己的 ``RecursionError`` 不是 ``ValueError``，这里一并转成它。"""
+
+    def loads(self, s: str | bytes, **kwargs: Any) -> Any:
+        try:
+            value = super().loads(s, **kwargs)
+        except RecursionError as exc:
+            raise ValueError(
+                f"JSON document nested deeper than {MAX_JSON_NESTING} levels"
+            ) from exc
+        if json_nesting_exceeds(value):
+            raise ValueError(
+                f"JSON document nested deeper than {MAX_JSON_NESTING} levels"
+            )
+        return value
 
 
 class InvalidRequestBody(BadRequest):
@@ -88,9 +156,43 @@ def optional_json_object() -> dict[str, Any]:
     try:
         raw = request.get_json(silent=True)
     except RecursionError:
-        # ``silent=True`` 只吞 ValueError；json.loads 对过深嵌套抛 RecursionError。
+        # ``silent=True`` 只吞 ValueError。app 的 provider（``BoundedJSONProvider``）已把
+        # 过深嵌套转成 ValueError；这里兜住没装它的 app（比如测试里临时搭的）。
         return {}
     return raw if isinstance(raw, dict) else {}
+
+
+def fields_that_are_not_text(**values: Any) -> list[str]:
+    """Names of the given request values that are present but are not strings.
+
+    ``None`` (JSON ``null``) counts as absent: every caller treats it like a missing
+    or empty value already.
+    """
+    return [
+        name
+        for name, value in values.items()
+        if value is not None and not isinstance(value, str)
+    ]
+
+
+def invalid_value_response(fields: list[str]) -> ResponseReturnValue:
+    """``400 invalid_value`` naming the request fields whose value cannot be used.
+
+    The envelope ``/api/update-notification-config`` has answered since R790:
+    ``{"status": "error", "error": "invalid_value", "fields": [...], "message": ...}``.
+    The message names the fields and never echoes the values (``bark_device_key``
+    sits beside the rest of the notification settings, and a feedback text is
+    the user's own words).
+    """
+    named = sorted(set(fields))
+    return jsonify(
+        {
+            "status": "error",
+            "error": "invalid_value",
+            "fields": named,
+            "message": msg("notify.invalidFieldValue", fields=", ".join(named)),
+        }
+    ), 400
 
 
 def _format_byte_count(value: object) -> str:

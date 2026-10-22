@@ -13,6 +13,12 @@ from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.feedback_types import FeedbackResult
 from ai_intervention_agent.i18n import msg
 from ai_intervention_agent.task_queue_singleton import get_task_queue
+from ai_intervention_agent.web_ui_routes._request_body import (
+    fields_that_are_not_text,
+    invalid_value_response,
+    json_nesting_exceeds,
+    require_json_object,
+)
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
 
 if TYPE_CHECKING:
@@ -84,11 +90,18 @@ def _selected_options_from_form(raw: str) -> list[str]:
     for an integer of more than 4300 digits, the interpreter's limit on int/str
     conversion, and ``RecursionError`` for nesting deeper than the interpreter
     allows; both used to escape the handler and came back as ``500``.
+
+    The interpreter's limit is not a limit any more on Python 3.14 (it reads documents
+    ~100 000 levels deep), so the depth is bounded here as well (R828): a nested array
+    would otherwise be kept as the ``str()`` of its first element.
     """
     try:
         parsed = json.loads(raw)
     except (ValueError, RecursionError):
         parsed = []
+    else:
+        if json_nesting_exceeds(parsed):
+            parsed = []
     return _sanitize_selected_options(parsed)
 
 
@@ -161,16 +174,37 @@ class FeedbackRoutesMixin:
                       type: boolean
                       description: 提交后是否清空 textarea (前端 UX 提示)
               400:
-                description: 请求格式错误 (JSON 解析失败 / 字段类型错误 /
-                  task_id 不存在)
+                description: 请求体不能用（只出现在既没有文件也没有表单字段、按 JSON 读体的提交上）
                 schema:
                   type: object
                   properties:
                     status:
                       type: string
                       enum: [error]
+                      description: 固定为 "error"
+                    error:
+                      type: string
+                      enum: [invalid_json, invalid_body, invalid_value]
+                      description: invalid_json=无法解析（空体、语法错、含嵌套超过 32 层）/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=task_id / feedback_text / user_input 不是字符串
+                    fields:
+                      type: array
+                      items:
+                        type: string
+                      description: 仅 invalid_value 时出现：不是字符串的字段名
                     message:
                       type: string
+                      description: 人类可读的说明
+              404:
+                description: task_id 指定的任务不存在
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                    error:
+                      type: string
+                      description: 错误说明文本
               413:
                 description: |
                   请求超过上传上限：整个请求大于 ``MAX_CONTENT_LENGTH``
@@ -209,13 +243,6 @@ class FeedbackRoutesMixin:
             logger.info(f"收到提交请求 - Content-Type: {request.content_type}")
             logger.debug(f"request.files keys: {list(request.files.keys())}")
             logger.debug(f"request.form keys: {list(request.form.keys())}")
-            try:
-                json_data = request.get_json()
-                logger.debug(
-                    f"request.json keys: {list(json_data.keys()) if isinstance(json_data, dict) else type(json_data)}"
-                )
-            except Exception as e:
-                logger.debug(f"无法解析JSON数据: {e}")
 
             if request.files:
                 requested_task_id = request.form.get("task_id", "").strip()
@@ -246,31 +273,40 @@ class FeedbackRoutesMixin:
 
                 images = []
             else:
-                try:
-                    data = request.get_json() or {}
-                    requested_task_id = str(data.get("task_id", "")).strip()
-                    feedback_text = str(
-                        data.get("feedback_text", data.get("user_input", ""))
-                    ).strip()
-                    selected_options = _sanitize_selected_options(
-                        data.get("selected_options")
-                    )
-                    images = data.get("images")
-                    if not isinstance(images, list):
-                        images = []
-
-                    logger.debug("接收到的JSON数据:")
-                    logger.debug(
-                        f"  - 文字内容: '{feedback_text}' (长度: {len(feedback_text)})"
-                    )
-                    logger.debug(f"  - 选项: {selected_options}")
-                    logger.debug(f"  - 图片数量: {len(images)}")
-                except Exception:
-                    requested_task_id = ""
-                    feedback_text = ""
-                    selected_options = []
+                # R829: 既没有文件也没有表单字段时，体必须是 JSON 对象。读不了的体（空体、
+                # 缺 JSON Content-Type、语法错、不是对象、嵌套过深）原来被当作“空答案”，
+                # 去完成当前活动任务并答 200：一个坏掉的脚本就能让用户正在等的那个问题
+                # 以空答案结束。调用必须在任何 ``try`` 之外，否则 400 又被吞掉。
+                data = require_json_object()
+                # null 等同没带；文本字段给了别的类型（数字、列表、对象）原来被 str()
+                # 成 "5" / "['a']"，null 成了字面的 "None" 答案。
+                not_text = fields_that_are_not_text(
+                    task_id=data.get("task_id"),
+                    feedback_text=data.get("feedback_text"),
+                    user_input=data.get("user_input"),
+                )
+                if not_text:
+                    logger.warning(f"提交被拒绝，字段值不是文本: {sorted(not_text)}")
+                    return invalid_value_response(not_text)
+                requested_task_id = (data.get("task_id") or "").strip()
+                # ``user_input`` 是旧名字，只在 ``feedback_text`` 没给（或为 null）时用。
+                text_value = data.get("feedback_text")
+                if text_value is None:
+                    text_value = data.get("user_input")
+                feedback_text = (text_value or "").strip()
+                selected_options = _sanitize_selected_options(
+                    data.get("selected_options")
+                )
+                images = data.get("images")
+                if not isinstance(images, list):
                     images = []
-                    logger.debug("JSON解析失败，使用默认值")
+
+                logger.debug("接收到的JSON数据:")
+                logger.debug(
+                    f"  - 文字内容: '{feedback_text}' (长度: {len(feedback_text)})"
+                )
+                logger.debug(f"  - 选项: {selected_options}")
+                logger.debug(f"  - 图片数量: {len(images)}")
 
             task_queue = get_task_queue()
             target_task_id = requested_task_id

@@ -1,6 +1,7 @@
-"""配置工具模块：边界值验证、向后兼容配置读取、类型转换辅助。"""
+"""配置工具模块：边界值验证、向后兼容配置读取、类型转换辅助、仅属主可读的文件写入。"""
 
 import logging
+import os
 from collections.abc import Mapping
 from typing import Any, TypeVar, cast, overload
 
@@ -197,3 +198,63 @@ def truncate_string(
         return value[:max_length]
 
     return value
+
+
+# 只有属主能读写。可能装着密钥的文件（config.toml 里的 Bark device key / API token、
+# 带 api_token 的备份、还没送达的通知正文）新建时用它；已经存在的文件不动（R827）。
+OWNER_ONLY_FILE_MODE = 0o600
+
+
+def restrict_to_owner(path: str | os.PathLike[str]) -> None:
+    """把 ``path`` 收紧到 0600；尽力而为，做不到只留一条 DEBUG。
+
+    FAT / 部分网络盘不支持 chmod（Windows 上它只管只读位），文件不存在也一样：
+    这些情况下文件照用，只是没法收紧，不该让第一次运行或一次保存失败。"""
+    try:
+        os.chmod(path, OWNER_ONLY_FILE_MODE)
+    except OSError as exc:
+        logger.debug(f"[R827] 无法把 {path} 收紧为仅属主可读写: {exc!r}")
+
+
+def _restrict_descriptor_to_owner(fd: int) -> bool:
+    """``fchmod(fd, 0600)``，尽力而为；成功返回 ``True``。"""
+    if not hasattr(os, "fchmod"):
+        return False
+    try:
+        os.fchmod(fd, OWNER_ONLY_FILE_MODE)
+    except OSError as exc:
+        logger.debug(f"[R827] 无法在描述符上收紧为仅属主可读写: {exc!r}")
+        return False
+    return True
+
+
+def write_text_owner_only(
+    path: str | os.PathLike[str],
+    text: str,
+    *,
+    encoding: str = "utf-8",
+    tighten_existing: bool = False,
+) -> None:
+    """写文本文件；文件还不存在时直接以 0600 创建，不会先以 0644 / 0666 出现再收紧。
+
+    ``open(path, "w")`` 建出来的模式是 ``0666 & ~umask``：umask 022 时同机所有账号可读，
+    umask 0（容器、``UMask=0000``）时还可写。这里把模式交给 ``os.open``，umask 只会再
+    拿掉几位，不会放宽。
+
+    文件已经存在时默认保持它的模式——那可能是用户有意放宽的（组共享），不该悄悄收回。
+    代理自己生成的文件（备份、``.tmp``）每次都会写进当前的密钥，传 ``tighten_existing=True``
+    让旧版本留下的 0644 文件在被覆盖时一并收紧：在已打开的描述符上 ``fchmod``，第一个字节
+    写进去之前就是 0600；没有 ``fchmod`` 的平台（Windows）或它失败时，写完再按路径 chmod。"""
+    # O_BINARY：Windows 上 os.open 默认是文本模式，再叠上 TextIOWrapper 的换行翻译会写出 \r\r\n
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0)
+    fd = os.open(path, flags, OWNER_ONLY_FILE_MODE)
+    try:
+        tightened = _restrict_descriptor_to_owner(fd) if tighten_existing else True
+        stream = os.fdopen(fd, "w", encoding=encoding)
+    except BaseException:
+        os.close(fd)
+        raise
+    with stream:
+        stream.write(text)
+    if not tightened:
+        restrict_to_owner(path)
