@@ -1333,180 +1333,254 @@
                     >Bark notifications (iOS)</span
                   >
                 </h5>
-                <div class="setting-item">
+                <div class="setting-item bark-enable-item">
                   <label class="setting-label">
-                    <input type="checkbox" id="bark-notification-enabled" />
+                    <input
+                      type="checkbox"
+                      id="bark-notification-enabled"
+                      aria-controls="bark-settings-fields"
+                    />
                     <span class="setting-title" data-i18n="settings.enableBark"
                       >Enable Bark notification</span
                     >
                   </label>
                 </div>
-                <div class="setting-item">
-                  <label class="setting-label has-input">
-                    <span class="setting-title" data-i18n="settings.barkUrl"
-                      >Bark URL</span
+                <div id="bark-settings-fields" class="bark-fields" hidden>
+                  <div class="setting-item">
+                    <label class="setting-label has-input">
+                      <span class="setting-title" data-i18n="settings.barkUrl"
+                        >Push URL</span
+                      >
+                      <input
+                        type="url"
+                        id="bark-url"
+                        class="setting-input"
+                        placeholder="https://api.day.app/push"
+                        value=""
+                      />
+                    </label>
+                  </div>
+                  <div class="setting-item">
+                    <label class="setting-label has-input">
+                      <span
+                        class="setting-title"
+                        id="bark-device-key-label"
+                        data-i18n="settings.barkDeviceKey"
+                        >Device Key</span
+                      >
+                      <span class="secret-field-row">
+                        <!--
+                          The key is a credential: masked by default, with a
+                          show/hide toggle. autocomplete/data-*ignore keep browsers
+                          and password managers from offering to save or fill it.
+                        -->
+                        <input
+                          type="password"
+                          id="bark-device-key"
+                          class="setting-input"
+                          autocomplete="off"
+                          autocapitalize="off"
+                          autocorrect="off"
+                          spellcheck="false"
+                          data-1p-ignore
+                          data-lpignore="true"
+                          data-bwignore="true"
+                          aria-labelledby="bark-device-key-label"
+                          aria-describedby="bark-device-key-hint"
+                          data-i18n-placeholder="settings.barkDeviceKeyPlaceholder"
+                          placeholder="Paste your Device Key"
+                          value=""
+                        />
+                        <button
+                          type="button"
+                          id="bark-device-key-toggle"
+                          class="btn btn-secondary btn-icon-only secret-field-toggle"
+                          aria-controls="bark-device-key"
+                          data-state="hidden"
+                          data-i18n-title="settings.barkDeviceKeyShow"
+                          data-i18n-aria-label="settings.barkDeviceKeyShow"
+                          title="Show Device Key"
+                          aria-label="Show Device Key"
+                        >
+                          <svg
+                            class="btn-icon secret-icon-show"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                            focusable="false"
+                          >
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                          <svg
+                            class="btn-icon secret-icon-hide"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                            focusable="false"
+                          >
+                            <path
+                              d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                            />
+                            <line x1="1" y1="1" x2="23" y2="23" />
+                          </svg>
+                        </button>
+                      </span>
+                    </label>
+                    <p
+                      class="setting-description"
+                      id="bark-device-key-hint"
+                      data-i18n="settings.barkDeviceKeyHint"
                     >
-                    <input
-                      type="url"
-                      id="bark-url"
-                      class="setting-input"
-                      placeholder="https://api.day.app/push"
-                      value=""
-                    />
-                  </label>
-                </div>
-                <div class="setting-item">
-                  <label class="setting-label has-input">
-                    <span
-                      class="setting-title"
-                      data-i18n="settings.barkDeviceKey"
-                      >Device Key</span
+                      Open the Bark app on your iPhone: in the sample address on its
+                      home screen, the part after the domain is your Device Key
+                      (https://api.day.app/YOUR_KEY/…).
+                    </p>
+                  </div>
+                  <div class="setting-item">
+                    <label class="setting-label has-input">
+                      <span class="setting-title" data-i18n="settings.barkIconUrl"
+                        >Icon URL (optional)</span
+                      >
+                      <input
+                        type="url"
+                        id="bark-icon"
+                        class="setting-input"
+                        placeholder="https://example.com/icon.png"
+                        value=""
+                      />
+                    </label>
+                  </div>
+                  <div class="setting-item">
+                    <label class="setting-label has-input">
+                      <span class="setting-title" data-i18n="settings.barkAction"
+                        >Click action</span
+                      >
+                      <select id="bark-action" class="setting-select">
+                        <option value="none" data-i18n="settings.barkActionNone">
+                          No action
+                        </option>
+                        <option value="url" data-i18n="settings.barkActionUrl">
+                          Open link
+                        </option>
+                        <option value="copy" data-i18n="settings.barkActionCopy">
+                          Copy content
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="setting-item">
+                    <label class="setting-label has-input">
+                      <span
+                        class="setting-title"
+                        data-i18n="settings.barkUrlTemplate"
+                        >Click URL template</span
+                      >
+                      <input
+                        type="text"
+                        id="bark-url-template"
+                        class="setting-input"
+                        data-i18n-placeholder="settings.barkUrlTemplatePlaceholder"
+                        placeholder="http://ai.local:8080/?task_id={task_id}"
+                        value=""
+                      />
+                    </label>
+                    <p
+                      class="setting-description"
+                      data-i18n="settings.barkUrlTemplateHint"
                     >
-                    <input
-                      type="text"
-                      id="bark-device-key"
-                      class="setting-input"
-                      data-i18n-placeholder="settings.barkDeviceKeyPlaceholder"
-                      placeholder="Enter Bark Device Key"
-                      value=""
-                    />
-                  </label>
-                </div>
-                <div class="setting-item">
-                  <label class="setting-label has-input">
-                    <span class="setting-title" data-i18n="settings.barkIconUrl"
-                      >Icon URL (optional)</span
-                    >
-                    <input
-                      type="url"
-                      id="bark-icon"
-                      class="setting-input"
-                      placeholder="https://example.com/icon.png"
-                      value=""
-                    />
-                  </label>
-                </div>
-                <div class="setting-item">
-                  <label class="setting-label has-input">
-                    <span class="setting-title" data-i18n="settings.barkAction"
-                      >Click action</span
-                    >
-                    <select id="bark-action" class="setting-select">
-                      <option value="none" data-i18n="settings.barkActionNone">
-                        No action
-                      </option>
-                      <option value="url" data-i18n="settings.barkActionUrl">
-                        Open link
-                      </option>
-                      <option value="copy" data-i18n="settings.barkActionCopy">
-                        Copy content
-                      </option>
-                    </select>
-                  </label>
-                </div>
-                <div class="setting-item">
-                  <label class="setting-label has-input">
-                    <span
-                      class="setting-title"
-                      data-i18n="settings.barkUrlTemplate"
-                      >Click URL template</span
-                    >
-                    <input
-                      type="text"
-                      id="bark-url-template"
-                      class="setting-input"
-                      data-i18n-placeholder="settings.barkUrlTemplatePlaceholder"
-                      placeholder="http://ai.local:8080/?task_id={task_id}"
-                      value=""
-                    />
-                  </label>
-                  <p
-                    class="setting-description"
-                    data-i18n="settings.barkUrlTemplateHint"
-                  >
-                    Used when click action is "Open link" and no explicit URL is
-                    supplied. Supports {task_id} / {event_id} / {base_url}
-                    placeholders.
-                  </p>
-                </div>
-                <div
-                  class="setting-item bark-base-url-status"
-                  id="bark-base-url-status-item"
-                  hidden
-                >
+                      Used when click action is "Open link" and no explicit URL is
+                      supplied. Supports {task_id} / {event_id} / {base_url}
+                      placeholders.
+                    </p>
+                  </div>
                   <div
-                    class="setting-label"
-                    style="
-                      flex-direction: column;
-                      align-items: stretch;
-                      gap: 6px;
-                    "
+                    class="setting-item bark-base-url-status"
+                    id="bark-base-url-status-item"
+                    hidden
                   >
-                    <span
-                      class="setting-title"
-                      data-i18n="settings.baseUrlStatusTitle"
-                      >Externally reachable base URL</span
-                    >
-                    <p
-                      class="setting-description"
-                      id="bark-base-url-status-message"
-                    ></p>
-                    <p
-                      class="setting-description"
-                      id="bark-base-url-status-suggestion"
-                    ></p>
                     <div
-                      class="bark-base-url-actions"
-                      style="display: flex; gap: 8px; flex-wrap: wrap"
+                      class="setting-label"
+                      style="
+                        flex-direction: column;
+                        align-items: stretch;
+                        gap: 6px;
+                      "
                     >
-                      <button
-                        class="btn btn-secondary"
-                        id="bark-base-url-copy-btn"
-                        type="button"
-                        hidden
+                      <span
+                        class="setting-title"
+                        data-i18n="settings.baseUrlStatusTitle"
+                        >Externally reachable base URL</span
                       >
-                        <span data-i18n="settings.baseUrlCopyLan"
-                          >Copy LAN URL</span
-                        >
-                      </button>
-                      <button
-                        class="btn btn-secondary"
-                        id="bark-base-url-recheck-btn"
-                        type="button"
+                      <p
+                        class="setting-description"
+                        id="bark-base-url-status-message"
+                      ></p>
+                      <p
+                        class="setting-description"
+                        id="bark-base-url-status-suggestion"
+                      ></p>
+                      <div
+                        class="bark-base-url-actions"
+                        style="display: flex; gap: 8px; flex-wrap: wrap"
                       >
-                        <span data-i18n="settings.baseUrlRecheck"
-                          >Re-check</span
+                        <button
+                          class="btn btn-secondary"
+                          id="bark-base-url-copy-btn"
+                          type="button"
+                          hidden
                         >
-                      </button>
+                          <span data-i18n="settings.baseUrlCopyLan"
+                            >Copy LAN URL</span
+                          >
+                        </button>
+                        <button
+                          class="btn btn-secondary"
+                          id="bark-base-url-recheck-btn"
+                          type="button"
+                        >
+                          <span data-i18n="settings.baseUrlRecheck"
+                            >Re-check</span
+                          >
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div class="setting-item">
-                  <button
-                    class="btn btn-secondary"
-                    id="test-bark-notification-btn"
-                  >
-                    <svg
-                      class="btn-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                      focusable="false"
+                  <div class="setting-item">
+                    <button
+                      class="btn btn-secondary"
+                      id="test-bark-notification-btn"
                     >
-                      <path
-                        d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"
-                      />
-                      <polyline points="14 2 14 8 20 8" />
-                      <line x1="9" y1="15" x2="15" y2="15" />
-                    </svg>
-                    <span data-i18n="settings.testBarkBtn"
-                      >Test Bark notification</span
-                    >
-                  </button>
+                      <svg
+                        class="btn-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <path
+                          d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"
+                        />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="9" y1="15" x2="15" y2="15" />
+                      </svg>
+                      <span data-i18n="settings.testBarkBtn"
+                        >Test Bark notification</span
+                      >
+                    </button>
+                  </div>
                 </div>
               </div>
 

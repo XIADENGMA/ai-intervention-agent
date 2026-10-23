@@ -63,7 +63,6 @@ UNTRANSLATED_WHITELIST: set[str] = {
     # 代码标识符
     "config.command.example",
     # URL 字段
-    "settings.barkUrl",
     "settings.barkUrlTemplatePlaceholder",
     # 语言名称 (zh-TW 内的 "繁體中文" 与 en 内的 "繁體中文" 是相同
     # 自我标识)

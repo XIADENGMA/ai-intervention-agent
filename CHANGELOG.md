@@ -398,6 +398,69 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   descriptor, the error unchanged), the mode rules, the encoding under a C locale, and an AST scan
   that the four call sites call the helper once and hold no copy of the sequence; the persistence
   tests that looked for `f.flush()` and `os.replace` inside `_persist` look at the helper now.
+- The Bark settings show only what is needed and keep the Device Key out of sight, in the Web UI
+  and in the VS Code panel alike (R852). Opening the settings put all six Bark fields on the page
+  whether or not Bark was in use; the Device Key, the secret that lets anyone push to the owner's
+  phone, was plain readable text; and the labels did not help: the panel's were English in every
+  language (`Bark URL`, `Bark Device Key`, `Bark Icon`, `Bark Action`, where the repeated word was
+  all that told them apart from the settings next to them), the Web UI's placeholder on a Chinese
+  page read `请输入 Bark Device Key`, and the two surfaces worded the same field differently. Now
+  the fields sit in one group that stays collapsed until `Enable Bark notification` is ticked (the
+  checkbox stays outside the group, `aria-controls` ties the two, and the panel's `Test Bark`
+  button follows the checkbox); the Device Key is a password field with a show / hide button (a
+  real button with an eye / eye-off icon, a state attribute and an accessible name that says what
+  a press will do) and, under it, one line on where to copy the key from (in the Bark app, the
+  part of the sample address after the domain), and password managers are told to leave it alone
+  (`autocomplete="off"`, `data-1p-ignore`, `data-lpignore`, `data-bwignore`); the key is masked
+  again when the group collapses and when the panel closes, and pressing the button saves nothing.
+  The labels lose the repeated product name (`Push URL` / `推送地址`, `Device Key` / `设备 Key` /
+  `裝置 Key`, `Icon URL`, `Click action`), exist in all three languages and are the same strings
+  on both surfaces. Nothing changes on the wire or in `config.toml`: the same keys are sent and
+  stored. Checked in a real browser against real backends, in English, 简体 and 繁體: 84 checks on
+  the Web UI and 87 on the panel (rendered from the compiled `dist/webview.js`), plus light and
+  dark screenshots and measurements at 390, 480, 700 and 1000 px. The 390 px one found that
+  `.btn { width: 100% }` below 768 px made the toggle swallow the row (the key field shrank to
+  34 px); the toggle's rule now outranks it. `test_no_authentication_surface_r724.py` still
+  refuses password fields anywhere in the pages but now names the one credential field it allows
+  (`bark-device-key`), and the labels that the untranslated-key audits had listed as English on
+  purpose (R353 / R374 for the panel, R350 / R366 for `settings.barkUrl`) are off those lists. A
+  new test, `test_bark_settings_display_r852.py` (50 tests, 46 of which fail on the previous
+  tree; 76 of 76 mutants killed), parses both templates (the group is collapsed in the markup and
+  does not contain its checkbox, the key is masked and has no value, the button has a name and
+  both icons), checks the strings (no repeated product name, Chinese in the Chinese locales,
+  identical on both surfaces, a hint that shows the address the key sits in) and the style rules
+  the layout depends on, and runs the two real scripts in Node against a small DOM (the saved
+  setting decides whether the group is open, ticking opens it and unticking closes and re-masks
+  it, the button reveals and masks without saving, closing the panel masks the key, a page
+  without the group still works).
+- The config file path's "open in IDE" button is an icon button again, and the two settings rows
+  that pair a text field with one now share their rules (R853). The button is a `.btn` and was
+  sized by a rule with one class, `.config-path-open-btn`; the generic `.btn` block further down
+  `main.css` has one class as well and comes later, so it won. On a desktop the icon button was
+  the 130 x 52 px pill every other button is, and in a window 768 px wide or narrower, where
+  `.btn` is `width: 100%`, it took the whole row, squeezed the path field to 34 px and made the
+  row 42 px wider than its box (measured in headless Chrome 156 at 1000, 768 and 390 px; the
+  Device Key's eye button, added by R852, had been written against that cascade and was fine).
+  Now the config path row and the Device Key row use the same rules, and the button rules carry
+  three classes (`.config-path-row .config-path-open-btn.btn`,
+  `.secret-field-row .secret-field-toggle.btn`), so no generic `.btn` rule outranks them: the
+  button is 46 x 44 px at every width, with a mouse and with a touch screen; the field takes the
+  rest of the row (622, 508 and 268 px wide at 1000, 768 and 390 px); the field's own top margin
+  moved to the row so the stretched button lines up with it; and the icon lost the right margin
+  that sat it off the centre. The one thing a user sees change is the config path button on a
+  desktop: a compact icon button beside the field, like the Device Key's eye, instead of a wide
+  pill. Nothing is sent or stored differently. A new test,
+  `test_field_icon_button_layout_r853.py` (90 tests, 4 of which fail on the previous tree; 66 of
+  66 mutants killed), reads `main.css` and `main.min.css` the way the cascade does, for the real
+  elements of `web_ui.html` (specificity and source order, `!important`, media queries at eight
+  widths with and without a touch pointer, `margin` / `padding` / `flex` / `gap` beside their
+  longhands), and requires, in every window, that the button keeps its own size (no width, at
+  most 3rem of minimum width and 1rem of padding, `flex: 0 0 auto`, the field's corners, an
+  icon with no margin), that the field grows and may shrink, that the row carries the top margin
+  and stretches its items, and that the two rows are laid out alike; a rule it cannot judge
+  raises instead of being guessed at. The model's values were compared with `getComputedStyle`
+  in Chrome on the old and on the new stylesheet, at three widths with a mouse and as a
+  touch-only device: 2588 values, no difference.
 
 ### Removed
 

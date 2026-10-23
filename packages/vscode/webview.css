@@ -1368,6 +1368,7 @@ body.vscode-light .no-content-progress-bar {
 }
 
 .settings-field input[type="text"],
+.settings-field input[type="password"],
 .settings-field input[type="number"] {
   width: 100%;
   padding: 8px 10px;
@@ -1392,6 +1393,7 @@ body.vscode-light .no-content-progress-bar {
 }
 
 .settings-field input[type="text"]:focus,
+.settings-field input[type="password"]:focus,
 .settings-field input[type="number"]:focus,
 .settings-field select:focus,
 .settings-field textarea:focus {
@@ -1423,6 +1425,47 @@ body.vscode-light .no-content-progress-bar {
 .settings-config-open-btn {
   flex: none;
   white-space: nowrap;
+}
+
+.settings-bark-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-secret-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.settings-secret-row input[type="text"],
+.settings-secret-row input[type="password"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-secret-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+}
+
+.settings-secret-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.settings-secret-toggle .secret-icon-hide,
+.settings-secret-toggle[data-state="shown"] .secret-icon-show {
+  display: none;
+}
+
+.settings-secret-toggle[data-state="shown"] .secret-icon-hide {
+  display: block;
 }
 
 .settings-field textarea {

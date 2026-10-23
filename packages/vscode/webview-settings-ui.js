@@ -251,6 +251,35 @@
     return !!(overlay && !overlay.classList.contains("hidden"));
   }
 
+  function setBarkDeviceKeyRevealed(revealed) {
+    const input = document.getElementById("notifyBarkDeviceKey");
+    const toggle = document.getElementById("settingsBarkDeviceKeyToggleBtn");
+    if (input) input.type = revealed ? "text" : "password";
+    if (!toggle) return;
+    const key = revealed
+      ? "settings.bark.deviceKeyHide"
+      : "settings.bark.deviceKeyShow";
+    const label = revealed
+      ? t("settings.bark.deviceKeyHide")
+      : t("settings.bark.deviceKeyShow");
+    toggle.setAttribute("data-state", revealed ? "shown" : "hidden");
+    toggle.setAttribute("data-i18n-title", key);
+    if (label && label !== key) {
+      toggle.setAttribute("title", label);
+      toggle.setAttribute("aria-label", label);
+    }
+  }
+
+  function syncBarkFieldsVisibility() {
+    const enabledEl = document.getElementById("notifyBarkEnabled");
+    const enabled = !!(enabledEl && enabledEl.checked);
+    const fields = document.getElementById("settingsBarkFields");
+    if (fields) fields.hidden = !enabled;
+    const testBtn = document.getElementById("settingsTestBarkBtn");
+    if (testBtn) testBtn.hidden = !enabled;
+    if (!enabled) setBarkDeviceKeyRevealed(false);
+  }
+
   function populateSettingsForm(settings) {
     isPopulatingSettingsForm = true;
     try {
@@ -274,6 +303,7 @@
       setValue("notifyBarkIcon", s.barkIcon);
       setValue("notifyBarkAction", s.barkAction);
       setValue("notifyBarkUrlTemplate", s.barkUrlTemplate);
+      syncBarkFieldsVisibility();
     } finally {
       isPopulatingSettingsForm = false;
     }
@@ -476,6 +506,11 @@
     if (overlay) overlay.classList.add("hidden");
     stopSettingsAutoRefresh({ preserveAutoSave: true });
     setSettingsHint("", false);
+    try {
+      setBarkDeviceKeyRevealed(false);
+    } catch (_e) {
+
+    }
   }
 
   async function openSettings() {
@@ -901,6 +936,16 @@
         );
       if (settingsTestBarkBtn)
         settingsTestBarkBtn.addEventListener("click", testBark);
+      const barkKeyToggleBtn = document.getElementById(
+        "settingsBarkDeviceKeyToggleBtn",
+      );
+      if (barkKeyToggleBtn)
+        barkKeyToggleBtn.addEventListener("click", () => {
+          const barkKeyInput = document.getElementById("notifyBarkDeviceKey");
+          setBarkDeviceKeyRevealed(
+            !!barkKeyInput && barkKeyInput.type === "password",
+          );
+        });
 
       try {
         initBarkBaseUrlStatus();
@@ -978,6 +1023,7 @@
           const t = e && e.target;
           const id = t && t.id ? String(t.id) : "";
           if (!id || !id.startsWith("notify")) return;
+          if (id === "notifyBarkEnabled") syncBarkFieldsVisibility();
           markSettingsDirty();
         };
         settingsPanel.addEventListener("input", maybeMarkDirty);

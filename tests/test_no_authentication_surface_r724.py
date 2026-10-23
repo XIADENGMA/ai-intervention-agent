@@ -8,6 +8,10 @@ reverse proxy in front of the page, so the copy now says access was denied and
 points at the network access settings. This file keeps that wording honest and
 keeps authentication from creeping back into the surfaces that never had it:
 the FastMCP constructor, the page templates and the first-party front-end code.
+
+A masked input is not a sign-in: the one password-type field the page templates
+may carry is a pasted credential for a third-party push service (the Bark device
+key), listed in ``PASTED_CREDENTIAL_FIELD_IDS`` below.
 """
 
 from __future__ import annotations
@@ -40,6 +44,9 @@ SETTINGS_HINT = {
 VENDORED_WEB_JS = {"marked.js", "prism.js", "tex-mml-chtml.js"}
 AUTH_HEADER = re.compile(r"""['"]authorization['"]|\bbearer\s""", re.I)
 PASSWORD_FIELD = re.compile(r"""type\s*=\s*['"]?password""", re.I)
+INPUT_TAG = re.compile(r"<input\b[^>]*>", re.I | re.S)
+FIELD_ID = re.compile(r"""\bid\s*=\s*['"]([^'"]+)['"]""", re.I)
+PASTED_CREDENTIAL_FIELD_IDS = {"bark-device-key"}
 
 
 def _status_text(locale: str) -> str:
@@ -80,7 +87,12 @@ class TestNoAuthenticationSurface:
         templates = sorted((PACKAGE / "templates").glob("*.html"))
         assert templates
         for path in templates:
-            assert PASSWORD_FIELD.search(path.read_text(encoding="utf-8")) is None, path
+            for tag in INPUT_TAG.findall(path.read_text(encoding="utf-8")):
+                if PASSWORD_FIELD.search(tag) is None:
+                    continue
+                field_id = FIELD_ID.search(tag)
+                assert field_id is not None, (path, tag)
+                assert field_id.group(1) in PASTED_CREDENTIAL_FIELD_IDS, (path, tag)
 
     def test_first_party_front_end_code_sets_no_authorization_header(self) -> None:
         sources = [

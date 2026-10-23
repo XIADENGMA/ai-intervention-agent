@@ -76,7 +76,6 @@ UNTRANSLATED_WHITELIST: set[str] = {
     # 代码标识符 / shell 命令 (技术术语保留)
     "config.command.example",
     # URL 字段 - 配置示例 URL 模板
-    "settings.barkUrl",
     "settings.barkUrlTemplatePlaceholder",
     # 语言名称自指代 (zh-CN 内的 "中文" / zh-TW 内的 "繁體中文" 与
     # en 内的英文名是不同的 — 这里 zh-CN.langZhCN = "中文" 而

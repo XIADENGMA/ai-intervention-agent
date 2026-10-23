@@ -40,11 +40,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 VSCODE_LOCALES = REPO_ROOT / "packages" / "vscode" / "locales"
 
 UNTRANSLATED_WHITELIST: set[str] = {
-    # Bark 配置 (推送服务术语 / URL placeholder, 跨语言通用)
-    "settings.bark.action",
-    "settings.bark.deviceKey",
-    "settings.bark.icon",
-    "settings.bark.url",
+    # Bark 配置 (URL 示例 placeholder, 跨语言通用; R852 起标签本身已翻译)
+    "settings.bark.iconPlaceholder",
     "settings.bark.urlPlaceholder",
     "settings.bark.urlTemplatePlaceholder",
     # 版本号链接 (链接 URL 不翻译)

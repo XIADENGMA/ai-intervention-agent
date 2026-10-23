@@ -78,6 +78,35 @@ class SettingsManager {
     return element;
   }
 
+  _syncBarkFieldsVisibility(enabled) {
+    const fields = document.getElementById("bark-settings-fields");
+    if (!fields) return;
+    fields.hidden = !enabled;
+    if (!enabled) {
+      this._setBarkDeviceKeyRevealed(false);
+    }
+  }
+
+  _setBarkDeviceKeyRevealed(revealed) {
+    const input = document.getElementById("bark-device-key");
+    const toggle = document.getElementById("bark-device-key-toggle");
+    if (input) {
+      input.type = revealed ? "text" : "password";
+    }
+    if (!toggle) return;
+    const key = revealed
+      ? "settings.barkDeviceKeyHide"
+      : "settings.barkDeviceKeyShow";
+    const label = revealed
+      ? _tl("settings.barkDeviceKeyHide", "Hide Device Key")
+      : _tl("settings.barkDeviceKeyShow", "Show Device Key");
+    toggle.setAttribute("data-state", revealed ? "shown" : "hidden");
+    toggle.setAttribute("data-i18n-title", key);
+    toggle.setAttribute("data-i18n-aria-label", key);
+    toggle.setAttribute("title", label);
+    toggle.setAttribute("aria-label", label);
+  }
+
   init() {
     if (this.initialized) {
       return Promise.resolve();
@@ -369,6 +398,7 @@ class SettingsManager {
     if (barkUrlTplEl) {
       barkUrlTplEl.value = this.settings.barkUrlTemplate || "";
     }
+    this._syncBarkFieldsVisibility(Boolean(this.settings.barkEnabled));
   }
 
   getStatusIcon(type) {
@@ -517,6 +547,15 @@ class SettingsManager {
         this.testBarkNotification(),
       );
     }
+    const barkKeyToggleBtn = document.getElementById("bark-device-key-toggle");
+    if (barkKeyToggleBtn) {
+      barkKeyToggleBtn.addEventListener("click", () => {
+        const barkKeyInput = document.getElementById("bark-device-key");
+        this._setBarkDeviceKeyRevealed(
+          Boolean(barkKeyInput) && barkKeyInput.type === "password",
+        );
+      });
+    }
     if (resetSettingsBtn) {
       resetSettingsBtn.addEventListener("click", () => this.resetSettings());
     }
@@ -589,6 +628,9 @@ class SettingsManager {
       };
 
       if (settingMap[e.target.id]) {
+        if (e.target.id === "bark-notification-enabled") {
+          this._syncBarkFieldsVisibility(e.target.checked);
+        }
         this.updateSetting(settingMap[e.target.id], e.target.checked);
       } else if (e.target.id === "sound-volume") {
         this.updateSetting("soundVolume", parseInt(e.target.value));
@@ -1181,6 +1223,8 @@ class SettingsManager {
       document.removeEventListener("keydown", this._settingsEscHandler);
       this._settingsEscHandler = null;
     }
+
+    this._setBarkDeviceKeyRevealed(false);
 
     const prev = this._previouslyFocusedElement;
     this._previouslyFocusedElement = null;

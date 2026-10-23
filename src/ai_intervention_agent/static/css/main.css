@@ -1315,32 +1315,6 @@ h1 {
   margin-bottom: 0.25rem;
 }
 
-.config-path-row {
-  display: flex;
-  align-items: stretch;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.config-path-row .config-path-input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.config-path-open-btn {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 0.85rem;
-  min-width: 2.6rem;
-}
-
-.config-path-open-btn .btn-icon {
-  width: 1.05rem;
-  height: 1.05rem;
-}
-
 .config-path-open-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1359,6 +1333,63 @@ h1 {
 
 .config-path-status.is-success {
   color: #34c759;
+}
+
+.setting-item.bark-enable-item {
+  margin-bottom: 0;
+}
+
+.bark-fields {
+  margin-top: 1rem;
+}
+
+/* A text field with an icon button beside it (the config file path's "open in
+   IDE", the Device Key's eye).  The field's own top margin moves to the row, or the
+   stretched button would start above the field.  The global .btn comes later in this
+   file (min-width 130px, padding 1rem 1.75rem, width 100% below 768px), so a rule
+   with one class loses to it; the button rules carry three. */
+.config-path-row,
+.secret-field-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.config-path-row .config-path-input,
+.secret-field-row .setting-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.config-path-row .config-path-open-btn.btn,
+.secret-field-row .secret-field-toggle.btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 2.75rem;
+  padding: 0 0.85rem;
+  border-radius: 8px;
+}
+
+.config-path-open-btn .btn-icon,
+.secret-field-toggle .btn-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-right: 0;
+}
+
+.secret-field-toggle .secret-icon-hide,
+.secret-field-toggle[data-state="shown"] .secret-icon-show {
+  display: none;
+}
+
+.secret-field-toggle[data-state="shown"] .secret-icon-hide {
+  display: inline;
 }
 
 .visually-hidden {
@@ -3735,6 +3766,9 @@ code,
     border-radius: 0;
     background: transparent;
     border: none;
+  }
+  .bark-fields {
+    margin-top: 0.75rem;
   }
 
   .setting-label {

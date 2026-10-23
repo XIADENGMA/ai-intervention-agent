@@ -35,11 +35,8 @@ VSCODE_LOCALES = REPO_ROOT / "packages" / "vscode" / "locales"
 # Whitelist: vscode locale 内合理保留的 untranslated key
 # 主要类别: Bark URL 配置项 (技术术语 / placeholder URL) + 版本号链接
 UNTRANSLATED_WHITELIST: set[str] = {
-    # Bark 配置 (推送服务术语 / URL placeholder, 跨语言通用)
-    "settings.bark.action",
-    "settings.bark.deviceKey",
-    "settings.bark.icon",
-    "settings.bark.url",
+    # Bark 配置 (URL 示例 placeholder, 跨语言通用; R852 起标签本身已翻译)
+    "settings.bark.iconPlaceholder",
     "settings.bark.urlPlaceholder",
     "settings.bark.urlTemplatePlaceholder",
     # 版本号链接 (链接 URL 不翻译)

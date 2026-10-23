@@ -2064,40 +2064,56 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
                 <label class="settings-toggle">
                     <span data-i18n="settings.bark.enabled">${tl("settings.bark.enabled")}</span>
-                    <input type="checkbox" id="notifyBarkEnabled">
+                    <input type="checkbox" id="notifyBarkEnabled" aria-controls="settingsBarkFields">
                 </label>
-                <label class="settings-field">
-                    <span class="settings-label" data-i18n="settings.bark.url">${tl("settings.bark.url")}</span>
-                    <input type="text" id="notifyBarkUrl" placeholder="${tl("settings.bark.urlPlaceholder")}" data-i18n-placeholder="settings.bark.urlPlaceholder">
-                </label>
-                <label class="settings-field">
-                    <span class="settings-label" data-i18n="settings.bark.deviceKey">${tl("settings.bark.deviceKey")}</span>
-                    <input type="text" id="notifyBarkDeviceKey" placeholder="${tl("settings.bark.deviceKeyPlaceholder")}" data-i18n-placeholder="settings.bark.deviceKeyPlaceholder">
-                </label>
-                <label class="settings-field">
-                    <span class="settings-label" data-i18n="settings.bark.icon">${tl("settings.bark.icon")}</span>
-                    <input type="text" id="notifyBarkIcon" placeholder="${tl("settings.bark.iconPlaceholder")}" data-i18n-placeholder="settings.bark.iconPlaceholder">
-                </label>
-                <label class="settings-field">
-                    <span class="settings-label" data-i18n="settings.bark.action">${tl("settings.bark.action")}</span>
-                    <select id="notifyBarkAction">
-                        <option value="none" data-i18n="settings.bark.actionNone">${tl("settings.bark.actionNone")}</option>
-                        <option value="url" data-i18n="settings.bark.actionUrl">${tl("settings.bark.actionUrl")}</option>
-                        <option value="copy" data-i18n="settings.bark.actionCopy">${tl("settings.bark.actionCopy")}</option>
-                    </select>
-                </label>
-                <label class="settings-field">
-                    <span class="settings-label" data-i18n="settings.bark.urlTemplate">${tl("settings.bark.urlTemplate")}</span>
-                    <input type="text" id="notifyBarkUrlTemplate" placeholder="${tl("settings.bark.urlTemplatePlaceholder")}" data-i18n-placeholder="settings.bark.urlTemplatePlaceholder">
-                    <span class="settings-field-hint" data-i18n="settings.bark.urlTemplateHint">${tl("settings.bark.urlTemplateHint")}</span>
-                </label>
-                <div class="settings-field bark-base-url-status" id="settingsBarkBaseUrlStatus" hidden>
-                    <span class="settings-label" data-i18n="settings.bark.baseUrlStatusTitle">${tl("settings.bark.baseUrlStatusTitle")}</span>
-                    <span class="settings-field-hint" id="settingsBarkBaseUrlMessage"></span>
-                    <span class="settings-field-hint" id="settingsBarkBaseUrlSuggestion"></span>
-                    <div class="settings-bark-base-url-actions">
-                        <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlCopyBtn" hidden data-i18n="settings.bark.baseUrlCopyLan">${tl("settings.bark.baseUrlCopyLan")}</button>
-                        <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlRecheckBtn" data-i18n="settings.bark.baseUrlRecheck">${tl("settings.bark.baseUrlRecheck")}</button>
+                <div class="settings-bark-fields" id="settingsBarkFields" hidden>
+                    <label class="settings-field">
+                        <span class="settings-label" data-i18n="settings.bark.url">${tl("settings.bark.url")}</span>
+                        <input type="text" id="notifyBarkUrl" placeholder="${tl("settings.bark.urlPlaceholder")}" data-i18n-placeholder="settings.bark.urlPlaceholder">
+                    </label>
+                    <div class="settings-field">
+                        <label class="settings-label" for="notifyBarkDeviceKey" data-i18n="settings.bark.deviceKey">${tl("settings.bark.deviceKey")}</label>
+                        <div class="settings-secret-row">
+                            <!-- Credential: masked by default with a show/hide toggle; autocomplete / data-*ignore keep browsers and password managers from saving or filling it. -->
+                            <input type="password" id="notifyBarkDeviceKey" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore="true" aria-describedby="settingsBarkDeviceKeyHint" placeholder="${tl("settings.bark.deviceKeyPlaceholder")}" data-i18n-placeholder="settings.bark.deviceKeyPlaceholder">
+                            <button type="button" class="settings-action secondary settings-secret-toggle" id="settingsBarkDeviceKeyToggleBtn" aria-controls="notifyBarkDeviceKey" data-state="hidden" title="${tl("settings.bark.deviceKeyShow")}" aria-label="${tl("settings.bark.deviceKeyShow")}" data-i18n-title="settings.bark.deviceKeyShow">
+                                <svg class="settings-secret-icon secret-icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                <svg class="settings-secret-icon secret-icon-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                                </svg>
+                            </button>
+                        </div>
+                        <span class="settings-field-hint" id="settingsBarkDeviceKeyHint" data-i18n="settings.bark.deviceKeyHint">${tl("settings.bark.deviceKeyHint")}</span>
+                    </div>
+                    <label class="settings-field">
+                        <span class="settings-label" data-i18n="settings.bark.icon">${tl("settings.bark.icon")}</span>
+                        <input type="text" id="notifyBarkIcon" placeholder="${tl("settings.bark.iconPlaceholder")}" data-i18n-placeholder="settings.bark.iconPlaceholder">
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-label" data-i18n="settings.bark.action">${tl("settings.bark.action")}</span>
+                        <select id="notifyBarkAction">
+                            <option value="none" data-i18n="settings.bark.actionNone">${tl("settings.bark.actionNone")}</option>
+                            <option value="url" data-i18n="settings.bark.actionUrl">${tl("settings.bark.actionUrl")}</option>
+                            <option value="copy" data-i18n="settings.bark.actionCopy">${tl("settings.bark.actionCopy")}</option>
+                        </select>
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-label" data-i18n="settings.bark.urlTemplate">${tl("settings.bark.urlTemplate")}</span>
+                        <input type="text" id="notifyBarkUrlTemplate" placeholder="${tl("settings.bark.urlTemplatePlaceholder")}" data-i18n-placeholder="settings.bark.urlTemplatePlaceholder">
+                        <span class="settings-field-hint" data-i18n="settings.bark.urlTemplateHint">${tl("settings.bark.urlTemplateHint")}</span>
+                    </label>
+                    <div class="settings-field bark-base-url-status" id="settingsBarkBaseUrlStatus" hidden>
+                        <span class="settings-label" data-i18n="settings.bark.baseUrlStatusTitle">${tl("settings.bark.baseUrlStatusTitle")}</span>
+                        <span class="settings-field-hint" id="settingsBarkBaseUrlMessage"></span>
+                        <span class="settings-field-hint" id="settingsBarkBaseUrlSuggestion"></span>
+                        <div class="settings-bark-base-url-actions">
+                            <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlCopyBtn" hidden data-i18n="settings.bark.baseUrlCopyLan">${tl("settings.bark.baseUrlCopyLan")}</button>
+                            <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlRecheckBtn" data-i18n="settings.bark.baseUrlRecheck">${tl("settings.bark.baseUrlRecheck")}</button>
+                        </div>
                     </div>
                 </div>
 

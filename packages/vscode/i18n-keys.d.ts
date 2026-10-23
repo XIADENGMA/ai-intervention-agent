@@ -37,7 +37,10 @@ export type I18nKey =
   | "settings.bark.baseUrlSuggestLan"
   | "settings.bark.baseUrlSuggestNoLan"
   | "settings.bark.deviceKey"
+  | "settings.bark.deviceKeyHide"
+  | "settings.bark.deviceKeyHint"
   | "settings.bark.deviceKeyPlaceholder"
+  | "settings.bark.deviceKeyShow"
   | "settings.bark.enabled"
   | "settings.bark.icon"
   | "settings.bark.iconPlaceholder"
@@ -207,7 +210,10 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "settings.bark.baseUrlSuggestLan",
   "settings.bark.baseUrlSuggestNoLan",
   "settings.bark.deviceKey",
+  "settings.bark.deviceKeyHide",
+  "settings.bark.deviceKeyHint",
   "settings.bark.deviceKeyPlaceholder",
+  "settings.bark.deviceKeyShow",
   "settings.bark.enabled",
   "settings.bark.icon",
   "settings.bark.iconPlaceholder",
