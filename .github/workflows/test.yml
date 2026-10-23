@@ -40,7 +40,10 @@ jobs:
   test:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 3.11 这一格带 coverage：整个任务 8 分钟以上，不带 coverage 的几格是 4-5.5 分钟。
+    # 2026-10-23 同一份代码 pytest 用了 466 s 和 578 s，后一次在测试结束后 1 秒被旧的
+    # 10 分钟上限掐掉（任务被取消，后面的步骤没跑）。20 分钟给 2 倍余量，与 codeql.yml 一致。
+    timeout-minutes: 20
 
     strategy:
       fail-fast: false
