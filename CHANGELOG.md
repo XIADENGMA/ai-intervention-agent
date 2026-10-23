@@ -2644,6 +2644,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (re)connect, and one when a page is loaded. The extension host (status bar counts) schedules
   its next poll before its stream is open and was left alone. 16 tests (11 red on the old code)
   and 10 one-point mutants all caught.
+- A configuration test failed at random on CI (R841). `test_the_real_watcher_thread_closes_the_gap`,
+  the test that runs the real config watcher thread, failed once on Python 3.13 (run 39916947793, on
+  Dependabot pull request #127, which only raises the eslint version in two JavaScript files) with
+  `assert 0.8 == 0.2`, after the check that the watcher had reloaded had passed. The product was
+  right and the test helper was wrong: it wrote `config.toml` in place and then moved the file's
+  modification time back to a made-up value, and in between the file is empty and dated by the real
+  clock, which is above the made-up value. A watcher poll in that moment reads the empty file, notes
+  the high mtime and never reloads again, since it reloads only on a greater one. Measured with the
+  real `ConfigManager` watcher (1 ms poll, 3000 edits per way): writing in place left the manager on
+  the old value after 194 edits on Linux and 36 on macOS; writing a temp file and renaming it over
+  the old one, after none. Keeping the file empty for 0.5 s makes the real test fail with the CI's
+  message. `ConfigManager` already saves by renaming (`tempfile` + `os.replace`), so nothing changes
+  for users; the helper now does the same. 2 new tests (both red on the old helper) and 4 one-point
+  mutants, all caught in every one of 6 runs.
 
 ### Security
 

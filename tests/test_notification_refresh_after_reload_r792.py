@@ -57,12 +57,20 @@ class World:
         monkeypatch.setattr(f"{MODULE}.CONFIG_FILE_AVAILABLE", True)
 
     def edit(self, volume: int) -> None:
-        """Write the file and give it a modification time that cannot equal the last one."""
-        self.path.write_text(
-            f"[notification]\nsound_volume = {volume}\n", encoding="utf-8"
-        )
+        """Replace the file, as ``ConfigManager`` saves it, with a modification time that cannot equal the last one.
+
+        The new file is finished and dated next to the old one and then renamed over it, so the
+        watcher thread of the real-watcher test sees the old file or the new one and nothing in
+        between.  Writing in place left the file empty for a moment, dated by the real clock and
+        therefore *above* the made-up one the next ``os.utime`` set; a poll landing in that moment
+        read the empty file, noted the high mtime and never reloaded again, because the watcher
+        reloads only on a greater one (R841: ``assert 0.8 == 0.2`` on CI).
+        """
+        new = self.path.with_name(self.path.name + ".new")
+        new.write_text(f"[notification]\nsound_volume = {volume}\n", encoding="utf-8")
         self._mtime += 10
-        os.utime(self.path, (self._mtime, self._mtime))
+        os.utime(new, (self._mtime, self._mtime))
+        os.replace(new, self.path)
 
     def refresh(self) -> None:
         self.manager.refresh_config_from_file()
