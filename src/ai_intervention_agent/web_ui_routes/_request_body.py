@@ -42,12 +42,19 @@
 （``BoundedJSONProvider``）读完文档后检查深度，过深就抛 Werkzeug 本来就当作"不是 JSON"的
 ``ValueError``，解释器自己的 ``RecursionError`` 也转成同一个 ``ValueError``——于是
 ``require_json_object()`` 在每个解释器上都答 ``400 invalid_json``，``optional_json_object()`` 都当
-"没带体"。表单字段里的 JSON 文本（``selected_options``）自己 ``json.loads``，用
-``json_nesting_exceeds`` 检查解析出来的值。
+"没带体"。表单字段里的 JSON 文本（``selected_options``）走同一个 ``loads_bounded``。
+
+孤立代理项（R845）
+~~~~~~~~~~~~~~~~~~
+标准库 ``json.loads`` 会把不成对的 ``"\\ud800"`` 读成一个没有 UTF-8 编码的字符串（原因和后果见
+``text_safety``：MCP 服务进程会在序列化工具结果时退出）。``loads_bounded`` 读完文档、查过深度之后
+把它们换成 U+FFFD，所以所有读 JSON 文本的入口——任何路由的体、表单里的 JSON 字段——拿到的都是
+能编码的文本。路由里不该再有自己的 ``json.loads``。
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any, Final
 
@@ -57,6 +64,7 @@ from flask.typing import ResponseReturnValue
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 
 from ai_intervention_agent.i18n import msg
+from ai_intervention_agent.text_safety import scrub_lone_surrogates
 
 # 容器（对象 / 数组）最多嵌套几层。第一方客户端最深 5 层（任务 → prompt_images → 条目 …）；
 # 32 层留足余地，又远在会让 str() / repr() 变慢的深度之下。
@@ -89,24 +97,29 @@ def json_nesting_exceeds(value: object, limit: int = MAX_JSON_NESTING) -> bool:
     return False
 
 
-class BoundedJSONProvider(DefaultJSONProvider):
-    """``request.get_json()`` 读体用的 provider：嵌套过深一律当"不是 JSON"（``ValueError``）。
+def loads_bounded(s: str | bytes | bytearray, **kwargs: Any) -> Any:
+    """读不可信的 JSON 文本：嵌套过深一律当"不是 JSON"（``ValueError``），孤立代理项换成 U+FFFD。
 
     Werkzeug 的 ``get_json(silent=True)`` 只吞 ``ValueError``、``silent=False`` 把它变成
-    ``400``；解释器自己的 ``RecursionError`` 不是 ``ValueError``，这里一并转成它。"""
+    ``400``；解释器自己的 ``RecursionError`` 不是 ``ValueError``，这里一并转成它。语法错误仍是
+    ``json.JSONDecodeError``（也是 ``ValueError``）。深度检查在代理项清洗之前，清洗才可以放心遍历。
+    """
+    try:
+        value = json.loads(s, **kwargs)
+    except RecursionError as exc:
+        raise ValueError(
+            f"JSON document nested deeper than {MAX_JSON_NESTING} levels"
+        ) from exc
+    if json_nesting_exceeds(value):
+        raise ValueError(f"JSON document nested deeper than {MAX_JSON_NESTING} levels")
+    return scrub_lone_surrogates(value)
+
+
+class BoundedJSONProvider(DefaultJSONProvider):
+    """``request.get_json()`` 读体用的 provider：读法见 ``loads_bounded``。"""
 
     def loads(self, s: str | bytes, **kwargs: Any) -> Any:
-        try:
-            value = super().loads(s, **kwargs)
-        except RecursionError as exc:
-            raise ValueError(
-                f"JSON document nested deeper than {MAX_JSON_NESTING} levels"
-            ) from exc
-        if json_nesting_exceeds(value):
-            raise ValueError(
-                f"JSON document nested deeper than {MAX_JSON_NESTING} levels"
-            )
-        return value
+        return loads_bounded(s, **kwargs)
 
 
 class InvalidRequestBody(BadRequest):

@@ -58,6 +58,7 @@ from ai_intervention_agent.exceptions import (
     ServiceUnavailableError,
     ValidationError,
 )
+from ai_intervention_agent.text_safety import scrub_lone_surrogates
 
 logger = EnhancedLogger(__name__)
 
@@ -680,7 +681,10 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
                         and task.get("status") == "completed"
                         and task.get("result")
                     ):
-                        return task["result"]
+                        # R845：结果里只要有一个孤立代理项，序列化工具返回值时 stdio
+                        # 写出任务就会失败、整个 MCP 进程退出。Web UI 入口已经清洗过，这里是
+                        # 进程边界上的最后一道：对端是什么版本、发来什么，回复都必须能编码。
+                        return scrub_lone_surrogates(task["result"])
         except httpx.ConnectError as e:
             watch.refusal()
             logger.debug(
@@ -1533,6 +1537,15 @@ async def interactive_feedback(
             )
             _bump_feedback_counter("failed_total")
 
+            # R847：没有得到答复的请求不等于 Web UI 没收到它。读超时、连接在答复途中断开
+            # 时请求已经送达、队列已经收下任务；这里直接让 agent 重调，第一个任务就成了
+            # 没有人在等的幽灵任务，排在前面被用户看到，用户的回答它收不到。与 R13 /
+            # R775 同一个修法：关掉这次调用可能建出来的任务（本来就没有时是 404，吞掉）。
+            await _run_to_completion(
+                _close_orphan_task_best_effort(
+                    task_id, target_host, config.port, client=client
+                )
+            )
             return server_config._make_resubmit_response()
         except asyncio.CancelledError:
             await _run_to_completion(

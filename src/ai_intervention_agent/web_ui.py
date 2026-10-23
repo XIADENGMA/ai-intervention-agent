@@ -589,6 +589,7 @@ class WebFeedbackUI(
             app=self.app,
             default_limits=["60 per minute", "10 per second"],
             headers_enabled=True,
+            client_ip=self._current_client_ip,
         )
 
         self.setup_security_headers()

@@ -1,7 +1,9 @@
-"""配置工具模块：边界值验证、向后兼容配置读取、类型转换辅助、仅属主可读的文件写入。"""
+"""配置工具模块：边界值验证、向后兼容配置读取、类型转换辅助、仅属主可读的文件写入、原子写入。"""
 
+import contextlib
 import logging
 import os
+import tempfile
 from collections.abc import Mapping
 from typing import Any, TypeVar, cast, overload
 
@@ -258,3 +260,45 @@ def write_text_owner_only(
         stream.write(text)
     if not tightened:
         restrict_to_owner(path)
+
+
+def atomic_write_text(
+    path: str | os.PathLike[str],
+    text: str,
+    *,
+    keep_existing_mode: bool = False,
+    temp_prefix: str = "",
+) -> None:
+    """整个文件换成 ``text``：同目录的临时文件写满 → ``flush`` → ``fsync`` → ``os.replace``。
+
+    读的一侧要么看到旧内容、要么看到新内容，崩溃或断电后也不会留下写了一半的文件；``fsync``
+    必须在 ``replace`` 之前，否则文件名已经指向新 inode、数据却还在页缓存里（R17.2）。任何异常
+    （包括 ``KeyboardInterrupt`` 和任务取消）都会先删掉临时文件再原样抛出，旧文件原封不动。
+
+    新文件的模式是 ``mkstemp`` 给的 0600：里面可能有密钥（R827）。``keep_existing_mode=True``
+    时，被替换的文件原来是什么模式就保持什么模式——可能是用户有意放宽的（组共享），保存一次
+    不该悄悄收回；没有 ``os.fchmod`` 的平台（Windows）上这一步跳过。目录要由调用方先建好。
+    """
+    target = os.fspath(path)
+    original_mode: int | None = None
+    if keep_existing_mode and hasattr(os, "fchmod"):
+        try:
+            original_mode = os.stat(target).st_mode
+        except OSError:
+            pass
+
+    fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(target) or ".", prefix=temp_prefix, suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            if original_mode is not None:
+                os.fchmod(stream.fileno(), original_mode)
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp_path, target)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+        raise

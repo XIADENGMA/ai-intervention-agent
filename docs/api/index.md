@@ -160,6 +160,7 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 - [task_constants](task_constants.md)
 - [task_queue](task_queue.md)
 - [task_queue_singleton](task_queue_singleton.md)
+- [text_safety](text_safety.md)
 - [web_ui](web_ui.md)
 - [web_ui_config_sync](web_ui_config_sync.md)
 - [web_ui_mdns](web_ui_mdns.md)
@@ -206,6 +207,7 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 - **notification_models**: Notification data models
 - **notification_providers**: Concrete notification backends (Web Push / system sound / Bark / mobile vibration / macOS native)
 - **task_constants**: Cheap-to-import task constants used by task queue and Web UI cold-start paths
+- **text_safety**: Replaces lone UTF-16 surrogates in text that came from untrusted JSON, so one unpaired escape in a request cannot stop the MCP server (R845)
 - **file_validator**: File validation
 - **enhanced_logging**: Logging enhancements
 - **remote_environment**: SSH / WSL remote-environment detection (R225) — pure-function probes used by the Web UI startup banner to surface actionable port-forwarding hints when bound to loopback on a remote host

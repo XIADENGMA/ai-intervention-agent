@@ -2306,11 +2306,12 @@ class TestGetRequestClientIp(unittest.TestCase):
         self.assertEqual(self.ui._get_request_client_ip(environ), "10.0.0.5")
 
     def test_loopback_trusts_forwarded_for(self):
+        # R849: the proxy next to the Web UI wrote the right-most entry
         environ = {
             "REMOTE_ADDR": "127.0.0.1",
             "HTTP_X_FORWARDED_FOR": "10.0.0.99, 10.0.0.1",
         }
-        self.assertEqual(self.ui._get_request_client_ip(environ), "10.0.0.99")
+        self.assertEqual(self.ui._get_request_client_ip(environ), "10.0.0.1")
 
     def test_loopback_empty_forwarded_for(self):
         environ = {"REMOTE_ADDR": "127.0.0.1", "HTTP_X_FORWARDED_FOR": ""}
@@ -2330,7 +2331,7 @@ class TestGetRequestClientIp(unittest.TestCase):
         from ai_intervention_agent.web_ui import WebFeedbackUI
 
         self.assertEqual(
-            WebFeedbackUI._parse_forwarded_for("10.0.0.1, 10.0.0.2"), "10.0.0.1"
+            WebFeedbackUI._parse_forwarded_for("10.0.0.1, 10.0.0.2"), "10.0.0.2"
         )
 
 

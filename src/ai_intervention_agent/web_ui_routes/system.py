@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from flask import jsonify, request
+from flask import g, jsonify, request
 from flask.typing import ResponseReturnValue
 
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
@@ -1400,12 +1400,19 @@ def _render_prometheus_metrics() -> str:
 
 
 def _get_client_ip() -> str:
-    """读取 Flask 请求的真实客户端 IP（不信任 X-Forwarded-* 头）。"""
-    return request.remote_addr or ""
+    """这次请求的访问者地址：和访问控制、限流认同一个（R850）。
+
+    ``before_request`` 钩子把 ``SecurityMixin._current_client_ip()`` 的答案放在
+    ``g.client_ip``。同机反向代理后面所有请求的连接地址都是 127.0.0.1，按连接地址
+    判断“是不是本机”，每个通过访问控制的访问者都会算本机；这里给的是代理写下的
+    访问者地址（只信任来自本机的连接，取 ``trusted_proxy_hops`` 指的那一项）。
+    钩子没有跑过时给空串，调用方按“不是本机”处理。
+    """
+    return g.get("client_ip", "")
 
 
 def _is_loopback_request() -> bool:
-    """仅本机来源（127.0.0.1 / ::1）的请求允许执行打开命令。"""
+    """访问者本人在本机（127.0.0.1 / ::1）才允许；经本机代理来的远程访问者不算。"""
     return _get_client_ip() in _resolve_loopback_ips()
 
 

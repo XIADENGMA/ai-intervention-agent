@@ -86,6 +86,63 @@ as narrow as possible and prefer SSH tunnels when feasible. The live settings AP
 must be able to round-trip existing notification configuration, so it is not a
 secret-redacted public API.
 
+## Client Address Behind a Reverse Proxy
+
+The access control (`network_security.allowed_networks` and `blocked_ips`) and the
+rate limiter tell visitors apart by one client address. A connection from another
+machine is judged by its own address and its `X-Forwarded-For` header is not read
+(a proxy on another machine counts as itself). A connection from the Web UI's own
+machine is a reverse proxy next to it (the setup above), so the client is the address
+that proxy wrote in `X-Forwarded-For`.
+
+Every proxy appends the address it saw on the right of that header, and everything to
+the left of it was written by the visitor, who can name any address there. The client
+is therefore the entry `network_security.trusted_proxy_hops` counts from the right:
+
+- `1` (default): one proxy next to the Web UI, for example nginx. The client is the
+  last entry.
+- `2`: one more proxy in front of that, for example CDN → nginx → Web UI. nginx must
+  append the CDN's address to what the CDN sent (`$proxy_add_x_forwarded_for`), which
+  makes the client the second entry from the right.
+- `0`: do not trust `X-Forwarded-For`. Every request through the local proxy is judged
+  as the proxy itself (`127.0.0.1`).
+
+A header with fewer entries than the setting counts gives its first entry. The setting
+takes a whole number from 0 to 8; anything else is read as `1`, with a warning in the
+log. An edit applies within about 2 seconds, like the other access control settings.
+
+Set it to the number of proxies that really sit in front of the Web UI. A larger
+number makes an entry the visitor wrote the client: with one proxy and the setting at
+`2`, the visitor picks the address the access control sees.
+
+The proxy next to the Web UI must write the header itself. Either of these is safe;
+passing the visitor's header on unchanged (`$http_x_forwarded_for`) is not:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    # one entry, the address nginx saw (trusted_proxy_hops = 1)
+    proxy_set_header X-Forwarded-For $remote_addr;
+    # or keep what the previous proxy sent and append the address nginx saw:
+    # proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+A proxy that writes no header makes every visitor look like `127.0.0.1`, which the
+default `allowed_networks` lets in. With a CDN in front of nginx and the setting still
+at `1`, the Web UI judges the CDN's address instead of the visitor's.
+
+The routes that only this machine may call go by the same address:
+`POST /api/system/rotate-api-token`, `GET /api/system/api-token-info` and, unless a valid
+API token is sent, `POST /api/system/log-level`, `POST /api/system/open-config-file` and
+`GET /api/system/open-config-file/info`. A visitor behind the proxy is this machine only
+when the proxy wrote a loopback address as the client (you browsing from the server
+itself); everyone else gets `403`, and the settings page disables its "Open config file
+in IDE" button with the note that it is only available on the local machine. Run them on
+the server, for example `curl http://127.0.0.1:8080/api/system/api-token-info`, or send
+the API token to the three that take one. With `trusted_proxy_hops = 0` everything that
+comes through the proxy counts as the proxy itself, which is this machine.
+
 ## Validation Checklist
 
 Run these before treating a deployment change as healthy:

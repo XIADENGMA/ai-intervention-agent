@@ -27,3 +27,5 @@
 ### `_restrict_descriptor_to_owner(fd: int) -> bool`
 
 ### `write_text_owner_only(path: str | os.PathLike[str], text: str) -> None`
+
+### `atomic_write_text(path: str | os.PathLike[str], text: str) -> None`

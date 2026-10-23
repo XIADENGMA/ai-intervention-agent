@@ -130,6 +130,33 @@ blocked_ips = []
 # Wildcards/suffixes are intentionally unsupported. Do not add 0.0.0.0 or ::;
 # those are listen addresses, not request Host values.
 trusted_hosts = []
+# 反向代理层数 / Reverse proxies in front of the Web UI (0-8, default 1)
+#
+# 只有来自本机的连接（同机反向代理）才会读取 X-Forwarded-For，客户端地址是其中
+# 从右数第 N 项（N 就是这个值）：每一层代理把它看到的对端地址追加在右边，最左边
+# 的是访问者自己写的，不可信。访问控制（allowed_networks / blocked_ips）和限流都
+# 按这个地址认人。
+#   1 = 本机上有一层代理（nginx 等），由它自己写这个头：
+#       proxy_set_header X-Forwarded-For $remote_addr;
+#   2 = 代理前面还有一层（例如 CDN → nginx → Web UI）
+#   0 = 不信任 X-Forwarded-For：经本机代理来的请求都按代理自己（127.0.0.1）判断
+# 填 Web UI 前面真正有的代理层数；填得比实际多，访问者自己写的一项会被当成客户端。
+# 写错（不是 0-8 的整数）按 1 处理，并在日志里警告。
+#
+# Only connections from this machine (a reverse proxy on the same host) are asked
+# for X-Forwarded-For. The client is the Nth entry from the right, N being this
+# value: each proxy appends the peer address it saw on the right, while the left
+# part is written by the visitor and cannot be trusted. Access control
+# (allowed_networks / blocked_ips) and rate limiting both use this address.
+#   1 = one proxy on this machine (nginx, ...) that writes the header itself:
+#       proxy_set_header X-Forwarded-For $remote_addr;
+#   2 = one more proxy in front of it (for example CDN -> nginx -> Web UI)
+#   0 = do not trust X-Forwarded-For: requests through a local proxy are judged as
+#       the proxy itself (127.0.0.1)
+# Use the number of proxies that really are in front of the Web UI; a larger number
+# makes an entry the visitor wrote the client.
+# An invalid value (not an integer from 0 to 8) is read as 1, with a warning in the log.
+trusted_proxy_hops = 1
 # 访问控制开关 / Access control switch
 access_control_enabled = true
 # R189 / T4: 可选 API token 认证 / Optional API token authentication
@@ -140,6 +167,8 @@ access_control_enabled = true
 #   - ``X-API-Token: <token>``（curl / PWA 友好）
 # Loopback 来源始终通过，token 只是为 non-loopback / 反向代理 / LAN PWA
 # 场景提供的额外认证通道——避免本机管理员被锁在门外。
+# “Loopback”指访问者本人的地址：同机反向代理后面，看代理写在 X-Forwarded-For
+# 里的那一项（见 trusted_proxy_hops），经代理来的远程访问者不算。
 #
 # 生成强 token: ``python -c "import secrets; print(secrets.token_urlsafe(32))"``
 # 长度要求：≥ 16 字符（< 16 会被静默视作未配置，并在 stderr 打警告）。
@@ -150,7 +179,9 @@ access_control_enabled = true
 # matches existing behavior). When set, non-loopback clients can authenticate
 # via header (Bearer or X-API-Token). Loopback always passes; token only adds
 # an *additional* path for non-loopback / reverse proxy / LAN PWA scenarios,
-# preventing local admins from being locked out.
+# preventing local admins from being locked out. "Loopback" is the visitor's own
+# address: behind a reverse proxy on the same machine, the one the proxy wrote in
+# X-Forwarded-For (see trusted_proxy_hops); a remote visitor behind it is not.
 api_token = ""
 
 # R199 / Cycle 7: api_token_rotated_at — ISO-8601 UTC timestamp of the

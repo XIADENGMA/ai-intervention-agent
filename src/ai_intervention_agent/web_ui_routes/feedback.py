@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any, cast
 
 from flask import jsonify, request
@@ -16,8 +15,11 @@ from ai_intervention_agent.task_queue_singleton import get_task_queue
 from ai_intervention_agent.web_ui_routes._request_body import (
     fields_that_are_not_text,
     invalid_value_response,
-    json_nesting_exceeds,
+    loads_bounded,
     require_json_object,
+)
+from ai_intervention_agent.web_ui_routes._task_answer import (
+    refused_answer_response,
 )
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
 
@@ -93,15 +95,14 @@ def _selected_options_from_form(raw: str) -> list[str]:
 
     The interpreter's limit is not a limit any more on Python 3.14 (it reads documents
     ~100 000 levels deep), so the depth is bounded here as well (R828): a nested array
-    would otherwise be kept as the ``str()`` of its first element.
+    would otherwise be kept as the ``str()`` of its first element. ``loads_bounded``
+    does both, and turns a lone surrogate (``"\\ud800"``) into U+FFFD (R845): kept, it
+    would make the tool result impossible to serialise.
     """
     try:
-        parsed = json.loads(raw)
-    except (ValueError, RecursionError):
+        parsed = loads_bounded(raw)
+    except ValueError:
         parsed = []
-    else:
-        if json_nesting_exceeds(parsed):
-            parsed = []
     return _sanitize_selected_options(parsed)
 
 
@@ -205,6 +206,23 @@ class FeedbackRoutesMixin:
                     error:
                       type: string
                       description: 错误说明文本
+              409:
+                description: 这个任务已经有答案了：第一个答案算数，这次的没有收下，也没有改动已有的答案
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                    status:
+                      type: string
+                      enum: [error]
+                    error:
+                      type: string
+                      enum: [task_already_answered]
+                    message:
+                      type: string
+                      description: 人类可读的说明（语言随请求的 Accept-Language）
               413:
                 description: |
                   请求超过上传上限：整个请求大于 ``MAX_CONTENT_LENGTH``
@@ -328,6 +346,17 @@ class FeedbackRoutesMixin:
                 "images": images,  # type: ignore[typeddict-item]  # 运行时总是正确类型
             }
 
+            if target_task_id:
+                logger.info(f"同时将反馈提交到TaskQueue中的目标任务: {target_task_id}")
+                # R846：队列没收下答案（任务刚被移除）就不能答"成功"，也不能把这份答案留在
+                # ``feedback_result`` 里让 ``GET /api/feedback`` 当作已提交的取走；见 task.py。
+                # R851：任务已经有答案时同理，答 409。
+                if not task_queue.complete_task(
+                    target_task_id,
+                    cast(dict[str, Any], feedback_result),
+                ):
+                    return refused_answer_response(task_queue, target_task_id)
+
             with self._state_lock:
                 self.feedback_result = feedback_result
 
@@ -337,13 +366,6 @@ class FeedbackRoutesMixin:
             )
             logger.debug(f"  - selected_options: {feedback_result['selected_options']}")
             logger.debug(f"  - images数量: {len(feedback_result['images'])}")
-
-            if target_task_id:
-                logger.info(f"同时将反馈提交到TaskQueue中的目标任务: {target_task_id}")
-                task_queue.complete_task(
-                    target_task_id,
-                    cast(dict[str, Any], feedback_result),
-                )
 
             with self._state_lock:
                 self.current_prompt = ""

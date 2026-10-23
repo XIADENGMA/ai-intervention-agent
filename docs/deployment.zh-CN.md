@@ -77,6 +77,53 @@ location /api/events {
 `network_security.allowed_networks`，可行时优先使用 SSH 隧道。运行中的设置 API
 必须能 round-trip 已有通知配置，所以它不是经过 secret-redaction 的公开 API。
 
+## 反向代理后面的客户端地址
+
+访问控制（`network_security.allowed_networks` 和 `blocked_ips`）和限流都靠一个客户端
+地址区分访问者。来自其他机器的连接按它自己的地址判断，不读它的 `X-Forwarded-For` 头
+（另一台机器上的代理会被当作它自己）。来自 Web UI 所在机器的连接就是紧挨着它的反向
+代理（上面这种部署），这时客户端是这层代理写在 `X-Forwarded-For` 里的地址。
+
+每层代理把它看到的地址追加在这个头的右边，而它左边的全是访问者自己写的，访问者可以在
+那里写任何地址。所以客户端是 `network_security.trusted_proxy_hops` 指定的、从右数的那
+一项：
+
+- `1`（默认）：Web UI 旁边有一层代理，例如 nginx。客户端是最后一项。
+- `2`：它前面还有一层代理，例如 CDN → nginx → Web UI。nginx 要把 CDN 的地址追加到 CDN
+  发来的内容后面（`$proxy_add_x_forwarded_for`），客户端就是从右数第二项。
+- `0`：不信任 `X-Forwarded-For`。经本机代理来的请求都按代理自己（`127.0.0.1`）判断。
+
+头里的项数比设置的数还少时，取第一项。这个设置接受 0 到 8 的整数，其他值按 `1` 处理，
+并在日志里打 warning。修改后约 2 秒内生效，和其他访问控制设置一样。
+
+填 Web UI 前面真正有的代理层数。填得比实际多时，访问者自己写的一项会被当成客户端：
+只有一层代理却填 `2`，访问者就能自己决定访问控制看到哪个地址。
+
+紧挨着 Web UI 的代理必须自己写这个头。下面两种都安全；把访问者发来的头原样传下去
+（`$http_x_forwarded_for`）则不安全：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    # 只有一项：nginx 看到的地址（trusted_proxy_hops = 1）
+    proxy_set_header X-Forwarded-For $remote_addr;
+    # 或者保留上一层代理发来的内容，再追加 nginx 看到的地址：
+    # proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+不写这个头的代理会让每个访问者都像是 `127.0.0.1`，默认的 `allowed_networks` 会放行它。
+CDN 在 nginx 前面、设置却还是 `1` 时，Web UI 判断的是 CDN 的地址，不是访问者的。
+
+只许本机调用的路由按同一个地址判断：`POST /api/system/rotate-api-token`、
+`GET /api/system/api-token-info`，以及没带有效 API token 时的
+`POST /api/system/log-level`、`POST /api/system/open-config-file`、
+`GET /api/system/open-config-file/info`。代理后面的访问者只有在代理写下的客户端地址是
+回环地址时才算本机（例如你在服务器上自己打开页面）；其他人得到 `403`，设置页上的
+“用 IDE 打开配置文件”按钮会置灰，并提示仅本机访问可用。要用它们请在服务器上执行，
+例如 `curl http://127.0.0.1:8080/api/system/api-token-info`，或者对能用 token 的那三个
+路由带上 API token。`trusted_proxy_hops = 0` 时经代理来的请求都算代理自己，也就是本机。
+
 ## 验证清单
 
 把部署变更视为健康之前，先跑：

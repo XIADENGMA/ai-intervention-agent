@@ -637,7 +637,7 @@ The access-denied message in the Web UI is a different thing: it means the serve
 **A broken-image icon without a note** means the reference never went through the MCP server:
 
 - `local_image_dirs = []` turns the feature off, so references stay as written.
-- The destination is a remote (`https:`) or `data:` URL: these are left alone and the browser loads them itself. The Web UI's content security policy only allows images from its own server and `data:` / `blob:`, so a remote image is blocked there.
+- The destination is a remote (`https:`) or `data:` URL: these are left alone and the browser loads them itself. The content security policy of the Web UI (images from its own server and `data:` / `blob:`) and of the VS Code panel (its own server, `data:` and the panel's own files) does not allow a remote image, so it is blocked in both: an address in a prompt is text the agent wrote, and a page that fetched it would send a request to any host the moment the prompt is shown. Save the file inside an allowed folder and refer to it by path instead.
 - The Web UI was restarted: images are kept in memory only, so a task restored after a restart shows its images as missing. Ask the agent to call the tool again.
 - The reference is inside a code block or inline code, which is never treated as an image.
 

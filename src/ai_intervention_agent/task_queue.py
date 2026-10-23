@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import sys
-import tempfile
 import threading
 import time
 import traceback
@@ -23,6 +22,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ai_intervention_agent.config_utils import atomic_write_text
 from ai_intervention_agent.local_images import PromptImage
 from ai_intervention_agent.runtime_constants import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
@@ -711,7 +711,15 @@ class TaskQueue:
         return True
 
     def complete_task(self, task_id: str, result: dict[str, Any]) -> bool:
-        """完成任务并标记为延迟删除（核心方法）"""
+        """记下任务的答案并标记为延迟删除（核心方法）：第一个答案算数。
+
+        返回 ``True`` 表示这次调用收下了答案；``False`` 表示没收下：任务不存在，或者已经
+        有人回答过（R851）。已完成的任务是终态（``set_active_task`` 同样不再激活它）：
+        答案和 ``completed_at``（保留计时从它算起）都不再改动，也不再发状态事件。原来
+        再来一个答案会覆盖第一个、让保留计时重新开始，可智能体通常早已按状态事件取走
+        第一个，后来的那个只留在 Web UI 里，提交它的页面还报“已提交”。判断在写锁里做，
+        同时到达的两个答案恰好有一个被收下。
+        """
         status_events: list[tuple[str, str | None, str]] = []
         with _watched_write_lock(self._lock, "complete_task"):
             if task_id not in self._tasks:
@@ -719,13 +727,17 @@ class TaskQueue:
                 return False
 
             task = self._tasks[task_id]
+            if task.status == TaskStatus.COMPLETED:
+                logger.info(f"任务已有答案，忽略再次提交: {task_id}")
+                return False
+
             old_status = task.status
             task.status = TaskStatus.COMPLETED
             task.result = result
             task.completed_at = datetime.now(UTC)
             status_events.append((task_id, old_status, TaskStatus.COMPLETED))
 
-            if task.loop_id and old_status != TaskStatus.COMPLETED:
+            if task.loop_id:
                 self._record_loop_round(task, result)
 
             if self._active_task_id == task_id:
@@ -1147,29 +1159,15 @@ class TaskQueue:
                     "saved_at": datetime.now(UTC).isoformat(),
                 }
 
-                fd, tmp_path = tempfile.mkstemp(
-                    dir=str(self._persist_path.parent),
-                    prefix=".tasks_",
-                    suffix=".tmp",
+                atomic_write_text(
+                    self._persist_path,
+                    json.dumps(
+                        data,
+                        ensure_ascii=False,
+                        separators=_COMPACT_JSON_SEPARATORS,
+                    ),
+                    temp_prefix=".tasks_",
                 )
-                try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as f:
-                        json.dump(
-                            data,
-                            f,
-                            ensure_ascii=False,
-                            separators=_COMPACT_JSON_SEPARATORS,
-                        )
-
-                        f.flush()
-                        os.fsync(f.fileno())
-                    os.replace(tmp_path, str(self._persist_path))
-                except Exception:
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
-                    raise
 
                 logger.debug(f"任务快照已持久化: {len(snapshot)} 个任务")
         except Exception as e:

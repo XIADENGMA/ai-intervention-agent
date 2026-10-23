@@ -94,9 +94,13 @@ class WebUiRateLimiter:
         *,
         default_limits: list[str] | None = None,
         headers_enabled: bool = True,
+        client_ip: Callable[[], str] | None = None,
     ) -> None:
         self.enabled = True
         self.headers_enabled = headers_enabled
+        # 一个访问者记在谁名下：和访问控制认同一个地址（``SecurityMixin._current_client_ip``）。
+        # 没给就按连接对端算，不读任何请求头。
+        self._client_ip = client_ip
         self._default_limits = [_parse_limit(item) for item in (default_limits or [])]
         self._buckets: dict[tuple[str, str, str], tuple[int, int]] = {}
         self._lock = threading.Lock()
@@ -149,22 +153,19 @@ class WebUiRateLimiter:
         return func
 
     def _client_key(self) -> str:
-        remote_addr = request.remote_addr or ""
-        try:
-            from ai_intervention_agent.web_ui_security import SecurityMixin
-
-            if SecurityMixin._should_trust_forwarded_for(remote_addr):
-                forwarded_for = request.headers.get("X-Forwarded-For", "")
-                forwarded_ip = SecurityMixin._parse_forwarded_for(forwarded_for)
-                if forwarded_ip:
-                    return forwarded_ip
-        except Exception:
-            logger.debug(
-                "Unable to evaluate trusted X-Forwarded-For client key; "
-                "falling back to request.remote_addr",
-                exc_info=True,
-            )
-        return remote_addr or "unknown"
+        if self._client_ip is not None:
+            try:
+                client = self._client_ip()
+            except Exception:
+                logger.debug(
+                    "Unable to resolve the client address; "
+                    "falling back to request.remote_addr",
+                    exc_info=True,
+                )
+            else:
+                if client:
+                    return client
+        return request.remote_addr or "unknown"
 
     def _check_limits(
         self, specs: list[_LimitSpec], *, scope: str

@@ -490,20 +490,26 @@ class TestRequestClientIpResolution(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_loopback_proxy_forwarded_for_is_respected(self):
-        """仅本机反向代理转发的 X-Forwarded-For 才会被信任"""
+        """仅本机反向代理转发的 X-Forwarded-For 才会被信任，取代理写的最右一项（R849）"""
         self.ui.network_security_config["allowed_networks"] = ["192.168.0.0/16"]
         self.ui.network_security_config["blocked_ips"] = []
         self.ui.network_security_config["access_control_enabled"] = True
 
-        response = self.client.get(
-            "/api/health",
-            environ_overrides={
-                "REMOTE_ADDR": "127.0.0.1",
-                "HTTP_X_FORWARDED_FOR": "192.168.1.20, 127.0.0.1",
-            },
-        )
+        # 访问者自己写的在左边，代理追加的真实来源在右边
+        for forwarded_for, status in (
+            ("203.0.113.9, 192.168.1.20", 200),
+            ("192.168.1.20, 203.0.113.9", 403),
+        ):
+            with self.subTest(forwarded_for=forwarded_for):
+                response = self.client.get(
+                    "/api/health",
+                    environ_overrides={
+                        "REMOTE_ADDR": "127.0.0.1",
+                        "HTTP_X_FORWARDED_FOR": forwarded_for,
+                    },
+                )
 
-        self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.status_code, status)
 
 
 class TestIntegration(unittest.TestCase):
@@ -753,6 +759,7 @@ class TestValidateNetworkSecurityConfigMixin(unittest.TestCase):
                 "allowed_networks",
                 "blocked_ips",
                 "trusted_hosts",
+                "trusted_proxy_hops",
                 "access_control_enabled",
                 "api_token",
                 "api_token_rotated_at",
@@ -1259,14 +1266,16 @@ class TestCallbackExceptions(unittest.TestCase):
 
 
 class TestBlockedIpsAddressValueError(unittest.TestCase):
-    """line 98-99: ip_address 实际抛 ValueError，但代码有 AddressValueError 守卫"""
+    """条目解析抛 AddressValueError 时，这一条被丢弃，不往外冒。
+
+    逐项解析在 ``web_ui_validators`` 里只有一份（R843），所以替换点在那里。"""
 
     def test_address_value_error_caught(self):
         from ipaddress import AddressValueError
 
         mgr = ConfigManager()
         with patch(
-            "ai_intervention_agent.config_modules.network_security.ip_address",
+            "ai_intervention_agent.web_ui_validators.ip_address",
             side_effect=AddressValueError("mock"),
         ):
             result = mgr._validate_network_security_config({"blocked_ips": ["1.2.3.4"]})

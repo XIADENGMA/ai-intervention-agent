@@ -13,13 +13,16 @@
     所以工业级原子写惯用法是：
         ``write → flush → fsync(fileno) → os.replace``
 
-    本仓库其他 5 处原子写入路径（``config_manager._save_config_immediate``、
+    本仓库其他几处原子写入路径（``config_manager._save_config_immediate``、
     ``config_modules/io_operations.py``、
-    ``config_modules/network_security._atomic_write_config``、
-    ``scripts/bump_version.py``）都遵守这个序列，唯独
+    ``config_modules/network_security._atomic_write_config``）都遵守这个序列，唯独
     ``task_queue._persist`` 历史上漏了 ``flush + fsync``，让任务队列
     成为整个仓库唯一一处在崩溃/断电下可能丢数据 / 出 NUL 字节文件的
     路径。本组测试锁住修复后的契约。
+
+    R844 之后四处都走 ``config_utils.atomic_write_text``：序列只写一遍，
+    "某一份拷贝漏了 fsync"这类错误没有地方可以再长出来；``_persist`` 的契约现在
+    由行为（下面的 syscall 顺序）和"它确实调用了这个函数"一起锁住。
 """
 
 from __future__ import annotations
@@ -141,24 +144,24 @@ class TestPersistFsyncContract(unittest.TestCase):
             f"行为层面 fsync 应紧邻在 replace 之前：{call_order}",
         )
 
-        # 静态部分：源文本里 flush() 必须早于 fsync(fileno())
+        # 静态部分：_persist 经由 atomic_write_text 落盘，helper 里 flush() 必须早于 fsync(fileno())
+        from ai_intervention_agent import config_utils
         from ai_intervention_agent.task_queue import TaskQueue
 
-        src = inspect.getsource(TaskQueue._persist)
-        self.assertIn("f.flush()", src, "_persist 源码中应显式调用 f.flush()")
         self.assertIn(
-            "os.fsync(f.fileno())",
-            src,
-            "_persist 源码中应显式调用 os.fsync(f.fileno())",
+            "atomic_write_text(",
+            inspect.getsource(TaskQueue._persist),
+            "_persist 必须经由 config_utils.atomic_write_text 落盘",
         )
-        flush_idx = src.find("f.flush()")
-        fsync_idx = src.find("os.fsync(f.fileno())")
-        self.assertGreater(flush_idx, 0, "f.flush() 必须出现")
-        self.assertGreater(fsync_idx, 0, "os.fsync(f.fileno()) 必须出现")
+        src = inspect.getsource(config_utils.atomic_write_text)
+        flush_idx = src.find("stream.flush()")
+        fsync_idx = src.find("os.fsync(stream.fileno())")
+        self.assertGreater(flush_idx, 0, "stream.flush() 必须出现")
+        self.assertGreater(fsync_idx, 0, "os.fsync(stream.fileno()) 必须出现")
         self.assertLess(
             flush_idx,
             fsync_idx,
-            f"源码层面 f.flush() 必须出现在 os.fsync(f.fileno()) 之前 "
+            f"源码层面 stream.flush() 必须出现在 os.fsync(stream.fileno()) 之前 "
             f"(flush@{flush_idx}, fsync@{fsync_idx})",
         )
 
@@ -207,17 +210,15 @@ class TestPersistAtomicWriteParity(unittest.TestCase):
         本仓库历史上有 5 处用 ``tempfile + os.replace`` 模式落盘的代码，
         其中 4 处都已经按 ``write → flush → fsync → replace`` 序列写。
         ``task_queue._persist`` 是 R17.2 之前唯一的"漏 fsync"叛徒。
-        本测试静态扫描所有这些路径，确保未来不会因为复制粘贴或重构
-        引入新的"漏 fsync"路径。
+        R844 把四份拷贝并成 ``config_utils.atomic_write_text``：这里扫描
+        该函数本身，并确认没有第二个函数把 ``mkstemp`` 和 ``os.replace``
+        拼在一起（拼出来的第二份拷贝就是下一个"漏 fsync"的候选）。
     """
 
-    # 仓库内所有声明走"原子写入"模式的函数定位
+    # 仓库内唯一声明走"原子写入"模式的函数
     # （文件路径相对仓库根，函数限定名；R76 src/ layout 后路径加上包前缀）
     _ATOMIC_WRITE_TARGETS = (
-        ("src/ai_intervention_agent/task_queue.py", "TaskQueue._persist"),
-        ("src/ai_intervention_agent/config_manager.py", "_save_config_immediate"),
-        # io_operations / network_security 的 free-form 函数名容易漂移，
-        # 改用 grep 全文文件确认
+        ("src/ai_intervention_agent/config_utils.py", "atomic_write_text"),
     )
 
     def _read_function_source(self, file_rel: str, qualname: str) -> str:
@@ -274,6 +275,28 @@ class TestPersistAtomicWriteParity(unittest.TestCase):
                     src,
                     f"{file_rel}::{qualname} 必须调用 os.replace() 完成原子切换",
                 )
+
+    def test_no_second_function_combines_mkstemp_and_replace(self) -> None:
+        """``mkstemp`` + ``os.replace`` 只在 ``atomic_write_text`` 里同时出现。"""
+        repo_root = Path(__file__).resolve().parent.parent
+        offenders: list[str] = []
+        for path in sorted((repo_root / "src" / "ai_intervention_agent").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                calls = {
+                    ast.unparse(call.func)
+                    for call in ast.walk(node)
+                    if isinstance(call, ast.Call)
+                }
+                if "tempfile.mkstemp" in calls and "os.replace" in calls:
+                    offenders.append(f"{path.relative_to(repo_root)}::{node.name}")
+        self.assertEqual(
+            offenders,
+            ["src/ai_intervention_agent/config_utils.py::atomic_write_text"],
+            "原子写入只该有一份实现；其余调用方请用 config_utils.atomic_write_text",
+        )
 
     def test_persist_signature_unchanged(self) -> None:
         """reverse-lock：``_persist()`` 签名保持 ``self`` 单参数。

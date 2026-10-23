@@ -81,8 +81,10 @@ class _StalledFirstPersist:
 
     def wrap_fsync(self, real: Callable[[int], None]) -> Callable[[int], None]:
         def wrapper(fd: int) -> None:
-            # Only the ``fsync`` ``_persist`` itself makes counts.
-            if sys._getframe(1).f_code.co_name == "_persist":
+            # Only the ``fsync`` of ``_persist``'s own write counts (R844: that write is
+            # ``atomic_write_text`` called by ``_persist``).
+            callers = (sys._getframe(1).f_code.co_name, sys._getframe(2).f_code.co_name)
+            if callers == ("atomic_write_text", "_persist"):
                 self.stall_if_first()
             real(fd)
 
@@ -289,11 +291,11 @@ class TestPersistStructureR834:
         assert "self._lock.read_lock" in calls(guarded=True), (
             "the snapshot must be taken inside the critical section"
         )
-        assert "os.replace" in calls(guarded=True), (
+        assert "atomic_write_text" in calls(guarded=True), (
             "the file replacement must be inside the critical section"
         )
         assert "self._lock.read_lock" not in calls(guarded=False)
-        assert "os.replace" not in calls(guarded=False)
+        assert "atomic_write_text" not in calls(guarded=False)
 
     def test_persist_lock_is_a_plain_non_reentrant_lock_per_queue(
         self, tmp_path: Path

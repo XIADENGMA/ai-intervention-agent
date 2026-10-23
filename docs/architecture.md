@@ -96,6 +96,15 @@ sequenceDiagram
     Note over Agent: Resumes execution<br/>with human input
 ```
 
+**One answer per task.** The first answer a task receives is the one the agent
+gets, and it is final: a second `POST /api/tasks/{id}/submit` (or
+`POST /api/submit` for the same task) changes nothing and answers `409` with
+`"error": "task_already_answered"`. A second browser tab, a double click, and
+the auto-resubmit countdown reaching zero just after a manual submit all send
+that second request. The page then reports a failure and keeps the draft,
+instead of announcing a submit that nobody receives. A task that is already
+gone answers `404`.
+
 ### Failure & recovery flows
 
 Beyond the happy path above, three boundary cases keep long-running

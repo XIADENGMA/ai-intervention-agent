@@ -59,6 +59,34 @@ suite('Webview CSP compatibility (VSCode)', () => {
     }
   })
 
+  test('images load only from the Web UI server, data: URLs and the panel itself, never from a remote address', async () => {
+    const provider = makeProvider()
+    try {
+      await provider._preloadResources()
+      const html = renderHtml(provider)
+
+      assert.deepStrictEqual(cspDirective(html, 'img-src'), ['data:', 'http://csp.test', 'vscode-resource:'])
+      for (const name of [
+        'default-src',
+        'connect-src',
+        'style-src',
+        'script-src',
+        'img-src',
+        'font-src',
+        'object-src',
+        'frame-src'
+      ]) {
+        assert.deepStrictEqual(
+          cspDirective(html, name).filter(source => /^(?:https?|wss?):$|^\*$/.test(source)),
+          [],
+          `${name} must not name a whole network scheme or a wildcard`
+        )
+      }
+    } finally {
+      provider.dispose()
+    }
+  })
+
   test('the CSP refuses inline styles, so the template must not rely on them', async () => {
     const provider = makeProvider()
     try {

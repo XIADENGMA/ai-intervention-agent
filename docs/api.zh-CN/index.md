@@ -152,6 +152,7 @@ ChatGPT Desktop / Claude Desktop / Cursor 等客户端原生渲染，避免在�
 - [task_constants](task_constants.md)
 - [task_queue](task_queue.md)
 - [task_queue_singleton](task_queue_singleton.md)
+- [text_safety](text_safety.md)
 - [web_ui](web_ui.md)
 - [web_ui_config_sync](web_ui_config_sync.md)
 - [web_ui_mdns](web_ui_mdns.md)
@@ -198,6 +199,7 @@ ChatGPT Desktop / Claude Desktop / Cursor 等客户端原生渲染，避免在�
 - **notification_models**: 通知数据模型
 - **notification_providers**: 具体通知后端实现（Web Push / 系统声音 / Bark / 移动振动 / macOS 原生）
 - **task_constants**: 低成本导入的任务常量，供任务队列与 Web UI 冷启动路径使用
+- **text_safety**: 孤立代理项修复 —— 把来自不受信任 JSON 的未配对 UTF-16 代理项替换成 U+FFFD，避免请求里一个转义就让 MCP 服务器进程退出（R845）
 - **file_validator**: 文件验证
 - **enhanced_logging**: 日志增强
 - **remote_environment**: SSH / WSL 远程环境探测（R225）—— 纯函数探针；Web UI 启动横幅据此在 host 为回环且检测到远程会话时，给出可操作的端口转发提示

@@ -6,6 +6,10 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict
 
 from ai_intervention_agent.local_images import DEFAULT_IMAGE_DIRS, normalize_image_dirs
 from ai_intervention_agent.skill_catalog import DEFAULT_SKILL_DIRS, normalize_skill_dirs
+from ai_intervention_agent.web_ui_validators import (
+    DEFAULT_TRUSTED_PROXY_HOPS,
+    validate_trusted_proxy_hops,
+)
 
 
 def _coerce_bool(v: Any) -> Any:
@@ -193,6 +197,9 @@ class NetworkSecuritySectionConfig(BaseModel):
     blocked_ips: list[str] = []
 
     trusted_hosts: list[str] = []
+    trusted_proxy_hops: Annotated[int, BeforeValidator(validate_trusted_proxy_hops)] = (
+        DEFAULT_TRUSTED_PROXY_HOPS
+    )
     access_control_enabled: SafeBool = True
 
     api_token: SafeStr = ""

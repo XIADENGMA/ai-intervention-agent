@@ -12222,6 +12222,10 @@ ratio                         15.848x
 
 ### 3.203 R660 · X-Forwarded-For 首值解析改用 `partition`
 
+> R849 之后：客户端不再取最左值，而是取从右数第 `network_security.trusted_proxy_hops`
+> 项（默认 1），`_parse_forwarded_for` 用 `rsplit(",", hops)`；下面的“最左值”是 R660
+> 当时的契约，下面拒绝项里的“从右侧选择”就是 R849 做的事。
+
 结论：已落地。`SecurityMixin._parse_forwarded_for()` 同时服务两条请求热路径：
 
 - `SecurityMixin._get_request_client_ip()`，用于每次访问控制判断；
@@ -12296,6 +12300,10 @@ return forwarded_for.partition(",")[0].strip()
   `SecurityMixin._parse_forwarded_for()`。
 
 ### 3.204 R661 · 未信任远端不读取 X-Forwarded-For
+
+> R849 之后：限流不再自己读取这个头，`WebUiRateLimiter._client_key` 调用访问控制用的
+> 同一个方法（`SecurityMixin._current_client_ip`），读取只剩 `_get_request_client_ip`
+> 里信任检查之后这一处；下面 limiter 的代码是 R661 当时的样子。
 
 结论：已落地。R660 已把 XFF 首值解析从 `split` 改为 `partition`，但两条
 请求热路径仍在判断远端是否可信之前读取 XFF：

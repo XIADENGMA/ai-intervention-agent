@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 import time
 from typing import TYPE_CHECKING, Any, cast
 
-from ai_intervention_agent.config_utils import write_text_owner_only
+from ai_intervention_agent.config_utils import atomic_write_text, write_text_owner_only
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 
 if TYPE_CHECKING:
@@ -178,21 +176,7 @@ class IOOperationsMixin:
             else:
                 content = json.dumps(restored_config, indent=2, ensure_ascii=False)
 
-            fd, tmp_path = tempfile.mkstemp(
-                suffix=".tmp", dir=str(self.config_file.parent)
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(content)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_path, str(self.config_file))
-            except BaseException:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            atomic_write_text(self.config_file, content, keep_existing_mode=True)
 
             with self._lock:
                 self._original_content = content

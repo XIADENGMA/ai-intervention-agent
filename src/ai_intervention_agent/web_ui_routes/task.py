@@ -22,7 +22,13 @@ from ai_intervention_agent.local_images import parse_prompt_images
 from ai_intervention_agent.sse_event_schemas import validate_payload
 from ai_intervention_agent.task_constants import PLACEHOLDER_MAX_LENGTH
 from ai_intervention_agent.task_queue_singleton import get_task_queue
-from ai_intervention_agent.web_ui_routes._request_body import optional_json_object
+from ai_intervention_agent.web_ui_routes._request_body import (
+    loads_bounded,
+    optional_json_object,
+)
+from ai_intervention_agent.web_ui_routes._task_answer import (
+    refused_answer_response,
+)
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
 
 if TYPE_CHECKING:
@@ -2407,6 +2413,23 @@ class TaskRoutesMixin:
                       type: string
               404:
                 description: 任务不存在
+              409:
+                description: 这个任务已经有答案了：第一个答案算数，这次的没有收下，也没有改动已有的答案
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                    status:
+                      type: string
+                      enum: [error]
+                    error:
+                      type: string
+                      enum: [task_already_answered]
+                    message:
+                      type: string
+                      description: 人类可读的说明（语言随请求的 Accept-Language）
               500:
                 description: 服务器内部错误
             """
@@ -2420,7 +2443,7 @@ class TaskRoutesMixin:
                 feedback_text = request.form.get("feedback_text", "")
                 selected_options_raw = request.form.get("selected_options", "[]")
                 try:
-                    selected_options = json.loads(selected_options_raw)
+                    selected_options = loads_bounded(selected_options_raw)
                 except Exception:
                     return (
                         jsonify(
@@ -2470,7 +2493,12 @@ class TaskRoutesMixin:
                 if images:
                     result["images"] = images
 
-                task_queue.complete_task(task_id, result)
+                # R846：表单（含上传）是在上面查过任务之后才读完的；这段时间里任务可能已被
+                # 移除（MCP 调用放弃并关闭它、用户在别处关了它、清理线程跑了）。R851：也可能
+                # 已经有人回答过了。队列没收下答案就不能答"成功"：页面会清空输入框，答案却
+                # 没有任何人收到。
+                if not task_queue.complete_task(task_id, result):
+                    return refused_answer_response(task_queue, task_id)
 
                 _ua = (request.headers.get("User-Agent") or "")[:80]
                 _referer = (request.headers.get("Referer") or "")[:80]

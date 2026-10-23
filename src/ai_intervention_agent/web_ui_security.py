@@ -30,7 +30,12 @@ from ai_intervention_agent.web_ui_mdns_utils import (
     MDNS_DEFAULT_HOSTNAME,
     normalize_mdns_hostname,
 )
-from ai_intervention_agent.web_ui_validators import validate_network_security_config
+from ai_intervention_agent.web_ui_validators import (
+    DEFAULT_TRUSTED_PROXY_HOPS,
+    LOOPBACK_ALLOWED_NETWORKS,
+    validate_network_security_config,
+    validate_trusted_proxy_hops,
+)
 
 if TYPE_CHECKING:
     from flask import Flask
@@ -39,7 +44,7 @@ logger = EnhancedLogger(__name__)
 
 _WILDCARD_BIND_HOSTS: frozenset[str] = frozenset({"0.0.0.0", "::", "[::]"})
 _LOOPBACK_TRUSTED_HOSTS: tuple[str, ...] = ("localhost", "127.0.0.1", "[::1]")
-_DEFAULT_ALLOWED_NETWORKS: tuple[str, ...] = ("127.0.0.0/8", "::1/128")
+_DEFAULT_ALLOWED_NETWORKS: tuple[str, ...] = tuple(LOOPBACK_ALLOWED_NETWORKS)
 _MISSING_CSP_NONCE = object()
 _MISSING_APP_CONFIG = object()
 
@@ -362,7 +367,10 @@ class SecurityMixin:
         @self.app.before_request
         def check_ip_and_generate_nonce() -> ResponseReturnValue | None:
             self._ensure_network_security_config_loaded()
-            client_ip = self._get_request_client_ip(request.environ)
+            client_ip = self._current_client_ip()
+            # R850：这个请求的访问者是谁只在这里算一次，访问控制和“只许本机”的
+            # 路由（web_ui_routes.system._get_client_ip）都认这个地址。
+            g.client_ip = client_ip
             if not self._is_ip_allowed(client_ip):
                 logger.warning(f"拒绝来自 {client_ip} 的访问请求")
                 abort(403)
@@ -599,11 +607,19 @@ class SecurityMixin:
             return False
 
     @staticmethod
-    def _parse_forwarded_for(forwarded_for: str) -> str:
-        """从 X-Forwarded-For 中提取首个客户端 IP。"""
-        if not forwarded_for:
+    def _parse_forwarded_for(
+        forwarded_for: str, hops: int = DEFAULT_TRUSTED_PROXY_HOPS
+    ) -> str:
+        """X-Forwarded-For 里 ``hops`` 层代理共同确认的客户端 IP：从右数第 ``hops`` 项。
+
+        每一层代理把它看到的连接对端追加在右边，最左边的则是访问者自己写的，不可信（R849）。
+        项数不足 ``hops`` 时取第一项；``hops`` 小于 1 表示不信任这个头。只从右边切
+        ``hops`` 刀：头的长度由访问者决定。
+        """
+        if hops < 1 or not forwarded_for:
             return ""
-        return forwarded_for.partition(",")[0].strip()
+        parts = forwarded_for.rsplit(",", hops)
+        return parts[max(len(parts) - hops, 0)].strip()
 
     @classmethod
     def _should_trust_forwarded_for(cls, remote_addr: str) -> bool:
@@ -615,14 +631,26 @@ class SecurityMixin:
         except (AddressValueError, ValueError):
             return False
 
+    def _trusted_proxy_hops(self) -> int:
+        """``network_security.trusted_proxy_hops``；这一段里没有它（或整段不是字典）就是默认值。"""
+        cfg = self.network_security_config
+        raw = cfg.get("trusted_proxy_hops") if isinstance(cfg, dict) else None
+        return validate_trusted_proxy_hops(raw)
+
     def _get_request_client_ip(self, environ: dict[str, Any]) -> str:
         """获取用于访问控制的客户端 IP。"""
         remote_addr = str(environ.get("REMOTE_ADDR", "")).strip()
 
         if self._should_trust_forwarded_for(remote_addr):
-            forwarded_for = str(environ.get("HTTP_X_FORWARDED_FOR", "")).strip()
-            forwarded_ip = self._parse_forwarded_for(forwarded_for)
-            if forwarded_ip:
-                return forwarded_ip
+            hops = self._trusted_proxy_hops()
+            if hops > 0:
+                forwarded_for = str(environ.get("HTTP_X_FORWARDED_FOR", "")).strip()
+                forwarded_ip = self._parse_forwarded_for(forwarded_for, hops)
+                if forwarded_ip:
+                    return forwarded_ip
 
         return remote_addr
+
+    def _current_client_ip(self) -> str:
+        """正在处理的这个请求的客户端 IP：访问控制和限流都按它认人。"""
+        return self._get_request_client_ip(request.environ)

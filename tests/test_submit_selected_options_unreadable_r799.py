@@ -13,12 +13,16 @@ Both escaped the handler and the caller got ``500``, although the same field wit
 syntax error (``{``) always meant "no selection".  The task-scoped route
 (``/api/tasks/<id>/submit``) catches ``Exception`` and answers ``400`` for all of them;
 that contract is pinned here too.  Found by a sweep of form fields over every route.
+
+R845 moved the parsing into ``_request_body.loads_bounded`` (one reader, ``ValueError`` for
+anything unreadable); the structural half of this file follows it.
 """
 
 from __future__ import annotations
 
 import ast
 import io
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -170,12 +174,40 @@ def _handler_names(handler: ast.ExceptHandler) -> set[str]:
     return names
 
 
-def _json_loads_without_a_safe_handler(path: Path) -> list[int]:
-    """Lines of ``json.loads(...)`` calls no enclosing ``try`` can survive.
+def _is_json_loads(node: ast.AST) -> bool:
+    """``json.loads(...)``: besides ``JSONDecodeError`` it raises ``ValueError`` (the digit
+    limit) and ``RecursionError`` (depth)."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "loads"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "json"
+    )
+
+
+def _is_bounded_read(node: ast.AST) -> bool:
+    """``loads_bounded(...)`` (R845), the one reader of request JSON: it raises ``ValueError``
+    for every text it cannot read - a too-deep one included - and nothing else."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "loads_bounded"
+    )
+
+
+JSON_LOADS_RAISES = {"ValueError", "RecursionError"}
+BOUNDED_READ_RAISES = {"ValueError"}
+
+
+def _reads_without_a_safe_handler(
+    path: Path, is_read: Callable[[ast.AST], bool], raises: set[str]
+) -> list[int]:
+    """Lines of calls ``is_read`` accepts that no enclosing ``try`` can survive.
 
     A call is safe when an enclosing ``try`` (the call in its body) has a handler for
-    ``Exception`` / a bare ``except``, or handlers for both ``ValueError`` (the parent of
-    ``JSONDecodeError`` and the digit-limit error) and ``RecursionError``.
+    ``Exception`` / a bare ``except``, or handlers for every name in ``raises``
+    (``ValueError`` is the parent of ``JSONDecodeError`` and of the digit-limit error).
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     parents: dict[ast.AST, ast.AST] = {}
@@ -185,13 +217,7 @@ def _json_loads_without_a_safe_handler(path: Path) -> list[int]:
 
     bad: list[int] = []
     for node in ast.walk(tree):
-        if not (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "loads"
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "json"
-        ):
+        if not is_read(node):
             continue
         safe = False
         child: ast.AST = node
@@ -203,19 +229,12 @@ def _json_loads_without_a_safe_handler(path: Path) -> list[int]:
                 caught: set[str] = set()
                 for handler in parent.handlers:
                     caught |= _handler_names(handler)
-                if (
-                    caught & {"BaseException", "Exception"}
-                    or {
-                        "ValueError",
-                        "RecursionError",
-                    }
-                    <= caught
-                ):
+                if caught & {"BaseException", "Exception"} or raises <= caught:
                     safe = True
                     break
             child = parent
         if not safe:
-            bad.append(node.lineno)
+            bad.append(getattr(node, "lineno", 0))
     return sorted(bad)
 
 
@@ -223,33 +242,57 @@ ROUTE_SOURCES = [
     *sorted((PACKAGE / "web_ui_routes").glob("*.py")),
     PACKAGE / "web_ui.py",
 ]
+THE_READER = PACKAGE / "web_ui_routes" / "_request_body.py"
+CALLERS = [path for path in ROUTE_SOURCES if path != THE_READER]
 
 
 class TestNoRouteParsesRequestJsonWithTooNarrowAHandler:
-    @pytest.mark.parametrize("path", ROUTE_SOURCES, ids=lambda p: p.name)
+    """R799 found ``json.loads`` calls whose handler knew only ``JSONDecodeError``.  Since R845
+    a route reads request JSON through ``loads_bounded`` alone (``test_lone_surrogates_r845``
+    pins that), so the rule has two halves: whoever calls the reader handles ``ValueError``,
+    and the reader itself turns ``RecursionError`` into one."""
+
+    @pytest.mark.parametrize("path", CALLERS, ids=lambda p: p.name)
     def test_every_json_loads_survives_valueerror_and_recursionerror(
         self, path: Path
     ) -> None:
-        assert _json_loads_without_a_safe_handler(path) == [], (
+        assert (
+            _reads_without_a_safe_handler(path, _is_json_loads, JSON_LOADS_RAISES) == []
+        ), (
             f"{path.name}: json.loads can raise ValueError (int digit limit) and "
             "RecursionError (deep nesting) besides JSONDecodeError; catch both"
         )
 
-    def test_the_scan_sees_the_json_loads_calls_of_the_submit_routes(self) -> None:
-        """Without this the scan could pass by finding nothing to look at."""
-        calls: dict[str, int] = {}
-        for path in ROUTE_SOURCES:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            calls[path.name] = sum(
-                1
-                for node in ast.walk(tree)
-                if isinstance(node, ast.Attribute)
-                and node.attr == "loads"
-                and isinstance(node.value, ast.Name)
-                and node.value.id == "json"
+    @pytest.mark.parametrize("path", CALLERS, ids=lambda p: p.name)
+    def test_every_bounded_read_survives_valueerror(self, path: Path) -> None:
+        assert (
+            _reads_without_a_safe_handler(path, _is_bounded_read, BOUNDED_READ_RAISES)
+            == []
+        ), (
+            f"{path.name}: loads_bounded raises ValueError for text it cannot read; catch it"
+        )
+
+    def test_the_reader_turns_recursionerror_into_valueerror(self) -> None:
+        """Its one ``json.loads`` lets ``ValueError`` out on purpose (that is its contract:
+        Flask answers ``400`` to it, the form parsers read it as "nothing selected")."""
+        assert (
+            _reads_without_a_safe_handler(
+                THE_READER, _is_json_loads, {"RecursionError"}
             )
-        assert calls["feedback.py"] >= 1, calls
-        assert calls["task.py"] >= 1, calls
+            == []
+        )
+
+    def test_the_scan_sees_the_reads_of_the_submit_routes(self) -> None:
+        """Without this the scan could pass by finding nothing to look at."""
+
+        def count(path: Path, is_read: Callable[[ast.AST], bool]) -> int:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            return sum(1 for node in ast.walk(tree) if is_read(node))
+
+        routes = PACKAGE / "web_ui_routes"
+        assert count(routes / "feedback.py", _is_bounded_read) >= 1
+        assert count(routes / "task.py", _is_bounded_read) >= 1
+        assert count(THE_READER, _is_json_loads) == 1
 
     def test_the_scan_rejects_a_handler_that_only_knows_jsondecodeerror(
         self, tmp_path: Path
@@ -268,7 +311,24 @@ class TestNoRouteParsesRequestJsonWithTooNarrowAHandler:
             "    except (ValueError, RecursionError):\n"
             "        return []\n"
             "def h(raw):\n"
-            "    return json.loads(raw)\n",
+            "    return json.loads(raw)\n"
+            "def i(raw):\n"
+            "    try:\n"
+            "        return loads_bounded(raw)\n"
+            "    except json.JSONDecodeError:\n"
+            "        return []\n"
+            "def j(raw):\n"
+            "    try:\n"
+            "        return loads_bounded(raw)\n"
+            "    except ValueError:\n"
+            "        return []\n"
+            "def k(raw):\n"
+            "    return loads_bounded(raw)\n",
             encoding="utf-8",
         )
-        assert _json_loads_without_a_safe_handler(sample) == [4, 13]
+        assert _reads_without_a_safe_handler(
+            sample, _is_json_loads, JSON_LOADS_RAISES
+        ) == [4, 13]
+        assert _reads_without_a_safe_handler(
+            sample, _is_bounded_read, BOUNDED_READ_RAISES
+        ) == [16, 25]

@@ -6,16 +6,24 @@
 
 ### `validate_auto_resubmit_timeout(value: int) -> int`
 
+### `parse_bind_interface(value: object) -> str | None`
+
 ### `validate_bind_interface(value: object) -> str`
 
 ### `validate_network_cidr(network_str: Any) -> bool`
 
 ### `_normalize_ip_str(addr_str: str) -> str`
 
+### `_canonical_ip_entry(entry: str) -> str`
+
+### `normalize_ip_entries(items: list[Any], field: str) -> list[str]`
+
 ### `validate_allowed_networks(networks: Any) -> list[str]`
 
 ### `validate_blocked_ips(ips: Any) -> list[str]`
 
 ### `validate_trusted_hosts(hosts: Any) -> list[str]`
+
+### `validate_trusted_proxy_hops(value: Any) -> int`
 
 ### `validate_network_security_config(config: Any) -> dict[str, Any]`

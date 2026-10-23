@@ -9,7 +9,6 @@ import re
 import shlex
 import shutil
 import sys
-import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -21,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 
 from ai_intervention_agent.config_utils import (
     apply_legacy_key_aliases,
+    atomic_write_text,
     restrict_to_owner,
     write_text_owner_only,
 )
@@ -938,31 +938,7 @@ class ConfigManager(
                 logger.debug(f"配置内容无变化，跳过写入: {self.config_file}")
                 return
 
-            orig_mode = None
-            if hasattr(os, "fchmod"):
-                try:
-                    orig_mode = os.stat(str(self.config_file)).st_mode
-                except OSError:
-                    pass
-
-            fd, tmp_path = tempfile.mkstemp(
-                suffix=".tmp",
-                dir=str(self.config_file.parent),
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    if orig_mode is not None:
-                        os.fchmod(f.fileno(), orig_mode)
-                    f.write(content)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_path, str(self.config_file))
-            except BaseException:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            atomic_write_text(self.config_file, content, keep_existing_mode=True)
 
             self._original_content = content
             logger.debug(f"配置文件已原子写入: {self.config_file}")
