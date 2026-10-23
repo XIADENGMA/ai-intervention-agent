@@ -1195,6 +1195,11 @@ function _connectDirectSSE(sharedLeaderMode) {
     if (sharedLeaderMode) {
       _postSseSharedMessage({ kind: "open", leaderId: _sseSharedClientId });
     }
+
+    // R837: the stream only carries what happens from now on, and the replay behind
+    // last_event_id cannot be relied on (a restarted server numbers its events from 1 again),
+    // so what happened before the subscription is read once, from the list itself.
+    _scheduleSharedSseFetch("sse-open", 0);
   };
 
   source.addEventListener("task_changed", function (e) {
@@ -1601,6 +1606,11 @@ function _onSseSharedMessage(event) {
     if (_sseSharedIsLeader) _broadcastSseLeader();
   } else if (kind === "leader" || kind === "open") {
     _handleSseLeaderMessage(message);
+    // R837: the leader's stream has just opened, which is the moment the list is read again.
+    // Its heartbeat ("leader") comes every few seconds and must not.
+    if (kind === "open" && !_sseSharedIsLeader) {
+      _scheduleSharedSseFetch("sse-open", 0);
+    }
   } else if (kind === "leader_gone") {
     var goneId = message.leaderId ? String(message.leaderId) : "";
     if (!goneId || goneId === _sseSharedLeaderId) {
@@ -1726,7 +1736,8 @@ function getNextBackoffMs(currentMs) {
 
 async function fetchAndApplyTasks(reason) {
 
-  var sseDriven = reason === "sse" || reason === "sse-gap";
+  var sseDriven =
+    reason === "sse" || reason === "sse-gap" || reason === "sse-open";
   if (typeof document !== "undefined" && document.hidden && !sseDriven) {
     return false;
   }

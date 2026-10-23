@@ -262,6 +262,9 @@ def _reassert_task_queue_persist_redirect():
     task_queue_singleton._default_persist_path = (  # ty: ignore[invalid-assignment]
         _redirected_default_persist_path
     )
+    # R836：``web_feedback_ui`` 会把单例绑到它的端口；一个用例绑过的端口不该决定下一个
+    # 用例里快照文件的名字。
+    task_queue_singleton._bound_port = None
 
 
 @pytest.fixture(autouse=True)

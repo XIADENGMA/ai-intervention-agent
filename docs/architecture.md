@@ -123,6 +123,7 @@ sequenceDiagram
     UI->>AIIA: GET /api/tasks (fallback poll: 2s,<br/>backing off to 30s on errors)
     UI->>AIIA: SSE reconnect (exponential backoff)
     AIIA-->>UI: SSE resumed
+    UI->>AIIA: GET /api/tasks (once, as soon as the stream<br/>is back: subscribe first, then read the list)
 
     Note over Agent,Human: ③ Typing-hold (human typing — never interrupt)
     Agent->>AIIA: interactive_feedback

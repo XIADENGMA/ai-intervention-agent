@@ -353,6 +353,8 @@ class TaskQueue:
 
         self._loop_history: dict[str, dict[str, Any]] = {}
 
+        # R834：快照与写盘合成一个临界区，同一时刻只有一个写盘者（见 _persist）。
+        self._persist_lock = Lock()
         self._persist_path: Path | None = Path(persist_path) if persist_path else None
         if self._persist_path:
             try:
@@ -617,7 +619,10 @@ class TaskQueue:
         min_seconds: int,
         max_seconds: int,
     ) -> tuple[bool, str | None, int, int]:
-        """cr32 §3.1 fix：在写锁内执行 ``Task.extend_deadline`` 的读改写原语。"""
+        """cr32 §3.1 fix：在写锁内执行 ``Task.extend_deadline`` 的读改写原语。
+
+        R835：延长成功后要落盘（锁外）。``auto_resubmit_timeout`` 在快照里；以前这里改了
+        内存却不写文件，Web UI 在下一次写盘前重启，延长就丢了。"""
         with _watched_write_lock(self._lock, "extend_task_deadline"):
             task = self._tasks.get(task_id)
             if task is None:
@@ -628,28 +633,37 @@ class TaskQueue:
                 min_seconds=min_seconds,
                 max_seconds=max_seconds,
             )
-            return (
+            result = (
                 success,
                 error_code,
                 task.extends_used,
                 task.auto_resubmit_timeout,
             )
+        if success:
+            self._persist()
+        return result
 
     def freeze_task_deadline(
         self,
         task_id: str,
     ) -> tuple[bool, str | None, int]:
-        """mining-6 Track A: 在写锁内调用 ``Task.freeze_deadline``。"""
+        """mining-6 Track A: 在写锁内调用 ``Task.freeze_deadline``。
+
+        R835：冻结成功后要落盘（锁外），否则重启后"不要超时"的任务带着原来的倒计时回来，
+        还可能被自动重调。"""
         with _watched_write_lock(self._lock, "freeze_task_deadline"):
             task = self._tasks.get(task_id)
             if task is None:
                 return False, "task_not_found", 0
             success, error_code = task.freeze_deadline()
-            return (
+            result = (
                 success,
                 error_code,
                 task.auto_resubmit_timeout,
             )
+        if success:
+            self._persist()
+        return result
 
     def set_active_task(self, task_id: str) -> bool:
         """手动切换活动任务"""
@@ -1077,76 +1091,87 @@ class TaskQueue:
                 )
 
     def _persist(self) -> None:
-        """将当前任务快照写入磁盘（原子操作：tmpfile → fsync → os.replace）。"""
+        """将当前任务快照写入磁盘（原子操作：tmpfile → fsync → os.replace）。
+
+        R834：快照与写盘是同一个临界区（``_persist_lock``），同一时刻只有一个写盘者，
+        而且快照在拿到锁**之后**才取。以前各线程各取各的快照、各自 fsync 再 replace：
+        取得早、fsync 慢的那个线程会在取得晚的线程之后才 ``os.replace``，把较新的
+        ``tasks.json`` 盖回旧状态（内存里有的任务文件里没有，下次重启就丢了）。现在
+        最后一个写盘者的快照一定包含它被调用之前发生的所有变更。
+
+        锁序：``_persist_lock`` → ``_lock.read_lock()``。写锁的持有者从不等
+        ``_persist_lock``（写后副作用都在写锁外触发），所以不会成环。
+        """
         if not self._persist_path:
             return
         try:
-            with self._lock.read_lock():
-                snapshot = []
-                for task in self._tasks.values():
-                    if task.status == TaskStatus.COMPLETED:
-                        continue
-                    snapshot.append(
-                        {
-                            "task_id": task.task_id,
-                            "prompt": task.prompt,
-                            "predefined_options": task.predefined_options,
-                            "predefined_options_defaults": task.predefined_options_defaults,
-                            "auto_resubmit_timeout": task.auto_resubmit_timeout,
-                            "auto_resubmit_timeout_explicit": task.auto_resubmit_timeout_explicit,
-                            "created_at": task.created_at.isoformat(),
-                            "status": task.status,
-                            "feedback_placeholder": task.feedback_placeholder,
-                            "header_label": task.header_label,
-                            "loop_id": task.loop_id,
-                            "loop_objective": task.loop_objective,
-                            "loop_phase": task.loop_phase,
-                            "success_criteria": task.success_criteria,
-                            "iteration_label": task.iteration_label,
-                        }
-                    )
-                active_id = self._active_task_id
+            with self._persist_lock:
+                with self._lock.read_lock():
+                    snapshot = []
+                    for task in self._tasks.values():
+                        if task.status == TaskStatus.COMPLETED:
+                            continue
+                        snapshot.append(
+                            {
+                                "task_id": task.task_id,
+                                "prompt": task.prompt,
+                                "predefined_options": task.predefined_options,
+                                "predefined_options_defaults": task.predefined_options_defaults,
+                                "auto_resubmit_timeout": task.auto_resubmit_timeout,
+                                "auto_resubmit_timeout_explicit": task.auto_resubmit_timeout_explicit,
+                                "created_at": task.created_at.isoformat(),
+                                "status": task.status,
+                                "feedback_placeholder": task.feedback_placeholder,
+                                "header_label": task.header_label,
+                                "loop_id": task.loop_id,
+                                "loop_objective": task.loop_objective,
+                                "loop_phase": task.loop_phase,
+                                "success_criteria": task.success_criteria,
+                                "iteration_label": task.iteration_label,
+                            }
+                        )
+                    active_id = self._active_task_id
 
-                loop_history_snapshot = copy.deepcopy(self._loop_history)
+                    loop_history_snapshot = copy.deepcopy(self._loop_history)
 
-            if not snapshot and not loop_history_snapshot:
-                self._persist_path.unlink(missing_ok=True)
-                logger.debug("任务快照为空，已删除持久化文件")
-                return
+                if not snapshot and not loop_history_snapshot:
+                    self._persist_path.unlink(missing_ok=True)
+                    logger.debug("任务快照为空，已删除持久化文件")
+                    return
 
-            data = {
-                "version": 1,
-                "active_task_id": active_id,
-                "tasks": snapshot,
-                "loop_history": loop_history_snapshot,
-                "saved_at": datetime.now(UTC).isoformat(),
-            }
+                data = {
+                    "version": 1,
+                    "active_task_id": active_id,
+                    "tasks": snapshot,
+                    "loop_history": loop_history_snapshot,
+                    "saved_at": datetime.now(UTC).isoformat(),
+                }
 
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(self._persist_path.parent),
-                prefix=".tasks_",
-                suffix=".tmp",
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(
-                        data,
-                        f,
-                        ensure_ascii=False,
-                        separators=_COMPACT_JSON_SEPARATORS,
-                    )
-
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_path, str(self._persist_path))
-            except Exception:
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=str(self._persist_path.parent),
+                    prefix=".tasks_",
+                    suffix=".tmp",
+                )
                 try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        json.dump(
+                            data,
+                            f,
+                            ensure_ascii=False,
+                            separators=_COMPACT_JSON_SEPARATORS,
+                        )
 
-            logger.debug(f"任务快照已持久化: {len(snapshot)} 个任务")
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp_path, str(self._persist_path))
+                except Exception:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    raise
+
+                logger.debug(f"任务快照已持久化: {len(snapshot)} 个任务")
         except Exception as e:
             logger.warning(f"任务持久化失败（不影响运行）: {e}", exc_info=True)
 

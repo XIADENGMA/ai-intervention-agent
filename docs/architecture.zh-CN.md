@@ -117,6 +117,7 @@ sequenceDiagram
     UI->>AIIA: GET /api/tasks（降级 polling：2s，<br/>出错时退避到 30s）
     UI->>AIIA: SSE 重连（指数退避）
     AIIA-->>UI: SSE 恢复
+    UI->>AIIA: GET /api/tasks（流一恢复就读一次：<br/>先订阅、再读取列表）
 
     Note over Agent,Human: ③ typing-hold（人在输入，绝不打断）
     Agent->>AIIA: interactive_feedback

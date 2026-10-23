@@ -1498,6 +1498,15 @@
         clearTimeout(pollingTimer)
         scheduleNextPoll(POLL_SSE_FALLBACK_MS, pollingToken)
       }
+
+      // R837: the stream only carries what happens from now on, and the replay behind
+      // last_event_id cannot be relied on (a restarted server numbers its events from 1 again),
+      // so what happened before the subscription is read once, from the list itself.
+      if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+      _sseDebounceTimer = setTimeout(function () {
+        _sseDebounceTimer = null
+        pollAllData('sse-open')
+      }, 0)
     }
 
     source.addEventListener('task_changed', function (e) {

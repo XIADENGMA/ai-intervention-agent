@@ -47,6 +47,7 @@ from flask.typing import ResponseReturnValue
 from flask_compress import Compress
 from flask_cors import CORS
 
+from ai_intervention_agent import task_queue_singleton
 from ai_intervention_agent.enhanced_logging import (
     EnhancedLogger,
     configure_logging_from_config,
@@ -1810,6 +1811,8 @@ def web_feedback_ui(
         - JSON文件使用ensure_ascii=False保留中文字符
     """
     auto_resubmit_timeout = validate_auto_resubmit_timeout(int(auto_resubmit_timeout))
+    # R836：任务快照按本 Web UI 的端口命名，同一安装目录下端口不同的 Web UI 不再共用一份。
+    task_queue_singleton.bind_task_queue_to_port(port)
     ui = WebFeedbackUI(
         prompt,
         predefined_options,

@@ -2531,6 +2531,76 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   client with default settings does go through the proxy, one variable at a time, so the stand-in
   is known to catch what it should, and no notification setting mentions a proxy; the other 8
   check the documents, which were the missing half) and 33 one-point mutants all caught.
+- `tasks.json` could go back in time when two writers overlapped (R834). Every change to the task
+  list ends in `TaskQueue._persist()`: take a snapshot under the read lock, write it to a temporary
+  file, `fsync` it, `os.replace` it over the snapshot. Nothing ordered the writers. A writer that
+  took its snapshot early and was slow to reach `os.replace` (a slow `fsync` is enough) replaced the
+  file after a writer that took its snapshot later, so a task that was in memory was missing from
+  the file (or one that was already completed was back in it) until the next change, and a Web UI
+  restart in that window restored the old list. A stress run (30 rounds of 8 threads, `fsync`
+  slowed by up to 4 ms) found a file that differed from the queue in 3 and 7 rounds out of 30 in
+  two runs on the old code, and in none of 30 in two runs with the fix. The snapshot and the write
+  are now one critical section under a new `_persist_lock`, and the snapshot is taken after the lock
+  is held, so the writer that goes last always writes a state that includes every change made
+  before it was called. The lock order is `_persist_lock`, then the read lock; no caller holds a
+  queue lock when it persists (every call site is checked by an AST rule), so nothing can wait in a
+  circle. The price is that writers wait for each other during the `fsync` instead of each paying
+  for their own, with no queue lock held while they wait. 6 tests (5 red on the old code: a writer
+  held up before it takes the lock and one held up inside `fsync` while another task is added, five
+  writers behind one held-up writer, the shape of `_persist`, the lock being a plain per-queue lock;
+  the sixth is a soak with a slow disk that only sometimes fails on the old code) and 6 one-point
+  mutants all caught.
+- Extending a countdown, or choosing "no timeout", was not saved (R835). `extend_task_deadline` and
+  `freeze_task_deadline` change `auto_resubmit_timeout`, a field the snapshot stores, but never
+  wrote the snapshot (`update_auto_resubmit_timeout_for_all` had the same gap until an earlier
+  fix). Until some other change rewrote the file, it still held the old countdown, so a Web UI
+  restart in that window (the revival of a Web UI that was killed while a question was waiting,
+  section 21 of the troubleshooting guide) brought back a question the user had frozen with its
+  countdown running, where it could be auto-resubmitted to the AI, and an extension was gone. Both
+  methods now persist after a successful change, outside the write lock; a refused change (task
+  not found, limit reached, invalid seconds, already frozen, completed) changes and writes
+  nothing. A probe that runs every public operation that changes the queue, one after the other,
+  and compares the file with the queue found these two as the only divergences; the same
+  comparison is now a test, so the next method that forgets to persist fails it. The number of
+  extensions already used is still not stored, so after a restart the limit counts from zero
+  again; the extended time itself is kept. 11 tests (6 red on the old code) and 5 one-point
+  mutants all caught.
+- Two Web UIs of one installation shared their task list (R836). The snapshot was
+  `<package>/data/tasks.json` for every Web UI process that runs from the same installed package.
+  Two MCP servers started from it with different configs and ports (two projects, so that their
+  questions do not mix) therefore shared the file: the second Web UI restored the first one's
+  pending questions as its own and listed them, and from then on each rewrote the file with only
+  its own tasks, erasing the other's. Two real MCP servers on ports 18850 and 18851: the second Web
+  UI listed `QUESTION FROM A` next to `QUESTION FROM B`, and `tasks.json` held both. The Web UI now
+  names the snapshot after its port, `tasks-<port>.json` in the same folder (`web_feedback_ui` binds
+  the task queue to its `--port` before the queue is built). The same port after a restart (R825)
+  finds its own file and another port never sees it: the same two servers now list one question
+  each, and `tasks-18850.json` and `tasks-18851.json` hold one task each. A snapshot written by an
+  older version (`tasks.json`) is not read, since it holds whatever some other Web UI left behind.
+  Not covered: two Web UIs on the same port but different hosts still share a file, and the WSGI
+  entry point (no port of its own) keeps `tasks.json`. Section 21 of the troubleshooting guide
+  names the new file, in both languages. 21 tests (19 red on the old code) and 12 one-point mutants
+  all caught.
+- A question that arrived while the page was reconnecting to a restarted Web UI showed up half a
+  minute late (R837). When the stream of the Web UI page (and of the VS Code panel's webview) opens,
+  the page moves its polling to a 30 s safety net and relies on the stream's replay
+  (`last_event_id`) for whatever it missed. A Web UI that was started again numbers its events from
+  1: a page that had seen event 57 asks for everything after 57, the new server has not got that
+  far and answers with nothing, and with no `gap_warning` either. A question created after the
+  page's last poll and before its stream was back was therefore invisible until the safety net
+  ran. Real Chrome 153 against a real Web UI that was killed (SIGKILL) and started again on the
+  same snapshot, which is what the revival in section 21 of the troubleshooting guide does:
+  question B, created 0.5 s before the stream came back, showed up 30.6 s after it was created;
+  with the fix it shows up 0.5 s after (and 0.1 s when it is created after the stream is back).
+  The page (a tab with its own stream, the leader of a group of tabs, a tab that follows a leader)
+  and the panel now read the task list once when the stream opens: subscribe first, then fetch,
+  so that what happened before is in the list and what happens after is in the stream. A tab in
+  the background does it too, as it does for a stream event, so a question is still noticed
+  there. A follower reads the list when its leader announces an open stream, not on the leader's
+  heartbeat, which comes every few seconds. The cost is one more `GET /api/tasks` per
+  (re)connect, and one when a page is loaded. The extension host (status bar counts) schedules
+  its next poll before its stream is open and was left alone. 16 tests (11 red on the old code)
+  and 10 one-point mutants all caught.
 
 ### Security
 

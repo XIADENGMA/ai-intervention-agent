@@ -137,9 +137,15 @@ R23.4：合并旧的 get_all_tasks() + get_task_count() 两次 read_lock，
 
 cr32 §3.1 fix：在写锁内执行 ``Task.extend_deadline`` 的读改写原语。
 
+R835：延长成功后要落盘（锁外）。``auto_resubmit_timeout`` 在快照里；以前这里改了
+内存却不写文件，Web UI 在下一次写盘前重启，延长就丢了。
+
 ##### `freeze_task_deadline(self, task_id: str) -> tuple[bool, str | None, int]`
 
 mining-6 Track A: 在写锁内调用 ``Task.freeze_deadline``。
+
+R835：冻结成功后要落盘（锁外），否则重启后"不要超时"的任务带着原来的倒计时回来，
+还可能被自动重调。
 
 ##### `set_active_task(self, task_id: str) -> bool`
 
