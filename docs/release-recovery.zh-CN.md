@@ -6,7 +6,7 @@
 本文是 **`v*.*.*` tag 推送触发 `release.yml`、其中一个或多个 release
 job 失败 / 部分发布时的人类可读 runbook**。
 
-`release.yml` 的六个 release job（按执行顺序）：
+`release.yml` 的四个 release job（按执行顺序）：
 
 1. **Build (sdist + wheel)** —— 跑 `scripts/ci_gate.py --ci`，再
    `uv build` + `twine check` + Node deps + VSIX build。上传
@@ -14,17 +14,16 @@ job 失败 / 部分发布时的人类可读 runbook**。
 2. **Publish to PyPI (Trusted Publisher)** —— 将 `dist/*` 上传到
    PyPI，附带 sigstore attestations。
 3. **Publish VSCode Extension to Open VSX** —— `npx --yes
-ovsx@0.10.9 publish ...`（R149 pin）。
-4. **Publish VSCode Extension to VS Code Marketplace** —— 若配置
-   了 `VSCE_PAT` secret 则 `vsce publish`；否则优雅 skip。
-5. **Create GitHub Release** —— 把 sdist/wheel/vsix 作为 release
+ovsx@0.10.9 publish ...`（R149 pin）。Open VSX 是本项目唯一发布
+   插件的注册表（R840）。
+4. **Create GitHub Release** —— 把 sdist/wheel/vsix 作为 release
    asset 上传，附带从 CHANGELOG 自动生成的 release notes。
 
 **任意 job** 失败都会留下 partial 状态。本手册按失败模式分类，给
 出每种模式的恢复方法 —— 全文最重要的一条规则：
 
-> 一旦某个 Publish job **成功**（PyPI / Open VSX / Marketplace 接
-> 收了 artefact），该版本号就**永久燃烧**了。PyPI 明确拒绝同版本
+> 一旦某个 Publish job **成功**（PyPI / Open VSX 接收了
+> artefact），该版本号就**永久燃烧**了。PyPI 明确拒绝同版本
 > 号的重复上传，即便 `yank` 之后也不行。Open VSX 同理。**永远不
 > 要复用已燃烧的版本号**，bump 到下一个 patch 即可。
 
@@ -76,7 +75,7 @@ tag，它们可能缓存了被抛弃的 commit hash。如果怀疑有外部消�
 
 ## 失败模式 2 —— Build ✓，部分 Publish ✗
 
-**现象**：`Build` 成功；PyPI 上传 ✓；Open VSX 或 Marketplace ✗。
+**现象**：`Build` 成功；PyPI 上传 ✓；Open VSX ✗。
 GitHub Release 取决于哪个 job 先跑，可能创建了也可能没创建。
 
 **示例（假设）**：PyPI ✓ + Open VSX ✗，因为 Open VSX 服务器临时
@@ -107,8 +106,6 @@ gh run download <run-id> --name vsix
 cd packages/vscode
 # Open VSX：
 npx --yes ovsx@0.10.9 publish *.vsix -p $OPENVSX_TOKEN
-# Marketplace（如果适用）：
-vsce publish --packagePath *.vsix -p $VSCE_PAT
 ```
 
 ### 选项 C —— Patch bump（v1.6.3 → v1.6.4）如果 artefact 自己坏了
@@ -129,8 +126,8 @@ artefact 是正常的；坏的是 VSIX。选项：
 
 ## 失败模式 3 —— Build ✓ + 所有 Publish ✓，但 `Create GitHub Release` ✗
 
-**现象**：PyPI ✓ + Open VSX ✓ + Marketplace ✓ + `Create GitHub
-Release` ✗（例如 `gh release create` 被限速或权限失败）。
+**现象**：PyPI ✓ + Open VSX ✓ + `Create GitHub Release` ✗
+（例如 `gh release create` 被限速或权限失败）。
 
 **恢复**：三种模式里最简单的。手动创建 GitHub Release：
 
@@ -230,7 +227,7 @@ Issue 跟踪器发条简报：
 2. **`main` 上的 `Tests` workflow**（R180 + R181 + CHANGELOG drift
    守护）—— 在 tag-push **之后**、`release.yml` Publish job **之前**
    抓失误。
-3. **`release.yml` 六个 job 流水线**（上面失败模式 1-3）—— 抓单 job
+3. **`release.yml` 四个 job 流水线**（上面失败模式 1-3）—— 抓单 job
    artefact / publish 级失败。
 
 ```bash
@@ -304,7 +301,7 @@ push 5 分钟后 retag `36222a3` → `35f9671`。
 
 **安全 retag 条件**（全部满足）：
 
-- PyPI / Open VSX / Marketplace 没有任何 publish 成功（查
+- PyPI / Open VSX 没有任何 publish 成功（查
   `release.yml` run page 或直接看 PyPI 页面）；
 - GitHub Release 还没创建（或者你能删掉它）；
 - 距离失败的 tag push < 30 分钟（统计上典型 fork/clone 延迟窗口

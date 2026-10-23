@@ -18,7 +18,7 @@
 ## 开 issue 前的自查清单
 
 1. **先搜索现有 issue / discussion**，重复是回复慢最常见原因。
-2. **确认在最新版本**：PyPI `pip install -U ai-intervention-agent`，VS Code 走 marketplace 自动更新。
+2. **确认在最新版本**：PyPI `pip install -U ai-intervention-agent`；VS Code 插件从 Open VSX 更新，或从 [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest) 安装最新的 VSIX。
 3. **看相关文档页**：[`README.zh-CN.md`](../README.zh-CN.md)、[`docs/troubleshooting.zh-CN.md`](../docs/troubleshooting.zh-CN.md)、[`docs/configuration.zh-CN.md`](../docs/configuration.zh-CN.md)、[`docs/mcp_tools.zh-CN.md`](../docs/mcp_tools.zh-CN.md)。
 4. **尝试纯净复现**：`uv run python scripts/manual_test.py --port 8080 --verbose`，确认问题在 published 代码上仍能复现，而非你本地的私改造成。
 5. **准备好日志**：VS Code 里把 `ai-intervention-agent.logLevel` 设为 `debug`；独立 server 设环境变量 `AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG`。

@@ -18,7 +18,7 @@ This file routes questions to the right channel so they get the fastest, most us
 ## Before opening an issue
 
 1. **Search existing issues and discussions** — duplicates are the most common cause of slow responses.
-2. **Confirm you are on the latest version**. PyPI: `pip install -U ai-intervention-agent`; VS Code: marketplace auto-update.
+2. **Confirm you are on the latest version**. PyPI: `pip install -U ai-intervention-agent`; VS Code extension: update it from Open VSX, or install the newest VSIX from [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest).
 3. **Read the relevant doc page**: [`README.md`](../README.md), [`docs/troubleshooting.md`](../docs/troubleshooting.md), [`docs/configuration.md`](../docs/configuration.md), [`docs/mcp_tools.md`](../docs/mcp_tools.md).
 4. **Try a clean reproduction**: run `uv run python scripts/manual_test.py --port 8080 --verbose` and confirm the issue persists with the published code, not your local patches.
 5. **Have logs ready**: enable `ai-intervention-agent.logLevel = "debug"` in VS Code, or set `AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG` for the standalone server.

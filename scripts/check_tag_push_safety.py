@@ -13,7 +13,7 @@ GitHub 平台对 ``push.tags`` 触发器有一条**未经文档化的硬限制**
 也就是说，``git push --follow-tags origin main`` 在本地堆积了 ≥4 个未推送
 ``v*.*.*`` tag 时，**虽然 push 本身成功**（远端能看到所有 tag），**但 GitHub
 不会为任何 tag 生成 webhook event**，导致 ``release.yml``（``on.push.tags``）
-静默不触发，PyPI / GitHub Release / VSCode Marketplace / Open VSX 全线都不
+静默不触发，PyPI / GitHub Release / Open VSX 全线都不
 会发布——**且 push 输出和 GitHub UI 都不会给开发者任何错误反馈**，唯一的现
 象是 "tag 在远端但 Actions 列表里没看到 Release run"。
 
@@ -325,7 +325,7 @@ def _check(threshold: int = 3, remote: str = "origin") -> int:
     print(
         "\nGitHub 平台限制：单次 push >3 个 tag 时 webhook events 不会被创建，"
         "release.yml（on.push.tags）将静默不触发——PyPI / GitHub Release / "
-        "VSCode Marketplace 等下游发布全部不会发生，且 push 输出和 GitHub UI "
+        "Open VSX 等下游发布全部不会发生，且 push 输出和 GitHub UI "
         "都不会给出错误反馈。\n"
         "参考：https://github.com/actions/runner/issues/3644\n",
         file=sys.stderr,

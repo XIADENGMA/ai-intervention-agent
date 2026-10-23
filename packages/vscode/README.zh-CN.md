@@ -20,6 +20,10 @@
 ## 安装
 
 > Open VSX 扩展页：`https://open-vsx.org/extension/xiadengma/ai-intervention-agent`
+>
+> 插件只发布在 Open VSX。以 Open VSX 为扩展库的编辑器（Cursor、VSCodium、Windsurf 等基于 VS Code 的编辑器）
+> 可以在扩展视图里直接按名字搜到。微软的 VS Code 不搜索 Open VSX：请从 Open VSX 页面或
+> [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest) 下载 `.vsix`，再按方式一安装。
 
 ### 方式一：安装 VSIX（推荐离线/内网环境）
 
@@ -114,7 +118,7 @@ npm run vscode:test
 
 ## 更新日志
 
-- **VS Code 插件专属**（Marketplace / Open VSX 精选版）：[`CHANGELOG.md`](CHANGELOG.md)
+- **VS Code 插件专属**（Open VSX 精选版）：[`CHANGELOG.md`](CHANGELOG.md)
 - **全仓库**（含服务端 / Web UI / 文档）：[GitHub `CHANGELOG.md`](https://github.com/xiadengma/ai-intervention-agent/blob/main/CHANGELOG.md)
 
 ## 项目地址

@@ -328,8 +328,8 @@ ERROR: Description in extension.vsixmanifest and package.json does not match.
 ERROR: Categories in extension.vsixmanifest and package.json do not match.
 ```
 
-—— 通常**只有** Open VSX job 报错；同一份 VSIX 上传到 Microsoft VS
-Code Marketplace 一切正常。
+—— 通常**只有** Open VSX job 报错；打包同一份 VSIX 的 `build` job
+是通过的。
 
 ### 为什么会这样
 
@@ -337,8 +337,8 @@ Code Marketplace 一切正常。
 解析）和 VSIX 内 `extension.vsixmanifest` 的字符串字段。NLS 占位符
 （如 `"%displayName%"`）在 `ovsx` 看来就是字面量字符串，不会展开后再
 比对——因此与 VSIX manifest 内被构建工具展开的字面值（如
-`"AI Intervention Agent"`）必然不等。Microsoft Marketplace 容忍这种
-差异；Open VSX（约 2026-05 起）不再容忍。
+`"AI Intervention Agent"`）必然不等。Open VSX 从约 2026-05 起严格
+执行这个比对。
 
 历史上这个问题坑过 v1.6.1 —— 详情见
 [`CHANGELOG.md`](../CHANGELOG.md#162--2026-05-10) —— 当时 `npx --yes

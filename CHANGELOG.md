@@ -339,6 +339,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   killed), pins the monthly interval and the absence of `day`, that no workflow has a way
   to merge a pull request, and that nothing under `.github/` or in the two documents names
   the deleted workflow.
+- The extension is documented as published on Open VSX only (R840). It was never published to the
+  Visual Studio Marketplace, but both READMEs linked a listing page that answers 404 (the
+  Marketplace query API finds 0 extensions for `xiadengma.ai-intervention-agent`), and SECURITY,
+  SUPPORT, the install channels of the bug-report form, the release-recovery runbook, the release
+  checklist, the tag-push warning and the README sentence that names the publisher all counted it as
+  a destination. They now say Open VSX, or the VSIX from GitHub Releases. The two READMEs of the
+  repository and the extension's two READMEs add that Microsoft's VS Code does not search Open VSX,
+  so it installs the VSIX with *Extensions: Install from VSIX...*, and the bug-report form offers
+  "VSIX from GitHub Releases" where it offered "VS Code Marketplace". The README sentence "5-job pipeline" is
+  "4-job" now (R233 compares it with `release.yml`), and the runbook, which said "six release
+  jobs" while listing five, says four. The troubleshooting entry about Open VSX rejecting
+  `%displayName%` no longer says that the same VSIX uploads fine to the Marketplace (nothing here
+  ever uploaded it there) and no longer compares the two registries. A new test,
+  `test_extension_on_open_vsx_only_r840.py` (11 tests, 29 mutants killed), pins the four jobs of
+  `release.yml`, that none of 18 user-facing files contains the word "marketplace", that no text
+  file links this extension's Marketplace page and that each README names the VSIX install.
 
 ### Removed
 
@@ -483,6 +499,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `.github/workflows/dependabot-auto-merge.yml`, the workflow that merged patch and minor
   Dependabot pull requests without waiting for the tests (R839; the reasons and the new
   monthly schedule are under Changed).
+- The `vscode-marketplace` job of `.github/workflows/release.yml` (R840). The repository has no
+  `VSCE_PAT` secret, so on every release the job reported success while its publish step was
+  skipped (run 34085308995 for v1.8.12) and printed "skipping VS Code Marketplace publish".
+  `release.yml` has four jobs now: `build`, `publish` (PyPI), `open-vsx` and `github-release`.
 
 ### Fixed
 

@@ -5,7 +5,7 @@
 ## 支持的版本
 
 只有 `main` 上的 **最新 minor** 会收到安全修复。新的 minor 一旦发布到 PyPI /
-Open VSX / VS Code Marketplace，旧 minor 立即 EOL。
+Open VSX，旧 minor 立即 EOL。
 
 | 版本  | 状态    |
 | ----- | ------- |
@@ -35,7 +35,7 @@ Open VSX / VS Code Marketplace，旧 minor 立即 EOL。
 
 - 回复确认：**72 小时** 内。
 - 定级与修复 ETA：确认后 **7 天** 内给出。
-- 协同披露：补丁上线（PyPI / Marketplace / Open VSX）后发布 GitHub Security
+- 协同披露：补丁上线（PyPI / Open VSX）后发布 GitHub Security
   Advisory，在 advisory 中致谢报告者（匿名请求除外）。
 
 ## 非 loopback 部署的加固建议

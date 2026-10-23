@@ -1,7 +1,7 @@
 # AI Intervention Agent · VS Code extension changelog
 
-This file is rendered on the **Changelog** tab of the VS Code
-Marketplace and Open VSX listing pages. It captures only the
+This file is rendered on the **Changelog** tab of the Open VSX
+listing page. It captures only the
 extension-relevant changes; for the complete project history (PyPI
 package, MCP server, Web UI internals), see the
 [root `CHANGELOG.md`][root-changelog] on GitHub.

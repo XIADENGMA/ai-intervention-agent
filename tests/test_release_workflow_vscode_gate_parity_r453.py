@@ -1,7 +1,7 @@
 """R453 · release workflow must validate VSCode before publishing VSIX.
 
 The dedicated VSCode workflow runs lint, tests, and packaging. The release
-workflow builds the VSIX that is later published to Marketplace/Open VSX, so it
+workflow builds the VSIX that is later published to Open VSX, so it
 must not regress to a package-only path that skips extension tests.
 """
 
@@ -50,7 +50,7 @@ def test_release_build_job_uses_single_headless_vscode_check_not_package_only() 
         "the workspace npm test lifecycle already runs pretest"
     )
     assert "run: npm run vscode:package" not in build, (
-        "release.yml must not build the marketplace VSIX through the "
+        "release.yml must not build the published VSIX through the "
         "package-only command; vscode:check runs tests and then packages"
     )
 
@@ -75,5 +75,4 @@ def test_publish_jobs_still_consume_build_vsix_artifact() -> None:
     assert "name: vsix" in text
     assert "path: packages/vscode/*.vsix" in text
     assert "needs: build" in text
-    assert "npx --yes @vscode/vsce publish" in text
     assert "npx --yes ovsx@0.10.9 publish" in text

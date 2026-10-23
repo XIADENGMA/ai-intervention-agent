@@ -240,7 +240,7 @@ invariant catalogue live in [`docs/architecture.md`](docs/architecture.md).
 
 Embeds the interaction panel into VS Code's sidebar so you never switch to a browser.
 
-- Install: [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent), [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=xiadengma.ai-intervention-agent), or download the VSIX from [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)
+- Install: from [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent) (the extension registry that Cursor, VSCodium, Windsurf and other VS Code-based editors use), or download the VSIX from [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest). Microsoft's VS Code does not search Open VSX, so install the VSIX there: Command Palette → **Extensions: Install from VSIX...**
 - Key setting: `ai-intervention-agent.serverUrl` must match your Web UI URL (e.g. `http://localhost:8080`; change the port via `web_ui.port` in [`config.toml.default`](config.toml.default))
 - More: `ai-intervention-agent.logLevel` and macOS native notifications (on by default, toggle in the sidebar's Notification Settings panel). The full settings list and the AppleScript executor security model are in [`packages/vscode/README.md`](packages/vscode/README.md)
 
@@ -274,7 +274,7 @@ On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and po
 - **MCP tool reference**: [`docs/mcp_tools.md`](docs/mcp_tools.md) · [`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)
 - **API docs**: [`docs/api/index.md`](docs/api/index.md) · [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **Troubleshooting / FAQ**: [`docs/troubleshooting.md`](docs/troubleshooting.md) · [`docs/troubleshooting.zh-CN.md`](docs/troubleshooting.zh-CN.md)
-- **Release notes**: [`CHANGELOG.md`](CHANGELOG.md) · VS Code marketplace listing: [`packages/vscode/CHANGELOG.md`](packages/vscode/CHANGELOG.md)
+- **Release notes**: [`CHANGELOG.md`](CHANGELOG.md) · VS Code extension (the Open VSX listing): [`packages/vscode/CHANGELOG.md`](packages/vscode/CHANGELOG.md)
 - **Contributing**: [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](.github/CODE_OF_CONDUCT.md) · scripts index: [`scripts/README.md`](scripts/README.md) · i18n guide: [`docs/i18n.md`](docs/i18n.md)
 - **Support & security**: [`SUPPORT.md`](.github/SUPPORT.md) · [`SECURITY.md`](.github/SECURITY.md)
 - **Release recovery runbook**: [`docs/release-recovery.md`](docs/release-recovery.md) · [`docs/release-recovery.zh-CN.md`](docs/release-recovery.zh-CN.md)
@@ -292,7 +292,7 @@ On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and po
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp) (poliva) | ~310 | Direct ancestor fork (see Acknowledgements); minimal Python MCP, single feedback dialog. |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp) (Pursue-LLL) | ~30 | Independent smaller-scale fork emphasising minimal dependencies. |
 
-Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (11,600+ tests + 1,050+ subtests across 40 audit cycles), and releases run through a 5-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
+Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (11,600+ tests + 1,050+ subtests across 40 audit cycles), and releases run through a 4-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
 
 Feature gaps (contributions welcome): Speech-to-Text input, always-on-top native window, Cursor usage monitoring, multi-tab session merging UI.
 
@@ -300,7 +300,7 @@ Feature gaps (contributions welcome): Speech-to-Text input, always-on-top native
 
 ## Acknowledgements
 
-The MCP `interactive_feedback` tool surface comes from two earlier projects: Fábio Ferreira's original [`noopstudios/interactive-feedback-mcp`](https://github.com/noopstudios/interactive-feedback-mcp) (2024) and Pau Oliva's [`poliva/interactive-feedback-mcp`](https://github.com/poliva/interactive-feedback-mcp) (2025). Their copyright notices are kept in [`LICENSE`](LICENSE), as the MIT license requires. The v1.5.x line is a substantial rewrite (Web UI, VS Code extension, i18n, notification stack, CI/CD pipeline), owned and maintained by [@xiadengma](https://github.com/xiadengma), the publisher on PyPI, Open VSX, and the VS Code Marketplace.
+The MCP `interactive_feedback` tool surface comes from two earlier projects: Fábio Ferreira's original [`noopstudios/interactive-feedback-mcp`](https://github.com/noopstudios/interactive-feedback-mcp) (2024) and Pau Oliva's [`poliva/interactive-feedback-mcp`](https://github.com/poliva/interactive-feedback-mcp) (2025). Their copyright notices are kept in [`LICENSE`](LICENSE), as the MIT license requires. The v1.5.x line is a substantial rewrite (Web UI, VS Code extension, i18n, notification stack, CI/CD pipeline), owned and maintained by [@xiadengma](https://github.com/xiadengma), the publisher on PyPI and Open VSX.
 
 ## License
 

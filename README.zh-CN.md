@@ -238,7 +238,7 @@ AIIA 以单个 Python 进程运行，桥接三个界面：暴露 `interactive_fe
 
 把交互面板放进 VS Code 侧边栏，避免频繁切换浏览器。
 
-- 安装：[Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)、[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=xiadengma.ai-intervention-agent)，或从 [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest) 下载 VSIX
+- 安装：从 [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)（Cursor、VSCodium、Windsurf 等基于 VS Code 的编辑器使用的扩展库）安装，或从 [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest) 下载 VSIX。微软的 VS Code 不搜索 Open VSX，请在其中用 VSIX 安装：命令面板 → **Extensions: Install from VSIX...**
 - 关键设置：`ai-intervention-agent.serverUrl` 填写你的 Web UI 地址（例如 `http://localhost:8080`；端口可在 [`config.toml.default`](config.toml.default) 的 `web_ui.port` 中修改）
 - 更多：`ai-intervention-agent.logLevel`、macOS 原生通知（默认开启，可在侧边栏「通知设置」面板中关闭）。完整设置项与 AppleScript executor 安全模型详见 [`packages/vscode/README.zh-CN.md`](packages/vscode/README.zh-CN.md)
 
@@ -272,7 +272,7 @@ iPhone 上最顺手的用法是把 Web UI 包进快捷指令（Shortcuts），�
 - **MCP 工具说明**：[`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md) · [`docs/mcp_tools.md`](docs/mcp_tools.md)
 - **API 文档**：[`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md) · [`docs/api/index.md`](docs/api/index.md)
 - **故障排查 / FAQ**：[`docs/troubleshooting.zh-CN.md`](docs/troubleshooting.zh-CN.md) · [`docs/troubleshooting.md`](docs/troubleshooting.md)
-- **发布说明**：[`CHANGELOG.md`](CHANGELOG.md) · VS Code 插件 marketplace 专属：[`packages/vscode/CHANGELOG.md`](packages/vscode/CHANGELOG.md)
+- **发布说明**：[`CHANGELOG.md`](CHANGELOG.md) · VS Code 插件（Open VSX 页面）专属：[`packages/vscode/CHANGELOG.md`](packages/vscode/CHANGELOG.md)
 - **贡献指南**：[`CONTRIBUTING.zh-CN.md`](.github/CONTRIBUTING.zh-CN.md) · [`CODE_OF_CONDUCT.zh-CN.md`](.github/CODE_OF_CONDUCT.zh-CN.md) · 脚本索引：[`scripts/README.md`](scripts/README.md) · i18n 指南：[`docs/i18n.md`](docs/i18n.md)
 - **获取支持与安全披露**：[`SUPPORT.zh-CN.md`](.github/SUPPORT.zh-CN.md) · [`SECURITY.zh-CN.md`](.github/SECURITY.zh-CN.md)
 - **Release 恢复 runbook**：[`docs/release-recovery.zh-CN.md`](docs/release-recovery.zh-CN.md) · [`docs/release-recovery.md`](docs/release-recovery.md)
@@ -290,7 +290,7 @@ iPhone 上最顺手的用法是把 Web UI 包进快捷指令（Shortcuts），�
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp)（poliva） | 约 310 | 直系上游 fork（参见下方致谢）；最精简的 Python MCP，单一反馈对话框。 |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp)（Pursue-LLL） | 约 30 | 体量更小的独立 fork，强调"依赖最少"。 |
 
-AIIA 在光谱中的位置：AIIA 走的是完整运维栈路线。Web UI 与 VS Code 插件共享同一后端，可观测性由 `/metrics` Prometheus 端点和[参考 Grafana 仪表盘](docs/observability/README.zh-CN.md)提供。Web UI 内置三种界面语言，文档提供中英双语；项目遵循不变量测试纪律（11,600+ 测试 + 1,050+ subtests，40 cycles 持续审计），发布流水线有 5 个 job。只想要最轻量的 drop-in，选 poliva 版本；想要桌面应用，选 mcp-feedback-enhanced；想要语音输入或多 tab UI，看 Relay 或 Node.js 版本。
+AIIA 在光谱中的位置：AIIA 走的是完整运维栈路线。Web UI 与 VS Code 插件共享同一后端，可观测性由 `/metrics` Prometheus 端点和[参考 Grafana 仪表盘](docs/observability/README.zh-CN.md)提供。Web UI 内置三种界面语言，文档提供中英双语；项目遵循不变量测试纪律（11,600+ 测试 + 1,050+ subtests，40 cycles 持续审计），发布流水线有 4 个 job。只想要最轻量的 drop-in，选 poliva 版本；想要桌面应用，选 mcp-feedback-enhanced；想要语音输入或多 tab UI，看 Relay 或 Node.js 版本。
 
 功能缺口（欢迎贡献）：语音转文字输入、原生置顶窗口、Cursor 用量监控、多 tab 会话合并 UI。
 
@@ -298,7 +298,7 @@ AIIA 在光谱中的位置：AIIA 走的是完整运维栈路线。Web UI 与 VS
 
 ## 致谢
 
-MCP `interactive_feedback` 工具的基础形态来自两个早期项目：Fábio Ferreira（2024）的 [`noopstudios/interactive-feedback-mcp`](https://github.com/noopstudios/interactive-feedback-mcp) 和 Pau Oliva（2025）的 [`poliva/interactive-feedback-mcp`](https://github.com/poliva/interactive-feedback-mcp)。两位作者的版权声明已按 MIT 协议要求保留在 [`LICENSE`](LICENSE) 中。v1.5.x 系列由 [@xiadengma](https://github.com/xiadengma)（PyPI / Open VSX / VS Code Marketplace 发布者）全面重写，涵盖 Web UI、VS Code 插件、i18n、通知体系和 CI/CD 流水线。
+MCP `interactive_feedback` 工具的基础形态来自两个早期项目：Fábio Ferreira（2024）的 [`noopstudios/interactive-feedback-mcp`](https://github.com/noopstudios/interactive-feedback-mcp) 和 Pau Oliva（2025）的 [`poliva/interactive-feedback-mcp`](https://github.com/poliva/interactive-feedback-mcp)。两位作者的版权声明已按 MIT 协议要求保留在 [`LICENSE`](LICENSE) 中。v1.5.x 系列由 [@xiadengma](https://github.com/xiadengma)（PyPI / Open VSX 发布者）全面重写，涵盖 Web UI、VS Code 插件、i18n、通知体系和 CI/CD 流水线。
 
 ## 开源协议
 

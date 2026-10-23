@@ -20,6 +20,11 @@ This VS Code extension embeds the AI Intervention Agent interaction panel into V
 ## Installation
 
 > Open VSX page: `https://open-vsx.org/extension/xiadengma/ai-intervention-agent`
+>
+> The extension is published on Open VSX only. Editors that use Open VSX as their extension registry
+> (Cursor, VSCodium, Windsurf and other VS Code-based editors) find it by name in the Extensions view.
+> Microsoft's VS Code does not search Open VSX: download the `.vsix` from the Open VSX page or from
+> [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest) and use Option 1.
 
 ### Option 1: Install a VSIX
 
@@ -114,7 +119,7 @@ npm run vscode:test
 
 ## Changelog
 
-- **Extension-only (curated for the Marketplace / Open VSX listing)**: [`CHANGELOG.md`](CHANGELOG.md)
+- **Extension-only (curated for the Open VSX listing)**: [`CHANGELOG.md`](CHANGELOG.md)
 - **Repository-wide (server / Web UI / docs)**: [GitHub `CHANGELOG.md`](https://github.com/xiadengma/ai-intervention-agent/blob/main/CHANGELOG.md)
 
 ## Repository

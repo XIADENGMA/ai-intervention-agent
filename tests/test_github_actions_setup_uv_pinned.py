@@ -67,11 +67,9 @@ def test_harden_runner_workflows_grant_actions_read() -> None:
         )
 
 
-def test_release_optional_marketplace_skips_use_notice_not_warning() -> None:
+def test_release_optional_open_vsx_skip_uses_notice_not_warning() -> None:
     text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-    assert "::warning::VSCE_PAT secret not configured" not in text
     assert "::warning::OPEN_VSX_TOKEN secret not configured" not in text
-    assert "::notice::VSCE_PAT secret not configured" in text
     assert "::notice::OPEN_VSX_TOKEN secret not configured" in text
 
 

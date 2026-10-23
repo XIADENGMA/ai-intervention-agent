@@ -380,8 +380,8 @@ ERROR: Description in extension.vsixmanifest and package.json does not match.
 ERROR: Categories in extension.vsixmanifest and package.json do not match.
 ```
 
-— typically _only_ the Open VSX job, with the same VSIX uploading
-fine to the Microsoft VS Code Marketplace.
+— typically _only_ the Open VSX job; the `build` job, which packages
+the same VSIX, passes.
 
 ### Why this happens
 
@@ -390,8 +390,8 @@ fields in `package.json` (after NLS placeholder resolution) literally
 match the corresponding fields in the VSIX's `extension.vsixmanifest`.
 NLS placeholders in `package.json` (e.g. `"%displayName%"`) are
 **not** resolved by `ovsx`; they're forwarded as-is and compared
-against the resolved manifest. The Microsoft Marketplace tolerates
-this; Open VSX (since ~2026-05) does not.
+against the resolved manifest. Open VSX has enforced the match
+since ~2026-05.
 
 This historically broke v1.6.1 — see
 [`CHANGELOG.md`](../CHANGELOG.md#162--2026-05-10) — when the floating

@@ -5,9 +5,9 @@
 
 This document is the human-readable runbook for **what to do when a
 `v*.*.*` tag push triggers `release.yml` and one or more of the
-six release jobs fails or partially ships**.
+four release jobs fails or partially ships**.
 
-The six release jobs of `release.yml` (in execution order):
+The four release jobs of `release.yml` (in execution order):
 
 1. **Build (sdist + wheel)** — runs `scripts/ci_gate.py --ci`
    then `uv build` + `twine check` + Node deps + VSIX build. Uploads
@@ -15,18 +15,17 @@ The six release jobs of `release.yml` (in execution order):
 2. **Publish to PyPI (Trusted Publisher)** — uploads `dist/*` to
    PyPI with sigstore attestations.
 3. **Publish VSCode Extension to Open VSX** — `npx --yes
-ovsx@0.10.9 publish ...` (pinned per R149).
-4. **Publish VSCode Extension to VS Code Marketplace** — `vsce
-publish` if `VSCE_PAT` secret is set; gracefully skips otherwise.
-5. **Create GitHub Release** — uploads sdist/wheel/vsix as
+ovsx@0.10.9 publish ...` (pinned per R149). Open VSX is the
+only extension registry the project publishes to (R840).
+4. **Create GitHub Release** — uploads sdist/wheel/vsix as
    release assets + auto-generated release notes from CHANGELOG.
 
 A failure in **any** job leaves the project in a partial state.
 This playbook describes how to recover for each failure pattern,
 and **the one rule that everything hinges on**:
 
-> Once a Publish job has _succeeded_ (PyPI / Open VSX / Marketplace
-> accepted the artefact), the version number is **permanently
+> Once a Publish job has _succeeded_ (PyPI / Open VSX accepted the
+> artefact), the version number is **permanently
 > burned**. PyPI explicitly refuses re-upload of the same version,
 > even after `yank`. Open VSX is the same. **Never re-use a burned
 > version number.** Bump to the next patch instead.
@@ -82,9 +81,8 @@ tracker if you suspect external consumers.
 
 ## Failure pattern 2 — Build ✓, some Publish jobs ✗
 
-**Symptom**: `Build` succeeds; PyPI ships ✓; Open VSX or
-Marketplace ✗. GitHub Release may or may not exist depending on
-which job ran first.
+**Symptom**: `Build` succeeds; PyPI ships ✓; Open VSX ✗. GitHub
+Release may or may not exist depending on which job ran first.
 
 **Example (hypothetical)**: PyPI ✓ + Open VSX ✗ because Open VSX
 servers had a transient 502.
@@ -115,8 +113,6 @@ gh run download <run-id> --name vsix
 cd packages/vscode
 # OpenVSX:
 npx --yes ovsx@0.10.9 publish *.vsix -p $OPENVSX_TOKEN
-# Marketplace (if applicable):
-vsce publish --packagePath *.vsix -p $VSCE_PAT
 ```
 
 ### Option C — Patch-bump (v1.6.3 → v1.6.4) if the artefact is broken
@@ -139,9 +135,8 @@ is minor / cosmetic; prefer option 2 if it's user-facing.
 
 ## Failure pattern 3 — Build ✓, all Publish jobs ✓, but `Create GitHub Release` ✗
 
-**Symptom**: PyPI ✓ + Open VSX ✓ + Marketplace ✓ + `Create
-GitHub Release` ✗ (e.g. `gh release create` rate-limited or
-permissions failed).
+**Symptom**: PyPI ✓ + Open VSX ✓ + `Create GitHub Release` ✗
+(e.g. `gh release create` rate-limited or permissions failed).
 
 **Recovery**: easiest of the three patterns. Create the GitHub
 Release manually:
@@ -251,7 +246,7 @@ the **three concentric belts** that catch tag-push-time mistakes.
 2. **`Tests` workflow on `main`** (R180 + R181 + CHANGELOG drift
    guard) — catches mistakes _after_ tag-push but _before_
    `release.yml` Publish jobs fire.
-3. **`release.yml` six-job pipeline** (failure patterns 1-3 above)
+3. **`release.yml` four-job pipeline** (failure patterns 1-3 above)
    — catches per-job artefact / publish failures.
 
 ```bash
@@ -327,7 +322,7 @@ is **safe** within a short window. v1.7.2 retagged from `36222a3`
 
 **Safe-to-retag conditions** (all must be true):
 
-- No PyPI / Open VSX / Marketplace publish has succeeded (check
+- No PyPI / Open VSX publish has succeeded (check
   `release.yml` run-page or PyPI page directly);
 - No GitHub Release has been created yet (or you can delete it);
 - < 30 minutes since the failed tag push (statistical: typical

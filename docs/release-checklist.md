@@ -149,7 +149,7 @@ sit in local repo until user explicitly approves push.
 Rationale:
 
 - Push triggers PyPI publish CI (irreversible)
-- Push triggers Open VSX + VSCode Marketplace publish CI
+- Push triggers Open VSX publish CI
   (irreversible)
 - A wrong release tag pushed publicly cannot be cleanly
   retracted (deleted-tag forks already exist in the wild)

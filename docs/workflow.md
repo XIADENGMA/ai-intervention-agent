@@ -42,7 +42,7 @@ This document describes the recommended development and release workflow for thi
 - `git commit -m "<type>: <message>"`
 - `git tag -a vX.Y.Z -m "vX.Y.Z"`
 - **Pre-push gate (R19.1)**: `make release-check` (≡ `uv run python scripts/check_tag_push_safety.py`)
-  - GitHub silently drops `push.tags` webhook events when more than 3 tags are pushed in a single push (see `actions/runner#3644`). If you accumulated, e.g., `v1.5.20 / v1.5.21 / v1.5.23 / v1.5.24` locally and ran `git push --follow-tags`, the push **succeeds** but `release.yml` never fires — PyPI / GitHub Release / VS Code Marketplace publishes are silently skipped, and no error is reported anywhere.
+  - GitHub silently drops `push.tags` webhook events when more than 3 tags are pushed in a single push (see `actions/runner#3644`). If you accumulated, e.g., `v1.5.20 / v1.5.21 / v1.5.23 / v1.5.24` locally and ran `git push --follow-tags`, the push **succeeds** but `release.yml` never fires — PyPI / GitHub Release / Open VSX publishes are silently skipped, and no error is reported anywhere.
   - This gate counts unpushed `v*.*.*` tags vs `git ls-remote --tags origin` and fails (exit 1) if there are 4+. Run it **before** `git push --follow-tags origin main`.
 - `git push --follow-tags origin main`
   - If `make release-check` reported 4+ unpushed tags, push them one at a time instead: `git push origin v1.5.24` (per-tag pushes don't hit the 3-tag webhook limit).

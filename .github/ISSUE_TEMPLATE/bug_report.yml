@@ -54,8 +54,8 @@ body:
       label: Install channel · 安装渠道
       options:
         - PyPI (`uv tool install` / `pipx install` / `pip install`)
-        - VS Code Marketplace
         - Open VSX
+        - VSIX from GitHub Releases · GitHub Releases 的 VSIX
         - Built from source · 源码构建
         - Other · 其它
     validations:

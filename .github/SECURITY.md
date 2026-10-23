@@ -5,8 +5,7 @@
 ## Supported versions
 
 Only the **latest minor** on the `main` branch receives security fixes. Older
-minors are end-of-life the moment a new minor is published on PyPI / Open VSX /
-VS Code Marketplace.
+minors are end-of-life the moment a new minor is published on PyPI / Open VSX.
 
 | Version | Status         |
 | ------- | -------------- |
@@ -39,7 +38,7 @@ listed on the GitHub profile `@xiadengma`. Please tag the subject with
 - Acknowledgement target: within **72 hours**.
 - Triage + fix ETA: shared within **7 days** of acknowledgement.
 - Coordinated disclosure: a GitHub Security Advisory is published once a fix
-  reaches users (PyPI / Marketplace / Open VSX). We credit reporters in the
+  reaches users (PyPI / Open VSX). We credit reporters in the
   advisory unless anonymity is requested.
 
 ## Hardening recommendations for non-loopback deployments
