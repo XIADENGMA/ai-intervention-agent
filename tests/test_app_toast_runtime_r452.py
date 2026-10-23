@@ -18,11 +18,17 @@ def _node_available() -> bool:
 
 
 def _run_node(script: str) -> str:
+    # The script goes in on stdin, not on the command line: Linux refuses a single argument over
+    # 128 KiB (MAX_ARG_STRLEN) and macOS refuses 1 MiB of arguments and environment together. A
+    # harness that embeds a real asset (sprout.json makes a 504 KB script) is under the second
+    # limit and far over the first, so it ran on macOS and not on Linux. R838.
     proc = subprocess.run(
-        ["node", "-e", script],
+        ["node", "-"],
+        input=script,
         capture_output=True,
         check=False,
         text=True,
+        encoding="utf-8",
         timeout=15,
     )
     if proc.returncode != 0:
@@ -598,3 +604,19 @@ def test_status_message_clears_stale_dismiss_timer_and_ignores_stale_callbacks()
             "display": "none",
         },
     }
+
+
+@unittest.skipUnless(_node_available(), "node runtime unavailable")
+def test_run_node_takes_a_script_larger_than_one_command_line_argument() -> None:
+    """R838：脚本走 stdin，不受命令行长度限制。
+
+    ``test_lottie_canvas_lifecycle_r727.py`` 的一个用例把整个 ``sprout.json``（445 KB）嵌进脚本，
+    脚本约 504 KB。脚本以前放在 ``node -e <脚本>`` 的参数里：Linux 单个参数上限 128 KiB
+    （``MAX_ARG_STRLEN``），macOS 的上限是参数加环境变量共 1 MiB。504 KB 在 macOS 放得下、在 Linux
+    放不下，所以只有 GitHub 上四个 Python 版本的 CI 全红
+    （``OSError: [Errno 7] Argument list too long: 'node'``），开发机上一直是绿的。
+    这里用 2 MiB 的脚本：两个系统上都放不进参数，退回 ``-e`` 时在开发机上也会失败。
+    """
+    padding = "// " + "x" * (2 * 1024 * 1024) + "\n"
+
+    assert _run_node(padding + "process.stdout.write('ran');") == "ran"

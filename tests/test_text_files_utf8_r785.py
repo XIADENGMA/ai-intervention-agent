@@ -34,6 +34,8 @@ macOS 和 UTF-8 的 Linux 上不会触发，所以开发机和 CI 都看不出�
 
 * 用 ``LC_ALL=C PYTHONUTF8=0 PYTHONCOERCECLOCALE=0`` 起一个子进程，让 ``locale`` 编码变成 ASCII
   （任何 POSIX 系统都有 C 区域设置），带中文的事件照常落盘、读得回来、字节是合法的 UTF-8；
+  子进程是一个脚本文件，不是 ``-c`` 的参数（R838）：命令行按区域设置解码，Linux 在这个区域设置下
+  会把参数里的中文变成孤立代理字符，Python 编译不了，子进程一行都没跑就退出了；脚本文件永远按 UTF-8 读；
 * 源码扫描（和它的自检）。
 """
 
@@ -102,15 +104,25 @@ def run_child(folder: Path) -> dict:
         "AI_INTERVENTION_AGENT_CONFIG_FILE": str(config),
     }
     env.pop("LANG", None)
+    # The child is a file, not ``-c <source>``. A command line is decoded with the locale, and under
+    # this one (ASCII, no UTF-8 mode) Linux turns the Chinese text in the source into lone
+    # surrogates, which Python refuses to compile: the child died before it ran a line (R838).
+    # macOS always decodes the command line as UTF-8, so only Linux showed it. A source file is
+    # always read as UTF-8, whatever the locale.
+    script = folder / "child_r785.py"
+    script.write_text(CHILD, encoding="utf-8")
     done = subprocess.run(
-        [sys.executable, "-c", CHILD, str(folder)],
+        [sys.executable, str(script), str(folder)],
         env=env,
         cwd=folder,
         capture_output=True,
         text=True,
         encoding="utf-8",
         timeout=120,
-        check=True,
+        check=False,
+    )
+    assert done.returncode == 0, (
+        f"the child exited {done.returncode}\n--- stdout ---\n{done.stdout}\n--- stderr ---\n{done.stderr}"
     )
     return json.loads(done.stdout.strip().splitlines()[-1])
 

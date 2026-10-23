@@ -446,6 +446,13 @@ class TestNoWriteRouteAnswers5xxForAnUnusableNumberOrType:
         monkeypatch.setattr(
             NotificationManager, "send_notification", lambda self, *a, **k: ""
         )
+        # ``/api/system/open-config-file`` launches an editor or the system opener. ``Popen`` is
+        # replaced below, but the route answers 500 before it gets that far when the machine has
+        # neither (a bare Linux container has no ``xdg-open``), so hand it an opener to "launch".
+        monkeypatch.setattr(
+            "ai_intervention_agent.web_ui_routes.system._system_open_command",
+            lambda target: ["xdg-open", str(target)],
+        )
         monkeypatch.setattr(
             subprocess, "Popen", lambda *a, **k: MagicMock(pid=1, poll=lambda: None)
         )
