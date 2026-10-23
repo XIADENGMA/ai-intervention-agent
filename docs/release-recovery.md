@@ -210,10 +210,13 @@ move?" detective work in future bisect sessions.
   ovsx pin upgrade ritual.
 - `.github/dependabot.yml` + `automated-security-fixes`
   (repo-level toggle, **R184**: enabled) — auto-PR for CVE
-  disclosures. Combined with `dependabot-auto-merge.yml`, the
-  flow is: CVE drops → Dependabot opens patch-bump PR →
-  patch/minor auto-merge → next release picks up the fix. Major
-  bumps still go to human review (per dependabot-auto-merge.yml).
+  disclosures. No workflow merges these PRs by itself (the
+  auto-merge workflow was removed in **R839**): CVE drops →
+  Dependabot opens the security PR right away (security updates
+  ignore the schedule) → you read the PR and its CI → merge it by
+  hand → the next release picks up the fix. Routine version
+  updates are checked once a month (the 1st) and are merged by
+  hand too.
 
 ## Pre-tag-push checklist (R206 / Cycle 9 · F-release-1)
 

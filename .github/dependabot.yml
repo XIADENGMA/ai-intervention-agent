@@ -1,12 +1,12 @@
 # Dependabot 配置
-# 功能：自动检测依赖更新并创建 PR
-# 检查频率：每周
+# 功能：自动检测依赖更新并创建 PR；PR 一律由人看过 CI 再合并（没有自动合并的 workflow）
+# 检查频率：每月 1 日（monthly）。`schedule.day` 只对 weekly 有效，monthly 不能带，否则校验器报错。
+#   安全更新（漏洞公布后的 PR）不受这里的 schedule 管，照旧立刻开。
 #
 # 关于 `groups:`：
 #   把大量琐碎的 patch/minor 合成单 PR，显著降低 dependabot 噪音。
 #   major 升级始终独立 PR（`update-types: ["major"]` 从默认 group 剔除），
-#   方便人工审阅 + 配合 auto-merge（见 .github/workflows/dependabot-auto-merge.yml
-#   的「仅 patch/minor 自动合并」逻辑）。
+#   方便人工审阅。
 
 version: 2
 
@@ -15,8 +15,7 @@ updates:
   - package-ecosystem: 'pip'
     directory: '/'
     schedule:
-      interval: 'weekly'
-      day: 'monday'
+      interval: 'monthly'
       time: '09:00'
       timezone: 'Asia/Shanghai'
     # PR 标签
@@ -47,8 +46,7 @@ updates:
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
-      interval: 'weekly'
-      day: 'monday'
+      interval: 'monthly'
       time: '09:00'
       timezone: 'Asia/Shanghai'
     labels:
@@ -72,8 +70,7 @@ updates:
   - package-ecosystem: 'npm'
     directory: '/'
     schedule:
-      interval: 'weekly'
-      day: 'monday'
+      interval: 'monthly'
       time: '09:00'
       timezone: 'Asia/Shanghai'
     labels:

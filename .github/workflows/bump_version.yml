@@ -57,7 +57,7 @@ jobs:
         # 通过 env 间接传入而不是直接 ${{ }} 内插到 shell：workflow_dispatch
         # 仅维护者可触发，但 GitHub 官方 script-injection 加固指南（以及
         # OSSF Scorecard）推荐所有用户可控输入一律走 env 变量 + 引号，
-        # 与下方 dependabot-auto-merge.yml 的 PR_URL 模式保持一致。
+        # 与下面「提交并推送」一步的写法保持一致。
         env:
           NEW_VERSION: ${{ inputs.version }}
         run: uv run python scripts/bump_version.py "$NEW_VERSION"

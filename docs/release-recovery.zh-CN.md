@@ -195,10 +195,11 @@ Issue 跟踪器发条简报：
   displayName + ovsx pin 升级仪式。
 - `.github/dependabot.yml` + `automated-security-fixes`
   （仓库级开关，**R184** 已启用）—— CVE 披露后 Dependabot 自动
-  开 PR。配合 `dependabot-auto-merge.yml` 的链路是：CVE 落地 →
-  Dependabot 开 patch-bump PR → patch/minor 自动合并 → 下个发布
-  自动带上修复。主版本仍走人工审阅（见
-  `dependabot-auto-merge.yml`）。
+  开 PR。没有任何 workflow 会自己合并这些 PR（自动合并的
+  workflow 已在 **R839** 删除）：CVE 落地 → Dependabot 立刻开安全
+  更新 PR（安全更新不受 schedule 管）→ 人看过 PR 和 CI → 手动
+  合并 → 下个发布自动带上修复。常规版本更新每月 1 日检查一次，
+  同样手动合并。
 
 ## Tag 推送前清单（R206 / Cycle 9 · F-release-1）
 

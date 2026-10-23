@@ -30,7 +30,6 @@ HARDEN_RUNNER_WORKFLOWS = (
     ROOT / ".github" / "workflows" / "actionlint.yml",
     ROOT / ".github" / "workflows" / "bump_version.yml",
     ROOT / ".github" / "workflows" / "codeql.yml",
-    ROOT / ".github" / "workflows" / "dependabot-auto-merge.yml",
     ROOT / ".github" / "workflows" / "dependency-review.yml",
     ROOT / ".github" / "workflows" / "release.yml",
     ROOT / ".github" / "workflows" / "scorecard.yml",

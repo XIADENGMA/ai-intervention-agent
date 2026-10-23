@@ -319,6 +319,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that `dom-security.js` loads first and that the success tail stays one function; R586
   and R587 now run the shared function and both handlers in Node, and R238 reads the new
   location.
+- Dependabot pull requests are merged by hand now, and version updates are checked once a
+  month (R839). `.github/workflows/dependabot-auto-merge.yml` ran
+  `gh pr merge --auto --squash` for every patch and minor update. The repository has
+  "Allow auto-merge" off and the ruleset of `main` has no required check, so that command
+  merged at once instead of waiting for the tests: the eight Dependabot pull requests from
+  #113 to #126 (2026-09-28 to 2026-10-19) were merged 17 to 24 seconds after they were
+  opened, and when their tests finished Python 3.11 was red on all eight (3.12 and 3.13 as
+  well on #123 and #126). Every week `origin/main` also gained one to three commits that a
+  local clone did not have. The workflow is deleted. `.github/dependabot.yml` checks pip,
+  github-actions and npm with `interval: monthly` (the 1st of the month, 09:00
+  Asia/Shanghai) instead of every Monday, and the three `day: monday` lines are gone
+  because GitHub accepts `day` only with `weekly`. Security updates never followed the
+  schedule: a published vulnerability still gets its pull request at once, and that pull
+  request is merged by hand like the others. A comment in `bump_version.yml` that pointed
+  at the deleted file now points at the step it meant, and the CVE-flow paragraph of
+  `docs/release-recovery.md` and `docs/release-recovery.zh-CN.md` describes what happens
+  now. A new test, `test_dependabot_review_before_merge_r839.py` (12 tests, 17 mutants
+  killed), pins the monthly interval and the absence of `day`, that no workflow has a way
+  to merge a pull request, and that nothing under `.github/` or in the two documents names
+  the deleted workflow.
 
 ### Removed
 
@@ -460,6 +480,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   literal verbatim, so every panel load sent about 3.7 KB of notes to the
   webview. No code or test reads their text; the markup they sat next to is
   unchanged.
+- `.github/workflows/dependabot-auto-merge.yml`, the workflow that merged patch and minor
+  Dependabot pull requests without waiting for the tests (R839; the reasons and the new
+  monthly schedule are under Changed).
 
 ### Fixed
 
