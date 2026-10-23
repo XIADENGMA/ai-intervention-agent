@@ -2,7 +2,8 @@
 # 语法参考：https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
 # 作用：
-#   1. 任意 PR 自动指派 owner 为 reviewer（替代 dependabot.yml 中已弃用的 `reviewers:`）；
+#   1. 任意 PR 自动指派 owner 为 reviewer，Dependabot 的 PR 也一样（dependabot.yml 的 `reviewers:`
+#      选项 GitHub 已经移除，那里不再写；R842 的测试要求这里始终有一条带 owner 的 `*` 规则）；
 #   2. 当仓库启用 branch protection + "Require review from Code Owners" 时，强制 owner review；
 #   3. 单文件可匹配多个规则，最后匹配的规则生效（顺序很重要）。
 #

@@ -3,6 +3,10 @@
 # 检查频率：每月 1 日（monthly）。`schedule.day` 只对 weekly 有效，monthly 不能带，否则校验器报错。
 #   安全更新（漏洞公布后的 PR）不受这里的 schedule 管，照旧立刻开。
 #
+# 审查者：这里不写 `reviewers:`。GitHub 已经移除了这个选项（2025-04-29 的 changelog
+#   “Dependabot reviewers configuration option being replaced by code owners”），写了也不起作用。
+#   Dependabot PR 上的 review 请求由 `.github/CODEOWNERS` 的 `* @xiadengma` 发出。
+#
 # 关于 `groups:`：
 #   把大量琐碎的 patch/minor 合成单 PR，显著降低 dependabot 噪音。
 #   major 升级始终独立 PR（`update-types: ["major"]` 从默认 group 剔除），
@@ -22,9 +26,6 @@ updates:
     labels:
       - 'dependencies'
       - 'python'
-    # 审查者
-    reviewers:
-      - 'xiadengma'
     # 提交消息前缀
     commit-message:
       prefix: 'chore(deps)'
@@ -52,8 +53,6 @@ updates:
     labels:
       - 'dependencies'
       - 'github-actions'
-    reviewers:
-      - 'xiadengma'
     commit-message:
       prefix: 'chore(ci)'
     open-pull-requests-limit: 5
@@ -76,8 +75,6 @@ updates:
     labels:
       - 'dependencies'
       - 'npm'
-    reviewers:
-      - 'xiadengma'
     commit-message:
       prefix: 'chore(deps-npm)'
     open-pull-requests-limit: 5

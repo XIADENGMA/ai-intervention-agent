@@ -503,6 +503,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `VSCE_PAT` secret, so on every release the job reported success while its publish step was
   skipped (run 34085308995 for v1.8.12) and printed "skipping VS Code Marketplace publish".
   `release.yml` has four jobs now: `build`, `publish` (PyPI), `open-vsx` and `github-release`.
+- The three `reviewers:` options of `.github/dependabot.yml` (R842). GitHub removed the option in 2025
+  (changelog of 2025-04-29, "Dependabot reviewers configuration option being replaced by code owners"),
+  so the lines did nothing: the Dependabot JSON schema rejects each of them, and the review request on
+  the new Dependabot pull requests #127 to #129 is a code-owner request that comes from `* @xiadengma`
+  in `.github/CODEOWNERS`. The header of `dependabot.yml` now says why it does not write `reviewers:`.
+  A new test checks that no entry has the option and that `CODEOWNERS` names an owner for every path.
 
 ### Fixed
 
