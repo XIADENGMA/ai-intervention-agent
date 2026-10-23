@@ -22,6 +22,8 @@
 
 ### `async _prepare_local_images(ctx: FastMCPContext | None, message: str, task_id: str) -> local_images.PreparedPrompt`
 
+### `_new_request_title(web_ui_config: server_config.WebUIConfig) -> str`
+
 ### `_dispatch_new_task_notification(task_id: str, message: str, web_ui_config: server_config.WebUIConfig) -> None`
 
 ### `async _revive_web_ui(config: server_config.WebUIConfig, task_id: str, watch: _WebUILossWatch) -> None`

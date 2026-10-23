@@ -335,7 +335,9 @@ def validate_input_with_defaults(
                 continue
 
             if len(cleaned_option) > MAX_OPTION_LENGTH:
-                logger.warning(f"选项过长被截断: {cleaned_option[:50]}...")
+                logger.warning(
+                    f"选项过长 ({len(cleaned_option)} 字符)，将被截断到 {MAX_OPTION_LENGTH}"
+                )
                 cleaned_option = cleaned_option[:MAX_OPTION_LENGTH] + "..."
 
             cleaned_options.append(cleaned_option)

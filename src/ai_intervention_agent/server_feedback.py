@@ -46,6 +46,7 @@ from mcp.types import (
 )
 from pydantic import Field
 
+import ai_intervention_agent.i18n as i18n
 import ai_intervention_agent.local_images as local_images
 import ai_intervention_agent.server_config as server_config
 import ai_intervention_agent.service_manager as service_manager
@@ -344,6 +345,18 @@ async def _prepare_local_images(
     return prepared
 
 
+def _new_request_title(web_ui_config: server_config.WebUIConfig) -> str:
+    """R830 · 给手机和桌面的"新请求"推送的标题，用用户选的语言写。
+
+    ``web_ui.language`` 明确选了就用它；``auto`` 取操作系统的语言，说不出来是英文
+    （见 ``i18n.resolve_lang``）。此前它是写死在代码里的中文，``language = "en"`` 的
+    人在手机上看到的也是中文标题。
+    """
+    return i18n.get_locale_message(
+        "notify.newRequestTitle", i18n.resolve_lang(web_ui_config.language)
+    )
+
+
 def _dispatch_new_task_notification(
     task_id: str, message: str, web_ui_config: server_config.WebUIConfig
 ) -> None:
@@ -384,7 +397,7 @@ def _dispatch_new_task_notification(
             metadata["base_url"] = base_url
 
         event_id = notification_manager.send_notification(
-            title="新的反馈请求",
+            title=_new_request_title(web_ui_config),
             message=notification_message,
             trigger=NotificationTrigger.IMMEDIATE,
             types=[
@@ -921,7 +934,7 @@ def launch_feedback_ui(
         config, auto_resubmit_timeout = service_manager.get_web_ui_config()
 
         logger.info(
-            f"启动反馈界面: {cleaned_summary[:100]}... (自动生成task_id: {task_id})"
+            f"启动反馈界面: prompt_len={len(cleaned_summary)} (自动生成task_id: {task_id})"
         )
 
         asyncio.run(service_manager.ensure_web_ui_running(config))
@@ -1000,7 +1013,7 @@ def launch_feedback_ui(
                         )
 
                     event_id = notification_manager.send_notification(
-                        title="新的交互反馈请求",
+                        title=_new_request_title(config),
                         message=notification_message,
                         trigger=NotificationTrigger.IMMEDIATE,
                         types=mcp_types,
@@ -1406,7 +1419,7 @@ async def interactive_feedback(
         _bump_feedback_counter("created_total")
 
         logger.info(
-            f"收到反馈请求: {cleaned_message[:50]}... (自动生成task_id: {task_id})"
+            f"收到反馈请求: prompt_len={len(cleaned_message)} (自动生成task_id: {task_id})"
         )
         await _emit_ctx_info(
             ctx,

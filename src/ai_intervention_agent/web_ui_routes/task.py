@@ -2474,10 +2474,9 @@ class TaskRoutesMixin:
 
                 _ua = (request.headers.get("User-Agent") or "")[:80]
                 _referer = (request.headers.get("Referer") or "")[:80]
-                _preview = feedback_text[:60].replace("\n", "\\n")
                 logger.info(
                     f"任务 {task_id} 反馈已提交 | opts={len(selected_options)} "
-                    f'imgs={len(images)} text[:60]="{_preview}" '
+                    f"imgs={len(images)} text_len={len(feedback_text)} "
                     f'ua="{_ua}" referer="{_referer}"'
                 )
                 return jsonify({"success": True, "message": msg("feedback.submitted")})

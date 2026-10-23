@@ -158,11 +158,11 @@ pip install ai-intervention-agent
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_content.png">
-    <img alt="桌面端 - 反馈页（多任务标签、Markdown 表格、代码高亮、数学公式、预设选项）" src=".github/assets/desktop_light_content.png" width="600" height="646" />
+    <img alt="桌面端 - 反馈页（多任务标签、Markdown 表格、代码高亮、数学公式、预设选项）" src=".github/assets/desktop_light_content.png" width="600" height="791" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
-    <img alt="移动端 - 反馈页" src=".github/assets/mobile_light_content.png" width="180" height="605" />
+    <img alt="移动端 - 反馈页" src=".github/assets/mobile_light_content.png" width="180" height="687" />
   </picture>
 </p>
 
@@ -290,7 +290,7 @@ iPhone 上最顺手的用法是把 Web UI 包进快捷指令（Shortcuts），�
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp)（poliva） | 约 310 | 直系上游 fork（参见下方致谢）；最精简的 Python MCP，单一反馈对话框。 |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp)（Pursue-LLL） | 约 30 | 体量更小的独立 fork，强调"依赖最少"。 |
 
-AIIA 在光谱中的位置：AIIA 走的是完整运维栈路线。Web UI 与 VS Code 插件共享同一后端，可观测性由 `/metrics` Prometheus 端点和[参考 Grafana 仪表盘](docs/observability/README.zh-CN.md)提供。Web UI 内置三种界面语言，文档提供中英双语；项目遵循不变量测试纪律（11,100+ 测试 + 1,050+ subtests，40 cycles 持续审计），发布流水线有 5 个 job。只想要最轻量的 drop-in，选 poliva 版本；想要桌面应用，选 mcp-feedback-enhanced；想要语音输入或多 tab UI，看 Relay 或 Node.js 版本。
+AIIA 在光谱中的位置：AIIA 走的是完整运维栈路线。Web UI 与 VS Code 插件共享同一后端，可观测性由 `/metrics` Prometheus 端点和[参考 Grafana 仪表盘](docs/observability/README.zh-CN.md)提供。Web UI 内置三种界面语言，文档提供中英双语；项目遵循不变量测试纪律（11,600+ 测试 + 1,050+ subtests，40 cycles 持续审计），发布流水线有 5 个 job。只想要最轻量的 drop-in，选 poliva 版本；想要桌面应用，选 mcp-feedback-enhanced；想要语音输入或多 tab UI，看 Relay 或 Node.js 版本。
 
 功能缺口（欢迎贡献）：语音转文字输入、原生置顶窗口、Cursor 用量监控、多 tab 会话合并 UI。
 

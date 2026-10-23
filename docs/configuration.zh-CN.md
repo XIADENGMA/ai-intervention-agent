@@ -295,13 +295,15 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 | `retry_delay`             | number  | `2`                               | 重试间隔秒数，范围 `[0, 60]`                                                                |
 | `bark_timeout`            | number  | `10`                              | 请求超时秒数，范围 `[1, 300]`                                                               |
 
+Bark 请求直接发往 `bark_url`，不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 和操作系统的代理设置，也没有代理选项；网络只能经代理访问外网时见[故障排查 §4](troubleshooting.zh-CN.md#4-通知没响web--声音--系统--bark)。
+
 ### `web_ui`（Web UI）
 
 控制 Web UI 的监听与 HTTP 客户端行为。
 
 | 配置项                 | 类型    | 默认值      | 说明                                                                                                                                                                                                                                                                                   |
 | ---------------------- | ------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"` / `"zh-TW"`                                                                                                                                                  |
+| `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"` / `"zh-TW"`。新请求推送（Bark、系统通知、声音）的标题也跟随它；没有浏览器可问时，`"auto"` 取操作系统的显示语言（macOS 的“首选语言”、Windows 的界面语言，其余看 `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG`），不是我们支持的语言时用英文（R830）                                                                                                                                                  |
 | `host`                 | string  | `127.0.0.1` | 可能会被 `network_security.bind_interface` 覆盖                                                                                                                                                                                                                                        |
 | `port`                 | number  | `8080`      | 范围 `[1, 65535]`                                                                                                                                                                                                                                                                      |
 | `debug`                | boolean | `false`     | 调试模式                                                                                                                                                                                                                                                                               |

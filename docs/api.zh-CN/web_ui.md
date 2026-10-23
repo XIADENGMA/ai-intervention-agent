@@ -391,7 +391,7 @@ R26.3 lazy-init 行为：
     2. 更新self.current_options（None转为空列表）
     3. 更新self.current_task_id
     4. 更新self.has_content标志
-    5. 记录日志（INFO级别）
+    5. 记录日志（INFO级别；只记提示词的长度，不记内容，R832）
 
 副作用：
     - 修改self.current_prompt、current_options、current_task_id

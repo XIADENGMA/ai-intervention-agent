@@ -848,6 +848,22 @@ class NotificationManager {
     }
   }
 
+  // R831: the words of one new request as a notification says them. A prompt has line breaks and a
+  // notification is one block of text, so white space collapses to single spaces. The task list the
+  // page polls keeps the first 100 characters of a prompt and says nothing of the rest, so words
+  // that long were probably cut by the sender and end in an ellipsis, as the words of a longer text
+  // are cut here; both are counted by code point, so a surrogate pair is never split. What is not
+  // text, or is only white space, says nothing.
+  static summarizeNewTask(raw) {
+    const maxChars = 100
+    if (typeof raw !== 'string') return ''
+    const text = raw.replace(/\s+/g, ' ').trim()
+    if (!text) return ''
+    const chars = Array.from(text)
+    if (chars.length > maxChars) return `${chars.slice(0, maxChars).join('')}…`
+    return Array.from(raw).length >= maxChars ? `${text}…` : text
+  }
+
   async notifyNewTasks(event = {}) {
     const countRaw = event && typeof event === 'object' ? event.count : null
     const taskIdsRaw = event && typeof event === 'object' ? event.taskIds : null
@@ -876,12 +892,16 @@ class NotificationManager {
 
     const title =
       typeof event.title === 'string' && event.title ? event.title : 'AI Intervention Agent'
-    // In the page's language, like the in-page hint (``showNewTaskVisualHint``) that the same
-    // event raises while the page is in front; English only when the i18n module did not load.
+    // One new request says what the AI asked (R831), in the AI's own words: the first of them, as
+    // the task list carries them. Several, or one that says nothing, are counted in the page's
+    // language, like the in-page hint (``showNewTaskVisualHint``) that the same event raises while
+    // the page is in front; English only when the i18n module did not load.
+    const summary = count === 1 ? NotificationManager.summarizeNewTask(event.summary) : ''
     const message =
-      count === 1 && taskIdCount === 1
+      summary ||
+      (count === 1 && taskIdCount === 1
         ? t('notify.newTask', { id: taskIds[0] }, `New task added: ${taskIds[0]}`)
-        : t('page.noContent.newTasks', { count }, `Received ${count} new task(s)`)
+        : t('page.noContent.newTasks', { count }, `Received ${count} new task(s)`))
 
     let pageAway = false
     try {

@@ -101,6 +101,8 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
 | **系统（plyer）** | `system_enabled = false`（默认）或 macOS 缺 `pyobjus`        | 在 `[notification]` 里设置 `system_enabled = true`。macOS 通过 plyer 走的系统通知有意跳过；项目改用 `macos_native_enabled = true`（基于 `osascript`）。Linux 需要 `libnotify`；Windows 走 Toast。                                                                                                                                                                                                                                            |
 | **Bark**          | device key 错 / 推送服务不可达 / `bark_url` 没指向你自建实例 | 用 `curl -v "$BARK_URL/$DEVICE_KEY/test"` 单测。设 `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` 做点击直达。**如果解析出来的 URL 是 loopback 地址**（`localhost` / `127.x.x.x` / `::1`），agent 现在会在服务端直接过滤——手机不会再收到一个无法点击打开的 URL；同时 Web UI 的 Bark 设置面板会推荐对应的 LAN IP（`http://<lan-ip>:<port>`）让你一键复制并写入 `web_ui.external_base_url`（或开 mDNS）后重试。 |
 
+**代理环境下的 Bark。** Bark 推送直接发往 `bark_url`：不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`（大小写都不读）和操作系统里的代理设置，也没有代理选项。所以，如果在设了代理变量的终端里 `curl -v "$BARK_URL/$DEVICE_KEY/test"` 能通、推送却始终没到，原因就是推送没有走代理。网络只能通过代理访问外网时，在应用之下接管流量（VPN 或 TUN 模式的代理、透明代理），或者把 `bark_url` 指向你的网络能直连的 Bark 服务器。
+
 ## 5. mDNS（`ai.local`）局域网解析不出来
 
 **症状**：手机 / 平板和电脑在同一 Wi-Fi，但打不开

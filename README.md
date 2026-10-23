@@ -159,11 +159,11 @@ Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_content.png">
-    <img alt="Desktop - feedback page (multi-task tabs, Markdown table, code highlighting, math, predefined options)" src=".github/assets/desktop_light_content.png" width="600" height="646" />
+    <img alt="Desktop - feedback page (multi-task tabs, Markdown table, code highlighting, math, predefined options)" src=".github/assets/desktop_light_content.png" width="600" height="791" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
-    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" width="180" height="605" />
+    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" width="180" height="687" />
   </picture>
 </p>
 
@@ -292,7 +292,7 @@ On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and po
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp) (poliva) | ~310 | Direct ancestor fork (see Acknowledgements); minimal Python MCP, single feedback dialog. |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp) (Pursue-LLL) | ~30 | Independent smaller-scale fork emphasising minimal dependencies. |
 
-Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (11,100+ tests + 1,050+ subtests across 40 audit cycles), and releases run through a 5-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
+Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (11,600+ tests + 1,050+ subtests across 40 audit cycles), and releases run through a 5-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
 
 Feature gaps (contributions welcome): Speech-to-Text input, always-on-top native window, Cursor usage monitoring, multi-tab session merging UI.
 

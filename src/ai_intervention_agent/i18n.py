@@ -3,14 +3,35 @@
 from __future__ import annotations
 
 import logging
+import os
+import plistlib
+import sys
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
-try:
-    from flask import request as _request_proxy
-except ImportError:  # pragma: no cover - Flask is a runtime dependency in normal use.
-    _flask_request: Any | None = None
-else:
-    _flask_request = _request_proxy
+_UNRESOLVED: Any = object()
+_flask_request: Any | None = _UNRESOLVED
+"""Flask 的 ``request`` 代理：第一次用到时才导入（``None`` 表示没装 Flask）。
+
+R830：MCP 服务进程不加载 Flask（``import ai_intervention_agent.server`` 不会带进 Flask、
+Werkzeug 和 Jinja2），而它现在要从这里取推送标题。顶部的 ``from flask import request``
+会让这个进程为了一个标题多背一整个 Web 框架。
+"""
+
+
+def _request_proxy() -> Any | None:
+    """Flask 的 ``request`` 代理，没装 Flask 时是 ``None``；只导入一次。"""
+    global _flask_request
+    if _flask_request is _UNRESOLVED:
+        try:
+            from flask import request as proxy
+        except ImportError:  # pragma: no cover - Flask is a runtime dependency.
+            _flask_request = None
+        else:
+            _flask_request = proxy
+    return _flask_request
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +71,9 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "notify.updateFailed": "Update failed",
         "notify.invalidFieldValue": "Invalid value for: {fields}",
         "notify.getFailed": "Failed to get config",
+        "notify.newRequestTitle": "New feedback request",
+        "notify.barkTestTitle": "AI Intervention Agent test",
+        "notify.barkTestBody": "This is a Bark test notification. If you received it, the configuration is correct.",
     },
     "zh-CN": {
         "feedback.submitted": "反馈已提交",
@@ -83,6 +107,9 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "notify.updateFailed": "更新失败",
         "notify.invalidFieldValue": "以下字段的值无效：{fields}",
         "notify.getFailed": "获取配置失败",
+        "notify.newRequestTitle": "新的反馈请求",
+        "notify.barkTestTitle": "AI Intervention Agent 测试",
+        "notify.barkTestBody": "这是一个 Bark 通知测试，如果收到此消息，说明配置正确。",
     },
     "zh-TW": {
         "feedback.submitted": "回饋已提交",
@@ -116,6 +143,9 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "notify.updateFailed": "更新失敗",
         "notify.invalidFieldValue": "以下欄位的值無效：{fields}",
         "notify.getFailed": "取得設定失敗",
+        "notify.newRequestTitle": "新的回饋請求",
+        "notify.barkTestTitle": "AI Intervention Agent 測試",
+        "notify.barkTestBody": "這是一則 Bark 通知測試，如果收到這則訊息，代表設定正確。",
     },
 }
 
@@ -134,7 +164,7 @@ def normalize_lang(raw: str) -> str:
 
 def detect_request_lang() -> str:
     """从 Flask request 的 Accept-Language 头检测语言，回退到 config.toml 配置。"""
-    request_proxy = _flask_request
+    request_proxy = _request_proxy()
     if request_proxy is not None:
         try:
             accept = request_proxy.headers.get("Accept-Language", "")
@@ -156,6 +186,118 @@ def detect_request_lang() -> str:
         pass
 
     return DEFAULT_LANG
+
+
+_POSIX_LANG_VARS = ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG")
+
+
+def _supported_lang(tag: str) -> str | None:
+    """``zh_CN.UTF-8``、``zh-Hant-TW``、``en`` 这类标识 → 页面能说的语言。
+
+    别的语言和"没说"（空、``C``、``POSIX``、``C.UTF-8``）都是 ``None``，
+    不会像 ``normalize_lang`` 那样顺手变成英文：调用方要靠它跳到下一个候选。
+    """
+    name = tag.strip().partition(".")[0].partition("@")[0].replace("_", "-")
+    if name[:2].lower() not in ("zh", "en"):
+        return None
+    return normalize_lang(name)
+
+
+def _macos_languages(home: Path) -> list[str]:
+    """macOS 用户的显示语言，按优先顺序（全局偏好里的 ``AppleLanguages``）。
+
+    读不到（没有这个文件、没权限、不是 plist、不是预期的形状）就是空列表。
+    """
+    try:
+        path = home / "Library" / "Preferences" / ".GlobalPreferences.plist"
+        with path.open("rb") as handle:
+            prefs = plistlib.load(handle)
+    except Exception:
+        return []
+    languages = prefs.get("AppleLanguages") if isinstance(prefs, dict) else None
+    if not isinstance(languages, list):
+        return []
+    return [item for item in languages if isinstance(item, str)]
+
+
+def _windows_ui_langid() -> int | None:
+    """Windows 的显示语言（LANGID）；不是 Windows 或调用失败时是 ``None``。"""
+    try:
+        import ctypes
+
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            return None
+        return int(windll.kernel32.GetUserDefaultUILanguage())
+    except Exception:
+        return None
+
+
+def _lang_from_windows_langid(langid: int) -> str | None:
+    """Windows 的 LANGID → 页面能说的语言；别的语言是 ``None``。"""
+    primary = langid & 0x3FF
+    if primary == 0x09:
+        return "en"
+    if primary == 0x04:
+        # 繁体：台湾 0x0404、香港 0x0C04、澳门 0x1404、中性 zh-Hant 0x7C04
+        # （子语言 1、3、5、0x1F）；其余中文（大陆 0x0804、新加坡 0x1004、中性 0x0004）是简体。
+        return "zh-TW" if (langid >> 10) in (0x01, 0x03, 0x05, 0x1F) else "zh-CN"
+    return None
+
+
+def detect_system_lang(
+    *,
+    platform: str | None = None,
+    environ: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> str | None:
+    """操作系统的显示语言，归一成 ``SUPPORTED_LANGS`` 之一；说不出来就是 ``None``。
+
+    R830：服务端在没有请求可问的时候（给手机和桌面的推送标题）没有 ``Accept-Language``，
+    也拿不到浏览器的 ``navigator.language``——页面上 ``auto`` 靠的就是它。最接近的是
+    操作系统自己的语言：
+
+    * macOS：用户全局偏好里的 ``AppleLanguages``。编辑器启动的 MCP 服务进程只有
+      ``LANG=C.UTF-8``，终端里的 ``LANG`` 又只带"地区"（中文系统、美国地区是
+      ``en_US.UTF-8``），都不是显示语言。
+    * Windows：``GetUserDefaultUILanguage``。
+    * 最后一道：``LANGUAGE``（冒号分隔的列表）、``LC_ALL``、``LC_MESSAGES``、``LANG``，
+      ``C``/``POSIX`` 等于没说。
+
+    按列表顺序取第一个页面能说的语言（应用选语言就是这么选的），不抛异常。
+    ``platform`` / ``environ`` / ``home`` 只给测试注入。
+    """
+    system = sys.platform if platform is None else platform
+    env = os.environ if environ is None else environ
+    tags: list[str] = []
+    if system == "darwin":
+        try:
+            tags += _macos_languages(home if home is not None else Path.home())
+        except RuntimeError:  # ``Path.home()``: no home directory to be found
+            pass
+    elif system == "win32":
+        langid = _windows_ui_langid()
+        lang = None if langid is None else _lang_from_windows_langid(langid)
+        if lang is not None:
+            return lang
+    for name in _POSIX_LANG_VARS:
+        tags += str(env.get(name, "")).split(":")
+    for tag in tags:
+        lang = _supported_lang(tag)
+        if lang is not None:
+            return lang
+    return None
+
+
+def resolve_lang(configured: str | None) -> str:
+    """没有请求可问时用的语言：设置里明确选的，否则系统的，否则英文。
+
+    ``configured`` 是 ``web_ui.language``（``auto`` / ``en`` / ``zh-CN`` / ``zh-TW``）。
+    """
+    raw = (configured or "").strip()
+    if raw and raw.lower() != "auto":
+        return normalize_lang(raw)
+    return detect_system_lang() or DEFAULT_LANG
 
 
 def get_locale_message(

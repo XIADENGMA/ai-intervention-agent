@@ -30,6 +30,9 @@ if (typeof window.pendingNewTaskCount === "undefined") {
 if (typeof window.newTaskHintTimer === "undefined") {
   window.newTaskHintTimer = null;
 }
+if (typeof window.pendingNewTaskSummary === "undefined") {
+  window.pendingNewTaskSummary = "";
+}
 
 if (typeof window.tasksHealthCheckTimer === "undefined") {
   window.tasksHealthCheckTimer = null;
@@ -273,6 +276,7 @@ var taskTextareaContents = window.taskTextareaContents;
 var taskOptionsStates = window.taskOptionsStates;
 var taskImages = window.taskImages;
 var pendingNewTaskCount = window.pendingNewTaskCount;
+var pendingNewTaskSummary = window.pendingNewTaskSummary;
 var newTaskHintTimer = window.newTaskHintTimer;
 var hasLoadedTaskSnapshot = window.hasLoadedTaskSnapshot;
 var feedbackPrompts = window.feedbackPrompts;
@@ -2005,6 +2009,14 @@ Object.defineProperty(window, "isManualSwitching", {
   configurable: true,
 });
 
+// R831: what a notification can say of a new request: the words of its prompt, as the task list
+// carries them (the first 100 characters, untouched: how long they are says whether they were cut).
+// ``notifyNewTasks`` turns them into one line; a task without a usable prompt says nothing.
+function _newTaskSummary(task) {
+  const prompt = task && typeof task.prompt === "string" ? task.prompt : "";
+  return prompt.trim() ? prompt : "";
+}
+
 function updateTasksList(tasks) {
   const taskDiff = _buildTaskListDiff(currentTasks, tasks);
   const isInitialTaskSnapshot = !hasLoadedTaskSnapshot;
@@ -2018,9 +2030,15 @@ function updateTasksList(tasks) {
       const pageHidden =
         typeof document !== "undefined" && document.hidden === true;
 
+      // One new request has words of its own; several are only counted.
+      const addedSummary =
+        addedTasks.length === 1 ? _newTaskSummary(taskDiff.addedTasks[0]) : "";
+
       if (activeTaskId && !pageHidden) {
         pendingNewTaskCount += addedTasks.length;
         window.pendingNewTaskCount = pendingNewTaskCount;
+        pendingNewTaskSummary = pendingNewTaskCount === 1 ? addedSummary : "";
+        window.pendingNewTaskSummary = pendingNewTaskSummary;
 
         if (newTaskHintTimer) {
           clearTimeout(newTaskHintTimer);
@@ -2028,16 +2046,22 @@ function updateTasksList(tasks) {
 
         newTaskHintTimer = setTimeout(() => {
           if (pendingNewTaskCount > 0) {
-            showNewTaskNotification(pendingNewTaskCount);
+            showNewTaskNotification(
+              pendingNewTaskCount,
+              undefined,
+              pendingNewTaskSummary,
+            );
             pendingNewTaskCount = 0;
             window.pendingNewTaskCount = 0;
+            pendingNewTaskSummary = "";
+            window.pendingNewTaskSummary = "";
           }
           newTaskHintTimer = null;
           window.newTaskHintTimer = null;
         }, 150);
         window.newTaskHintTimer = newTaskHintTimer;
       } else {
-        showNewTaskNotification(addedTasks.length);
+        showNewTaskNotification(addedTasks.length, undefined, addedSummary);
       }
     }
 
@@ -3848,7 +3872,7 @@ function showNewTaskVisualHint(count) {
   _debugLog(`New-task hint shown for ${count} new task(s)`);
 }
 
-function showNewTaskNotification(count, taskIds) {
+function showNewTaskNotification(count, taskIds, summary) {
   try {
     if (
       typeof notificationManager !== "undefined" &&
@@ -3859,6 +3883,7 @@ function showNewTaskNotification(count, taskIds) {
         type: "new_tasks",
         count: typeof count === "number" ? count : Number(count),
         taskIds: Array.isArray(taskIds) ? taskIds : [],
+        summary: typeof summary === "string" ? summary : "",
       });
       return;
     }

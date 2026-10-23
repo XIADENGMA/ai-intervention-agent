@@ -73,6 +73,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- The test matrix and the package metadata now include Python 3.14. The whole CI gate
+  (`scripts/ci_gate.py --ci`: ruff, ty, the i18n and docs checks, the minify and precompress
+  checks, 11 373 tests with 2 206 subtests, the red-team script) passes on Python 3.14.9 with no
+  warning, in an environment built from `uv.lock` (`uv sync --frozen --python 3.14`), so no
+  dependency or line of code had to change: `.github/workflows/test.yml` gains `"3.14"` in the
+  matrix and `pyproject.toml` gains the `Programming Language :: Python :: 3.14` classifier.
+  `requires-python` stays `>=3.11`.
 - Every pytest-xdist worker now has its own config file. `tests/conftest.py` gives each
   pytest process a temp directory with a `config.toml`, exports it as
   `AI_INTERVENTION_AGENT_CONFIG_FILE` and puts the default template back before each
@@ -2462,6 +2469,68 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   object (an empty one included), a form and a multipart upload behave as before. The OpenAPI block
   said "`task_id` does not exist" under `400` while the code answers `404`; it now lists the three
   codes of the `400` and the `404`.
+- The title of the push for a new request, and the message of the *Test Bark* button, are in the
+  language the user chose (R830). Bark, the system notification and the sound share one title, and
+  it was written into the code in Chinese: `新的反馈请求` for the `interactive_feedback` tool,
+  `新的交互反馈请求` for the deprecated `launch_feedback_ui`; the button of the settings page sent a
+  Chinese title and a Chinese body whatever language the page was in. With `language = "en"` the
+  phone showed a Chinese title over the agent's message, with `"zh-TW"` a Simplified one. Real stdio
+  MCP server, real Web UI child and a Bark stand-in, six set-ups, old tree against new: all six old
+  titles were `新的反馈请求`; new, `"en"` gives `New feedback request`, `"zh-TW"` gives `新的回饋請求`,
+  `"zh-CN"` is unchanged, and `"auto"` follows the language of the operating system. The server has
+  no `Accept-Language` to ask there, and the browser's `navigator.language` (what `auto` means on
+  the page) is out of its reach, so it reads the display language of the system: on macOS the first
+  of the user's *Preferred Languages* that the page speaks (`AppleLanguages` in the global
+  preferences: an editor starts the MCP server with `LANG=C.UTF-8`, and the `LANG` of a terminal
+  carries the region, `en_US.UTF-8` on a Chinese system set to the United States), on Windows the
+  UI language, everywhere else `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`, where `C` / `POSIX` /
+  `C.UTF-8` mean "not said". A system that says nothing the page speaks gets English. The Test
+  button answers in the language of the page that asked, like the other messages of its route.
+  Reading the preferences takes 0.3 ms. `i18n` imports Flask the first time a request is asked for
+  its language instead of when it is imported, so the MCP server process, which does not load Flask,
+  still does not. Left as it was: the compatibility route `/api/notify-new-tasks`, which nothing in
+  the repository calls any more. 126 tests (121 red on the old code, 5 pin what must not change:
+  the texts that were hard-coded stay the zh-CN texts, an explicit language is never overruled)
+  and 50 one-point mutants all caught.
+- The desktop notification for a new request said that something had arrived, not what the AI
+  asked (R831). When the Web UI page is hidden or has lost focus, a browser notification tells the
+  user; its body was the same fixed sentence for every request (`收到 1 个新的交互反馈请求`,
+  `Received 1 new feedback request`), so they had to open the page to learn whether it was a yes/no
+  question or a plan to read. Bark and the system notification already carried the first 100
+  characters of the message. When exactly one request is new, the body is now those words: the
+  line breaks and runs of white space become single spaces, and an ellipsis ends a text that was
+  cut. Real Chrome 153 against a real Web UI, page in Chinese, permission granted, for the question
+  `请确认是否可以删除迁移文件？` followed by `选项 A / B`: the body was `收到 1 个新的交互反馈请求`, it is
+  `请确认是否可以删除迁移文件？ 选项 A / B`, with the tab in the background (at once) and with the
+  page in front but out of focus while another task is open (after the 150 ms debounce); a longer
+  message ends in `…`. On a page opened over plain HTTP from another machine, whose notification
+  falls back to a toast and an in-page card, both carry the words in place of the sentence. Nothing
+  changes on the server: `GET /api/tasks` already gives the first 100 characters of each prompt, so
+  that length means "cut" and an ellipsis follows it (counted by code point, so a surrogate pair is
+  never split); the `new_tasks` event the task list raises gets a `summary` field, text or empty.
+  Several new requests at once and a prompt that is blank or not text are announced as before (the
+  count, or the sentence naming the request). The words are shown with `textContent` like every
+  other notification text, so markup in a message is shown as text.
+  Left as it was: the VS Code panel's own notification, and the compatibility route
+  `/api/notify-new-tasks`. 81 tests (51 red on the old scripts, 30 pin what must not change; the
+  real scripts run in Node against a fake browser) and 39 one-point mutants all caught.
+- The documentation never said that the Bark push ignores proxy settings, which on a network that
+  reaches the Internet only through a proxy looks like a bug (R833). The push goes straight to
+  `bark_url`: the client is handed an explicit transport (which makes httpx skip the environment)
+  and, since R782, `trust_env=False`, so it does not read `HTTP_PROXY`, `HTTPS_PROXY` or
+  `ALL_PROXY` (either case) or the operating system's proxy settings, and the notification
+  settings have no proxy option. The symptom is a push that never arrives while
+  `curl -v "$BARK_URL/$DEVICE_KEY/test"` works in a terminal that has the proxy variables, with
+  nothing in the log to say why. The behaviour is unchanged. Section 4 of the troubleshooting guide
+  (notifications) gains a "Bark behind a proxy" paragraph that names the three variables, says
+  there is no option and gives the ways out (a VPN, a TUN-mode proxy or a transparent proxy below
+  the application, or a `bark_url` that the network reaches directly), and the configuration
+  reference says the same under the notification table with a link to that section, in both
+  languages. 16 tests (8 pin the behaviour: with every proxy variable pointing at a stand-in proxy
+  on a loopback port, the Bark server gets the push and the proxy hears nothing, while a control
+  client with default settings does go through the proxy, one variable at a time, so the stand-in
+  is known to catch what it should, and no notification setting mentions a proxy; the other 8
+  check the documents, which were the missing half) and 33 one-point mutants all caught.
 
 ### Security
 
@@ -2546,6 +2615,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   object, a deep value under each key a handler reads) at 100 000 levels: 13 answers `5xx` on 3.14
   before, none on 3.11, 3.12, 3.13 and 3.14 now, and the same answers on all four. 86 tests (63 red
   on the old code on 3.11, 70 on 3.14) and 23 one-point mutants all caught.
+- The INFO and WARNING log lines no longer carry the first characters of what the AI asked, what
+  the user answered or an option's text (R832). The convention is to log lengths and never content
+  (`task.created … message_len=22`; R826 closed the traceback hole), but five call sites still
+  printed a prefix: the route that takes the user's answer logged its first 60 characters
+  (`text[:60]="…"`, INFO, into the Web UI child's `web_ui.log` on disk, up to 5 MB); an option
+  longer than the 10 000-character limit was logged by its first 50 characters (WARNING, into the
+  MCP server's stderr, which is what Cursor's MCP log panel shows and what gets pasted whole into
+  issues); and the tool entry, the deprecated launcher and `WebFeedbackUI.update_content` logged
+  the first 50 or 100 characters of the question. Real stdio MCP server and real Web UI child, a
+  question, an over-long option and an answer that each begin with a marker, `log_level = "INFO"`
+  (the default): the old tree printed the option text in 1 stderr line and the answer in 1
+  `web_ui.log` line; the new tree prints neither and says `选项过长 (10219 字符)，将被截断到 10000`
+  and `text_len=63`. At `log_level = "DEBUG"` the old tree also printed the question
+  (`收到反馈请求: R832-PROMPT-MARKER…`); the new one prints `收到反馈请求: prompt_len=84`. The words
+  that decide the level of a line (`收到反馈请求`, `启动反馈界面`, `内容已更新`) stay in the lines, so
+  no line changes its level. Not touched: the DEBUG lines that dump a result (`server_config` prints
+  the feedback it returns), because DEBUG is where a person goes to look at content. 33 tests (8
+  red on the old code, 25 pin what must stay: the phrases, the levels, the truncation itself, and a
+  scan of the package for a log call at INFO or above that slices a prompt, message, option or
+  answer) and 32 one-point mutants all caught.
 
 ## [1.8.12] - 2026-09-07
 

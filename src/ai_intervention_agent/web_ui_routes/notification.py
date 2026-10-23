@@ -342,8 +342,8 @@ class NotificationRoutesMixin:
 
                     test_event = NotificationEvent(
                         id=f"test_bark_{int(time.time())}",
-                        title="AI Intervention Agent 测试",
-                        message="这是一个 Bark 通知测试，如果收到此消息，说明配置正确。",
+                        title=msg("notify.barkTestTitle"),
+                        message=msg("notify.barkTestBody"),
                         trigger=NotificationTrigger.IMMEDIATE,
                         types=[NotificationType.BARK],
                         metadata=test_metadata,

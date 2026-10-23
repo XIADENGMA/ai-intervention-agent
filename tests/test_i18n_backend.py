@@ -29,9 +29,12 @@ PKG_ROOT = ROOT / "src" / "ai_intervention_agent"
 # hand-picked files, which silently left ``skills.py`` and ``_request_body.py``
 # (R789 / R800) out of "which keys are used"; a new route module would have been
 # invisible to the orphan check the same way.
+# ``server_feedback.py`` is the one module outside the Web UI that writes text a person
+# reads: the title of the push for a new request (R830).
 SERVER_PY_GLOB = [
     PKG_ROOT / "web_ui.py",
     *sorted((PKG_ROOT / "web_ui_routes").glob("*.py")),
+    PKG_ROOT / "server_feedback.py",
 ]
 
 # Matches ``msg("x.y")`` and ``get_locale_message("x.y")`` across the

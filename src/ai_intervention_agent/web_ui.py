@@ -1495,7 +1495,7 @@ class WebFeedbackUI(
             2. 更新self.current_options（None转为空列表）
             3. 更新self.current_task_id
             4. 更新self.has_content标志
-            5. 记录日志（INFO级别）
+            5. 记录日志（INFO级别；只记提示词的长度，不记内容，R832）
 
         副作用：
             - 修改self.current_prompt、current_options、current_task_id
@@ -1514,7 +1514,9 @@ class WebFeedbackUI(
             self.current_task_id = new_task_id
             self.has_content = bool(new_prompt)
         if new_prompt:
-            logger.info(f"内容已更新: {new_prompt[:50]}... (task_id: {new_task_id})")
+            logger.info(
+                f"内容已更新 (task_id: {new_task_id}, prompt_len: {len(new_prompt)})"
+            )
         else:
             logger.info("内容已清空，显示无有效内容页面")
 

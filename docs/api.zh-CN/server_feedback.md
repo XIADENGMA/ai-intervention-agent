@@ -149,6 +149,14 @@ feature existed: a broken image instead of a failed tool call. The file work
 runs off the event loop under a deadline, so an unresponsive mount cannot
 stall the tool call either.
 
+### `_new_request_title(web_ui_config: server_config.WebUIConfig) -> str`
+
+R830 · 给手机和桌面的"新请求"推送的标题，用用户选的语言写。
+
+``web_ui.language`` 明确选了就用它；``auto`` 取操作系统的语言，说不出来是英文
+（见 ``i18n.resolve_lang``）。此前它是写死在代码里的中文，``language = "en"`` 的
+人在手机上看到的也是中文标题。
+
 ### `_dispatch_new_task_notification(task_id: str, message: str, web_ui_config: server_config.WebUIConfig) -> None`
 
 R776 · 通知用户有新任务（system / sound / Bark）；在工作线程里调用，不会抛异常。
