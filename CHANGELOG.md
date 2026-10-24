@@ -9,6 +9,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- Nothing yet.
+
+## [1.9.0] - 2026-10-25
+
 ### Added
 
 - The multi-select options of a request no longer get lost under a long
