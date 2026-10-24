@@ -952,6 +952,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   and its Chinese mirror now say what to do when each step fails, how to make a Release by hand
   (every file in one command, because a published immutable Release takes no more files), and
   how to verify a download.
+- A file name with two dots in it is no longer refused as a path (R880). The upload check on the
+  server (`FileValidator._validate_filename`) and the one in the page
+  (`ValidationUtils.validateFilename`) refused every name that had `..` anywhere in it, as if
+  the dots were a way out of the folder. A name leaves its folder only through `/` or `\`, both
+  checks refuse those on the next line anyway, and the server never writes the name to disk (the
+  agent is only told it), so the dots guarded nothing: `a..b.png`, `report..final.png`,
+  `v1..2.png`, `photo..png` and `x..` were all refused, with the server's "illegal character"
+  (there is none) or the page's "path traversal characters". What the user saw depended on where
+  the picture came from. The page refused the file when it was added. The VS Code webview has no
+  such check (its `sanitizeFileName` leaves dots alone), so it sent the file and the server
+  dropped it: `POST /api/tasks/<id>/submit` answered success while the picture never reached the
+  agent. The substring also refused names of three or more dots (`...`) by accident, so the
+  rule is now what the error text always said, a name that is empty or only dots (spaces round
+  it do not count), in the server and in the page (which used to let a lone `.` through for the
+  server to refuse). `/` and `\` are refused as before. The page script's minified and
+  compressed copies were regenerated. The new module (177 tests, 53 of which fail on the
+  previous source; 35 of 35 mutants killed) pins the validator, the page script (the source and
+  the minified copy the page is served, run by node), the upload helper and the submit route,
+  and that the page and the validator agree on every name in its lists. Tried in a real Chrome
+  (headless, a throw-away profile) against a throw-away server: with this change the page took
+  `a..b.png` and the server kept it; with the previous code the page said "File name contains
+  path traversal characters", and a `fetch` upload of the same name, sent as the browser
+  encodes it, got `200` and no image.
 
 ### Removed
 

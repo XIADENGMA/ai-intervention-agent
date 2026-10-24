@@ -349,14 +349,17 @@ class FileValidator:
     def _validate_filename(self, filename: str, result: FileValidationResult) -> None:
         """检查路径遍历、特殊字符、隐藏文件"""
 
+        # 只由点组成的名字（"."、".."、"..."）不是文件，直接拒绝（R880）。
         stripped_name = filename.strip()
-        if not stripped_name or stripped_name == "." or stripped_name == "..":
+        if not stripped_name.strip("."):
             result["errors"].append("文件名无效（空或只包含点）")
 
         if "\x00" in filename:
             result["errors"].append("文件名包含 NUL 字节（path-truncation 攻击向量）")
 
-        if ".." in filename or "/" in filename or "\\" in filename:
+        # 离开目录只能靠分隔符；不带分隔符的 ".." 只是名字的一部分（"a..b.png"），
+        # 不是路径穿越（R880）。
+        if "/" in filename or "\\" in filename:
             result["errors"].append("文件名包含非法字符")
 
         if any(char in self._DANGEROUS_CHARS for char in filename):

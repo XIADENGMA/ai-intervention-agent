@@ -112,7 +112,7 @@ class ValidationUtils {
     }
 
     if (
-      filename.includes("..") ||
+      /^\s*\.+\s*$/.test(filename) ||
       filename.includes("/") ||
       filename.includes("\\")
     ) {
