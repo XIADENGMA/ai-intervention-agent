@@ -20,6 +20,7 @@ from __future__ import annotations
 import inspect
 import json
 import tempfile
+import threading
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,11 +32,23 @@ def _write_persist(path: Path, payload: dict) -> None:
 
 
 class _CountingDateTime(datetime):
+    """The ``datetime`` the module under test sees while a queue is restored.
+
+    It counts the ``now()`` calls of ONE thread, ``owner``, the one that restores the queue, and
+    gives every other thread the real time. A queue that another test left running has a cleanup
+    thread that asks for the time every five seconds; when that call fell inside the few
+    milliseconds of the patch it was counted as a second snapshot of the restore and the test
+    failed at random.
+    """
+
     calls: list[object] = []
     current = datetime(2025, 1, 1, 0, 5, tzinfo=UTC)
+    owner: int | None = None
 
     @classmethod
     def now(cls, tz=None):
+        if threading.get_ident() != cls.owner:
+            return datetime.now(tz)
         cls.calls.append(tz)
         return cls.current
 
@@ -50,6 +63,8 @@ class TestRestoreResilience(unittest.TestCase):
         self.persist_path = Path(self._tmp.name) / "tasks.json"
 
     def tearDown(self) -> None:
+        # a test that counts must name its own thread, not inherit the previous test's
+        _CountingDateTime.owner = None
         self._tmp.cleanup()
 
     def _make_queue(self):
@@ -244,6 +259,7 @@ class TestRestoreResilience(unittest.TestCase):
         )
 
         _CountingDateTime.calls = []
+        _CountingDateTime.owner = threading.get_ident()
         with patch("ai_intervention_agent.task_queue.datetime", _CountingDateTime):
             q = self._make_queue()
         try:
@@ -273,6 +289,7 @@ class TestRestoreResilience(unittest.TestCase):
         )
 
         _CountingDateTime.calls = []
+        _CountingDateTime.owner = threading.get_ident()
         with patch("ai_intervention_agent.task_queue.datetime", _CountingDateTime):
             q = self._make_queue()
         try:
@@ -280,6 +297,29 @@ class TestRestoreResilience(unittest.TestCase):
             self.assertIsNotNone(q.get_task("only"))
         finally:
             q.stop_cleanup()
+
+    def test_the_counter_ignores_every_thread_but_the_one_that_restores(self) -> None:
+        # The cleanup thread of a queue that another test left running asks the module for the
+        # time. While the module is patched that call is not part of the restore: it gets the
+        # real time and is not counted (without this the two tests above fail at random).
+        from ai_intervention_agent import task_queue
+
+        _CountingDateTime.calls = []
+        _CountingDateTime.owner = threading.get_ident()
+        answers: list[datetime] = []
+        with patch("ai_intervention_agent.task_queue.datetime", _CountingDateTime):
+            other = threading.Thread(
+                target=lambda: answers.append(task_queue.datetime.now(UTC))
+            )
+            other.start()
+            other.join(timeout=5)
+            own = task_queue.datetime.now(UTC)
+        self.assertFalse(other.is_alive())
+        self.assertEqual(_CountingDateTime.calls, [UTC], "only this thread is counted")
+        self.assertEqual(own, _CountingDateTime.current)
+        self.assertEqual(len(answers), 1)
+        self.assertNotEqual(answers[0], _CountingDateTime.current)
+        self.assertLess(abs((datetime.now(UTC) - answers[0]).total_seconds()), 60)
 
 
 class TestCorruptPersistQuarantine(unittest.TestCase):
