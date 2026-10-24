@@ -138,6 +138,11 @@ jobs:
     permissions:
       actions: read
       contents: write
+      # actions/attest 需要这两项：id-token 向 Sigstore 申请短期签名证书，
+      # attestations 把证明写回 GitHub。只给这个不安装第三方依赖的 job；
+      # build job（跑 npm ci / ci_gate）仍然没有它们。
+      id-token: write
+      attestations: write
 
     steps:
       # 审计模式下 harden-runner 仅记录 egress，不 block；样本够了再切 block
@@ -163,24 +168,128 @@ jobs:
           name: vsix
           path: vsix/
 
-      - name: 创建 GitHub Release（附带产物）
+      # 先看这个 tag 现在的 Release 是什么状态：
+      #   - 有草稿（多半是上次中断留下的）：不自动续用也不自动删（草稿里可能有
+      #     手写的说明），报错让人看一眼；删掉草稿后重新运行这个 job 即可。
+      #   - 已经发布（例如只重跑了后面失败的清理步骤）：这个 job 的活已经干完，
+      #     后面的证明和发布步骤跳过。已发布的 immutable Release 本来就改不了，
+      #     重新上传（--clobber）只会失败，对可变的 Release 则等于悄悄换文件。
+      - name: 检查这个 tag 的 Release 状态
+        id: state
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-
-          prerelease_flag=""
-          if [[ "$tag" == *-* ]]; then
-            prerelease_flag="--prerelease"
+          drafts="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            | jq -s --arg tag "$tag" '[.[][] | select(.draft and .tag_name == $tag)] | length')"
+          if [[ "$drafts" != "0" ]]; then
+            echo "::error::已经有 $tag 的草稿 Release（多半是上次中断留下的）。请在 Releases 页面删除它，再重新运行这个 job。"
+            exit 1
           fi
-
-          # 如果 Release 不存在则创建；存在则仅上传/覆盖产物（避免 tag 重跑导致失败）
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/* vsix/*.vsix --clobber
+            echo "state=published" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release $tag 已经发布，跳过证明和发布步骤"
           else
-            gh release create "$tag" dist/* vsix/*.vsix --title "$tag" --generate-notes $prerelease_flag
+            echo "state=none" >> "$GITHUB_OUTPUT"
           fi
+
+      # 给 sdist / wheel / VSIX 生成 SLSA 构建来源证明（artifact attestation）。
+      # 证明绑定这次 workflow run 里每个文件的 sha256，所以用户拿到 PyPI 或
+      # GitHub Release 上的同一份文件后可以自己核对：
+      #   gh attestation verify <文件> --repo XIADENGMA/ai-intervention-agent
+      - name: 生成构建来源证明（actions/attest）
+        if: steps.state.outputs.state == 'none'
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*
+            vsix/*.vsix
+
+      # bundle 要作为 Release 文件一起发布（离线也能核对），所以放在发布前；
+      # 先对着刚生成的 bundle 离线核对一遍，签名身份必须是这个仓库的 release.yml。
+      - name: 保存并核对证明 bundle
+        if: steps.state.outputs.state == 'none'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p attestation
+          bundle="attestation/ai-intervention-agent-${GITHUB_REF_NAME#v}.sigstore.json"
+          cp "$BUNDLE_PATH" "$bundle"
+          for f in dist/* vsix/*.vsix; do
+            gh attestation verify "$f" \
+              --bundle "$bundle" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          done
+
+      # GitHub 建议的顺序：建草稿 → 传齐所有文件 → 核对 → 最后才发布。
+      # 开着 release immutability 时，发布的那一刻起 tag 和文件就再也改不了，
+      # 所以核对必须在发布之前。
+      - name: 创建 GitHub Release（草稿 → 上传 → 核对 → 发布）
+        if: steps.state.outputs.state == 'none'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          files=(dist/* vsix/*.vsix "attestation/ai-intervention-agent-${tag#v}.sigstore.json")
+
+          create_args=(--draft --verify-tag --title "$tag" --generate-notes)
+          if [[ "$tag" == *-* ]]; then
+            create_args+=(--prerelease)
+          fi
+          gh release create "$tag" "${create_args[@]}"
+          # 草稿还没有 immutable 保护，上传可以放心进行
+          gh release upload "$tag" "${files[@]}"
+
+          # 核对：文件名集合和 sha256 必须与本地完全一致，不一致就在发布前失败
+          want="$(for f in "${files[@]}"; do
+            printf 'sha256:%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$(basename "$f")"
+          done | sort)"
+          have="$(gh release view "$tag" --json assets \
+            | jq -r '.assets[] | "\(.digest)  \(.name)"' | sort)"
+          if [[ "$want" != "$have" ]]; then
+            echo "::error::Release $tag 上的文件和本地构建产物不一致（左：本地，右：Release）"
+            diff <(printf '%s\n' "$want") <(printf '%s\n' "$have") || true
+            exit 1
+          fi
+
+          gh release edit "$tag" --draft=false
+
+          # 发布之后只做告知，不会让 job 失败：Release 已经发出去了，读不到的东西
+          # 不该把这次发布变成红的（那样后面的清理步骤也会被跳过）。开着 release
+          # immutability 时 isImmutable 是 true，release attestation 稍后就能被
+          # gh release verify 查到。这几句用 notice 而不是 warning：没打开
+          # immutability 是允许的状态，不是问题。
+          immutable="$(gh release view "$tag" --json isImmutable 2>/dev/null \
+            | jq -r '.isImmutable' 2>/dev/null || echo unknown)"
+          case "$immutable" in
+            true)
+              verified=no
+              for _ in 1 2 3 4 5 6; do
+                if gh release verify "$tag" >/dev/null 2>&1; then
+                  verified=yes
+                  break
+                fi
+                sleep 5
+              done
+              if [[ "$verified" == yes ]]; then
+                echo "::notice::Release $tag 是 immutable，release attestation 校验通过"
+              else
+                echo "::notice::Release $tag 是 immutable，但 30 秒内还没查到 release attestation；稍后手动运行 gh release verify $tag 确认"
+              fi
+              ;;
+            false)
+              echo "::notice::Release $tag 不是 immutable（仓库设置里没有打开 Enable release immutability）"
+              ;;
+            *)
+              echo "::notice::读不到 Release $tag 的 isImmutable；稍后手动运行 gh release view $tag --json isImmutable 确认"
+              ;;
+          esac
 
       # 保持 Release 页只保留最近 3 个正式版本：更早的自动删除。
       # 仅删除 GitHub Release 条目（不带 --cleanup-tag），git tag /

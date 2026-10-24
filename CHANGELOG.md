@@ -924,6 +924,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   byte. No installed copy of the application changes: `flask-compress` asks for `brotlicffi` on
   PyPy only (CPython uses `brotli`, fixed in R875), and `virtualenv` is a development-only
   package, reached through `pre-commit`. No code changed.
+- The GitHub Release job survives release immutability, and signs what it ships (R879). Release
+  immutability is a repository setting (generally available since October 2025; off in this
+  repository when this was written): once a Release is published, its tag and its assets are
+  locked, and GitHub adds a signed release attestation. `release.yml` predates it. Its
+  `github-release` step ran `gh release create`, or, when the tag already had a Release,
+  `gh release upload --clobber`, and the step is what a re-run reaches when the clean-up of old
+  Releases fails after the publish: on an immutable Release the upload is refused and the job
+  turns red, on a mutable one it swaps the files under a Release that has been public for
+  minutes. And `gh release view` finds a draft by its tag, so a draft left behind by a killed
+  runner would have sent the step down the same branch, which ends green with the draft still a
+  draft (from the source of `gh`; not tried on GitHub). The job now looks at the tag's Release
+  first (a leftover draft stops it with an error that says what to delete; a published Release
+  skips everything up to the clean-up), has `actions/attest`, pinned to a commit, write build
+  provenance for the sdist, the wheel and the VSIX, keeps the bundle as
+  `ai-intervention-agent-<version>.sigstore.json`, and verifies each file against it with
+  `gh attestation verify --bundle --repo --signer-workflow` before anything goes out; then it
+  creates the Release as a draft, uploads the four files, compares names and sha256 digests with
+  the local files, and publishes last. Whether the Release is immutable and has its release
+  attestation is reported in notices only. `id-token: write` and `attestations: write` go to this
+  job only. Nothing is switched on by this change: the repository setting stays as it is, and
+  with it off the job still ships a bundle that anyone can check with `gh attestation verify`.
+  The new module (24 tests, 19 of which fail on the previous workflow; 36 of 36 mutants killed,
+  28 of them by the scripted runs alone) pins the file and runs every scripted step under
+  `bash -e` against a fake `gh` that refuses what GitHub refuses. `actions/attest` and the real
+  API are not run, so the first real release is the rest of the proof. `docs/release-recovery.md`
+  and its Chinese mirror now say what to do when each step fails, how to make a Release by hand
+  (every file in one command, because a published immutable Release takes no more files), and
+  how to verify a download.
 
 ### Removed
 

@@ -1,6 +1,8 @@
 # Release Recovery Playbook
 
-> Closes CR#13 §F-1. Last revised 2026-05-12 (v1.6.3 cycle).
+> Closes CR#13 §F-1. Last revised 2026-05-12 (v1.6.3 cycle); the
+> `Create GitHub Release` job and failure pattern 3 were rewritten for release
+> immutability and attestations (R879).
 > Chinese mirror: [`release-recovery.zh-CN.md`](release-recovery.zh-CN.md).
 
 This document is the human-readable runbook for **what to do when a
@@ -17,8 +19,12 @@ The four release jobs of `release.yml` (in execution order):
 3. **Publish VSCode Extension to Open VSX** — `npx --yes
 ovsx@0.10.9 publish ...` (pinned per R149). Open VSX is the
 only extension registry the project publishes to (R840).
-4. **Create GitHub Release** — uploads sdist/wheel/vsix as
-   release assets + auto-generated release notes from CHANGELOG.
+4. **Create GitHub Release** — attests the sdist, the wheel and the
+   VSIX (`actions/attest`, SLSA build provenance), creates the Release as
+   a **draft**, uploads the three files and the attestation bundle,
+   checks them against the local files, and only then publishes it.
+   The notes are GitHub's auto-generated ones (`--generate-notes`), not
+   the CHANGELOG. See "Release immutability and attestations" below.
 
 A failure in **any** job leaves the project in a partial state.
 This playbook describes how to recover for each failure pattern,
@@ -136,24 +142,123 @@ is minor / cosmetic; prefer option 2 if it's user-facing.
 ## Failure pattern 3 — Build ✓, all Publish jobs ✓, but `Create GitHub Release` ✗
 
 **Symptom**: PyPI ✓ + Open VSX ✓ + `Create GitHub Release` ✗
-(e.g. `gh release create` rate-limited or permissions failed).
+(e.g. Sigstore or the GitHub API was down, or a rate limit hit).
 
-**Recovery**: easiest of the three patterns. Create the GitHub
-Release manually:
+**Recovery**: easiest of the three patterns, because the job is
+built to be re-run: nothing is published to PyPI / Open VSX again,
+and its first step looks at the tag's Release before it does
+anything. Re-run it with `gh run rerun <run-id> --job <job-id>`
+(or `--failed`). What else to do depends on the step that failed:
+
+(The steps are named in Chinese in `release.yml`; the English below
+is a gloss.)
+
+- **Look at the tag's Release** (`检查这个 tag 的 Release 状态`)
+  failed with "draft already exists": an earlier run was killed and
+  left a **draft**. Delete the draft (Releases page, or
+  `gh release delete vX.Y.Z --yes`) and re-run. The job never reuses
+  or deletes a draft by itself: it may hold notes someone wrote.
+- **Build provenance** (`生成构建来源证明`) or **save and verify the
+  bundle** (`保存并核对证明 bundle`): no Release exists yet and nothing
+  was published. Re-run.
+- **Create the Release** (`创建 GitHub Release`: upload, check or
+  publish): a **draft** may be left, unpublished, because an upload
+  failed or a file on GitHub differs from the local one. Delete the
+  draft and re-run. Nothing was published; that is what the check
+  before the publish is for.
+- **Clean up old Releases** (`清理旧 Release`): the Release is
+  already **published**. Re-run: the job sees it, skips the
+  attestation and the publish, and only repeats the clean-up. Nothing
+  is uploaded twice.
+
+If a re-run cannot work (the cause is not transient, or the run is too
+old), create the Release by hand from the Build job's artefacts:
 
 ```bash
 # Download artefacts from the Build job.
-gh run download <run-id> --name dist
-gh run download <run-id> --name vsix
+gh run download <run-id> --name dist --dir dist
+gh run download <run-id> --name vsix --dir vsix
 
-# Create the GitHub Release pointing at the existing tag.
-gh release create v1.6.3 \
-  --notes-from-tag \
-  ./dist/*.tar.gz ./dist/*.whl ./packages/vscode/*.vsix
+# Create the GitHub Release pointing at the existing tag. With files
+# on the command line, gh makes a draft, uploads, then publishes.
+gh release create vX.Y.Z --verify-tag --title vX.Y.Z --generate-notes \
+  dist/* vsix/*.vsix
 ```
 
-Optionally re-run only the `Create GitHub Release` job via `gh
-run rerun <run-id> --job <job-id>` if the cause was transient.
+Attach **every** file in that one command: once a Release is
+published with release immutability on, nothing can be added to it
+(see the next section). A Release made by hand has no
+`ai-intervention-agent-<version>.sigstore.json` (the attestation is
+made inside the job); GitHub's own release attestation is still
+created for it when the setting is on.
+
+## Release immutability and attestations (R879)
+
+GitHub can lock a Release once it is published: with the repository
+setting **Enable release immutability** (Settings → the "Releases"
+section; it only applies to Releases published *after* it is switched
+on), the tag and the assets of a published Release can no longer
+change, and GitHub signs a *release attestation* for it (tag, commit
+and every asset). The `Create GitHub Release` job works with the
+setting on or off, and says which it found in a notice at the end of
+its log. `gh api repos/XIADENGMA/ai-intervention-agent/immutable-releases`
+shows the current setting. Turning it on is a repository setting, not
+something the workflow does.
+
+What the setting means for a release, and what the job does about it:
+
+- **Published is final.** Assets cannot be added, replaced or deleted,
+  and the tag can neither move nor be deleted while the Release
+  exists. The title, the notes and the pre-release / latest flags stay
+  editable. So the job makes a **draft**, uploads every file, checks
+  them (names and sha256 against the local files), and publishes
+  **last**; a draft can still be thrown away.
+- **It cannot be undone for a Release that is out.** Turning the
+  setting off later does not unlock Releases published while it was
+  on. Deleting such a Release is allowed, but its tag name stays
+  used: GitHub refuses a new Release for it. Same rule as PyPI and
+  Open VSX: a published version is burned (see "Beyond the retag
+  window").
+- **A re-run must not re-upload.** Re-uploading with `--clobber`
+  deletes the old file first: on a published immutable Release that
+  fails, on a mutable one it swaps files under a public Release. The
+  job instead looks at the Release first. A leftover draft stops it
+  with an error (delete the draft, re-run); a published Release makes
+  it skip straight to the clean-up.
+- **The files are attested.** `actions/attest` records that the
+  sdist, the wheel and the VSIX were built by this workflow from this
+  commit (SLSA build provenance). The bundle ships with the Release
+  as `ai-intervention-agent-<version>.sigstore.json`, and the job
+  verifies each file against it, pinned to this repository and to
+  `release.yml`, before it publishes anything. The PyPI files carry
+  their own attestation (PEP 740) from the Trusted Publisher upload;
+  the GitHub one covers the same bytes.
+
+How to check a download (needs `gh`):
+
+```bash
+# A Release published while immutability was on: the tag and every
+# asset, against GitHub's release attestation.
+gh release verify vX.Y.Z --repo XIADENGMA/ai-intervention-agent
+gh release verify-asset vX.Y.Z ./ai_intervention_agent-X.Y.Z-py3-none-any.whl \
+  --repo XIADENGMA/ai-intervention-agent
+
+# Build provenance of a file, wherever the copy came from (PyPI, the
+# Release):
+gh attestation verify ./ai_intervention_agent-X.Y.Z-py3-none-any.whl \
+  --repo XIADENGMA/ai-intervention-agent
+
+# The same, offline, with the bundle that ships with the Release:
+gh attestation verify ./ai_intervention_agent-X.Y.Z-py3-none-any.whl \
+  --bundle ./ai-intervention-agent-X.Y.Z.sigstore.json \
+  --repo XIADENGMA/ai-intervention-agent \
+  --signer-workflow XIADENGMA/ai-intervention-agent/.github/workflows/release.yml
+```
+
+`gh release verify` answers "no attestations" for a Release that was
+published while the setting was off, and for every Release built
+before this job existed; that is expected, not a failure of the
+release.
 
 ## What R180 + R181 prevent
 
@@ -189,6 +294,12 @@ move?" detective work in future bisect sessions.
   guard.
 - `tests/test_release_workflow_ovsx_pinned_r149.py` — R149 ovsx
   pin guard (related: prevents floating-tag toolchain drift).
+- `tests/test_release_workflow_immutable_attest_r879.py` — R879
+  guard for the `Create GitHub Release` job: the permissions, the
+  pinned `actions/attest`, the draft → upload → check → publish
+  order, and a run of every scripted step against a fake `gh`
+  (a leftover draft, a re-run after publishing, a wrong upload, a
+  bundle that does not verify).
 - `scripts/check_tag_push_safety.py` — pre-push safety check
   (warns if you're pushing more than 3 unpushed tags at once).
   **R185 extension**: `--check-cve` flag blocks the release if
@@ -327,7 +438,9 @@ is **safe** within a short window. v1.7.2 retagged from `36222a3`
 
 - No PyPI / Open VSX publish has succeeded (check
   `release.yml` run-page or PyPI page directly);
-- No GitHub Release has been created yet (or you can delete it);
+- No GitHub Release has been *published* yet. A draft can be deleted;
+  a published one cannot be taken back if release immutability is on
+  (deleting it does not free the tag name, see above);
 - < 30 minutes since the failed tag push (statistical: typical
   external fork/clone latency window — beyond this, assume someone
   has a frozen reference).

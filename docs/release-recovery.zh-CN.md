@@ -1,6 +1,8 @@
 # Release 恢复手册
 
-> 关闭 CR#13 §F-1。最后修订 2026-05-12（v1.6.3 周期）。
+> 关闭 CR#13 §F-1。最后修订 2026-05-12（v1.6.3 周期）；`Create GitHub
+> Release` job 与失败模式 3 因 release immutability 和 attestation 重写
+> （R879）。
 > 英文版：[`release-recovery.md`](release-recovery.md)。
 
 本文是 **`v*.*.*` tag 推送触发 `release.yml`、其中一个或多个 release
@@ -16,8 +18,12 @@ job 失败 / 部分发布时的人类可读 runbook**。
 3. **Publish VSCode Extension to Open VSX** —— `npx --yes
 ovsx@0.10.9 publish ...`（R149 pin）。Open VSX 是本项目唯一发布
    插件的注册表（R840）。
-4. **Create GitHub Release** —— 把 sdist/wheel/vsix 作为 release
-   asset 上传，附带从 CHANGELOG 自动生成的 release notes。
+4. **Create GitHub Release** —— 给 sdist、wheel、VSIX 生成构建来源
+   证明（`actions/attest`，SLSA build provenance），先把 Release 建成
+   **草稿**，上传这三个文件和证明 bundle，与本地文件逐个核对，核对
+   通过才发布。release notes 是 GitHub 自动生成的（`--generate-notes`），
+   不是 CHANGELOG 的内容。详见下文「Release immutability 与
+   attestation」。
 
 **任意 job** 失败都会留下 partial 状态。本手册按失败模式分类，给
 出每种模式的恢复方法 —— 全文最重要的一条规则：
@@ -127,23 +133,99 @@ artefact 是正常的；坏的是 VSIX。选项：
 ## 失败模式 3 —— Build ✓ + 所有 Publish ✓，但 `Create GitHub Release` ✗
 
 **现象**：PyPI ✓ + Open VSX ✓ + `Create GitHub Release` ✗
-（例如 `gh release create` 被限速或权限失败）。
+（例如 Sigstore 或 GitHub API 临时不可用、命中速率限制）。
 
-**恢复**：三种模式里最简单的。手动创建 GitHub Release：
+**恢复**：三种模式里最简单的，因为这个 job 本来就是按「可以重跑」写
+的：不会再发布一次 PyPI / Open VSX，而且它的第一步会先看这个 tag 的
+Release 处于什么状态，再决定做什么。用 `gh run rerun <run-id> --job
+<job-id>`（或 `--failed`）重跑；除此之外还要做什么，看是哪一步失败的：
+
+- **检查这个 tag 的 Release 状态** 报「已经有草稿」：上一次运行被打断，
+  留下了一个**草稿**。先删掉草稿（Releases 页面，或
+  `gh release delete vX.Y.Z --yes`），再重跑。job 自己永远不会复用或
+  删除草稿：草稿里可能有人写的说明。
+- **生成构建来源证明**，或 **保存并核对证明 bundle**：还没有 Release，
+  什么都没发布。直接重跑。
+- **创建 GitHub Release**（上传、核对或发布）：可能留下一个没发布的
+  **草稿**，原因是某个文件没传好，或 GitHub 上的文件与本地的不一致。
+  删掉草稿再重跑。什么都没发布；这正是发布前先核对的用处。
+- **清理旧 Release**：Release 已经**发布**了。直接重跑：job 看到它已
+  发布，就跳过证明和发布，只把清理再做一遍。不会上传第二次。
+
+如果重跑不行（原因不是瞬时的，或者这次运行太老了），用 Build job 的
+artefact 手动创建 Release：
 
 ```bash
 # 下载 Build job 的 artefact。
-gh run download <run-id> --name dist
-gh run download <run-id> --name vsix
+gh run download <run-id> --name dist --dir dist
+gh run download <run-id> --name vsix --dir vsix
 
-# 用已有 tag 创建 GitHub Release。
-gh release create v1.6.3 \
-  --notes-from-tag \
-  ./dist/*.tar.gz ./dist/*.whl ./packages/vscode/*.vsix
+# 用已有 tag 创建 GitHub Release。命令行里带文件时，gh 会先建草稿、
+# 上传，再发布。
+gh release create vX.Y.Z --verify-tag --title vX.Y.Z --generate-notes \
+  dist/* vsix/*.vsix
 ```
 
-也可以用 `gh run rerun <run-id> --job <job-id>` 仅重跑该 job（前提
-是失败原因是瞬时的）。
+**所有**文件都要在这一条命令里带上：打开 release immutability 后，
+Release 一旦发布就不能再往里加文件（见下一节）。手动创建的 Release
+没有 `ai-intervention-agent-<version>.sigstore.json`（证明是在 job 里
+生成的）；开着这个设置时，GitHub 自己的 release attestation 照样会生成。
+
+## Release immutability 与 attestation（R879）
+
+GitHub 可以在 Release 发布之后把它锁住：打开仓库设置 **Enable release
+immutability**（Settings → "Releases" 一节；只对**之后**发布的 Release
+生效）后，已发布 Release 的 tag 和 asset 就不能再改，GitHub 还会为它
+生成一份 *release attestation*（tag、commit 和每个 asset）。
+`Create GitHub Release` job 在这个设置开着或关着时都能正常工作，并在
+日志末尾用一条 notice 说明它看到的是哪种。
+`gh api repos/XIADENGMA/ai-intervention-agent/immutable-releases`
+能查到当前设置。打开它是仓库设置，不是 workflow 做的事。
+
+这个设置对一次发布意味着什么，job 又是怎么应对的：
+
+- **发布即定稿。** asset 不能再添加、替换或删除；Release 还在的时候，
+  tag 既不能移动也不能删除。标题、说明和 pre-release / latest 标记仍可
+  编辑。所以 job 先建**草稿**，上传全部文件，核对（文件名和 sha256 与
+  本地文件逐个比），**最后**才发布；草稿随时可以扔掉。
+- **已发布的 Release 没法撤回。** 之后再关掉这个设置，也不会解锁已经
+  发布的 Release。这样的 Release 可以删除，但它的 tag 名依然算「用过
+  了」：GitHub 不会再让这个 tag 建新 Release。规则和 PyPI、Open VSX 一
+  样：发布过的版本号就燃烧了（见「超过 retag 窗口之后」）。
+- **重跑不能重新上传。** 用 `--clobber` 重传会先删掉旧文件：在已发布
+  的 immutable Release 上会失败，在可变的 Release 上则会在公开的
+  Release 下面把文件换掉。所以 job 改成先看 Release：留着草稿就报错
+  停下（删掉草稿，重跑）；Release 已发布就直接跳到清理。
+- **文件有证明。** `actions/attest` 记录 sdist、wheel 和 VSIX 是这个
+  workflow 在这个 commit 上构建的（SLSA build provenance）。bundle 以
+  `ai-intervention-agent-<version>.sigstore.json` 的名字随 Release 发
+  布，job 在发布之前就用它逐个验证文件，并钉死仓库和 `release.yml`。
+  PyPI 上的文件另有 Trusted Publisher 上传时生成的 attestation
+  （PEP 740）；GitHub 这份覆盖的是同样的字节。
+
+怎么检查下载下来的文件（需要 `gh`）：
+
+```bash
+# 在 immutability 开着时发布的 Release：tag 和每个 asset，对照
+# GitHub 的 release attestation。
+gh release verify vX.Y.Z --repo XIADENGMA/ai-intervention-agent
+gh release verify-asset vX.Y.Z ./ai_intervention_agent-X.Y.Z-py3-none-any.whl \
+  --repo XIADENGMA/ai-intervention-agent
+
+# 一个文件的构建来源，不管副本是哪儿来的（PyPI、Release）：
+gh attestation verify ./ai_intervention_agent-X.Y.Z-py3-none-any.whl \
+  --repo XIADENGMA/ai-intervention-agent
+
+# 同上，离线，用随 Release 发布的 bundle：
+gh attestation verify ./ai_intervention_agent-X.Y.Z-py3-none-any.whl \
+  --bundle ./ai-intervention-agent-X.Y.Z.sigstore.json \
+  --repo XIADENGMA/ai-intervention-agent \
+  --signer-workflow XIADENGMA/ai-intervention-agent/.github/workflows/release.yml
+```
+
+对一个在设置关着时发布的 Release，以及对这个 job 出现之前构建的每个
+Release，`gh release verify` 都会回答「no attestations」；这是预期的，
+不是 Release 出了问题。
 
 ## R180 + R181 阻止了什么
 
@@ -178,6 +260,11 @@ Issue 跟踪器发条简报：
   guard。
 - `tests/test_release_workflow_ovsx_pinned_r149.py` —— R149 ovsx
   pin guard（相关：防止 floating-tag toolchain drift）。
+- `tests/test_release_workflow_immutable_attest_r879.py` —— R879，
+  `Create GitHub Release` job 的 guard：权限、钉死的
+  `actions/attest`、草稿 → 上传 → 核对 → 发布的顺序，并把每个脚本步
+  骤对着一个假的 `gh` 跑一遍（留着草稿、发布后重跑、传错文件、
+  bundle 验证不过）。
 - `scripts/check_tag_push_safety.py` —— push 前安全检查（一次推
   超过 3 个未推 tag 会告警）。**R185 扩展**：`--check-cve` 标志在
   仓库存在 ≥ 1 个 `critical`/`high` 级 Dependabot 开放告警时阻止
@@ -305,7 +392,9 @@ push 5 分钟后 retag `36222a3` → `35f9671`。
 
 - PyPI / Open VSX 没有任何 publish 成功（查
   `release.yml` run page 或直接看 PyPI 页面）；
-- GitHub Release 还没创建（或者你能删掉它）；
+- GitHub Release 还没**发布**。草稿可以删；已发布的 Release 在
+  release immutability 开着时没法撤回（删掉它也腾不出 tag 名，见上
+  文）；
 - 距离失败的 tag push < 30 分钟（统计上典型 fork/clone 延迟窗口
   —— 超过这个时间，要假设有人有 frozen reference 了）。
 
