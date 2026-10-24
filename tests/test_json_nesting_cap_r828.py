@@ -43,7 +43,6 @@ import json
 import re
 import threading
 import time
-import tracemalloc
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -59,6 +58,7 @@ from ai_intervention_agent.notification_manager import (
 )
 from ai_intervention_agent.web_ui import WebFeedbackUI
 from ai_intervention_agent.web_ui_routes import _request_body as body_contract
+from tests.conftest import peak_traced_bytes_in_a_clean_interpreter
 
 LOOPBACK = {"REMOTE_ADDR": "127.0.0.1"}
 TASK_ID = "r828-task"
@@ -122,15 +122,17 @@ class TestJsonNestingExceeds:
         assert body_contract.json_nesting_exceeds(value, 4) is True
 
     def test_the_memory_it_needs_follows_the_depth_not_the_width(self) -> None:
-        """A 10 MB body of 3.3 million ``[]`` must not cost another 160 MB to look at."""
-        wide: list[Any] = [[] for _ in range(300_000)]
-        tracemalloc.start()
-        try:
-            before = tracemalloc.get_traced_memory()[0]
-            assert body_contract.json_nesting_exceeds(wide, 2) is False
-            extra = tracemalloc.get_traced_memory()[1] - before
-        finally:
-            tracemalloc.stop()
+        """A 10 MB body of 3.3 million ``[]`` must not cost another 160 MB to look at.
+
+        Measured in a clean interpreter: in this process any thread another test left running
+        (the debounced config save, the config watcher) allocates megabytes inside the window.
+        """
+        extra = peak_traced_bytes_in_a_clean_interpreter(
+            imports="from ai_intervention_agent.web_ui_routes._request_body import json_nesting_exceeds",
+            build="wide = [[] for _ in range(300_000)]",
+            measured="answer = json_nesting_exceeds(wide, 2)",
+            check="assert answer is False",
+        )
         assert extra < 200_000, f"{extra} bytes"
 
     def test_a_wide_document_is_not_deep(self) -> None:

@@ -40,6 +40,8 @@ import asyncio
 import itertools
 import json
 import random
+import threading
+import time
 import tracemalloc
 from collections.abc import Iterator
 from pathlib import Path
@@ -58,6 +60,7 @@ from ai_intervention_agent.task_queue_singleton import get_task_queue
 from ai_intervention_agent.text_safety import scrub_lone_surrogates
 from ai_intervention_agent.web_ui import WebFeedbackUI
 from ai_intervention_agent.web_ui_routes import _request_body as body_contract
+from tests.conftest import peak_traced_bytes_in_a_clean_interpreter
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "ai_intervention_agent"
 LOOPBACK = {"REMOTE_ADDR": "127.0.0.1"}
@@ -262,32 +265,112 @@ class TestScrub:
 
     def test_a_wide_document_costs_no_memory(self) -> None:
         """R828's reason for an explicit stack of iterators: a 10 MB body of ``[]`` is 3.3
-        million lists, and a copy of it is 200 MB."""
-        value: list[Any] = [[] for _ in range(300_000)]
-        value.append(["tail\ud800"])
-        tracemalloc.start()
-        try:
-            scrub_lone_surrogates(value)
-            _, peak = tracemalloc.get_traced_memory()
-        finally:
-            tracemalloc.stop()
-        assert value[-1] == [f"tail{FFFD}"]
+        million lists, and a copy of it is 200 MB.  Measured in a clean interpreter: in this
+        process any thread another test left running (the debounced config save, the config
+        watcher) allocates megabytes inside the window."""
+        peak = peak_traced_bytes_in_a_clean_interpreter(
+            imports="from ai_intervention_agent.text_safety import scrub_lone_surrogates",
+            build=r"""
+                value = [[] for _ in range(300_000)]
+                value.append(["tail\ud800"])
+            """,
+            measured="scrub_lone_surrogates(value)",
+            check=r'assert value[-1] == ["tail\ufffd"]',
+        )
         assert peak < 256 * 1024, f"{peak} bytes"
 
     def test_a_wide_dict_costs_no_memory_either(self) -> None:
-        value: dict[str, Any] = {f"k{n}": [] for n in range(100_000)}
-        value["tail"] = "x\ud800"
-        tracemalloc.start()
-        try:
-            scrub_lone_surrogates(value)
-            _, peak = tracemalloc.get_traced_memory()
-        finally:
-            tracemalloc.stop()
-        assert value["tail"] == f"x{FFFD}"
+        peak = peak_traced_bytes_in_a_clean_interpreter(
+            imports="from ai_intervention_agent.text_safety import scrub_lone_surrogates",
+            build=r"""
+                value = {f"k{n}": [] for n in range(100_000)}
+                value["tail"] = "x\ud800"
+            """,
+            measured="scrub_lone_surrogates(value)",
+            check=r'assert value["tail"] == "x\ufffd"',
+        )
         assert peak < 256 * 1024, f"{peak} bytes"
 
     def test_the_replacement_character_is_u_fffd(self) -> None:
         assert text_safety.REPLACEMENT_CHARACTER == FFFD
+
+
+class TestTheMeasurementIsTakenInACleanInterpreter:
+    """Why the two memory tests above do not measure in the pytest process.
+
+    The CI run of 7a99e3dd failed on Python 3.13 with ``AssertionError: 2563213 bytes`` for the
+    wide-document test.  ``tracemalloc`` counts what every thread allocates, and a
+    ``threading.Timer`` that an earlier test's ``update_section`` had started (the debounced
+    config save, which ``reload`` does not cancel when nothing is pending) fired inside the
+    window and parsed the config with tomlkit: 2-3 MB for a function that allocates 2 KB.
+    """
+
+    def test_a_thread_of_this_process_does_not_change_the_number(self) -> None:
+        stop = threading.Event()
+        running = threading.Event()
+
+        def noisy() -> None:
+            while not stop.is_set():
+                held = [bytearray(1024) for _ in range(2_000)]  # about 2 MB at a time
+                running.set()
+                time.sleep(0.001)
+                del held
+
+        thread = threading.Thread(target=noisy, daemon=True)
+        thread.start()
+        try:
+            assert running.wait(30)
+            tracemalloc.start()
+            try:
+                time.sleep(0.2)
+                in_this_process = tracemalloc.get_traced_memory()[1]
+            finally:
+                tracemalloc.stop()
+            clean = peak_traced_bytes_in_a_clean_interpreter(
+                imports="", build="", measured="pass"
+            )
+        finally:
+            stop.set()
+            thread.join()
+
+        assert in_this_process > 1_000_000, (
+            "the control: this thread must be loud enough"
+        )
+        assert clean < 10_000, f"{clean} bytes"
+
+    def test_what_the_child_prints_while_importing_is_not_the_number(self) -> None:
+        peak = peak_traced_bytes_in_a_clean_interpreter(
+            imports="print('a banner')\nprint('and another line')",
+            build="",
+            measured="pass",
+        )
+
+        assert 0 <= peak < 10_000
+
+    def test_a_failing_check_in_the_child_fails_the_test_with_its_exit_status(
+        self,
+    ) -> None:
+        with pytest.raises(AssertionError, match="exit 3"):
+            peak_traced_bytes_in_a_clean_interpreter(
+                imports="", build="", measured="pass", check="raise SystemExit(3)"
+            )
+
+    def test_an_error_in_the_measured_code_is_reported_with_its_traceback(self) -> None:
+        with pytest.raises(AssertionError, match="ZeroDivisionError"):
+            peak_traced_bytes_in_a_clean_interpreter(
+                imports="", build="", measured="1 / 0"
+            )
+
+    def test_no_other_test_starts_tracemalloc_in_the_pytest_process(self) -> None:
+        tests_dir = Path(__file__).resolve().parent
+        starters = sorted(
+            path.name
+            for path in tests_dir.glob("test_*.py")
+            if "tracemalloc.start(" in path.read_text(encoding="utf-8")
+        )
+
+        # this file only, for the control above; everything else measures through the helper
+        assert starters == [Path(__file__).name], starters
 
 
 def random_document(rng: random.Random, depth: int = 0) -> Any:

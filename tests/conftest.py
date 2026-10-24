@@ -18,8 +18,10 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
+import textwrap
 from collections.abc import Callable
 from pathlib import Path
 
@@ -214,6 +216,58 @@ def snapshot_global_log_levels() -> Callable[[], None]:
             handler.setLevel(level)
 
     return restore
+
+
+_PEAK_MARKER = "PEAK_TRACED_BYTES="
+
+
+def peak_traced_bytes_in_a_clean_interpreter(
+    imports: str,
+    build: str,
+    measured: str,
+    check: str = "",
+    *,
+    timeout: float = 180.0,
+) -> int:
+    """在一个只跑这段代码的新解释器里量 ``measured`` 的 ``tracemalloc`` 峰值（字节）。
+
+    ``tracemalloc`` 记的是整个进程的分配，不管哪个线程分配的。pytest 进程里总有前面的用例留下的
+    线程：``ConfigManager`` 的延迟保存（``update_section`` 起一个 3 秒的 ``threading.Timer``，
+    ``reload`` 在没有待写入的键时不会取消它）、配置文件的监听线程、任务队列的清理线程……它们醒来
+    解析一次 TOML 就分配 2–3 MB，落在测量窗口里，一个断言“峰值小于 256 KiB”的用例就随机失败：
+    CI 的 Python 3.13 上红过一次；在 Linux 容器里按 CI 的方式整跑（xdist 4、loadfile），诊断版本四次里
+    复现了两次。新解释器里只有主线程，数字只来自被测的代码。
+
+    四段代码按顺序在子进程里执行：``imports``、``build``（造数据，不计入）、``measured``（计入）、
+    ``check``（测量结束后的断言）。返回的是 ``measured`` 期间的峰值减去开始时已有的量。
+    """
+    script = "\n".join(
+        [
+            textwrap.dedent(imports),
+            "import tracemalloc",
+            textwrap.dedent(build),
+            "tracemalloc.start()",
+            "_before = tracemalloc.get_traced_memory()[0]",
+            textwrap.dedent(measured),
+            "_peak = tracemalloc.get_traced_memory()[1] - _before",
+            "tracemalloc.stop()",
+            textwrap.dedent(check),
+            f"print({_PEAK_MARKER!r} + str(_peak))",
+        ]
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    assert done.returncode == 0, f"exit {done.returncode}: {done.stderr}"
+    reported = [
+        line for line in done.stdout.splitlines() if line.startswith(_PEAK_MARKER)
+    ]
+    assert len(reported) == 1, done.stdout
+    return int(reported[0][len(_PEAK_MARKER) :])
 
 
 @pytest.fixture(autouse=True)
