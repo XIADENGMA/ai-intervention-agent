@@ -45,7 +45,7 @@ configuration documented below.
 
 The MCP `2025-11-25` tools spec allows a server to declare
 `capabilities.tools.listChanged=true` and send
-`notifications/tools/list_changed` when the tool list changes. FastMCP 4.1.1
+`notifications/tools/list_changed` when the tool list changes. FastMCP 4.1
 supports runtime `add_tool()` / `local_provider.remove_tool()`, but neither
 sends that notification by itself (checked inside a request on both protocol
 eras); the per-session `ctx.enable_components()` does, and on the sessionless
@@ -74,7 +74,7 @@ Before any dynamic tool ships, it must satisfy these boundaries:
   sensitive output redaction.
 
 The local SDK spike is locked by
-`tests/test_mcp_dynamic_tools_spike_r457.py`: it verifies FastMCP 4.1.1 can add
+`tests/test_mcp_dynamic_tools_spike_r457.py`: it verifies FastMCP 4.1 can add
 and remove a tool dynamically, preserves annotations/tags/version, rejects
 duplicate name+version with `on_duplicate="error"`, and uses the current
 `on_duplicate` constructor parameter rather than the older

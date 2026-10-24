@@ -200,7 +200,10 @@ move?" detective work in future bisect sessions.
   `.github/ISSUE_TEMPLATE/bug_report.yml`. **R183**: now also warns
   if `CHANGELOG.md [Unreleased]` looks empty at bump time
   (`--warn-empty-unreleased` default-on; `--no-warn-empty-unreleased`
-  suppresses).
+  suppresses). **R874**: also sets `CITATION.cff` `date-released` from
+  the `## [X.Y.Z] - YYYY-MM-DD` heading of the new version in
+  `CHANGELOG.md` (promote `[Unreleased]` first; without the heading it
+  warns and leaves the date).
 - `docs/troubleshooting.md` §12 (R151) — Open VSX displayName +
   ovsx pin upgrade ritual.
 - `.github/dependabot.yml` + `automated-security-fixes`

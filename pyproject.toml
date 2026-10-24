@@ -76,7 +76,10 @@ dependencies = [
     # Already pulled in transitively via flask-compress[brotli], but declared
     # here as a first-class dep so `uv sync` / `pip install ai-intervention-agent`
     # always installs it explicitly.
-    "brotli>=1.2.0",
+    # R875: 1.2.1 fixes an out-of-bounds write in the Brotli *decoder*
+    # (GHSA-9v8h-qqgm-4m35 / CVE-2026-111497, critical). httpx decodes
+    # ``Content-Encoding: br`` replies with this package, so the floor moves up.
+    "brotli>=1.2.1",
 ]
 
 [project.optional-dependencies]

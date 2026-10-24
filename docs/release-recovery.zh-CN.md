@@ -187,7 +187,9 @@ Issue 跟踪器发条简报：
   `CITATION.cff`、`.github/ISSUE_TEMPLATE/bug_report.yml` 的程序化
   版本同步。**R183**：bump 时若 `CHANGELOG.md [Unreleased]` 看起来
   为空会打 WARNING（`--warn-empty-unreleased` 默认开启；
-  `--no-warn-empty-unreleased` 抑制）。
+  `--no-warn-empty-unreleased` 抑制）。**R874**：同时把 `CITATION.cff` 的
+  `date-released` 设成 `CHANGELOG.md` 里新版本 `## [X.Y.Z] - YYYY-MM-DD`
+  标题的日期（先把 `[Unreleased]` 改成该标题；没有标题就只警告、不动日期）。
 - `docs/troubleshooting.zh-CN.md` §12（R151） —— Open VSX
   displayName + ovsx pin 升级仪式。
 - `.github/dependabot.yml` + `automated-security-fixes`

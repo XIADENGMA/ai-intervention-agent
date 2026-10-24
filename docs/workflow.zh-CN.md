@@ -38,6 +38,7 @@
 
 - 一键同步版本号（不带 `v` 前缀）：`uv run python scripts/bump_version.py X.Y.Z`
   - 会同步：`pyproject.toml` / `uv.lock` / `package.json` / `package-lock.json` / `packages/vscode/package.json` / `.github/ISSUE_TEMPLATE/bug_report.yml` / `CITATION.cff`
+  - `CITATION.cff` 同步 `version` 和 `date-released`。日期取自 `CHANGELOG.md` 里 `## [X.Y.Z] - YYYY-MM-DD` 标题，所以要先把 `[Unreleased]` 改成这个标题；没有这个标题时脚本不动日期，只在 stderr 提示（改好标题后再跑一次）
   - 可选：`--ci-gate --with-vscode`（同步后跑一轮本地 CI Gate）
 - `git commit -m "<type>: <message>"`
 - `git tag -a vX.Y.Z -m "vX.Y.Z"`

@@ -98,8 +98,9 @@ class TestUpdateCitationVersion(unittest.TestCase):
         self.assertIn("cff-version: 1.2.0", result)
 
     def test_preserves_date_released_field(self) -> None:
-        # date-released 是另一条 release 信息；bump_version 不应该副作用地动它
-        # （由发布者根据实际 tag 日期手动维护）
+        # ``_update_citation_version`` 只管 version 这一行；date-released 由另一个函数
+        # ``_update_citation_date`` 按 CHANGELOG 里的发布日期改（R874，见
+        # tests/test_citation_release_date_follows_changelog_r874.py）
         result = _update_citation_version(SAMPLE_CITATION, "1.5.23")
         self.assertIn('date-released: "2026-05-04"', result)
 

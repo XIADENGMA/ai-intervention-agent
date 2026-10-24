@@ -34,7 +34,7 @@ class TestStaticCoreToolSurface(unittest.TestCase):
 
 
 class TestFastMcpDynamicToolSpike(unittest.TestCase):
-    """Local FastMCP 4.1.1 dynamic add/remove behavior."""
+    """Local FastMCP 4.1 dynamic add/remove behavior."""
 
     def _make_spike_tool(self):
         @tool(

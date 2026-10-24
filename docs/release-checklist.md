@@ -90,7 +90,10 @@ Then:
 atomic bump — the existing script (pre-dates this doc;
 shipped in v1.5.x) handles all of the above **plus**
 `uv.lock`, `.github/ISSUE_TEMPLATE/bug_report.yml`, and
-`CITATION.cff`. Run as:
+`CITATION.cff` (its `version` and its `date-released`: the date comes
+from the `## [X.Y.Z] - YYYY-MM-DD` heading you promoted in A.1, so
+promote first; without that heading the script leaves the date alone and
+warns on stderr). Run as:
 
 ```sh
 uv run python scripts/bump_version.py X.Y.Z --dry-run  # preview

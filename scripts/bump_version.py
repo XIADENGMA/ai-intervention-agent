@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -230,6 +231,83 @@ def _extract_citation_version(text: str) -> str | None:
     return m.group(1) if m else None
 
 
+# ``date-released: "2026-09-07"``；引号可以是双引号、单引号或没有，改写时原样保留。
+_CITATION_DATE_RE = re.compile(
+    r"^(date-released:[ \t]*)([\"']?)(\d{4}-\d{2}-\d{2})\2[ \t]*$", re.MULTILINE
+)
+
+
+def _extract_citation_date(text: str) -> str | None:
+    """``CITATION.cff`` 顶层 ``date-released`` 的值；没有这个字段返回 ``None``。"""
+    m = _CITATION_DATE_RE.search(text)
+    return m.group(3) if m else None
+
+
+def _update_citation_date(text: str, release_date: str) -> str:
+    """把 ``date-released`` 改成 ``release_date``（``YYYY-MM-DD``），其余字节不动。"""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", release_date):
+        raise ValueError(f"release_date 必须是 YYYY-MM-DD：{release_date!r}")
+    datetime.date.fromisoformat(release_date)
+    return _replace_first(
+        _CITATION_DATE_RE,
+        rf"\g<1>\g<2>{release_date}\g<2>",
+        text,
+        label="CITATION.cff date-released",
+    )
+
+
+def _changelog_release_date(text: str, version: str) -> str | None:
+    """``CHANGELOG.md`` 里 ``## [<version>] - YYYY-MM-DD`` 标题写的发布日期（R874）。
+
+    分隔符可以是连字符、en dash 或 em dash（这个文件两种写法都有）；标题后面还可以跟
+    ``[YANKED]`` 之类的备注。没有这个标题、或写的不是一个真实存在的日期，返回 ``None``。
+    同一个版本出现多次时取最靠前的有效标题。
+    """
+    heading = re.compile(
+        rf"^## \[{re.escape(version)}\][ \t]+[-\u2013\u2014][ \t]+"
+        r"(\d{4}-\d{2}-\d{2})(?:[ \t].*)?\r?$",
+        re.MULTILINE,
+    )
+    for match in heading.finditer(text):
+        try:
+            datetime.date.fromisoformat(match.group(1))
+        except ValueError:
+            continue
+        return match.group(1)
+    return None
+
+
+def _update_citation(text: str, new_version: str, release_date: str | None) -> str:
+    """``CITATION.cff`` 的新内容：版本号，加上（已知时）与 CHANGELOG 一致的发布日期。"""
+    updated = _update_citation_version(text, new_version)
+    if release_date is not None and _extract_citation_date(updated) is not None:
+        updated = _update_citation_date(updated, release_date)
+    return updated
+
+
+def _read_text_or_none_quiet(path: Path) -> str | None:
+    try:
+        return _read_text(path)
+    except OSError:
+        return None
+
+
+def _citation_date_warning(root: Path, new_version: str) -> str | None:
+    """CHANGELOG 里还没有该版本的带日期标题、而 ``CITATION.cff`` 有日期要同步时的提示。"""
+    changelog = _read_text_or_none_quiet(root / "CHANGELOG.md")
+    citation = _read_text_or_none_quiet(root / "CITATION.cff")
+    if changelog is None or citation is None:
+        return None
+    current = _extract_citation_date(citation)
+    if current is None or _changelog_release_date(changelog, new_version) is not None:
+        return None
+    return (
+        f'WARNING (R874): CHANGELOG.md 里没有 "## [{new_version}] - YYYY-MM-DD" 标题，'
+        f"CITATION.cff 的 date-released 保持 {current} 不变。"
+        "请先把 [Unreleased] 改成这个标题再 bump，或手动改 date-released。（继续 bump）"
+    )
+
+
 def _changelog_unreleased_section(text: str) -> tuple[int, int] | None:
     """返回 ``[Unreleased]`` 区段在 ``text`` 中的 ``(start, end)`` 字节索引。"""
     head = re.search(r"^## \[Unreleased\]\s*$", text, re.MULTILINE)
@@ -314,7 +392,10 @@ def main(argv: list[str]) -> int:
         print("- package-lock.json")
         print("- packages/vscode/package.json")
         print("- .github/ISSUE_TEMPLATE/bug_report.yml")
-        print("- CITATION.cff  (version 字段；date-released 仍需手动维护)")
+        print(
+            "- CITATION.cff  (version 字段；date-released 取自 CHANGELOG.md 里该版本的 "
+            '"## [X.Y.Z] - YYYY-MM-DD" 标题，没有这个标题就保持不变)'
+        )
         return 0
 
     raw_version = (args.version or "").strip()
@@ -353,6 +434,13 @@ def main(argv: list[str]) -> int:
         print(f"版本号格式不合法：{new_version}", file=sys.stderr)
         return 2
 
+    changelog_text = _read_text_or_none_quiet(root / "CHANGELOG.md")
+    release_date = (
+        None
+        if changelog_text is None
+        else _changelog_release_date(changelog_text, new_version)
+    )
+
     targets: list[tuple[Path, Callable[[str], str]]] = [
         (root / "pyproject.toml", lambda t: _update_pyproject_version(t, new_version)),
         (root / "uv.lock", lambda t: _update_uv_lock_version(t, new_version)),
@@ -376,7 +464,7 @@ def main(argv: list[str]) -> int:
         ),
         (
             root / "CITATION.cff",
-            lambda t: _update_citation_version(t, new_version),
+            lambda t: _update_citation(t, new_version, release_date),
         ),
     ]
 
@@ -605,6 +693,10 @@ def main(argv: list[str]) -> int:
                     "（继续 bump；通过 --no-warn-empty-unreleased 关闭此提示）",
                     file=sys.stderr,
                 )
+
+    date_warning = _citation_date_warning(root, new_version)
+    if date_warning is not None:
+        print(date_warning, file=sys.stderr)
 
     pending_writes: list[tuple[Path, str]] = []
     for path, transformer in targets:

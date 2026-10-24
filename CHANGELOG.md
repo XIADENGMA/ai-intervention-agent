@@ -852,6 +852,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the previous source; 49 of 49 mutants killed) reads the definition as a client receives it and
   holds every description in it to English prose, no development-tracking id and no reference to
   the server's own source. The README test-count floor goes from 12,500+ to 13,000+.
+- `CITATION.cff` now gives the release date of the version it names, and the bump script keeps it
+  that way (R874). The file carries `version` and `date-released`, and GitHub builds its "Cite
+  this repository" box from them; `scripts/bump_version.py` moved the version at every bump and
+  never the date, so `date-released` stayed at 2026-07-19, the day of v1.8.0, through the twelve
+  releases since, and the box named v1.8.12 with a date 50 days before it was tagged. The date is
+  corrected to 2026-09-07, the day this changelog gives for 1.8.12. From now on the script reads
+  the date from the `## [X.Y.Z] - YYYY-MM-DD` heading of the version it bumps to, which step A.1
+  of the release checklist writes before the bump, and rewrites only the date, keeping the quotes
+  of the field. With no such heading yet it keeps the old date, says so on stderr and goes on, so
+  promoting the changelog and running the bump again fixes it; `--check` does not look at the
+  date. The workflow, release-checklist and release-recovery docs now say where the date comes
+  from. The new module (105 tests, 100 of which fail on the previous tree; 60 of 60 mutants
+  killed) holds the file to a readable, real date that equals the changelog's for the version it
+  names, and runs a whole bump on a copy of the release files, before and after the promotion.
+- The lock files take the fixes for seven advisories published on 2026-10-22 and 2026-10-23
+  (R875). `scripts/dependency_audit.py --gate release`, which `release.yml` runs before it
+  publishes anything (and `--gate pr` in `test.yml`), went red on a tree that had passed the day
+  before: pip-audit reported an out-of-bounds write in the Brotli decoder (GHSA-9v8h-qqgm-4m35,
+  critical), two FastMCP authorization flaws (GHSA-7xgj-8392-5q4r, GHSA-vqqp-x5qm-5qp4) and three
+  in filelock (GHSA-v4x8-3wr5-3wq8, GHSA-567q-5qvw-pf92, GHSA-9vhv-jxww-xfm5), and npm audit
+  reported GHSA-m5mm-p8h7-m29v in `serialize-javascript`. `uv.lock` moves brotli 1.2.0 to 1.2.1,
+  fastmcp and fastmcp-slim 4.1.1 to 4.1.3 (with openapi-pydantic 0.5.1 to 0.6.0, which fastmcp now
+  requires) and filelock 3.25.2 to 4.2.4 (a development-only package, reached through pre-commit
+  and virtualenv); `package-lock.json` moves `serialize-javascript` 7.1.2 to 7.1.4, inside the
+  existing `^7.0.5` override. The floor of the direct `brotli` dependency in `pyproject.toml` goes
+  from 1.2.0 to 1.2.1, because httpx decodes `Content-Encoding: br` replies with it and an install
+  outside the lock should get the fixed decoder as well. The docs and the test docstring that
+  named FastMCP 4.1.1 now say 4.1. No code changed and no exception was added to the audit
+  script; both gates pass again.
 
 ### Removed
 
