@@ -15,10 +15,15 @@ Only a response that actually served the file keeps the long policy; any error i
 
 from __future__ import annotations
 
+import itertools
 import unittest
+from types import SimpleNamespace
 from typing import Any
+from unittest import mock
 
 from flask import Response
+
+from ai_intervention_agent import web_ui_rate_limiter
 
 POLICIES = {
     "/static/js/x.js": "max-age=86400",
@@ -33,6 +38,15 @@ POLICIES = {
     "/sounds/x.mp3": "max-age=604800",
     "/icons/x.png": "max-age=604800",
 }
+
+# The limiter counts in fixed windows of the wall clock, so a burst is limited only when
+# eleven of its fifteen requests fall into one wall-clock second. They do not always: a
+# second boundary after the fifth to the tenth request leaves two windows that both stay
+# within the limit, and no 429 comes out (about 6 % of the bursts when a request takes
+# 10 ms, every one of them when it takes 100 ms or more). The rate-limit test therefore
+# pins the limiter's clock, with an instant of its own on every run, so that a repeat in
+# the same process does not meet the hits counted by an earlier run.
+_INSTANTS = itertools.count()
 
 
 class TestStaticErrorsAreNotCached(unittest.TestCase):
@@ -89,7 +103,13 @@ class TestStaticErrorsAreNotCached(unittest.TestCase):
                 response.close()
 
     def test_a_rate_limited_static_url_is_not_cached(self) -> None:
-        responses = [self._client.get("/static/js/r772-limited.js") for _ in range(15)]
+        instant = 1_700_000_000.25 + 120 * next(_INSTANTS)
+        with mock.patch.object(
+            web_ui_rate_limiter, "time", SimpleNamespace(time=lambda: instant)
+        ):
+            responses = [
+                self._client.get("/static/js/r772-limited.js") for _ in range(15)
+            ]
         try:
             statuses = [r.status_code for r in responses]
             self.assertEqual(statuses[0], 200)
