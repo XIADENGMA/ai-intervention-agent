@@ -15,6 +15,19 @@ const WORKBENCH_NETWORK_LINES = [
 
 const WORKBENCH_STACK_LINE = /^\s+at .*vscode-file:\/\/vscode-app\//;
 
+// @vscode/test-electron 3 starts VS Code with --no-cached-data. The option parser of VS Code
+// reads every --no-<name> as <name>=false, finds no option called "cached-data" (it has
+// "no-cached-data") and prints this line on every start. Exactly this line, not every
+// "not in the list of known options" line: a misspelt option of ours must still show.
+const LAUNCH_OPTION_LINES = [
+  /^Warning: 'cached-data' is not in the list of known options, but still passed to Electron\/Chromium\.$/,
+];
+
+export function isLaunchOptionNoise(rawLine) {
+  const line = rawLine.replace(ANSI_ESCAPE, "");
+  return LAUNCH_OPTION_LINES.some((pattern) => pattern.test(line));
+}
+
 export function createWorkbenchNetworkFilter() {
   let insideNoise = false;
   return function isWorkbenchNetworkNoise(rawLine) {
@@ -32,14 +45,20 @@ export function createWorkbenchNetworkFilter() {
 }
 
 function pipeFiltered(stream, target, onHidden) {
-  const isNoise = createWorkbenchNetworkFilter();
+  const isNetworkNoise = createWorkbenchNetworkFilter();
   const lines = readline.createInterface({
     input: stream,
     crlfDelay: Infinity,
   });
   lines.on("line", (line) => {
-    if (isNoise(line)) {
-      onHidden();
+    // The network filter sees every line first: it keeps the state of the stack pass, and
+    // any other line, this launch line too, ends that pass.
+    if (isNetworkNoise(line)) {
+      onHidden("network");
+      return;
+    }
+    if (isLaunchOptionNoise(line)) {
+      onHidden("launch");
       return;
     }
     target.write(`${line}\n`);
@@ -53,9 +72,9 @@ export async function runFiltered(command, args, options = {}) {
     env: options.env ?? process.env,
     stdio: ["inherit", "pipe", "pipe"],
   });
-  let hidden = 0;
-  const countHidden = () => {
-    hidden += 1;
+  const hidden = { network: 0, launch: 0 };
+  const countHidden = (kind) => {
+    hidden[kind] += 1;
   };
   const drained = Promise.all([
     pipeFiltered(child.stdout, process.stdout, countHidden),
@@ -69,10 +88,16 @@ export async function runFiltered(command, args, options = {}) {
     child.once("close", (code) => resolve(code ?? 1));
   });
   await drained;
-  if (hidden > 0) {
+  if (hidden.network > 0) {
     process.stdout.write(
-      `(left out ${hidden} line${hidden === 1 ? "" : "s"} VS Code printed about its own ` +
+      `(left out ${hidden.network} line${hidden.network === 1 ? "" : "s"} VS Code printed about its own ` +
         "marketplace, chat and alert lookups; the test instance has no reliable network)\n",
+    );
+  }
+  if (hidden.launch > 0) {
+    process.stdout.write(
+      `(left out ${hidden.launch} line${hidden.launch === 1 ? "" : "s"} VS Code printed about ` +
+        "--no-cached-data, a flag @vscode/test-electron passes to it)\n",
     );
   }
   return exitCode;

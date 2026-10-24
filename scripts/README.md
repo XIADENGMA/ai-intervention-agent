@@ -136,9 +136,11 @@ diverges.
 - [`package_vscode_vsix.mjs`](package_vscode_vsix.mjs) — build the
   VSCode `.vsix` package via `vsce`.
 - [`run_vscode_host_tests.mjs`](run_vscode_host_tests.mjs)
-  _(R745)_ — run the extension host tests (`vscode-test`) and leave out the
+  _(R745, R882)_ — run the extension host tests (`vscode-test`) and leave out the
   lines VS Code itself prints when its own marketplace / chat / alert
-  lookups fail; results, failures and the exit code pass through unchanged.
+  lookups fail, and the one line it prints about `--no-cached-data` (a flag
+  `@vscode/test-electron` passes to it); each kind is counted and named in a
+  note of its own; results, failures and the exit code pass through unchanged.
 - [`bump_version.py`](bump_version.py) — bump version across
   `pyproject.toml`, `package.json`, README badges, etc. `--check`
   validates cross-file consistency.

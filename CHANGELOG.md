@@ -999,6 +999,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the files a real run changes (the files a real bump rewrote, one file behind at a time, a date
   that differs), the line for `CITATION.cff`, the warnings, and that nothing is written and no
   gate is run.
+- The VS Code extension host tests no longer print VS Code's complaint about `--no-cached-data`
+  (R882). Since `@vscode/test-electron` 3 (the dependency bump of #86; 2.5.2 did not) the VS Code
+  of the host tests is started with a fixed `--no-cached-data`. The command line parser inside
+  VS Code turns every `--no-<name>` into `<name>=false`, finds no option called `cached-data`
+  (it knows `no-cached-data`) and prints one line on every start, on Linux and on macOS:
+  `Warning: 'cached-data' is not in the list of known options, but still passed to
+  Electron/Chromium.` The run stayed green and the tests were untouched, but the output of the
+  host tests is meant to hold nothing but results, and our own `launchArgs` cannot remove the
+  line (`test-electron` puts them in front of its fixed arguments and has no switch to drop one).
+  The wrapper `scripts/run_vscode_host_tests.mjs` (R745) now also leaves out exactly that line,
+  counts it apart from the network lines and says so in a note of its own, which names the flag:
+  `(left out 1 line VS Code printed about --no-cached-data, a flag @vscode/test-electron passes
+  to it)`. Any other "is not in the list of known options" line, for any other option, stays, so
+  a misspelt option of ours still shows; the network lines, their note and the stack that goes
+  with a left-out network line are as before. Tried on the real thing, VS Code 1.110.0: its
+  command line printed the line when given `--no-cached-data`, and the previous wrapper passed it
+  on; through the new wrapper the line was gone, the note was printed, the exit code was 0, and a
+  second, unknown option (`--zz-unknown-option`) still got its own warning. The real host tests
+  in a copy of `main`, run twice with the previous wrapper and twice with the new one (99
+  passing, 2 pending, exit 0 each time), differ by that line on stderr and by the note at the
+  end, and by nothing else except timing figures and the network lookups that fail now and then,
+  which the network note counts as before. The new module (19 tests, 17 of which fail on the
+  previous script; 39 of 39 mutants killed) pins the line, the look-alikes that must stay, the
+  note and the two counts, the order of the two checks, and that the two streams are still
+  filtered independently.
 
 ### Removed
 
