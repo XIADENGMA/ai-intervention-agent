@@ -158,6 +158,6 @@
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^10.13.0",
     "globals": "^17.13.0",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }
