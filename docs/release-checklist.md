@@ -96,7 +96,7 @@ promote first; without that heading the script leaves the date alone and
 warns on stderr). Run as:
 
 ```sh
-uv run python scripts/bump_version.py X.Y.Z --dry-run  # preview
+uv run python scripts/bump_version.py X.Y.Z --dry-run  # preview: same checks and warnings, writes nothing
 uv run python scripts/bump_version.py X.Y.Z            # apply
 uv run python scripts/bump_version.py --check          # verify post-bump
 ```

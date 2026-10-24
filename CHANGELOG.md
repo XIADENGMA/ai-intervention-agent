@@ -975,6 +975,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `a..b.png` and the server kept it; with the previous code the page said "File name contains
   path traversal characters", and a `fetch` upload of the same name, sent as the browser
   encodes it, got `200` and no image.
+- `bump_version.py --dry-run` is now a preview of the real bump (R881). The flag returned before
+  the script read the version, a file or the changelog, and printed the same seven file names for
+  any input. So `--dry-run` with no version, with `not-a-version` or with `v1.8.13` answered 0
+  where the real run answers 2; a file that was missing, or one the script cannot rewrite (a bug
+  template with no `placeholder: e.g.` line, a `uv.lock` with no entry for the package), left the
+  preview at 0 where the real run stops with 1; the warnings of the real run (R874, the changelog
+  has no dated heading for the version; R183, an empty `[Unreleased]`) never appeared, although
+  the preview is where `docs/release-checklist.md` sends the person who releases; the list named
+  every file even when the tree was already at the version; and `--check --dry-run` ran the
+  preview and dropped `--check` without a word. The flag now runs the real path up to the point
+  where it would write, then prints the files that would change, in the order the script writes
+  them, and for `CITATION.cff` what happens to `version` and to `date-released` (the old and the
+  new date, or that the date stays because `CHANGELOG.md` has no `## [X.Y.Z] - YYYY-MM-DD`
+  heading); a tree that is already at the version is told so. It writes nothing and does not run
+  `--ci-gate`. `--check` and `--dry-run` exclude each other (exit 2). The checklist's line for the
+  flag says what the preview does. The real bump and `--check` are not changed: the old and the
+  new script gave the same exit code, output and files in 50 of 50 scenarios (a bump to a new
+  version, to a pre-release and to a build version, with and without a dated heading, with an
+  empty `[Unreleased]`, to the version the tree is at, with each file missing or broken, and
+  `--check` in the same cases). The new module (64 tests, 54 of which fail on the previous script;
+  29 of 29 mutants killed) pins the checks the preview shares with the real run, that the list is
+  the files a real run changes (the files a real bump rewrote, one file behind at a time, a date
+  that differs), the line for `CITATION.cff`, the warnings, and that nothing is written and no
+  gate is run.
 
 ### Removed
 

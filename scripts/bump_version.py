@@ -308,6 +308,48 @@ def _citation_date_warning(root: Path, new_version: str) -> str | None:
     )
 
 
+def _citation_dry_run_note(
+    root: Path, updated: str, new_version: str, release_date: str | None
+) -> str:
+    """``--dry-run`` 里 ``CITATION.cff`` 那一行的说明：会改哪些字段，日期怎么处理（R881）。"""
+    current = _read_text_or_none_quiet(root / "CITATION.cff")
+    if current is None:
+        return ""
+    fields: list[str] = []
+    if _extract_citation_version(current) != _extract_citation_version(updated):
+        fields.append("version")
+    old_date = _extract_citation_date(current)
+    new_date = _extract_citation_date(updated)
+    if old_date is not None and new_date != old_date:
+        fields.append(f"date-released {old_date} → {new_date}")
+    elif old_date is not None and release_date is None:
+        fields.append(
+            f"date-released 保持 {old_date} 不变，"
+            f'CHANGELOG.md 里没有 "## [{new_version}] - YYYY-MM-DD" 标题'
+        )
+    return f"  ({'；'.join(fields)})" if fields else ""
+
+
+def _dry_run_lines(
+    root: Path,
+    new_version: str,
+    release_date: str | None,
+    pending_writes: list[tuple[Path, str]],
+) -> list[str]:
+    """``--dry-run`` 打印的内容：真正 bump 时会改哪些文件（R881）。"""
+    if not pending_writes:
+        return [
+            f"所有目标文件已是 {new_version}，没有需要修改的文件（dry-run：未写文件）。"
+        ]
+    lines = [f"将同步版本号到 {new_version}（dry-run：未写文件），会修改："]
+    for path, updated in pending_writes:
+        line = f"- {path.relative_to(root).as_posix()}"
+        if path == root / "CITATION.cff":
+            line += _citation_dry_run_note(root, updated, new_version, release_date)
+        lines.append(line)
+    return lines
+
+
 def _changelog_unreleased_section(text: str) -> tuple[int, int] | None:
     """返回 ``[Unreleased]`` 区段在 ``text`` 中的 ``(start, end)`` 字节索引。"""
     head = re.search(r"^## \[Unreleased\]\s*$", text, re.MULTILINE)
@@ -349,7 +391,8 @@ def main(argv: list[str]) -> int:
         nargs="?",
         help="目标版本号（SemVer），例如 1.4.18 或 1.4.18-rc.1。不提供时：--check 会自动使用 pyproject.toml 的版本。",
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--check", action="store_true", help="仅检查是否已是该版本（不写文件）"
     )
     parser.add_argument(
@@ -357,8 +400,14 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="从 pyproject.toml 读取版本号作为目标版本（主要用于 --check；不建议用于实际 bump）。",
     )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="打印将修改的文件列表（不写文件）"
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "R881：按真正 bump 的流程校验并计算，只打印将修改的文件列表"
+            "（不写文件，也不执行 --ci-gate）。版本号不合法、文件缺失、更新失败时"
+            "与真正 bump 一样报错退出，警告也一样打印。不能与 --check 同用。"
+        ),
     )
     parser.add_argument(
         "--ci-gate",
@@ -383,20 +432,6 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     root = _repo_root()
-
-    if args.dry_run:
-        print("将同步版本号的文件：")
-        print("- pyproject.toml")
-        print("- uv.lock")
-        print("- package.json")
-        print("- package-lock.json")
-        print("- packages/vscode/package.json")
-        print("- .github/ISSUE_TEMPLATE/bug_report.yml")
-        print(
-            "- CITATION.cff  (version 字段；date-released 取自 CHANGELOG.md 里该版本的 "
-            '"## [X.Y.Z] - YYYY-MM-DD" 标题，没有这个标题就保持不变)'
-        )
-        return 0
 
     raw_version = (args.version or "").strip()
     if not raw_version:
@@ -720,6 +755,11 @@ def main(argv: list[str]) -> int:
             return 1
         if updated != raw:
             pending_writes.append((path, updated))
+
+    if args.dry_run:
+        for line in _dry_run_lines(root, new_version, release_date, pending_writes):
+            print(line)
+        return 0
 
     for path, content in pending_writes:
         _write_text_atomic(path, content)
