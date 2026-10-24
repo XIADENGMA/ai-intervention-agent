@@ -911,6 +911,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   scenario, a host without a `mime.types` file and a host whose file says something else,
   because the type table is process-wide state, and asks Flask for a shipped font; a third check
   holds every font extension shipped under `static/` to the registration.
+- The lock takes the fixes for two more advisories (R878). GitHub raised two Dependabot alerts on
+  `uv.lock`: #57, critical, the out-of-bounds write in the Brotli decoder that R875 fixed in
+  `brotli` (GHSA-9v8h-qqgm-4m35), which the same advisory also names in `brotlicffi`; and #58,
+  high, the Bash activator of `virtualenv` leaving the `--prompt` value unescaped in `PS1`, so
+  that the prompt expansion later runs it (GHSA-cx6f-vjhg-g3cc, CVE-2026-115586, a regression of
+  21.14.9). `pip-audit` reports neither on the previous lock, so `scripts/dependency_audit.py`
+  stayed green: `brotlicffi` is required where the interpreter is PyPy and is not audited on
+  CPython, and `pip-audit` finds nothing yet for `virtualenv` 21.14.12. `uv.lock` moves
+  `brotlicffi` 1.2.0.0 to 1.2.1.0 and `virtualenv` 21.14.12 to 21.14.13, and nothing else; it is
+  the file Dependabot's two pull requests (133 and 132) give when applied together, byte for
+  byte. No installed copy of the application changes: `flask-compress` asks for `brotlicffi` on
+  PyPy only (CPython uses `brotli`, fixed in R875), and `virtualenv` is a development-only
+  package, reached through `pre-commit`. No code changed.
 
 ### Removed
 
