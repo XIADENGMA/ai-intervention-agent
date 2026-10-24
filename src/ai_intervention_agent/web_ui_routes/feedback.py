@@ -46,19 +46,23 @@ def _sanitize_selected_options(raw: Any) -> list[str]:
     规则：
       1. 非 list → 空列表
       2. list 中的每个元素：非字符串则先用 str() 转；然后 strip；
-         过滤掉空字符串和超过 ``MAX_OPTION_LENGTH``（R166：10000 字符）
-         的异常长串；
+         过滤掉空字符串和超过 ``MAX_STORED_OPTION_LENGTH`` 的异常长串；
       3. 去重但保持顺序；
       4. 最多保留 50 项（上层 UI 一般也就几项，这里只做兜底防滥用）。
 
-    R166：单项长度上限从硬编码 500 → 引用 ``MAX_OPTION_LENGTH`` 常量
-    （当前 10000，对齐服务端 ``validate_input_with_defaults``），避免软
-    上限不一致让"前端提交"和"后端 schema 校验"两套数值漂移。
+    R166：单项长度上限从硬编码 500 → 引用 server_config 的常量，对齐服务端
+    ``validate_input_with_defaults``，避免软上限不一致让"前端提交"和"后端
+    schema 校验"两套数值漂移。
+
+    R858：上限是 ``MAX_STORED_OPTION_LENGTH``（10000 个字符加截断标记 ``...``），
+    不是 ``MAX_OPTION_LENGTH``：服务端把更长的选项截成这个长度再显示，用户勾选的
+    就是这份文字；上限再小一点，这个选项就被悄悄丢掉，AI 收不到用户选了什么，页面
+    却答"已提交"。
     """
     if not isinstance(raw, list):
         return []
 
-    from ai_intervention_agent.server_config import MAX_OPTION_LENGTH
+    from ai_intervention_agent.server_config import MAX_STORED_OPTION_LENGTH
 
     seen: set[str] = set()
     cleaned: list[str] = []
@@ -73,7 +77,7 @@ def _sanitize_selected_options(raw: Any) -> list[str]:
         item = item.strip()
         if not item:
             continue
-        if len(item) > MAX_OPTION_LENGTH:
+        if len(item) > MAX_STORED_OPTION_LENGTH:
             continue
         if item in seen:
             continue
@@ -243,20 +247,18 @@ class FeedbackRoutesMixin:
                     message:
                       type: string
               429:
-                description: 速率超限 (60 per minute)
+                description: 速率超限 (60 per minute)；响应头 `Retry-After` 给出建议等待的秒数
+                headers:
+                  Retry-After:
+                    type: integer
+                    description: 建议等待的秒数（≥ 1）
                 schema:
                   type: object
                   properties:
-                    status:
+                    error:
                       type: string
-                      enum: [error]
-                      description: 固定为 `error`
-                    message:
-                      type: string
-                      description: 错误说明文本（如 `rate limit exceeded`）
-                    retry_after:
-                      type: integer
-                      description: 建议客户端等待秒数（如 `60`）后重试
+                      enum: [rate_limit_exceeded]
+                      description: 固定为 rate_limit_exceeded
             """
             logger.info(f"收到提交请求 - Content-Type: {request.content_type}")
             logger.debug(f"request.files keys: {list(request.files.keys())}")
@@ -664,6 +666,7 @@ class FeedbackRoutesMixin:
                       enum: [success, waiting]
                     feedback:
                       type: object
+                      nullable: true
                       description: 反馈内容，无反馈时为 null
             """
             with self._state_lock:

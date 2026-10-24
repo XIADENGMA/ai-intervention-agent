@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `_web_ui_arguments() -> dict[str, Any]`
+
 ### `create_app() -> Any`
 
 ## Classes

@@ -49,6 +49,17 @@ external task queue backend. Multiple workers would each have their own task
 queue and SSE bus, so a task created in one worker could be invisible to a
 browser connected to another.
 
+The Web UI built this way takes the same address settings the MCP server gives the Web UI
+it starts: `network_security.bind_interface`, `web_ui.port`, `web_ui.external_base_url`,
+`mdns.hostname` and `network_security.trusted_hosts` (and the
+`AI_INTERVENTION_AGENT_WEB_UI_HOST` / `AI_INTERVENTION_AGENT_WEB_UI_PORT` overrides). They
+decide which `Host` names it accepts, so a reverse proxy that passes the original `Host` on
+needs its name in `trusted_hosts` or in `external_base_url`. They are read once, when the
+app is built: restart the WSGI server after changing one of them. If the configuration
+cannot be read, the app starts on the defaults (loopback and `ai.local` only) and the log
+says so. Where the server listens is decided by its own `--listen` / `--bind`, not by
+`bind_interface`.
+
 ## SSE Proxy Requirements
 
 `/api/events` is a Server-Sent Events stream. Reverse proxies must not buffer it.
@@ -65,11 +76,18 @@ location /api/events {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
     proxy_set_header Connection "";
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_buffering off;
     proxy_cache off;
     proxy_read_timeout 1h;
 }
 ```
+
+Keep the `X-Forwarded-For` line in this block. nginx does not carry the `proxy_set_header`
+lines of the block around a `location` into one that sets its own, so without it the stream
+reaches the Web UI with no client address and the access control judges every visitor of the
+stream as `127.0.0.1` (see
+[Client Address Behind a Reverse Proxy](#client-address-behind-a-reverse-proxy)).
 
 Behind a reverse proxy, also decide who may write. A request from a browser that
 changes state (`POST` / `PUT` / `PATCH` / `DELETE`, plus `GET /api/feedback`) is
@@ -132,6 +150,24 @@ A proxy that writes no header makes every visitor look like `127.0.0.1`, which t
 default `allowed_networks` lets in. With a CDN in front of nginx and the setting still
 at `1`, the Web UI judges the CDN's address instead of the visitor's.
 
+Waitress has to be told which proxy to trust. Since 3.0, unless it is given the proxy's
+address, it removes `X-Forwarded-For` (and `X-Forwarded-Host`, `X-Forwarded-Proto`,
+`X-Forwarded-Port` and `Forwarded`) from every request before the Web UI sees it,
+whatever the proxy wrote. Run as in the command at the top of this page, behind nginx, it
+makes every visitor look like `127.0.0.1`: the routes that only this machine may call
+(below) answer everyone nginx lets in, `blocked_ips` and `allowed_networks` judge nobody,
+and the rate limiter counts all visitors as one. Name the proxy and the header, and give
+the number of proxies in front of the Web UI (the same number as `trusted_proxy_hops`);
+Waitress then puts the visitor's address into `REMOTE_ADDR` itself:
+
+```bash
+waitress-serve --listen=127.0.0.1:8080 --threads=8 \
+  --trusted-proxy=127.0.0.1 --trusted-proxy-headers=x-forwarded-for --trusted-proxy-count=1 \
+  --call 'ai_intervention_agent.web_ui_wsgi:create_app'
+```
+
+Gunicorn and Flask's own server leave the header alone and need nothing extra.
+
 The routes that only this machine may call go by the same address:
 `POST /api/system/rotate-api-token`, `GET /api/system/api-token-info` and, unless a valid
 API token is sent, `POST /api/system/log-level`, `POST /api/system/open-config-file` and
@@ -151,6 +187,22 @@ Run these before treating a deployment change as healthy:
 curl -i http://127.0.0.1:8080/api/system/health
 curl -N http://127.0.0.1:8080/api/events
 uv run pytest -q tests/test_web_ui_wsgi_profile_r452.py tests/test_sse_last_event_id_r41.py
+```
+
+Behind a proxy, also ask from another machine, not from the server: the Web UI has to tell
+you apart from the machine it runs on.
+
+```bash
+curl -i http://<proxy address>/api/system/api-token-info
+```
+
+It must answer `403`. A `200` means the Web UI sees every visitor as `127.0.0.1`: the
+header is missing, or the server stripped it (see above). Then put that machine's address
+in `network_security.blocked_ips` (it applies within about 2 seconds); the stream has to
+refuse it like every other route:
+
+```bash
+curl -i -m 3 http://<proxy address>/api/events
 ```
 
 A healthy stream prints `: connected` at once and, while nothing happens, one

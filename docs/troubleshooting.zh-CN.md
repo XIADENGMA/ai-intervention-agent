@@ -13,7 +13,7 @@
 
 ## 1. Web UI 启动失败（端口被占用）
 
-**症状**：agent 一直拿到重调提示、始终没有问题弹出来（工具几秒内就返回，
+**症状**：agent 拿到重调提示、始终没有问题弹出来（工具几秒内就返回，
 不会等你）；MCP 日志里出现
 `端口 127.0.0.1:8080 已被占用（health-check 未识别为本服务）`（错误码
 `port_in_use`），或者 Web UI 日志里出现 `Address already in use` /
@@ -22,6 +22,21 @@
 **原因**：默认端口 `8080`（`web_ui.port`）被其他进程占用。常见有：
 之前残留的 `ai-intervention-agent` 进程、其他本地开发服务器、
 开机时被某个系统服务抢占。
+
+MCP 服务靠 `GET /api/health` 的响应认出自己的 Web UI：HTTP 200，且 JSON
+体是 `{"status": "ok"}`。别的程序在这个路径上回了 200 但内容不是这个
+（前端开发服务器最常见：任何路径都回一页 HTML），不会被当成 Web UI：日志
+会写出回应的是什么，你会得到上面那条 `port_in_use` 错误，而不是任务被发给
+那个程序。如果日志里说的是端口上的 Web UI 和 MCP 服务不是同一个*版本*，
+说明旧版本的 Web UI 进程还在跑（升级之前残留的）并且被继续复用：把它停掉
+（下面的 `lsof` 命令能找到它），或者换端口。
+
+连续失败的头两次，agent 拿到的是重调提示（一次失败不等于永久失败）；从第三次
+起，agent 拿到的是一段说明：写着哪里失败了（端口被占用时就是日志里那段，带两种
+换端口的办法），并请它停止调用、把原因告诉你，所以聊天窗口里看得到出了什么
+问题，而不是 agent 在原地空转。不会挡住任何后续调用：每次调用仍然真去连 Web
+UI，处理好原因之后，让 agent 再调一次 `interactive_feedback` 就行。没人回答不算
+失败：你不在座位上时，agent 按设计每隔几分钟重调一次，永远收不到这段说明。
 
 **修复**（按速度从快到慢）：
 
@@ -73,7 +88,9 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
   **Developer: Open Webview Developer Tools** 可以查看面板的控制台。
 - **企业网络拦截** —— 公司 Zscaler / 终端安全软件偶尔会拦
   VS Code 发起的 `localhost` 请求。要么找 IT 加白，要么把
-  `web_ui.host` 改成 `0.0.0.0` 走局域网 IP。
+  `ai-intervention-agent.serverUrl` 指向局域网 IP。Web UI 默认监听所有网卡；
+  只有把 `network_security.bind_interface` 改成了 `127.0.0.1` 才不是，
+  那就改回 `0.0.0.0`。
 
 ## 3. AI 调用了 `interactive_feedback` 后 Web UI 没看到任务
 
@@ -113,13 +130,13 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
 - **mDNS 只在绑定到非 loopback 接口时发布**。
   把 `network_security.bind_interface` 改成局域网 IP（比如 `192.168.x.y`）
   或者 `0.0.0.0`，不能是 `127.0.0.1`。（`bind_interface` 配置项在
-  `[network_security]` section 下，不是 `[web_ui]` —— 它在运行时会
-  覆盖 `web_ui.host`。）
+  `[network_security]` section 下，不是 `[web_ui]` —— `web_ui.host`
+  不决定监听地址。）
 - **macOS 休眠 / Wi-Fi 省电** 大约 5 分钟后会清掉 Bonjour 记录。
   要么 caffeinate 保持唤醒，要么手机刷一下页面 —— 通常重新解析
   是秒级的。
 - **企业 / 酒店 Wi-Fi 屏蔽 multicast**。换个人热点，或者在设置页
-  让它生成 IP 形式的 URL 二维码（`web_ui.host = "0.0.0.0"`
+  让它生成 IP 形式的 URL 二维码（`network_security.bind_interface = "0.0.0.0"`
   之后会显示）。
 
 ## 6. "Open in IDE" 按钮没反应 / 开错了编辑器
@@ -439,10 +456,10 @@ release.yml` 里找），不要走浮动。
 **症状** —— 监控面板某一行、CI 断言、或 `curl | jq` 管道一直显示
 "stale" / "—" / 缺字段，但 endpoint 实际返回 200 + 合法 JSON。
 
-- `curl /api/system/recent-logs | jq '.entries | length'` 返回 `null`
-  （实际读成了 `.logs`）。
-- `curl /api/system/health | jq '.checks.notification.status'` 返回
-  `undefined`（字段被悄悄重命名）。
+- `curl /api/system/recent-logs | jq '.logs'` 打印 `null`（`jq '.logs | length'`
+  打印 `0`，读起来就像"没有日志"）：列表在 `.entries` 下面。
+- `curl /api/system/health | jq '.checks.notification.status'` 打印
+  `null`：通知这一项的检查结果叫 `ok`，不叫 `status`。
 - Prometheus exporter 抓不到 per-provider streak 指标，尽管 JSON
   里明明有。
 

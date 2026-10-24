@@ -140,9 +140,45 @@ R25.2: 实际加载延迟到 ``get_sync_client``。
 
 TCP 端口检查，验证服务是否在监听
 
+### `_note_health_once(config: WebUIConfig, kind: str, message: str) -> None`
+
+同一个 ``(host, port, kind)`` 只打一次 WARNING。
+
+每次工具调用都会做一遍健康检查，同一个问题不能每次都刷一条日志。
+
+### `_own_version() -> str`
+
+本 MCP 进程所属包的版本号；读不到（源码直接运行）时返回空串。
+
+### `_body_preview(response: Any) -> str`
+
+响应体开头的几十个字符，写进日志帮人认出占着端口的是什么程序。
+
+### `_warn_if_other_version(config: WebUIConfig, theirs: object) -> None`
+
+连上的 Web UI 与本 MCP 进程不是同一个版本时，提醒一次，不拒绝。
+
+多个 IDE 窗口共用一个 Web UI，升级之后旧窗口起的 Web UI 可能还在跑；
+这种组合一直能用，所以只提醒。任何一边读不到版本号就不比较
+（老版本的 ``/api/health`` 没有 ``version``）。
+
+### `_is_this_web_ui(response: Any, config: WebUIConfig) -> bool`
+
+``GET /api/health`` 的响应是不是本服务的：HTTP 200 且 JSON ``status == "ok"``。
+
+只看 200 不够：别的程序占着这个端口时（8080 上常见的前端开发服务器对任何路径
+都回 200 加一页 HTML），会被当成已经在运行的 Web UI，既不启动 Web UI，也看不到
+“端口被占用”的提示，任务却发给了那个程序。本服务的每个版本都回
+``{"status": "ok"}``，认这个形状不会误伤任何已能正常工作的组合。
+
+永远不抛异常：响应读不出 JSON 也只是“不是本服务”。
+
 ### `health_check_service(config: WebUIConfig) -> bool`
 
 HTTP /api/health 检查，验证服务是否正常。
+
+“正常”指 HTTP 200 且响应是本服务的 ``{"status": "ok", ...}``，见
+``_is_this_web_ui``；别的程序占着端口并回 200 不算。
 
 R25.2: ``except httpx.HTTPError`` 在函数体内引用 ``httpx``，但走到这一步前
 ``create_http_session(config)`` 必然已通过 ``get_sync_client`` 把 httpx 加载好
@@ -265,6 +301,10 @@ R25.2: 函数体首行 ``import httpx`` 把 httpx 引入函数局部命名空间
 ``client`` 允许 ``interactive_feedback`` 复用本次调用已取出的
 AsyncClient，避免健康检查和后续 POST /api/tasks 分别做一次
 singleton lookup；未传入时保持历史行为。
+
+``/api/health`` 的响应必须是本服务的（见 ``_is_this_web_ui``）才算“已经在运行”；
+别的程序占着端口并回 200 时走启动流程，``start_web_service`` 发现端口被占用后
+抛 ``port_in_use``，而不是把任务发给那个程序。
 
 ### `cleanup_http_clients() -> None`
 

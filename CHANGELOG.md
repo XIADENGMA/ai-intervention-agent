@@ -461,6 +461,332 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   raises instead of being guessed at. The model's values were compared with `getComputedStyle`
   in Chrome on the old and on the new stylesheet, at three widths with a mouse and as a
   touch-only device: 2588 values, no difference.
+- An answer that the countdown sends on its own and the server refuses now says so, on the page
+  and in the VS Code panel (R854). Nobody presses anything when the countdown ends, and
+  `submitTaskFeedback` wrote a refusal to the console and nowhere else: a task that had been
+  answered from somewhere else in the meantime (the server's 409, "already answered") left the
+  page looking hung, a stopped server or a proxy's error page did the same, and the panel's
+  Submit said only `Submit failed (HTTP 409)` although the response carries the reason. Now the
+  page shows a red status message in the words of the Submit button: the status first (401,
+  403, 5xx), then the sentence the server gives (for a 409, "This task was already answered;
+  this answer was not sent"; also 413), then the generic "Submit failed"; a request that failed
+  before any answer came (offline, timed out) gets the message of its failure. A refusal need
+  not be JSON (a proxy's 502 is an HTML page), so the body is read tolerantly and the status
+  decides, and what goes wrong in the page's own clean-up after the server took the answer is
+  not reported as a failed submit. The panel's message is now "Submit failed: " followed by the
+  server's sentence when the response has one (trimmed, cut at 200 characters, waited for at
+  most 1.5 s so that a body that never comes cannot hold the panel) and stays "Submit failed
+  (HTTP N)" when it has none; the draft is kept in both cases, a 429 keeps its own handling and
+  never reads the body, and a 404 is not read before the retry on `/api/submit`. The server is
+  untouched and no string is new (`ui.submit.failedReason` was already in the three panel
+  languages). One limit stays: the server words its sentence in the language of the request's
+  `Accept-Language`, which is the browser's and not always the one picked in the page, and a
+  404 stays the generic "Submit failed". Seen in headless Chrome against real backends, before
+  and after: a 409, a 404, an unreachable server and a success on the page, and a 409 in the
+  panel. A new test, `test_submit_failure_reason_shown_r854.py` (106 tests, 99 of which fail on
+  the previous tree; 38 of 38 mutants killed), runs the real `multi_task.js` and the real
+  `submitWithData` in Node against a table of 21 refusals and 3 ways a request fails: what the
+  page shows (and that the Submit button shows the same for the same response, except in three
+  cases it names), what the panel logs, that the draft is kept and the panel freed, and that
+  the wait for the body never stays running; it also covers a failing clean-up after the answer
+  was taken, a status line that throws, a page without the helpers, the whole countdown path
+  and the three languages' message templates.
+- Everything that tells you how to choose the address the Web UI listens on now names the setting
+  that does it (R855). That setting is `network_security.bind_interface` (default `0.0.0.0`, every
+  interface), or the env var `AI_INTERVENTION_AGENT_WEB_UI_HOST` over it. `web_ui.host` is only a
+  fallback for a config that has no `bind_interface`, and a config merged with the defaults always
+  has one, so setting `web_ui.host` alone changes nothing: a real start of the Web UI with
+  `web_ui.host = "127.0.0.1"` listened on every interface (`*:PORT` in `lsof`), the same as with
+  no setting, while `bind_interface = "127.0.0.1"` gave `127.0.0.1:PORT`. The product kept sending
+  people to the dead key: the Bark hint of the settings page and of the VS Code panel ("or change
+  `web_ui.host` to 0.0.0.0", in all three languages of both), two Bark log lines, the two "cannot
+  reach the Web UI" errors, the troubleshooting guide in both languages (the firewall answer and
+  the QR-code answer), the comment on `host` in `config.toml.default`, the configuration guides
+  (the `host` row, the host-selection rule, the row of the env var, and the table of what needs a
+  restart, which listed `web_ui.host`), and the README, which gave `127.0.0.1` as the default of
+  `AI_INTERVENTION_AGENT_WEB_UI_HOST` although it is `0.0.0.0`. Someone who followed any of them
+  to keep the Web UI local got a listener on every interface. They now name
+  `network_security.bind_interface`, and the configuration guides say in so many words that
+  `web_ui.host = "127.0.0.1"` does not make the Web UI local-only. `scripts/manual_test.py --host`
+  wrote the same dead key and so never changed the address; it now sets the env var. Behaviour is
+  unchanged: the default stays `0.0.0.0`, `web_ui.host` stays a fallback and the env var still
+  wins; only text and that script changed. If you set `web_ui.host` in your own `config.toml` to
+  restrict the Web UI, it never did; set `network_security.bind_interface = "127.0.0.1"` instead.
+  A new test, `test_listen_address_guidance_r855.py` (15 tests, 12 of which fail on the previous
+  tree; 43 of 43 mutants killed), starts from real config files: eleven combinations of the two
+  settings and the env var (the default, `web_ui.host` alone, `bind_interface` alone, both, the
+  env var over each, a blank env var) and the address `get_web_ui_config` returns for each; every
+  string of the package (messages and docstrings) and of the six locale files must not name
+  `web_ui.host`; the Bark hint of both surfaces in the three languages must name
+  `network_security.bind_interface` and still offer `web_ui.external_base_url`; each guide may
+  name `web_ui.host` only in a sentence that says it decides nothing; the comments of `host` and
+  `bind_interface` in `config.toml.default`, the README's default and the `--host` option (with
+  the real script loaded) are checked too.
+- The MCP server no longer takes another program on the Web UI's port for the Web UI (R856). It
+  asked `GET /api/health` and read any HTTP 200 as "the Web UI is running". Port 8080, the
+  default, is also the default port of front-end dev servers (webpack-dev-server, Vue CLI), which
+  answer every path with 200 and a page of HTML. With one of them there, a real stdio MCP server
+  found "the Web UI is already running", sent the task to the dev server (`GET /api/health`, then
+  `POST /api/tasks` in the dev server's log) and gave the agent the re-call prompt after 0.1 s,
+  with nothing in its own log to say why. `start_web_service` had the same blind spot in its own
+  "already running" shortcut, so the `port_in_use` message, with the `lsof` command and the two
+  ways to change the port, could not be reached. Now only HTTP 200 with a JSON object whose
+  `status` is `"ok"` counts, which is what every version of the Web UI has always answered, so
+  nothing that worked stops working (a real Web UI of the previous release, which has no
+  `version`, was used by the new MCP server exactly as before). Anything else is another program:
+  the log says once per port what answered (the port and the first 80 characters of its answer),
+  the normal start path finds the port taken and raises `port_in_use`, and the other program is
+  asked nothing but the health request (the same dev server, after: `GET /api/health` twice and no
+  `POST`, and the log carries the line and the `port_in_use` error). `/api/health` now also
+  reports `version`, the same package version `/api/capabilities` gives as `server_version`. When
+  the Web UI that is already running has another version than the MCP server (an orphan from
+  before an upgrade, a window that has not been restarted), one warning says so, with both
+  versions and how to replace the old one (the `lsof` command, or another `web_ui.port`). It is
+  still used, because that combination has always worked; a missing, unknown or equal version, or
+  a local version that cannot be read, is silent. The troubleshooting guide says in both languages
+  how the Web UI is recognised and what the two lines mean. A new test,
+  `test_web_ui_identity_check_r856.py` (96 tests, 56 of which fail on the previous tree, the other
+  40 pin what did not change; 26 of 26 mutants killed), puts a real HTTP server on a port and asks
+  both checks, the sync `health_check_service` and the async `ensure_web_ui_running`, about 23
+  answers (this Web UI's, with and without `version` and extra keys, and 19 others: HTML, plain
+  text, empty, a JSON list, string, null or number, another shape, a `status` other than `ok`,
+  broken JSON, bytes that are not text, and `ok` bodies with a 301, 404 or 503) for the same
+  verdict, one line per port and no line for a plain error status; it covers the version rules
+  (once per port and version, eight silent cases, an unreadable local version, a version read once
+  from the installed package), the real `ensure_web_ui_running` and `start_web_service` against a
+  dev server (they raise `port_in_use`, ask it only for `/api/health` and spawn nothing) and
+  against this Web UI (left alone), and a real Web UI served in the test (its `/api/health`
+  carries the version, both checks pass without a warning, another local version is noticed).
+- When the MCP server cannot hand a question to the Web UI, the agent is no longer sent round the
+  same loop for ever (R857). Every failed call (a port held by another program, a Web UI that
+  cannot be started, a task POST that was refused or not answered, a wait that ended in an error)
+  returned the configured `resubmit_prompt` and the agent obeyed at once. Failures like a taken
+  port come back immediately and are the same on every try: a real stdio MCP server with another
+  program on the port answered four calls in a row after 0.10, 0.00, 0.00 and 0.00 seconds with
+  the same sentence, so the agent ran at the speed of the model and the user saw a row of tool
+  calls and was never told what was wrong. The failures are now counted. The first two get the
+  re-call prompt as before, because one failure is not a permanent one (the Web UI may be
+  restarting). From the third in a row the reply says how many calls failed, why the last one
+  did, and asks the agent to stop calling and tell the user, in Chinese and English. The reason
+  quotes the project's own errors as written (a taken port brings the `lsof` command and the two
+  ways to change the port) and other exceptions with their class name, on one line of at most 400
+  characters; of a refused task POST only the Web UI's own JSON `error` field is quoted, never the
+  plain-text body of whatever else answered. The reply carries no `prompt_suffix`, which asks the
+  agent to call more. The count blocks nothing: every call still tries the Web UI, so after the
+  user has fixed the cause the next call is a normal one (on the real server, after the
+  explanation the port was freed and the next call was answered; with the port taken again, the
+  first two failures got the re-call prompt and the third the explanation). An answer clears the
+  count, and so does a wait that ends without one (a timeout, a lost task): a user who is away
+  makes the agent re-call every few minutes by design, and that is never reported as an outage. A
+  cancelled call and an invalid argument (`ToolError`) leave the count alone, and every call is
+  still counted once in `failed_total`. The description of the tool tells the agent what the third
+  failure means, and the troubleshooting guide says so in both languages. A new test,
+  `test_feedback_stops_retry_loop_r857.py` (39 tests, 35 of which fail on the previous tree, the
+  other 4 pin what did not change; 32 of 32 mutants killed), drives the real `interactive_feedback`
+  through seven kinds of failure (a task POST refused with 409, 429 and 500, an unreachable Web
+  UI, a wait error, a taken port, an unexpected exception) and checks the first two replies, the
+  third, and that the count keeps growing; how the reason is written (own errors as they are,
+  class names, an empty message, one line cut at 400 characters, a plain-text body not forwarded,
+  the Web UI's error field shortened); what clears the count and what leaves it alone (an answer,
+  a wait without an answer, a cancelled call, an invalid argument); that a Web UI that is back is
+  used by the very next call; the counters and the warning in the log; and that the description,
+  the single reply exit, the lock and the test fixture are in place.
+- An option the server itself cut to fit can be ticked and sent back (R858). The MCP server cuts
+  an option longer than 10 000 characters at that length and adds `...`, so the page shows, and
+  the user can tick, an option of 10 003 characters. `POST /api/submit` (the route the page and
+  the VS Code panel fall back to when they have no active task id) cleaned `selected_options`
+  with a limit of 10 000 in all three encodings it reads (urlencoded form, multipart with
+  images, JSON), so the option the user had just ticked was thrown away without a word while the
+  route answered `200`: the page cleared the text box, and the agent got the user's other ticks
+  but not this one. A real stdio MCP server, an option of 20 000 characters and a short one,
+  both ticked through each of the three encodings, returned `选择的选项: short option` three
+  times; it now returns both, the long one exactly as the server stored it. The limit is now
+  `MAX_STORED_OPTION_LENGTH`, the cut length plus the mark. It is named in `server_config` next
+  to `MAX_OPTION_LENGTH` and the cut itself is made with the same mark, so the two cannot drift
+  apart again. A string longer than that is still dropped, and the task route
+  (`/api/tasks/<id>/submit`), which never had a length limit, is unchanged. The new module (36
+  tests, 19 of which fail on the previous behaviour; the other 17 pin what did not change; 15 of
+  15 mutants killed) round-trips options of every length around the limit through both cleaners
+  and through the real route in all three encodings (a cut that lands on a space, a cut through
+  non-ASCII text, the neighbours and their order, ticking only the cut option), checks that the
+  limit is still a limit (one longer than anything stored is dropped, exactly the limit is kept,
+  the other rules of the cleaner), and that the task route and the constants are as described.
+- A `500` answer no longer carries the text of the exception that caused it (R859). Every Web UI
+  route that fails on the server's side answers with a fixed or localised text and writes the
+  cause, with the traceback, to the log; two did not. `GET /api/loops` answered
+  `{"success": false, "error": str(e)}` and `POST /api/update-language` answered
+  `{"status": "error", "message": str(e)}`. The text of the usual failures there is an `OSError`
+  that names a file (`[Errno 13] Permission denied: '/Users/<name>/.config/ai-intervention-agent/config.toml'`),
+  so a caller that is allowed to reach the page (`allowed_networks`) learned the account name and
+  the directory layout of the machine. They now answer `服务器内部错误` and the localised
+  `Update failed`, the same as their neighbours; the cause is still in the log, and `/api/loops`
+  now logs it with its traceback like the others. The page only looks at the status of both
+  answers, so nothing it shows changes. The new module (38 tests, 6 of which fail on the previous
+  behaviour; the other 32 pin what did not change and the checker's own cases; 19 of 19 mutants
+  killed) checks both routes, the log, the working paths and the `400` for an unsupported
+  language, and applies a static rule to `web_ui.py` and `web_ui_routes/*.py`: no
+  `except ... as name` block answers with a status of 500 or above, or one that cannot be read,
+  and puts `name` into the response other than as `type(name).__name__`.
+- The OpenAPI text of the error answers now says what the routes answer (R860). The error schemas
+  in the route docstrings were written to raise the coverage ratchets (R422-R446), and a ratchet
+  cannot tell a schema that is true from one that is not; read against the code, many were not.
+  `GET /api/tasks`, `/api/loops`, `/api/tasks/export` and `/api/tasks/<id>` documented
+  `{"status": "error", "message": ...}`; they answer `{"success": false, "error": ...}`.
+  `POST /api/tasks` (400, 409, 500), `POST /api/system/open-config-file` (400, 403, 500) and
+  `POST /api/system/log-level` (400, 403) documented a `message` field and "classification
+  codes" (`invalid_payload`, `duplicate_task_id`, `queue_full`, `path_not_found`, `non_loopback`,
+  `invalid_level`) that exist nowhere in the code: `error` is the text and there is no
+  `message`. `POST /api/tasks/<id>/extend` documented `extends_exhausted` for its 422; the code,
+  and the VS Code panel that tests for it, use `extends_limit_reached`. `POST /api/submit` and
+  `POST /api/system/rotate-api-token` documented a 429 body with `retry_after`; the limiter
+  answers `{"error": "rate_limit_exceeded"}` and puts the wait in the `Retry-After` header,
+  which the schemas now list. `GET /api/system/health` documented `timestamp` in its 503 body
+  (the field is `ts_unix`); `rotate-api-token` said the new token is usually 64 characters (it
+  is 43); `api-token-info` said `token_length` is `0` without a token (it is `null`, as is
+  `age_seconds` when there is no usable timestamp); and `log-level` said only loopback may call
+  it (a valid API token works too, as for `open-config-file`). Text only: no route answers
+  differently. The new module (73 tests, 18 of which fail on the previous docs; the other
+  55 pin docs that were true and the checkers' own cases; 38 of 38 mutants killed)
+  applies two rules to every documented 4xx / 5xx answer, so the next schema that documents what
+  the code does not fails: each property can be produced by the route (a dict literal in a
+  `return` with that status, a return whose status the code cannot read, a helper the route
+  calls, or the answer the app gives to every route), and each `error` / `code` / `reason` value
+  and every `snake_case` word in the response or property description is a string of the source.
+  It also checks the token length, the `null` token length and the real 429 body and header
+  against the running routes.
+- `GET /api/system/metrics` and `GET /api/tasks/export?format=markdown` now answer a `Content-Type`
+  that names its `charset` once (R861). Both routes passed a `mimetype` that already carried
+  `; charset=utf-8`, and Werkzeug appends `; charset=utf-8` to every `text/*` mimetype itself
+  without reading what the string says, so the headers were
+  `text/plain; version=0.0.4; charset=utf-8; charset=utf-8` and
+  `text/markdown; charset=utf-8; charset=utf-8`. Nothing visibly broke (browsers read the first
+  `charset`, and Go's `mime.ParseMediaType`, which Prometheus uses on the scrape, accepts a
+  repeated parameter whose values are equal), but the value was not the one the Prometheus
+  client libraries send, and a stricter parser rejects it. The metrics route now passes the
+  header as a `content_type` (used as it stands) and the export a bare `text/markdown`. The new
+  module (26 tests, 6 of which fail on the previous behaviour; the other 20 pin what did not
+  change and the checker's own cases; 30 of 30 mutants killed) asks every `GET` route of the Web
+  UI, for a file that exists and for one that does not, and fails on any `Content-Type` that
+  names a parameter twice; a static rule over the package does the same for every `mimetype=`
+  and `content_type=` literal, asking Werkzeug what a `mimetype` becomes.
+- A `mdns.service_name` that zeroconf refuses no longer ends the mDNS thread with a traceback
+  (R862). Zeroconf refuses a name that cannot be a DNS label (more than 63 bytes in UTF-8, so 22
+  Chinese characters are already too many, or an ASCII control character) with
+  `BadTypeInNameException`, which is neither an `OSError` nor a `ValueError`, the two classes the
+  `try` around `ServiceInfo` caught. The Web UI carried on, but the `ai-agent-mdns-register`
+  thread died with a traceback on stderr: nothing in the log, nothing on the console, and no
+  word about which setting to change. Any exception from building the `ServiceInfo` now
+  degrades like the failures next to it: one warning with the traceback that names the service
+  name, the publish IP and the limit, the usual `mDNS 发布失败 ... 已降级为仅通过 IP/localhost 访问`
+  line on the console, and nothing published. A name that is fine is published as before. The new
+  module (38 tests, 15 of which fail on the previous behaviour; the other 23 pin zeroconf's
+  behaviour for a table of names it refuses and takes, and that a good name is still published
+  as configured; 18 of 18 mutants killed) runs each refused name directly and in a thread as
+  `WebFeedbackUI.run` does, every class of exception from the construction, and the names that
+  must keep working.
+- A wrong method on an API route is now answered in JSON (R863). Flask answered it with
+  Werkzeug's own `405` page, an HTML document, while `handle_404` answers the paths under `/api/`
+  and `/metrics` in JSON and so do the `400`, `403`, `413`, `429` and `500` answers of the
+  routes, so a client that reads the body of an error answer as JSON failed on
+  `Unexpected token '<'` for `GET /api/submit` (the route is `POST`) instead of on the reason. A
+  `405` on an API path now answers `{"success": false, "error": "method_not_allowed"}` and the
+  `Allow` header HTTP requires (the methods the path serves, sorted). A page path (`POST /`) keeps
+  Werkzeug's page unless the client asks for JSON, which is the rule `handle_404` has always
+  applied and now shares with the new handler. The new module (17 tests, 6 of which fail on the
+  previous behaviour; the other 11 pin the page path, the `404` answers, `OPTIONS`, the right
+  method and a `405` with no valid method; 17 of 17 mutants killed) asks the URL map which method
+  each of the 40 API paths refuses (158 requests; never a method that another rule of the same
+  path serves, so no handler runs) and holds the sweep to reach every API path.
+- The event stream no longer sets a hop-by-hop header, so Waitress can serve it (R864).
+  `GET /api/events`, the stream the page and the VS Code extension listen to, was built with
+  `Connection: keep-alive`. PEP 3333 forbids a WSGI application to set `Connection`,
+  `Keep-Alive`, `Proxy-Authenticate`, `Proxy-Authorization`, `TE`, `Trailers`,
+  `Transfer-Encoding` and `Upgrade`, and servers differ in what they do about it: gunicorn
+  drops the header, Werkzeug's development server (the default `run()` path) sent it and then
+  its own `Connection: close`, so the answer named `Connection` twice, and Waitress, which
+  `docs/deployment.md` offers for Windows and simple deployments, raises an `AssertionError`
+  (`Connection is a "hop-by-hop" header; it cannot be used by a WSGI application`) from
+  `start_response`. Under Waitress every request for the stream was therefore a `500` with a
+  traceback in the log, and no event ever arrived over it. The header is gone
+  (`Cache-Control: no-cache` and `X-Accel-Buffering: no` stay; an HTTP/1.1 connection is
+  persistent anyway): a real Waitress, run in a sandbox, now answers the stream with `200`,
+  chunked, `: connected` at once and a `task_changed` event as soon as a task is added. The new
+  module (32 tests, 6 of which fail on the previous behaviour; the other 26 pin the other
+  sweeps and the checker's own cases; 26 of 26 mutants killed) serves the stream with the
+  standard library's `wsgiref` handler, which makes the check Waitress makes, asks every `GET`
+  route (45 URLs, the stream read for its first frame) and three paths no route matches, every
+  method each API route refuses (158 requests) and `OPTIONS` on every route (54 URLs) for a
+  hop-by-hop header, holding the sweeps to reach every route, and a static rule reads the 53
+  modules of the package and fails on any `headers=` literal, assignment to a `headers`
+  mapping, `headers.add`, `set` or `setdefault` call or `return body, status, {...}` tuple that
+  names one.
+- A HEAD request for the event stream no longer leaves a subscriber on the bus (R865). Flask
+  answers HEAD for a `GET` route by running the view and dropping the body, and the view of
+  `/api/events` subscribed a queue to the SSE bus before it returned a generator whose `finally`
+  takes the queue off again; with no body to send, the server never starts the generator, so
+  every HEAD left its queue behind (a real Waitress reported `aiia_sse_subscriber_count 5` after
+  five of them). Only `emit()` removed such a queue, once 48 events had piled up in it, as a
+  client that stopped reading: the `backpressure_discards` figure counted clients that never
+  existed, and each `emit()` put its event in the dead queues until then. A HEAD now answers
+  the status and headers of the `GET` (`text/event-stream`, `Cache-Control: no-cache`,
+  `X-Accel-Buffering: no`, no `Content-Length`) and touches nothing else; a `GET` is unchanged
+  (it subscribes while the view runs, so an event emitted before the first frame is read still
+  reaches it, and closing it unsubscribes). The new module (8 tests, 6 of which fail on the
+  previous behaviour; the other 2 pin the `GET`; 15 of 15 mutants killed) runs each case on a bus
+  of its own and sends a HEAD to every `GET` route of the Web UI (45 URLs), holding the sweep to
+  reach the stream.
+- The deployment guides' proxy settings now give the Web UI the visitor's address (R866). The
+  nginx block for `/api/events` set `Connection` and nothing else, and nginx does not carry the
+  `proxy_set_header` lines of the block around a `location` into one that sets its own, so the
+  stream reached the Web UI without a client address, and a visitor on `blocked_ips`, refused by
+  every other route, got `200` and `: connected` from it (nginx 1.31 in front of Waitress,
+  gunicorn and Flask's server, in containers). And Waitress, run as the guides say, removes
+  `X-Forwarded-For` from every request unless it is told which proxy to trust (its default
+  since 3.0), so behind nginx every visitor was this machine: another machine got `200` from
+  `GET /api/system/api-token-info` and a visitor on `blocked_ips` got `200` everywhere. The
+  guides now write the header in the stream's block, give the Waitress command that trusts the
+  proxy (`--trusted-proxy=127.0.0.1 --trusted-proxy-headers=x-forwarded-for
+  --trusted-proxy-count=1`) and add two lines to the validation checklist that ask from another
+  machine. With them all four servers refused that visitor on every route, the stream included,
+  and an allowed visitor still got `: connected` within a hundredth of a second. The new module
+  (32 tests, 7 of which fail on the previous guides; 46 of 46 mutants killed) reads the nginx
+  snippets and the Waitress command of both guides and holds the Web UI to what they say: a
+  table of visitors, and every `GET` route against a visitor the proxy named.
+- The WSGI factory now builds the Web UI with the settings the MCP server gives the Web UI it
+  starts (R867). `create_app()` read none of them, so behind Waitress or gunicorn
+  `network_security.trusted_hosts`, `web_ui.external_base_url` and `mdns.hostname` did not decide
+  which `Host` names the Web UI accepted, and the fix `docs/troubleshooting.md` gives for a proxy
+  that passes `Host` on (`proxy_set_header Host $http_host;` plus the name in `trusted_hosts`)
+  still ended in `400` there: with nginx 1.31 in front, in containers, Flask's server accepted
+  the name and Waitress and gunicorn refused it. The factory now reads `get_web_ui_config()`, the
+  function that builds the Web UI process's command line, and hands `host`, `port`,
+  `external_base_url`, `mdns_hostname` and `trusted_hosts` to `WebFeedbackUI`; all three servers
+  then answer alike for every case tried (the default names, `trusted_hosts`, `external_base_url`,
+  `mdns.hostname`, a name nobody listed). An unreadable configuration starts the app on the
+  defaults with one warning. The app is also built once, under a lock: four first requests that
+  arrived together built four apps. The WSGI section of both deployment guides says which
+  settings the app takes and that they are read once, when it is built. The new module (23 tests,
+  20 of which fail on the previous tree; 28 of 28 mutants killed) holds the factory to the
+  command line.
+- The OpenAPI text of a success answer now says what the route answers (R868). R860 read the
+  error answers against the code; this reads the success answers. Every `/api/` route that does
+  not act on the machine was asked what it answers in three states of the queue (no task, a task
+  with options next to one without, an answered task), and each answer was checked against the
+  schema its own docstring declares. Eight properties are `null` in some state but were declared
+  plain `string`, `array`, `object` or `number`, so a client generated from the description, or a
+  validator run against it, rejected the answer: `task_id` and `predefined_options` of
+  `GET /api/config`, `feedback` of `GET /api/feedback`, `p50_ms` and `p95_ms` of
+  `GET /api/system/sse-stats`, and `predefined_options`, `predefined_options_defaults` and
+  `result` of `GET /api/tasks/{task_id}` (whose description also said an unanswered task has "an
+  empty object" as its result; it is `null`). They are now `nullable: true` and say when.
+  `POST /api/update-language`, the route the language menu calls, had no OpenAPI text at all; it
+  now lists the four languages and its `200`, `400` (the `invalid_json` / `invalid_body` codes
+  belong to a body that is not a JSON object, not to an unsupported language) and `500` answers.
+  Two `curl | jq` examples in section 13 of the troubleshooting guide described their output
+  wrongly; they now show `.logs` (prints `null`; the list is under `.entries`) and
+  `.checks.notification.status` (prints `null`; the check answers with `ok`). The new module
+  (46 tests, 23 of which fail on the previous tree; 57 of 57 mutants killed) holds the
+  descriptions to the answers.
 
 ### Removed
 

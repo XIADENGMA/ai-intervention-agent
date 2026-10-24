@@ -7,6 +7,11 @@
 #   “Dependabot reviewers configuration option being replaced by code owners”），写了也不起作用。
 #   Dependabot PR 上的 review 请求由 `.github/CODEOWNERS` 的 `* @xiadengma` 发出。
 #
+# 标签：`labels:` 只写仓库里真实存在的 `dependencies`。仓库里没有的标签（这里原来写的
+#   `python`、`github-actions`、`npm`）GitHub 不会替你创建，Dependabot 直接忽略它们；
+#   而配置了 `labels:` 就会取代 Dependabot 的默认标签，所以 `dependencies` 要明写。
+#   想按生态区分标签：先在仓库里创建标签（Settings → Labels），再把它加到对应的 `labels:`。
+#
 # 关于 `groups:`：
 #   把大量琐碎的 patch/minor 合成单 PR，显著降低 dependabot 噪音。
 #   major 升级始终独立 PR（`update-types: ["major"]` 从默认 group 剔除），
@@ -22,10 +27,9 @@ updates:
       interval: 'monthly'
       time: '09:00'
       timezone: 'Asia/Shanghai'
-    # PR 标签
+    # PR 标签（为什么只有一个：见文件头的“标签”）
     labels:
       - 'dependencies'
-      - 'python'
     # 提交消息前缀
     commit-message:
       prefix: 'chore(deps)'
@@ -52,7 +56,6 @@ updates:
       timezone: 'Asia/Shanghai'
     labels:
       - 'dependencies'
-      - 'github-actions'
     commit-message:
       prefix: 'chore(ci)'
     open-pull-requests-limit: 5
@@ -74,7 +77,6 @@ updates:
       timezone: 'Asia/Shanghai'
     labels:
       - 'dependencies'
-      - 'npm'
     commit-message:
       prefix: 'chore(deps-npm)'
     open-pull-requests-limit: 5

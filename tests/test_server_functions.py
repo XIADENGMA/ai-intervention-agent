@@ -1090,6 +1090,7 @@ class TestHealthCheckService(unittest.TestCase):
         mock_session = MagicMock()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
+        mock_resp.json.return_value = {"status": "ok"}
         mock_session.get.return_value = mock_resp
         mock_session_fn.return_value = mock_session
 
@@ -2860,6 +2861,7 @@ class TestEnsureWebUIRunningExtended(unittest.TestCase):
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
+        mock_resp.json.return_value = {"status": "ok"}
 
         mock_client = MagicMock()
         mock_client.get = AsyncMock(return_value=mock_resp)
@@ -2874,6 +2876,7 @@ class TestEnsureWebUIRunningExtended(unittest.TestCase):
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
+        mock_resp.json.return_value = {"status": "ok"}
 
         mock_client = MagicMock()
         mock_client.get = AsyncMock(return_value=mock_resp)

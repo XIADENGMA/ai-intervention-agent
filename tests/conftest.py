@@ -178,6 +178,27 @@ def _reset_log_duplicate_window():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_feedback_failure_streak():
+    """每个用例都从“还没有连续失败过”开始（R857）。
+
+    ``interactive_feedback`` 在进程里数连续失败：第三次起不再回“请立即重调”，而是
+    说明原因。这个计数跟着模块活整个 pytest 进程，前面的用例失败过两次，后面用例
+    的第一次失败就会拿到另一种回复——用例是否通过取决于执行顺序。
+    只在模块已经被导入时才动它：没导入过就没有计数，也不该为此付一次导入。
+    """
+
+    def reset() -> None:
+        module = sys.modules.get("ai_intervention_agent.server_feedback")
+        clear = getattr(module, "reset_failure_streak_for_testing", None)
+        if clear is not None:
+            clear()
+
+    reset()
+    yield
+    reset()
+
+
 def snapshot_global_log_levels() -> Callable[[], None]:
     """记录 root logger、root 上所有 handler 和 werkzeug 当前的级别，返回还原它们的函数。"""
     root = logging.getLogger()

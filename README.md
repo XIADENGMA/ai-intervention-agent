@@ -257,7 +257,7 @@ On first run, `config.toml` is created from [`config.toml.default`](config.toml.
 For `uvx`, Docker, systemd, or SSH-remote runtimes where editing the file is awkward, the most-used `web_ui` settings can be overridden by env var at startup (invalid values log a `WARNING` and fall back safely; full surface in [`docs/configuration.md#environment-variable-overrides`](docs/configuration.md#environment-variable-overrides)):
 
 ```bash
-export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # default 127.0.0.1
+export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # listen address, default 0.0.0.0 (all interfaces)
 export AI_INTERVENTION_AGENT_WEB_UI_PORT=8181         # default 8080, range [1, 65535]
 export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=en       # auto / en / zh-CN / zh-TW
 uvx ai-intervention-agent
@@ -292,7 +292,7 @@ On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and po
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp) (poliva) | ~310 | Direct ancestor fork (see Acknowledgements); minimal Python MCP, single feedback dialog. |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp) (Pursue-LLL) | ~30 | Independent smaller-scale fork emphasising minimal dependencies. |
 
-Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (12,100+ tests + 1,300+ subtests across 40 audit cycles), and releases run through a 4-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
+Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (12,500+ tests + 1,300+ subtests across 40 audit cycles), and releases run through a 4-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
 
 Feature gaps (contributions welcome): Speech-to-Text input, always-on-top native window, Cursor usage monitoring, multi-tab session merging UI.
 

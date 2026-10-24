@@ -381,8 +381,9 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                     if _bark_url_is_loopback(rendered):
                                         logger.warning(
                                             f"bark_url_template 渲染结果命中回环地址 {rendered!r}，"
-                                            "已抑制 url 字段；建议将 web_ui.host 改为 0.0.0.0 "
-                                            "或在设置面板配置 external_base_url 为 LAN/公网 URL"
+                                            "已抑制 url 字段；建议将 network_security.bind_interface "
+                                            "改为 0.0.0.0，或在设置面板配置 external_base_url "
+                                            "为 LAN/公网 URL"
                                         )
                                     else:
                                         url_value = rendered
@@ -390,9 +391,9 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                     hint = ""
                                     if "{base_url}" in template and not base_url:
                                         hint = (
-                                            "；base_url 为空（web_ui.host 是回环地址且没有配置 "
-                                            "external_base_url），请在设置面板配置 "
-                                            "web_ui.external_base_url 或启用 mDNS"
+                                            "；base_url 为空（监听地址 network_security.bind_interface "
+                                            "是回环地址且没有配置 external_base_url），"
+                                            "请在设置面板配置 web_ui.external_base_url 或启用 mDNS"
                                         )
                                     logger.warning(
                                         f"bark_url_template 渲染结果不是合法 URL，已忽略: "

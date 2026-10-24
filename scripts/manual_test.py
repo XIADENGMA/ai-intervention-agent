@@ -140,6 +140,7 @@ AI Intervention Agent 智能介入代理测试工具
 import argparse
 import atexit
 import json
+import os
 import signal
 import sys
 import threading
@@ -1092,7 +1093,10 @@ def setup_test_environment(args):
                 return False
 
         if args.host is not None:
-            config_mgr.set("web_ui.host", args.host, save=False)
+            # 监听地址取自 network_security.bind_interface，``web_ui.host`` 不起作用；
+            # 而 network_security 不在 ConfigManager 的内存配置里，进程内改它的受支持
+            # 方式是环境变量（docs/configuration.md「环境变量覆盖」）。
+            os.environ["AI_INTERVENTION_AGENT_WEB_UI_HOST"] = args.host
             config_updated = True
             print(f"📌 设置主机: {args.host}")
 

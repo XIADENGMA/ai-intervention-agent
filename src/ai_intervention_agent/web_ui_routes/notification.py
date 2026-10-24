@@ -1388,21 +1388,31 @@ class NotificationRoutesMixin:
                   properties:
                     success:
                       type: boolean
+                      enum: [false]
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误说明文本（如 `invalid provider`）
+                      enum: [invalid_provider]
+                      description: 固定为 invalid_provider
+                    message:
+                      type: string
+                      description: 说明文字：provider 必须是哪几个之一、当前传入了什么
               500:
-                description: 通知系统不可用
+                description: 通知系统不可用，或发送失败
                 schema:
                   type: object
                   properties:
                     success:
                       type: boolean
+                      enum: [false]
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误说明文本
+                      enum: [notification_unavailable, dispatch_failed]
+                      description: 机器可读的原因：notification_unavailable=通知系统不可用，dispatch_failed=发送失败
+                    message:
+                      type: string
+                      description: 人类可读的说明（语言随请求的 Accept-Language）
             """
             _ensure_notification_loaded()
             if notification_manager is None:

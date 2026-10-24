@@ -15,7 +15,7 @@ right channel.
 
 ## 1. Web UI does not start (port already in use)
 
-**Symptom**: the agent keeps getting the re-call prompt and no question
+**Symptom**: the agent gets the re-call prompt and no question
 ever shows up (the tool returns within seconds instead of waiting for you);
 the MCP log shows `端口 127.0.0.1:8080 已被占用（health-check 未识别为本服务）`
 (error code `port_in_use`), or the Web UI log shows `Address already in use` /
@@ -25,6 +25,25 @@ the MCP log shows `端口 127.0.0.1:8080 已被占用（health-check 未识别�
 `web_ui.port`). Common culprits: a previous orphaned `ai-intervention-agent`
 process, another local dev server, or a system service that grabbed
 the port at boot.
+
+The MCP server recognises its Web UI by the answer to `GET /api/health`:
+HTTP 200 with the JSON body `{"status": "ok"}`. A program that answers 200
+there with anything else (a front-end dev server is the usual one: it answers
+every path with a page of HTML) is not taken for the Web UI. The log says what
+answered, and you get the `port_in_use` error above instead of tasks being
+sent to that program. If the log instead says the Web UI on the port is
+another *version* than the MCP server, an older Web UI process is still
+running (an orphan from before an upgrade) and is being reused: stop it
+(the `lsof` command below shows it) or change the port.
+
+The first two failed calls in a row get the re-call prompt (one failure is
+not a permanent one). From the third on, the agent is told what failed (for a
+taken port, the same text as in the log, with the two ways to change the port)
+and asked to stop calling and tell you, so the chat says what is wrong instead
+of the agent spinning. Nothing stays blocked: every call still tries the Web UI,
+so once you have fixed the cause, ask the agent to call `interactive_feedback`
+again. An unanswered question is not a failure: while you are away the agent
+re-calls every few minutes, as designed, and never gets this message.
 
 **Fix** (sorted from fastest to slowest):
 
@@ -82,8 +101,9 @@ empty / spinning panel.
   Developer Tools** shows the panel's console.
 - **Network firewall** — corporate Zscaler / Endpoint Security
   occasionally blocks `localhost` requests from VS Code. Ask IT for
-  an exception, or run with `web_ui.host = "0.0.0.0"` and use the
-  LAN IP.
+  an exception, or point `ai-intervention-agent.serverUrl` at the LAN IP.
+  The Web UI listens on all interfaces unless `network_security.bind_interface`
+  was changed to `127.0.0.1`; set it back to `0.0.0.0` if it was.
 
 ## 3. Task list is empty after the AI calls `interactive_feedback`
 
@@ -127,14 +147,14 @@ does not show the task.
 - **mDNS only publishes when bound to a non-loopback interface**.
   Set `network_security.bind_interface` to your LAN IP (e.g. `192.168.x.y`)
   or `0.0.0.0`, not `127.0.0.1`. (`bind_interface` lives under the
-  `[network_security]` section, not `[web_ui]` — it overrides
-  `web_ui.host` at runtime.)
+  `[network_security]` section, not `[web_ui]` — `web_ui.host` does not
+  choose the listen address.)
 - **macOS Sleep / Wi-Fi power-save** drops the Bonjour record after
   ~5 minutes of idle. Either pin caffeinate, or just refresh the
   page on the phone — re-resolution is usually instant.
 - **Corporate / hotel Wi-Fi blocks multicast**. Switch to a personal
   hotspot or pre-share the IP-based URL via QR code (the settings
-  page will print one once `web_ui.host = "0.0.0.0"`).
+  page will print one once `network_security.bind_interface = "0.0.0.0"`).
 
 ## 6. `Open in IDE` button does nothing / opens the wrong editor
 
@@ -500,10 +520,11 @@ Toolchain upgrades are deliberately tracked PRs, not silent drift:
 pipeline silently shows "stale" / "—" / missing fields even though the
 endpoint returns 200 with a JSON body.
 
-- `curl /api/system/recent-logs | jq '.entries | length'` returns
-  `null` (was reading `.logs`).
-- `curl /api/system/health | jq '.checks.notification.status'` returns
-  `undefined` (field renamed under the hood).
+- `curl /api/system/recent-logs | jq '.logs'` prints `null` (and
+  `jq '.logs | length'` prints `0`, which reads as "no log lines"): the
+  list is under `.entries`.
+- `curl /api/system/health | jq '.checks.notification.status'` prints
+  `null`: the notification check answers with `ok`, not `status`.
 - Prometheus exporter shows no per-provider streak metrics even
   though the JSON contains them.
 

@@ -68,6 +68,27 @@ R352 (cycle-39 #C2) · **Test-only**: 把 ``_FEEDBACK_COUNTERS`` 全
 给 ``server.server_info_resource`` 在 ``aiia://server/info`` 子块里
 渲染，运维侧通过 MCP `resources/read` 拉取即可看到累计值。
 
+### `reset_failure_streak_for_testing() -> None`
+
+**仅供测试**：把连续失败的次数清零，让用例互不影响（conftest 的 autouse 夹具调用）。
+
+### `_one_line(text: str, limit: int) -> str`
+
+压成一行并截断：原因要放进一句话里交给 AI。
+
+### `_describe_failure(exc: BaseException) -> str`
+
+把异常写成一句 AI 和用户都读得懂的原因。
+
+### `_giving_up_text(streak: int, reason: str) -> str`
+
+### `_failed_call_response(reason: str) -> list`
+
+一次调用没能把问题交给 Web UI 时，回给 AI 的内容（R857）。
+
+连续失败不到 ``_FAILURE_STREAK_LIMIT`` 次：照旧回“请立即重调”；到了：写明
+最近一次的原因，让 AI 停下来告诉用户。
+
 ### `_silence_logging_capability_deprecation() -> None`
 
 Hide the one SDK warning that ``ctx.info`` is known to raise.
@@ -290,7 +311,8 @@ Behavior:
 - On parameter validation failure, raises `ToolError` so the agent can
   retry with corrected arguments. On service / task failure, returns a
   configurable resubmit prompt instructing the agent to call this tool
-  again, instead of silently dropping the request.
+  again, instead of silently dropping the request. After 3 failures in
+  a row it returns the cause instead: stop calling and tell the user.
 
 Cross-tool compatibility:
 - `summary` / `prompt` are accepted as aliases for `message` so the same
@@ -319,6 +341,23 @@ sidebar 渲染一行进度日志，让人类用户能"看到工具确实在工�
 ctx 而崩；具体安全语义见 ``_emit_ctx_info`` 的 docstring。
 
 ## 类
+
+### `class _FailureStreak`
+
+连续失败的次数：失败加一，拿到答复或者等待超时就清零。
+
+只是个进程内的计数，不拦截任何调用：下一次调用照样真去连 Web UI，所以用户
+把问题处理好之后，AI 再调一次就是好的，不会被上一轮的失败挡住。
+
+#### 方法
+
+##### `__init__(self) -> None`
+
+##### `hit(self) -> int`
+
+##### `clear(self) -> None`
+
+##### `count(self) -> int`
 
 ### `class _WebUILossWatch`
 

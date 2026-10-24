@@ -367,6 +367,9 @@
   const POLL_CONFIG_TIMEOUT_MS = 6000
 
   const SUBMIT_TIMEOUT_MS = 20000
+  // After a refused submit: how long to wait for the body that may say why, and how much of it to show.
+  const SUBMIT_FAILURE_BODY_WAIT_MS = 1500
+  const SUBMIT_FAILURE_REASON_MAX_CHARS = 200
 
   function parseRgbColor(color) {
     try {
@@ -5362,6 +5365,33 @@
     return true
   }
 
+  // R854: the server says why it refused an answer in `message`, in the language of the request (409:
+  // the task already has an answer; 413: the request is too large). Anything else (a proxy's HTML
+  // page, a body without a message) leaves the status code to speak. The headers have arrived by now
+  // and the request's own timer is gone, so a body that never comes must not hold the panel: the wait
+  // is short. Returns '' when there is nothing to show; never throws.
+  async function readSubmitFailureReason(response) {
+    let timer = null
+    try {
+      const body = await Promise.race([
+        response.json(),
+        new Promise(function (resolve) {
+          timer = setTimeout(function () {
+            resolve(null)
+          }, SUBMIT_FAILURE_BODY_WAIT_MS)
+        })
+      ])
+      const reason = body && typeof body.message === 'string' ? body.message.trim() : ''
+      return reason.length > SUBMIT_FAILURE_REASON_MAX_CHARS
+        ? reason.slice(0, SUBMIT_FAILURE_REASON_MAX_CHARS) + '…'
+        : reason
+    } catch (e) {
+      return ''
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
   async function submitWithData(text, options, taskIdOverride) {
 
     try {
@@ -5533,8 +5563,12 @@
           return false
         }
 
-        const msg = t('ui.submit.failed', { status: response.status })
-        logError(msg)
+        const reason = await readSubmitFailureReason(response)
+        logError(
+          reason
+            ? t('ui.submit.failedReason', { reason: reason })
+            : t('ui.submit.failed', { status: response.status })
+        )
       }
       return false
     } catch (error) {

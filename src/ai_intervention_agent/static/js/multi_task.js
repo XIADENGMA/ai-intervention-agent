@@ -3716,7 +3716,41 @@ function collectSelectedOptionsForTask(taskId) {
   return labels;
 }
 
+// R854: nobody pressed anything when the countdown ends, so an automatic submit that is refused,
+// or never arrives, must say so; in silence the page looks hung. The words are the Submit button's
+// (app.js submitFeedback): the status first (401/403/5xx), then the server's own sentence (409
+// "already answered", 413), then the generic one; a request that failed before any answer came
+// gets the message of its failure. It runs inside the submit's catch, so it never throws.
+function _showSubmitFailure(response, result, error) {
+  try {
+    if (typeof showStatus !== "function" || typeof t !== "function") return;
+    let text;
+    if (error) {
+      text = t(
+        typeof _classifyFetchError === "function"
+          ? _classifyFetchError(error)
+          : "status.networkError",
+      );
+    } else {
+      const httpKey =
+        typeof _classifyHttpResponse === "function"
+          ? _classifyHttpResponse(response)
+          : null;
+      text = httpKey
+        ? t(httpKey)
+        : (result && typeof result.message === "string" && result.message) ||
+          t("status.submitFailed");
+    }
+    showStatus(text, "error");
+  } catch (e) {
+    console.error("Could not show the submit failure:", e);
+  }
+}
+
 async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
+  // True once the server has taken the answer: what goes wrong after that is the page's own
+  // clean-up, not a failed submit, and must not be reported as one.
+  let accepted = false;
   try {
     const formData = new FormData();
     formData.append("feedback_text", feedbackText);
@@ -3743,9 +3777,18 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       30000,
     );
 
-    const data = await response.json();
+    // A refusal need not be JSON (a proxy's 502 is an HTML page): the status decides what the
+    // reviewer reads, as in app.js submitFeedback (R725); only a 2xx that is not JSON is an error.
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      if (response.ok) throw parseError;
+    }
+    if (!data) data = {};
 
     if (data.success) {
+      accepted = true;
       _debugLog(`Task ${taskId} submitted successfully`);
 
       requestFeedbackInputFocus();
@@ -3795,9 +3838,11 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       }
     } else {
       console.error("Submit task failed:", data.error);
+      _showSubmitFailure(response, data, null);
     }
   } catch (error) {
     console.error("Submit task feedback failed:", error);
+    if (!accepted) _showSubmitFailure(null, null, error);
   }
 }
 

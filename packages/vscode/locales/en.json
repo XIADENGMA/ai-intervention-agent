@@ -41,7 +41,7 @@
       "baseUrlStatusOk": "Current base_url: {url} (Bark notifications open correctly on mobile)",
       "baseUrlStatusLoopback": "Current base_url is a loopback address ({url}); Bark notifications cannot open it on mobile devices.",
       "baseUrlStatusUnreachable": "No externally reachable base_url detected; the Bark click URL will be omitted.",
-      "baseUrlSuggestLan": "Suggested fix: copy the LAN address below into web_ui.external_base_url, or change web_ui.host to 0.0.0.0/your LAN IP.",
+      "baseUrlSuggestLan": "Suggested fix: copy the LAN address below into web_ui.external_base_url, or set network_security.bind_interface to 0.0.0.0/your LAN IP.",
       "baseUrlSuggestNoLan": "No usable LAN interface detected; manually set web_ui.external_base_url to a reachable URL.",
       "baseUrlCopyLan": "Copy LAN URL",
       "baseUrlCopied": "Copied",

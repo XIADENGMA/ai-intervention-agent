@@ -1,7 +1,7 @@
 """R808: the copy button of a code block also works where there is no Clipboard API.
 
 ``navigator.clipboard`` only exists in a secure context.  The README documents the
-Web UI as reachable from other machines (``web_ui.host = "0.0.0.0"``, an mDNS
+Web UI as reachable from other machines (``network_security.bind_interface = "0.0.0.0"``, an mDNS
 ``<host>.local`` URL, the iPhone Shortcuts setup), and ``http://192.168.x.x:8081`` or
 ``http://ai.local:8081`` is *not* a secure context: there ``navigator.clipboard`` is
 ``undefined``.  The copy button of a fenced code block

@@ -44,6 +44,16 @@ gunicorn 'ai_intervention_agent.web_ui_wsgi:create_app()' \
 拥有独立的 task queue 和 SSE bus，于是某个 worker 创建的任务可能对连到另一个
 worker 的浏览器不可见。
 
+这样构建的 Web UI，地址类设置和 MCP 服务器给它自己启动的 Web UI 的完全一样：
+`network_security.bind_interface`、`web_ui.port`、`web_ui.external_base_url`、
+`mdns.hostname` 和 `network_security.trusted_hosts`（以及
+`AI_INTERVENTION_AGENT_WEB_UI_HOST` / `AI_INTERVENTION_AGENT_WEB_UI_PORT` 两个环境变量的
+覆盖）。它们决定接受哪些 `Host` 名称，所以把原始 `Host` 原样传下去的反向代理，要把它的
+名字写进 `trusted_hosts` 或 `external_base_url`。它们只在应用构建时读一次：改了其中任何
+一项都要重启 WSGI server。读不了配置时，应用按默认值启动（只接受回环地址和 `ai.local`），
+日志里会说明。监听在哪里由 server 自己的 `--listen` / `--bind` 决定，不是
+`bind_interface`。
+
 ## SSE 代理要求
 
 `/api/events` 是 Server-Sent Events 流。反向代理不能缓冲它。路由本身已经输出：
@@ -59,11 +69,16 @@ location /api/events {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
     proxy_set_header Connection "";
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_buffering off;
     proxy_cache off;
     proxy_read_timeout 1h;
 }
 ```
+
+这个块里也要保留 `X-Forwarded-For` 这一行。nginx 不会把外层块里的 `proxy_set_header` 带进自己也写了
+`proxy_set_header` 的 `location`，不写的话事件流到 Web UI 时没有客户端地址，访问控制会把它的
+每个访问者都当成 `127.0.0.1`（见[反向代理后面的客户端地址](#反向代理后面的客户端地址)）。
 
 放在反向代理后面时，还要决定谁能发写请求。浏览器发来的会改状态的请求（`POST` / `PUT` /
 `PATCH` / `DELETE`，加上 `GET /api/feedback`），除非浏览器声明它来自 Web UI 自己的页面，
@@ -115,6 +130,22 @@ location / {
 不写这个头的代理会让每个访问者都像是 `127.0.0.1`，默认的 `allowed_networks` 会放行它。
 CDN 在 nginx 前面、设置却还是 `1` 时，Web UI 判断的是 CDN 的地址，不是访问者的。
 
+Waitress 必须被告知该信任哪个代理。从 3.0 起，没有给它代理的地址时，它会在请求到达 Web UI 之前删掉
+`X-Forwarded-For`（以及 `X-Forwarded-Host`、`X-Forwarded-Proto`、`X-Forwarded-Port` 和
+`Forwarded`），不管代理写了什么。按本页开头的命令运行、前面放 nginx 时，每个访问者都会像是
+`127.0.0.1`：只许本机调用的路由（见下）对 nginx 放进来的所有人都有应答，`blocked_ips` 和
+`allowed_networks` 谁也不拦，限流把所有访问者算成一个。写明代理和这个头，再给出 Web UI 前面
+的代理层数（和 `trusted_proxy_hops` 是同一个数）；这样 Waitress 会自己把访问者的地址放进
+`REMOTE_ADDR`：
+
+```bash
+waitress-serve --listen=127.0.0.1:8080 --threads=8 \
+  --trusted-proxy=127.0.0.1 --trusted-proxy-headers=x-forwarded-for --trusted-proxy-count=1 \
+  --call 'ai_intervention_agent.web_ui_wsgi:create_app'
+```
+
+Gunicorn 和 Flask 自带的 server 不会动这个头，不需要额外设置。
+
 只许本机调用的路由按同一个地址判断：`POST /api/system/rotate-api-token`、
 `GET /api/system/api-token-info`，以及没带有效 API token 时的
 `POST /api/system/log-level`、`POST /api/system/open-config-file`、
@@ -132,6 +163,20 @@ CDN 在 nginx 前面、设置却还是 `1` 时，Web UI 判断的是 CDN 的地�
 curl -i http://127.0.0.1:8080/api/system/health
 curl -N http://127.0.0.1:8080/api/events
 uv run pytest -q tests/test_web_ui_wsgi_profile_r452.py tests/test_sse_last_event_id_r41.py
+```
+
+放在代理后面时，还要从另一台机器（不是服务器本机）问一次：Web UI 必须能把你和它所在的机器分开。
+
+```bash
+curl -i http://<代理地址>/api/system/api-token-info
+```
+
+它必须答 `403`。答 `200` 说明 Web UI 把每个访问者都看成 `127.0.0.1`：头没写，或者被 server
+删掉了（见上）。然后把这台机器的地址写进 `network_security.blocked_ips`（约 2 秒内生效）；
+事件流也必须像其他路由一样拒绝它：
+
+```bash
+curl -i -m 3 http://<代理地址>/api/events
 ```
 
 健康的流会立刻打印 `: connected`，之后空闲时每 25 秒一条 `event: heartbeat`。如果几秒内

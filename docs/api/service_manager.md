@@ -26,6 +26,16 @@
 
 ### `is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool`
 
+### `_note_health_once(config: WebUIConfig, kind: str, message: str) -> None`
+
+### `_own_version() -> str`
+
+### `_body_preview(response: Any) -> str`
+
+### `_warn_if_other_version(config: WebUIConfig, theirs: object) -> None`
+
+### `_is_this_web_ui(response: Any, config: WebUIConfig) -> bool`
+
 ### `health_check_service(config: WebUIConfig) -> bool`
 
 ### `invalidate_web_ui_config_cache() -> None`

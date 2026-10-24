@@ -890,9 +890,10 @@ class WebFeedbackUI(
                       description: 渲染后的 HTML
                     predefined_options:
                       type: array
+                      nullable: true
                       items:
                         type: string
-                      description: 预定义选项列表
+                      description: 预定义选项列表；激活的任务没有选项时为 null，没有任务时为 []
                     predefined_options_defaults:
                       type: array
                       items:
@@ -900,6 +901,8 @@ class WebFeedbackUI(
                       description: 与 predefined_options 按位置对应的默认勾选状态
                     task_id:
                       type: string
+                      nullable: true
+                      description: 激活任务的 ID；没有任务可显示时为 null
                     auto_resubmit_timeout:
                       type: number
                       description: 超时时间（秒）
@@ -1119,6 +1122,11 @@ class WebFeedbackUI(
         @self.app.route("/api/health", methods=["GET"])
         def health_check() -> ResponseReturnValue:
             """健康检查端点
+
+            MCP 服务靠它判断“这个端口上跑的是不是本服务”：HTTP 200 且 JSON 里
+            ``status == "ok"`` 才算（别的程序占着端口、对任何路径都回 200 的情况，
+            ``service_manager`` 不会当成本服务）。``version`` 供 MCP 服务发现连到的
+            是另一个版本时打一条警告；老版本没有这个字段，缺了不算错。
             ---
             tags:
               - System
@@ -1131,8 +1139,11 @@ class WebFeedbackUI(
                     status:
                       type: string
                       example: ok
+                    version:
+                      type: string
+                      example: "1.8.12"
             """
-            return jsonify({"status": "ok"})
+            return jsonify({"status": "ok", "version": get_project_version()})
 
         @self.app.route("/api/capabilities", methods=["GET"])
         def capabilities() -> ResponseReturnValue:
@@ -1197,6 +1208,64 @@ class WebFeedbackUI(
 
             请求体必须是 JSON 对象，否则 400（``invalid_json`` / ``invalid_body``）；
             对象里没有 ``language`` 视为 ``auto``。
+            ---
+            tags:
+              - System
+            consumes:
+              - application/json
+            parameters:
+              - in: body
+                name: body
+                schema:
+                  type: object
+                  properties:
+                    language:
+                      type: string
+                      enum: [auto, en, zh-CN, zh-TW]
+                      default: auto
+                      description: 界面语言；auto 表示跟随浏览器的语言，缺省按 auto 处理
+            responses:
+              200:
+                description: 语言已保存
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [success]
+                      description: 固定为 "success"
+                    language:
+                      type: string
+                      enum: [auto, en, zh-CN, zh-TW]
+                      description: 已保存的界面语言
+              400:
+                description: 请求体不是 JSON 对象，或语言不在支持的取值里（配置一概不改）
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    error:
+                      type: string
+                      enum: [invalid_json, invalid_body]
+                      description: 仅请求体不合法时出现：invalid_json=无法解析或缺 JSON Content-Type，invalid_body=不是 JSON 对象
+                    message:
+                      type: string
+                      description: 请求体不合法，或语言不受支持的人类可读说明
+              500:
+                description: 写入配置失败
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 写入 config 失败的人类可读说明
             """
             data = require_json_object()
             try:
@@ -1214,7 +1283,9 @@ class WebFeedbackUI(
                 return jsonify({"status": "success", "language": lang})
             except Exception as e:
                 logger.error(f"更新语言配置失败: {e}", exc_info=True)
-                return jsonify({"status": "error", "message": str(e)}), 500
+                return jsonify(
+                    {"status": "error", "message": msg("notify.updateFailed")}
+                ), 500
 
         self._setup_task_routes()
         self._setup_feedback_routes()
@@ -1267,14 +1338,20 @@ class WebFeedbackUI(
             RequestEntityTooLarge, request_too_large_response
         )
 
+        def wants_json_error() -> bool:
+            """API 路径和要 JSON 的客户端拿 JSON 错误体，其余拿页面（404 / 405 共用）。"""
+            from flask import request as _request
+
+            accept_best = _request.accept_mimetypes.best or ""
+            is_api_path = _request.path.startswith(("/api/", "/metrics"))
+            return is_api_path or "json" in accept_best
+
         @self.app.errorhandler(404)
         def handle_404(exc: object) -> ResponseReturnValue:
             from flask import render_template
             from flask import request as _request
 
-            accept_best = _request.accept_mimetypes.best or ""
-            is_api_path = _request.path.startswith(("/api/", "/metrics"))
-            if is_api_path or "json" in accept_best:
+            if wants_json_error():
                 return jsonify({"success": False, "error": "not_found"}), 404
             try:
                 return (
@@ -1296,6 +1373,20 @@ class WebFeedbackUI(
                     "</body></html>",
                     404,
                 )
+
+        from werkzeug.exceptions import MethodNotAllowed
+
+        @self.app.errorhandler(405)
+        def handle_405(exc: MethodNotAllowed) -> ResponseReturnValue:
+            # Werkzeug 自己的 405 是一页 HTML，而 API 的其他错误都是 JSON；
+            # 与 404 用同一条判断，API 路径答 JSON，页面路径保持原样（R863）。
+            if not wants_json_error():
+                return exc.get_response()
+            response = jsonify({"success": False, "error": "method_not_allowed"})
+            response.status_code = 405
+            if exc.valid_methods:
+                response.headers["Allow"] = ", ".join(sorted(exc.valid_methods))
+            return response
 
     def shutdown_server(self) -> None:
         """优雅关闭Flask服务器

@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import contextlib
+import functools
 import os
 import signal
 import socket
@@ -401,8 +402,107 @@ def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
         return False
 
 
+_HEALTH_NOTES_SEEN: set[tuple[str, int, str]] = set()
+_HEALTH_NOTES_LOCK = threading.Lock()
+_UNKNOWN_VERSIONS = frozenset({"", "unknown", "0.0.0+local"})
+
+
+def _note_health_once(config: WebUIConfig, kind: str, message: str) -> None:
+    """同一个 ``(host, port, kind)`` 只打一次 WARNING。
+
+    每次工具调用都会做一遍健康检查，同一个问题不能每次都刷一条日志。
+    """
+    key = (config.host, config.port, kind)
+    with _HEALTH_NOTES_LOCK:
+        if key in _HEALTH_NOTES_SEEN:
+            return
+        _HEALTH_NOTES_SEEN.add(key)
+    logger.warning(message)
+
+
+@functools.lru_cache(maxsize=1)
+def _own_version() -> str:
+    """本 MCP 进程所属包的版本号；读不到（源码直接运行）时返回空串。"""
+    try:
+        from importlib.metadata import version
+
+        return version("ai-intervention-agent")
+    except Exception:
+        return ""
+
+
+def _body_preview(response: Any) -> str:
+    """响应体开头的几十个字符，写进日志帮人认出占着端口的是什么程序。"""
+    try:
+        text = str(response.text).strip()
+    except Exception:
+        return "（读不到响应体）"
+    if not text:
+        return "（空响应体）"
+    return repr(text[:80] + ("…" if len(text) > 80 else ""))
+
+
+def _warn_if_other_version(config: WebUIConfig, theirs: object) -> None:
+    """连上的 Web UI 与本 MCP 进程不是同一个版本时，提醒一次，不拒绝。
+
+    多个 IDE 窗口共用一个 Web UI，升级之后旧窗口起的 Web UI 可能还在跑；
+    这种组合一直能用，所以只提醒。任何一边读不到版本号就不比较
+    （老版本的 ``/api/health`` 没有 ``version``）。
+    """
+    ours = _own_version()
+    if (
+        not isinstance(theirs, str)
+        or theirs in _UNKNOWN_VERSIONS
+        or ours in _UNKNOWN_VERSIONS
+        or theirs == ours
+    ):
+        return
+    _note_health_once(
+        config,
+        f"version:{theirs}",
+        f"端口 {config.port} 上已有的 Web UI 是 {theirs} 版，本 MCP 服务是 {ours} 版；"
+        "它是另一个 MCP 进程（或升级前的进程）启动的，这里继续复用它，"
+        "新版本带来的功能可能还没生效。要换成当前版本：先停掉旧的 Web UI 进程"
+        f"（lsof -nP -iTCP:{config.port} -sTCP:LISTEN 找到它），"
+        "或者把 web_ui.port 换成别的端口",
+    )
+
+
+def _is_this_web_ui(response: Any, config: WebUIConfig) -> bool:
+    """``GET /api/health`` 的响应是不是本服务的：HTTP 200 且 JSON ``status == "ok"``。
+
+    只看 200 不够：别的程序占着这个端口时（8080 上常见的前端开发服务器对任何路径
+    都回 200 加一页 HTML），会被当成已经在运行的 Web UI，既不启动 Web UI，也看不到
+    “端口被占用”的提示，任务却发给了那个程序。本服务的每个版本都回
+    ``{"status": "ok"}``，认这个形状不会误伤任何已能正常工作的组合。
+
+    永远不抛异常：响应读不出 JSON 也只是“不是本服务”。
+    """
+    if response.status_code != 200:
+        return False
+    try:
+        body = response.json()
+    except Exception:
+        body = None
+    if not isinstance(body, dict) or body.get("status") != "ok":
+        _note_health_once(
+            config,
+            "not-this-web-ui",
+            f"端口 {config.port} 上有程序对 /api/health 回了 HTTP 200，但内容不是"
+            f'本服务的 {{"status": "ok"}}：{_body_preview(response)}；'
+            "不把它当作 Web UI。请停掉占用该端口的程序，"
+            "或者把 web_ui.port 换成别的端口",
+        )
+        return False
+    _warn_if_other_version(config, body.get("version"))
+    return True
+
+
 def health_check_service(config: WebUIConfig) -> bool:
     """HTTP /api/health 检查，验证服务是否正常。
+
+    “正常”指 HTTP 200 且响应是本服务的 ``{"status": "ok", ...}``，见
+    ``_is_this_web_ui``；别的程序占着端口并回 200 不算。
 
     R25.2: ``except httpx.HTTPError`` 在函数体内引用 ``httpx``，但走到这一步前
     ``create_http_session(config)`` 必然已通过 ``get_sync_client`` 把 httpx 加载好
@@ -420,11 +520,11 @@ def health_check_service(config: WebUIConfig) -> bool:
         health_url = f"{get_target_base_url(config.host, config.port)}/api/health"
 
         response = session.get(health_url, timeout=5)
-        is_healthy = bool(response.status_code == 200)
+        is_healthy = _is_this_web_ui(response, config)
 
         if is_healthy:
             logger.debug("服务健康检查通过")
-        else:
+        elif response.status_code != 200:
             logger.warning(f"服务健康检查失败，状态码: {response.status_code}")
 
         return is_healthy
@@ -746,6 +846,10 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
         network_security_config = config_mgr.get_section("network_security")
         mdns_config = config_mgr.get_section("mdns")
 
+        # 监听地址取 ``network_security.bind_interface``。后面的 ``web_ui.host`` 只是
+        # 这个键缺失时的回退；默认配置（以及合并过默认值的任何配置）总带着
+        # ``bind_interface``，所以 ``web_ui.host`` 实际上不起作用 —— 想改监听地址，
+        # 改 ``bind_interface`` 或设环境变量 AI_INTERVENTION_AGENT_WEB_UI_HOST。
         host = str(
             network_security_config.get(
                 "bind_interface", web_ui_config.get("host", "127.0.0.1")
@@ -773,7 +877,7 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
         env_host = _coerce_env_str(_ENV_WEB_UI_HOST)
         if env_host:
             logger.info(
-                f"环境变量 {_ENV_WEB_UI_HOST} 覆盖 web_ui.host: {host!r} -> {env_host!r}"
+                f"环境变量 {_ENV_WEB_UI_HOST} 覆盖监听地址: {host!r} -> {env_host!r}"
             )
             host = env_host
 
@@ -1198,7 +1302,7 @@ def update_web_content(
     except httpx.ConnectError:
         logger.error(f"无法连接到 Web 服务: {url}", exc_info=True)
         raise ServiceUnavailableError(
-            "无法连接到 Web UI 服务，请确认服务正在运行，并检查地址/端口（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl 设置）。",
+            "无法连接到 Web UI 服务，请确认服务正在运行，并检查地址/端口（如 network_security.bind_interface、web_ui.port 或 VS Code 的 serverUrl 设置）。",
             code="connection_refused",
         ) from None
     except httpx.HTTPError as e:
@@ -1225,6 +1329,10 @@ async def ensure_web_ui_running(
     ``client`` 允许 ``interactive_feedback`` 复用本次调用已取出的
     AsyncClient，避免健康检查和后续 POST /api/tasks 分别做一次
     singleton lookup；未传入时保持历史行为。
+
+    ``/api/health`` 的响应必须是本服务的（见 ``_is_this_web_ui``）才算“已经在运行”；
+    别的程序占着端口并回 200 时走启动流程，``start_web_service`` 发现端口被占用后
+    抛 ``port_in_use``，而不是把任务发给那个程序。
     """
     try:
         health_client = client
@@ -1234,7 +1342,7 @@ async def ensure_web_ui_running(
             f"{get_target_base_url(config.host, config.port)}/api/health",
             timeout=2,
         )
-        if response.status_code == 200:
+        if _is_this_web_ui(response, config):
             logger.debug("Web UI 已经在运行")
             return
     except Exception as e:

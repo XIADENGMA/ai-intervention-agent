@@ -74,11 +74,12 @@ class TestSanitizeSelectedOptions(unittest.TestCase):
         )
 
     def test_overlong_items_dropped(self) -> None:
-        # R166：单项长度上限从 500 提升到 MAX_OPTION_LENGTH (10_000)。
-        # 测试相对常量构造超长项，避免硬编码漂移。
-        from ai_intervention_agent.server_config import MAX_OPTION_LENGTH
+        # R166：单项长度上限从 500 提升到 10_000；测试相对常量构造超长项，避免硬编码漂移。
+        # R858：服务端自己存下的最长选项是 MAX_STORED_OPTION_LENGTH（截断后的长度加
+        # 省略号），上限就是它，所以“超长”从比它长一个字符算起。
+        from ai_intervention_agent.server_config import MAX_STORED_OPTION_LENGTH
 
-        too_long = "x" * (MAX_OPTION_LENGTH + 1)
+        too_long = "x" * (MAX_STORED_OPTION_LENGTH + 1)
         self.assertEqual(
             _sanitize_selected_options(["ok", too_long, "also-ok"]),
             ["ok", "also-ok"],

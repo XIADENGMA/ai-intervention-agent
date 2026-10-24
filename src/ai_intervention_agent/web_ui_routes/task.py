@@ -809,6 +809,21 @@ class TaskRoutesMixin:
               200:
                 description: SSE 事件流（连接后立即发一个注释帧，之后是 task_changed 事件 + 25s 心跳）
             """
+            # No ``Connection`` header: PEP 3333 forbids a WSGI application to set a hop-by-hop
+            # header, and Waitress (the server docs/deployment.md recommends) enforces it by
+            # raising, so every ``GET /api/events`` was a 500 there. The dev server added its own
+            # ``Connection: close`` after this one, so the response named two (R864).
+            headers = {
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            }
+            # Flask answers HEAD for a GET route by running the view and dropping the body, so the
+            # generator below would never start and its ``finally`` never take the queue off the
+            # bus: each HEAD left a subscriber behind until 48 later events discarded it as a
+            # client that stopped reading (R865). A HEAD answer needs the status and headers only.
+            if request.method == "HEAD":
+                return Response(iter(()), mimetype="text/event-stream", headers=headers)
+
             _ensure_sse_callback_registered()
 
             after_id_raw = (
@@ -881,11 +896,7 @@ class TaskRoutesMixin:
             return Response(
                 generate(),
                 mimetype="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "X-Accel-Buffering": "no",
-                    "Connection": "keep-alive",
-                },
+                headers=headers,
             )
 
         @self.app.route("/api/tasks", methods=["GET"])
@@ -993,13 +1004,14 @@ class TaskRoutesMixin:
                 schema:
                   type: object
                   properties:
-                    status:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
                       type: string
-                      enum: [error]
-                      description: 固定为 "error"
-                    message:
-                      type: string
-                      description: 服务器异常详情或通用提示
+                      enum: [服务器内部错误]
+                      description: 固定为 "服务器内部错误"；真正的原因只写在日志里，响应里不带
             """
             try:
                 task_queue = get_task_queue()
@@ -1162,13 +1174,14 @@ class TaskRoutesMixin:
                 schema:
                   type: object
                   properties:
-                    status:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
                       type: string
-                      enum: [error]
-                      description: 固定为 "error"
-                    message:
-                      type: string
-                      description: 服务器异常详情或通用提示
+                      enum: [服务器内部错误]
+                      description: 固定为 "服务器内部错误"；真正的原因只写在日志里，响应里不带
             """
             try:
                 task_queue = get_task_queue()
@@ -1181,8 +1194,8 @@ class TaskRoutesMixin:
                     }
                 )
             except Exception as e:
-                logger.error(f"获取 loop 视图失败: {e}")
-                return jsonify({"success": False, "error": str(e)}), 500
+                logger.error(f"获取 loop 视图失败: {e}", exc_info=True)
+                return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
         # NOTE(feat-remove-download): web 右上角"下载任务"按钮已下线（见
         # ``templates/web_ui.html`` 中说明注释 + ``tests/test_feat_remove_download_button.py``）。
@@ -1226,10 +1239,14 @@ class TaskRoutesMixin:
                 schema:
                   type: object
                   properties:
-                    status:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
                       type: string
-                      enum: [error]
-                      description: 固定为 "error"
+                      enum: [unsupported_format, invalid_since]
+                      description: 机器可读的原因：unsupported_format=format 不是 json / markdown，invalid_since=since 不是合法 ISO 8601
                     message:
                       type: string
                       description: 参数校验失败的人类可读说明
@@ -1238,13 +1255,14 @@ class TaskRoutesMixin:
                 schema:
                   type: object
                   properties:
-                    status:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
                       type: string
-                      enum: [error]
-                      description: 固定为 "error"
-                    message:
-                      type: string
-                      description: 服务器异常详情或通用提示
+                      enum: [服务器内部错误]
+                      description: 固定为 "服务器内部错误"；真正的原因只写在日志里，响应里不带
             """
 
             try:
@@ -1415,7 +1433,8 @@ class TaskRoutesMixin:
 
                 body = "\n".join(lines).rstrip() + "\n"
 
-                response = Response(body, mimetype="text/markdown; charset=utf-8")
+                # Werkzeug adds ``; charset=utf-8`` to a ``text/*`` mimetype itself (R861).
+                response = Response(body, mimetype="text/markdown")
                 response.headers["Content-Disposition"] = (
                     f'attachment; filename="{base_name}.md"'
                 )
@@ -1501,10 +1520,7 @@ class TaskRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误分类码 (e.g., invalid_payload / invalid_field)
-                    message:
-                      type: string
-                      description: 人类可读错误说明
+                      description: 说明哪一项不对的文字（固定的中文，不随 Accept-Language 变），例如 "缺少必要参数：task_id（或 id）"
               409:
                 description: 任务 ID 重复或队列已满
                 schema:
@@ -1516,10 +1532,8 @@ class TaskRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 冲突分类码 (e.g., duplicate_task_id / queue_full)
-                    message:
-                      type: string
-                      description: 冲突原因说明 + 可能的解决建议
+                      enum: [任务队列已满或任务ID重复]
+                      description: 固定为 "任务队列已满或任务ID重复"（重复和队列已满是同一句话）
               500:
                 description: 服务器内部错误
                 schema:
@@ -1531,10 +1545,8 @@ class TaskRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误分类码
-                    message:
-                      type: string
-                      description: 服务器异常详情或通用提示
+                      enum: [服务器内部错误]
+                      description: 固定为 "服务器内部错误"；真正的原因只写在日志里，响应里不带
             """
             try:
                 raw = request.get_json(silent=False)
@@ -1798,14 +1810,16 @@ class TaskRoutesMixin:
                           description: 任务状态 (pending/active/completed)
                         predefined_options:
                           type: array
+                          nullable: true
                           items:
                             type: string
-                          description: 预定义选项列表 (供前端渲染 chip 按钮)
+                          description: 预定义选项列表 (供前端渲染 chip 按钮)；任务没带选项时为 null
                         predefined_options_defaults:
                           type: array
+                          nullable: true
                           items:
                             type: boolean
-                          description: 与 predefined_options 一一对应的默认选中状态
+                          description: 与 predefined_options 一一对应的默认选中状态；任务没带默认值时为 null
                         created_at:
                           type: string
                           format: date-time
@@ -1821,31 +1835,34 @@ class TaskRoutesMixin:
                           description: 截止时间戳 (server_time + remaining_time)
                         result:
                           type: object
-                          description: 反馈结果 (任务未完成时为空对象, 完成后含 user_input/selected_options/images)
+                          nullable: true
+                          description: 反馈结果 (任务未完成时为 null, 完成后含 user_input/selected_options/images)
               404:
                 description: 任务不存在
                 schema:
                   type: object
                   properties:
-                    status:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
                       type: string
-                      enum: [error]
-                      description: 固定为 "error"
-                    message:
-                      type: string
-                      description: 错误说明文本（如 `Task not found`）
+                      enum: [任务不存在]
+                      description: 固定为 "任务不存在"
               500:
                 description: 服务器内部错误
                 schema:
                   type: object
                   properties:
-                    status:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
                       type: string
-                      enum: [error]
-                      description: 固定为 "error"
-                    message:
-                      type: string
-                      description: 服务器异常详情或通用提示
+                      enum: [服务器内部错误]
+                      description: 固定为 "服务器内部错误"；真正的原因只写在日志里，响应里不带
             """
             try:
                 task_queue = get_task_queue()
@@ -1991,7 +2008,7 @@ class TaskRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误说明文本
+                      description: '`seconds` 不是整数时是说明文字（`seconds 必须是整数`），其余情况和 `code` 相同（机器可读的原因，不是说明文字）'
                     code:
                       type: string
                       description: |
@@ -2007,7 +2024,7 @@ class TaskRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误说明文本（如 `task not found`）
+                      description: '固定为 "任务不存在"'
               413:
                 description: |
                   请求超过上传上限：整个请求大于 ``MAX_CONTENT_LENGTH``
@@ -2040,10 +2057,10 @@ class TaskRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误说明文本
+                      description: 和 `code` 相同（机器可读的原因，不是说明文字）
                     code:
                       type: string
-                      description: 固定为 `extends_exhausted`
+                      description: 固定为 `extends_limit_reached`
                     extends_used:
                       type: integer
                       description: 已使用的延长次数（用于前端展示）
@@ -2164,10 +2181,10 @@ class TaskRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误说明文本（task_completed 类）
+                      description: 和 `code` 相同（机器可读的原因，不是说明文字）
                     code:
                       type: string
-                      description: 错误码（如 `task_completed`）
+                      description: 固定为 `task_completed`
               404:
                 description: task 不存在
                 schema:
@@ -2192,7 +2209,7 @@ class TaskRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误说明文本
+                      description: 和 `code` 相同（机器可读的原因，不是说明文字）
                     code:
                       type: string
                       description: 固定为 `already_frozen`

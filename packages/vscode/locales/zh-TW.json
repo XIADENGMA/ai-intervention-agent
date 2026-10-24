@@ -46,7 +46,7 @@
       "baseUrlStatusOk": "目前 base_url：{url}（手機端 Bark 點擊通知可正常跳轉）",
       "baseUrlStatusLoopback": "目前 base_url 是回送地址（{url}），手機端點擊 Bark 通知會指向手機自身、無法打開 Web UI。",
       "baseUrlStatusUnreachable": "未檢測到可對外訪問的 base_url，Bark 通知點擊將不附 url 欄位。",
-      "baseUrlSuggestLan": "推薦設定：複製下方 LAN 地址到 web_ui.external_base_url，或將 web_ui.host 改為 0.0.0.0/LAN IP。",
+      "baseUrlSuggestLan": "推薦設定：複製下方 LAN 地址到 web_ui.external_base_url，或將 network_security.bind_interface 改為 0.0.0.0/LAN IP。",
       "baseUrlSuggestNoLan": "未探測到可用 LAN 網路卡（可能是離線或被 VPN 隔離）。可手動將 web_ui.external_base_url 設為可訪問的 URL。",
       "baseUrlCopyLan": "複製 LAN 地址",
       "baseUrlCopied": "已複製",

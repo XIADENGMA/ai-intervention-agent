@@ -88,7 +88,7 @@ MCP 服务端和它启动的 Web UI 各自每 2 秒检查一次配置文件的�
 | `web_ui.language`                                                                                                            | 约 2 秒内                                                                                                                           |
 | `web_ui.http_request_timeout`、`http_max_retries`、`http_retry_delay`                                                        | MCP 服务端：HTTP 客户端会重建，下一次请求使用新值                                                                                   |
 | `network_security.allowed_networks`、`blocked_ips`、`access_control_enabled`、`trusted_proxy_hops`、`api_token`              | 正在运行的 Web UI 约 2 秒内应用新规则                                                                                               |
-| `web_ui.host`、`web_ui.port`、`network_security.bind_interface`、`network_security.trusted_hosts`、`mdns.*`、`web_ui.log_level` | 进程启动时读取一次：请重启 MCP 服务端                                                                                               |
+| `web_ui.port`、`network_security.bind_interface`、`network_security.trusted_hosts`、`mdns.*`、`web_ui.log_level`               | 进程启动时读取一次：请重启 MCP 服务端                                                                                               |
 
 重启 MCP 服务端会停止它启动的 Web UI，下一次反馈请求会用新值再启动一个。如果有 Web UI
 在它的 MCP 服务端之后还活着（服务端是被杀掉而不是正常停止的），它会继续使用旧值和旧端口：
@@ -102,7 +102,7 @@ MCP 服务端和它启动的 Web UI 各自每 2 秒检查一次配置文件的�
 
 | 环境变量                                | 覆盖项            | 类型 / 范围             | 说明                                                                |
 | --------------------------------------- | ----------------- | ----------------------- | ------------------------------------------------------------------- |
-| `AI_INTERVENTION_AGENT_WEB_UI_HOST`     | `web_ui.host`     | string                  | 典型值：`127.0.0.1`（loopback）/ `0.0.0.0`（局域网 / SSH 远程访问） |
+| `AI_INTERVENTION_AGENT_WEB_UI_HOST`     | `network_security.bind_interface` | string  | Web UI 监听的地址。典型值：`127.0.0.1`（loopback）/ `0.0.0.0`（局域网 / SSH 远程访问） |
 | `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int，`[1, 65535]`       | 越界或非数字会记 WARNING 并忽略，server 继续用 `config.toml` 中的值 |
 | `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN` / `zh-TW` | 强制设置 Web UI 语言，忽略系统 locale 与已保存的偏好                |
 
@@ -304,7 +304,7 @@ Bark 请求直接发往 `bark_url`，不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_
 | 配置项                 | 类型    | 默认值      | 说明                                                                                                                                                                                                                                                                                   |
 | ---------------------- | ------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"` / `"zh-TW"`。新请求推送（Bark、系统通知、声音）的标题也跟随它；没有浏览器可问时，`"auto"` 取操作系统的显示语言（macOS 的“首选语言”、Windows 的界面语言，其余看 `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG`），不是我们支持的语言时用英文（R830）                                                                                                                                                  |
-| `host`                 | string  | `127.0.0.1` | 可能会被 `network_security.bind_interface` 覆盖                                                                                                                                                                                                                                        |
+| `host`                 | string  | `127.0.0.1` | 不是监听地址：Web UI 监听的是 `network_security.bind_interface`（默认 `0.0.0.0`），只要它存在就会忽略本项，而合并过默认值的配置里它总是存在。见下面的“Host 选择规则”。                                                                                                                                                                 |
 | `port`                 | number  | `8080`      | 范围 `[1, 65535]`                                                                                                                                                                                                                                                                      |
 | `debug`                | boolean | `false`     | 调试模式                                                                                                                                                                                                                                                                               |
 | `http_request_timeout` | number  | `30`        | HTTP 请求超时（秒），范围 `[1, 600]`                                                                                                                                                                                                                                                   |
@@ -331,7 +331,7 @@ Bark 请求直接发往 `bark_url`，不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_
 
 **Host 选择规则**：
 
-- Web UI 实际 host 优先使用 `network_security.bind_interface`（若存在），否则使用 `web_ui.host`。
+- Web UI 监听的地址：设置了环境变量 `AI_INTERVENTION_AGENT_WEB_UI_HOST` 就用它，否则用 `network_security.bind_interface`（默认 `0.0.0.0`）。`web_ui.host` 只是没有 `bind_interface` 时的回退；合并过默认值的配置里 `bind_interface` 总是存在，所以只改 `web_ui.host` **不会**改变监听地址（`web_ui.host = "127.0.0.1"` 不会让 Web UI 只对本机开放，要用 `network_security.bind_interface = "127.0.0.1"`）。
 - HTTP `Host` 校验与 IP 白名单是两层不同边界：`trusted_hosts` 描述浏览器/代理可以使用哪些主机名，`allowed_networks` 描述哪些客户端来源网段可以访问。
 - 默认允许 `localhost`、`127.0.0.1`、`[::1]`、`mdns.hostname`（默认 `ai.local`）、配置的具体 bind host/IP，以及 `web_ui.external_base_url` 中的主机名。
 - 浏览器发来的写请求还要单独核对是不是 Web UI 自己的来源，与上面的 `Host` 和 IP 检查互不相干：会改状态的请求（所有 `POST` / `PUT` / `PATCH` / `DELETE`，加上 `GET /api/feedback`）在浏览器声明是另一个页面发起时，会返回 `403 cross_origin_write_blocked`。放行：浏览器自己的 `Sec-Fetch-Site: same-origin`；既没有 `Origin` 也没有 `Sec-Fetch-Site` 的客户端（MCP 服务、`curl`、脚本、VS Code 扩展宿主）；`Origin` 与 `Host` 是同一个主机和端口、页面自己的 `localhost` / `127.0.0.1` 来源、VS Code webview，或 `web_ui.external_base_url` 的来源。放在改写 `Host` 的纯 HTTP 反向代理（nginx 默认）后面时，把 `web_ui.external_base_url` 设成你在浏览器里打开的地址，或者让代理把原始 `Host` 传下去并写进 `trusted_hosts`（见 [故障排查 §19](troubleshooting.zh-CN.md#19-web-ui-里的按钮没反应浏览器里看到-403-cross_origin_write_blocked)）。

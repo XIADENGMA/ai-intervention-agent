@@ -56,6 +56,11 @@ PROMPT_SUFFIX_DEFAULT = "\n请积极调用 interactive_feedback 工具"
 
 MAX_MESSAGE_LENGTH = 1_000_000
 MAX_OPTION_LENGTH = 10_000
+# An option longer than MAX_OPTION_LENGTH is cut there and gets the mark, so the
+# longest option the server ever shows (and so the longest one a user can tick) is
+# MAX_STORED_OPTION_LENGTH. The submit routes must take that back (R858).
+OPTION_TRUNCATION_MARK = "..."
+MAX_STORED_OPTION_LENGTH = MAX_OPTION_LENGTH + len(OPTION_TRUNCATION_MARK)
 
 
 class WebUIConfig(BaseModel):
@@ -338,7 +343,9 @@ def validate_input_with_defaults(
                 logger.warning(
                     f"选项过长 ({len(cleaned_option)} 字符)，将被截断到 {MAX_OPTION_LENGTH}"
                 )
-                cleaned_option = cleaned_option[:MAX_OPTION_LENGTH] + "..."
+                cleaned_option = (
+                    cleaned_option[:MAX_OPTION_LENGTH] + OPTION_TRUNCATION_MARK
+                )
 
             cleaned_options.append(cleaned_option)
             cleaned_defaults.append(_normalize_option_default(default_raw))

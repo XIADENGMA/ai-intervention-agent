@@ -53,6 +53,7 @@ import ai_intervention_agent.service_manager as service_manager
 from ai_intervention_agent.config_manager import get_config
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.exceptions import (
+    AIAgentError,
     ServiceConnectionError,
     ServiceTimeoutError,
     ServiceUnavailableError,
@@ -138,6 +139,97 @@ def get_feedback_counters() -> dict[str, int]:
     """
     with _FEEDBACK_COUNTERS_LOCK:
         return _FEEDBACK_COUNTERS.copy()
+
+
+_FAILURE_STREAK_LIMIT = 3
+"""R857：连续失败到这个次数，``interactive_feedback`` 就不再回“请立即重调”。
+
+前两次照旧回重调提示：一次失败不等于永久失败（Web UI 刚好在重启、一次请求超时），
+让 AI 再调一次通常就好了。第三次起说明原因并让 AI 停下：端口被别的程序占着、
+Web UI 起不来这类失败再试多少次都一样，而每次失败几乎是立刻返回的（真实 stdio
+MCP 服务上实测 0.00 秒），重调提示等于让 AI 以模型的速度原地空转，永远没有人看到。"""
+
+_FAILURE_REASON_MAX_CHARS = 400
+
+
+class _FailureStreak:
+    """连续失败的次数：失败加一，拿到答复或者等待超时就清零。
+
+    只是个进程内的计数，不拦截任何调用：下一次调用照样真去连 Web UI，所以用户
+    把问题处理好之后，AI 再调一次就是好的，不会被上一轮的失败挡住。
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._count = 0
+
+    def hit(self) -> int:
+        with self._lock:
+            self._count += 1
+            return self._count
+
+    def clear(self) -> None:
+        with self._lock:
+            self._count = 0
+
+    @property
+    def count(self) -> int:
+        with self._lock:
+            return self._count
+
+
+_FAILURE_STREAK = _FailureStreak()
+
+
+def reset_failure_streak_for_testing() -> None:
+    """**仅供测试**：把连续失败的次数清零，让用例互不影响（conftest 的 autouse 夹具调用）。"""
+    _FAILURE_STREAK.clear()
+
+
+def _one_line(text: str, limit: int) -> str:
+    """压成一行并截断：原因要放进一句话里交给 AI。"""
+    flat = " ".join(text.split())
+    if len(flat) <= limit:
+        return flat
+    return flat[: limit - 1] + "…"
+
+
+def _describe_failure(exc: BaseException) -> str:
+    """把异常写成一句 AI 和用户都读得懂的原因。"""
+    detail = _one_line(str(exc), _FAILURE_REASON_MAX_CHARS)
+    name = type(exc).__name__
+    if isinstance(exc, AIAgentError):
+        # 本项目自己的异常，消息本来就是写给人看的（端口被占用、文件缺失……）。
+        return detail or name
+    return f"{name}: {detail}" if detail else name
+
+
+def _giving_up_text(streak: int, reason: str) -> str:
+    return (
+        f"【interactive_feedback 暂时不可用】已连续 {streak} 次没能把问题交给 Web UI，"
+        "再立刻重试不会有结果。\n"
+        f"原因：{reason}\n"
+        "请先不要再调用 interactive_feedback：把上面的原因告诉用户，"
+        "等用户处理好之后再继续。\n"
+        f"(interactive_feedback is unavailable: {streak} consecutive attempts "
+        "failed. Do not call it again right away; tell the user the reason "
+        "above and wait until it is fixed.)"
+    )
+
+
+def _failed_call_response(reason: str) -> list:
+    """一次调用没能把问题交给 Web UI 时，回给 AI 的内容（R857）。
+
+    连续失败不到 ``_FAILURE_STREAK_LIMIT`` 次：照旧回“请立即重调”；到了：写明
+    最近一次的原因，让 AI 停下来告诉用户。
+    """
+    streak = _FAILURE_STREAK.hit()
+    if streak < _FAILURE_STREAK_LIMIT:
+        return server_config._make_resubmit_response()
+    logger.warning(
+        f"interactive_feedback 已连续失败 {streak} 次，这次不再让 AI 立即重试：{reason}"
+    )
+    return [TextContent(type="text", text=_giving_up_text(streak, reason))]
 
 
 def _silence_logging_capability_deprecation() -> None:
@@ -1045,7 +1137,7 @@ def launch_feedback_ui(
         except httpx.HTTPError as e:
             logger.error(f"添加任务请求失败: {e}", exc_info=True)
             return {
-                "error": f"无法连接到 Web UI：{e}。请确认 Web UI 服务已启动，并检查地址/端口配置（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl）。"
+                "error": f"无法连接到 Web UI：{e}。请确认 Web UI 服务已启动，并检查地址/端口配置（如 network_security.bind_interface、web_ui.port 或 VS Code 的 serverUrl）。"
             }
 
         backend_timeout = server_config.calculate_backend_timeout(
@@ -1317,7 +1409,8 @@ async def interactive_feedback(
     - On parameter validation failure, raises `ToolError` so the agent can
       retry with corrected arguments. On service / task failure, returns a
       configurable resubmit prompt instructing the agent to call this tool
-      again, instead of silently dropping the request.
+      again, instead of silently dropping the request. After 3 failures in
+      a row it returns the cause instead: stop calling and tell the user.
 
     Cross-tool compatibility:
     - `summary` / `prompt` are accepted as aliases for `message` so the same
@@ -1473,10 +1566,15 @@ async def interactive_feedback(
 
             if response.status_code != 200:
                 error_detail = "未知错误"
+                # R857：交给 AI 的原因只引用 Web UI 自己的 JSON 错误字段，别的程序
+                # 回的纯文本响应体不原样转给模型。
+                web_ui_error = ""
                 try:
                     payload = response.json()
                     if isinstance(payload, dict):
                         error_detail = str(payload.get("error", error_detail))
+                        if isinstance(payload.get("error"), str):
+                            web_ui_error = payload["error"]
                     else:
                         error_detail = str(payload)
                 except ValueError as e:
@@ -1500,7 +1598,10 @@ async def interactive_feedback(
                 )
                 _bump_feedback_counter("failed_total")
 
-                return server_config._make_resubmit_response()
+                reason = f"Web UI 拒绝了新任务（HTTP {response.status_code}"
+                if web_ui_error:
+                    reason += f"：{_one_line(web_ui_error, 120)}"
+                return _failed_call_response(reason + "）")
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
             logger.event(
@@ -1546,7 +1647,7 @@ async def interactive_feedback(
                     task_id, target_host, config.port, client=client
                 )
             )
-            return server_config._make_resubmit_response()
+            return _failed_call_response(f"连不上 Web UI（{_describe_failure(e)}）")
         except asyncio.CancelledError:
             await _run_to_completion(
                 _close_orphan_task_best_effort(
@@ -1573,7 +1674,9 @@ async def interactive_feedback(
             )
             _bump_feedback_counter("failed_total")
 
-            return server_config._make_resubmit_response()
+            return _failed_call_response(
+                f"等待用户答复时出错：{_one_line(str(result['error']), 200)}"
+            )
 
         if (
             isinstance(result, dict)
@@ -1588,6 +1691,9 @@ async def interactive_feedback(
                 duration_ms=int((time.monotonic() - _task_t0) * 1000),
             )
             _bump_feedback_counter("failed_total")
+            # R857：任务已经送到 Web UI、在那里等过了——等不到人是设计内的长等待循环
+            # （人不在座位上），不是“Web UI 用不了”，所以不计入连续失败。
+            _FAILURE_STREAK.clear()
             await _emit_ctx_info(
                 ctx,
                 f"Task {task_id} timed out or was lost before human feedback arrived",
@@ -1603,6 +1709,7 @@ async def interactive_feedback(
             duration_ms=_completed_duration_ms,
         )
         _bump_feedback_counter("completed_total")
+        _FAILURE_STREAK.clear()
         await _emit_ctx_info(
             ctx,
             f"Received human feedback for task {task_id} (took {_completed_duration_ms} ms)",
@@ -1650,7 +1757,7 @@ async def interactive_feedback(
         logger.error(f"interactive_feedback 工具执行失败: {e}", exc_info=True)
         _bump_feedback_counter("failed_total")
 
-        return server_config._make_resubmit_response()
+        return _failed_call_response(_describe_failure(e))
 
 
 class FeedbackServiceContext:

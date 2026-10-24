@@ -97,7 +97,7 @@ class TestUpdateLanguageEndpoint(_UpdateLanguageBase):
 
     @patch("ai_intervention_agent.web_ui.get_config")
     def test_config_manager_exception_returns_500(self, mock_get_config) -> None:
-        """``update_section`` 抛异常 → 500，不应让 5xx 泄漏 traceback 给前端。"""
+        """``update_section`` 抛异常 → 500，不应让 5xx 泄漏 traceback 或异常文字给前端（R859）。"""
         mock_mgr = MagicMock()
         mock_mgr.update_section.side_effect = OSError("simulated config write failure")
         mock_get_config.return_value = mock_mgr
@@ -107,7 +107,9 @@ class TestUpdateLanguageEndpoint(_UpdateLanguageBase):
         self.assertEqual(resp.status_code, 500)
         data = resp.get_json()
         self.assertEqual(data["status"], "error")
-        self.assertIn("simulated config write failure", data["message"])
+        # 标准化文案，不应是 raw exception text（与通知配置路由同一条规则）
+        self.assertNotIn("simulated config write failure", data["message"])
+        self.assertTrue(data["message"])
 
     def test_extra_whitespace_is_stripped(self) -> None:
         """``" zh-CN "`` 应被 ``.strip()`` 后视为合法。"""

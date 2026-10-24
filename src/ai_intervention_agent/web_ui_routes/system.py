@@ -1647,7 +1647,7 @@ class SystemRoutesMixin:
                       type: string
                       description: 实际使用的命令（基名），"system" 表示系统默认
               400:
-                description: 路径不存在或编辑器不可用
+                description: 没有可打开的配置文件：服务器解析不出路径、文件不存在，或 `path` 不是字符串 / 解析不了
                 schema:
                   type: object
                   properties:
@@ -1657,12 +1657,9 @@ class SystemRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误分类码 (e.g., path_not_found / editor_unavailable)
-                    message:
-                      type: string
-                      description: 错误说明
+                      description: '说明文字（英文），例如 "Config file does not exist: <path>"'
               403:
-                description: 来源非环回地址，或路径不在白名单中
+                description: 不是本机访问、也没带有效 API token，或路径不在白名单中
                 schema:
                   type: object
                   properties:
@@ -1672,12 +1669,9 @@ class SystemRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 安全拒绝码 (e.g., non_loopback / path_not_whitelisted)
-                    message:
-                      type: string
-                      description: 安全拒绝原因说明
+                      description: 说明文字（英文，固定的）：哪一道门没过
               500:
-                description: 启动子进程失败
+                description: 没有可用的编辑器、编辑器在探测和启动之间消失，或启动失败
                 schema:
                   type: object
                   properties:
@@ -1687,10 +1681,7 @@ class SystemRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 子进程错误分类
-                    message:
-                      type: string
-                      description: 子进程启动失败详情
+                      description: 说明文字（英文，固定的），具体原因只写在日志里
             """
             if not _is_authorized():
                 logger.warning(
@@ -1884,7 +1875,7 @@ class SystemRoutesMixin:
             description: |
                 设置面板（Bark / 跨设备通知）用本接口判断 ``effective_base_url``
                 是否回环、并展示 ``suggested_lan_base_url`` 推荐值，引导用户配
-                ``web_ui.external_base_url`` 或调整 ``web_ui.host``。
+                ``web_ui.external_base_url`` 或调整 ``network_security.bind_interface``。
 
                 **任意来源** 的请求都允许查询 —— LAN 上 PWA 设置面板也需要看到
                 这个状态。所有字段都是诊断元数据，不暴露内部敏感配置。
@@ -2096,10 +2087,12 @@ class SystemRoutesMixin:
                       properties:
                         p50_ms:
                           type: number
-                          description: 50 分位延迟（ms, float）
+                          nullable: true
+                          description: 50 分位延迟（ms, float）；count 为 0 时为 null
                         p95_ms:
                           type: number
-                          description: 95 分位延迟（ms, float）
+                          nullable: true
+                          description: 95 分位延迟（ms, float）；count 为 0 时为 null
                         count:
                           type: integer
                           description: 当前 ring buffer 实际样本数
@@ -2238,9 +2231,9 @@ class SystemRoutesMixin:
                       type: string
                       enum: [unhealthy]
                       description: 固定为 "unhealthy"
-                    timestamp:
+                    ts_unix:
                       type: integer
-                      description: 上次检查的 Unix timestamp (秒)
+                      description: 本次检查的 Unix timestamp (秒)
                     checks:
                       type: object
                       description: 各子检查的状态映射
@@ -2430,10 +2423,12 @@ class SystemRoutesMixin:
             from flask import Response
 
             payload = _render_prometheus_metrics()
+            # ``content_type``, not ``mimetype``: Werkzeug adds ``; charset=utf-8`` to a
+            # ``text/*`` mimetype itself, so this string would name the charset twice (R861).
             return Response(
                 payload,
                 status=200,
-                mimetype="text/plain; version=0.0.4; charset=utf-8",
+                content_type="text/plain; version=0.0.4; charset=utf-8",
             )
 
         @self.app.route("/api/system/log-level", methods=["GET"])
@@ -2522,8 +2517,10 @@ class SystemRoutesMixin:
 
                 **安全约束**：
 
-                * 仅 ``loopback`` 来源（``127.0.0.1`` / ``::1``）允许调用——
-                  与 ``open-config-file`` 同档安全级别，避免远程主机通过
+                * 仅 ``loopback`` 来源（``127.0.0.1`` / ``::1``），或带有效 API token
+                  （``Authorization: Bearer <token>`` / ``X-API-Token: <token>``，
+                  见 ``[network_security].api_token``）的请求允许调用——与
+                  ``open-config-file`` 同档安全级别，避免远程主机通过
                   web UI 把日志炸到磁盘满；
                 * 只接受 ``DEBUG`` / ``INFO`` / ``WARNING`` / ``ERROR`` /
                   ``CRITICAL`` 5 个 enum 值（大小写不敏感）；其他值返回 400；
@@ -2573,12 +2570,9 @@ class SystemRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 校验失败分类码 (e.g., invalid_level / missing_field)
-                    message:
-                      type: string
-                      description: 错误说明
+                      description: 说明文字（英文）：level 缺失或不是字符串，或不是 5 个 enum 值之一（后一种会列出有效值）
               403:
-                description: 非 loopback 来源
+                description: 不是本机访问、也没带有效 API token
                 schema:
                   type: object
                   properties:
@@ -2588,10 +2582,7 @@ class SystemRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 安全拒绝码 (e.g., non_loopback)
-                    message:
-                      type: string
-                      description: 安全拒绝原因说明
+                      description: 说明文字（英文，固定的）
             """
             if not _is_authorized():
                 return (
@@ -2738,8 +2729,8 @@ class SystemRoutesMixin:
                     token_length:
                       type: integer
                       description: |
-                        新 token 字符长度 (常 64); 客户端可用于 sanity check
-                        防止传输截断 (与 api_token 的 len 严格一致)。
+                        新 token 字符长度 (43：``secrets.token_urlsafe(32)``); 客户端可用于
+                        sanity check 防止传输截断 (与 api_token 的 len 严格一致)。
                     rotated_at:
                       type: string
                       description: ISO-8601 UTC timestamp
@@ -2753,7 +2744,7 @@ class SystemRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: 错误说明文本（如 `loopback only`）
+                      description: '说明文字（英文，固定的）：rotation 只接受本机来源，不接受 API token'
               500:
                 description: 写入 config 失败
                 schema:
@@ -2766,19 +2757,18 @@ class SystemRoutesMixin:
                       type: string
                       description: 错误说明文本（写入失败原因）
               429:
-                description: 速率超限（5/hour）
+                description: 速率超限（5/hour）；响应头 `Retry-After` 给出建议等待的秒数
+                headers:
+                  Retry-After:
+                    type: integer
+                    description: 建议等待的秒数（≥ 1）
                 schema:
                   type: object
                   properties:
-                    success:
-                      type: boolean
-                      description: 固定为 false
                     error:
                       type: string
-                      description: 错误说明文本（如 `rate limit exceeded`）
-                    retry_after:
-                      type: integer
-                      description: 建议客户端等待秒数后重试
+                      enum: [rate_limit_exceeded]
+                      description: 固定为 rate_limit_exceeded
             """
 
             if not _is_loopback_request():
@@ -2879,13 +2869,14 @@ class SystemRoutesMixin:
                     has_token:
                       type: boolean
                       description: |
-                        当前是否已配置 API token (true = secret 已存在,
-                        false = 从未 rotate 过)。
+                        当前是否配置了可用的 API token (已设置且长度 >= 16);
+                        未配置或太短为 false。
                     token_length:
                       type: integer
+                      nullable: true
                       description: |
-                        当前 token 字符长度 (常 64); 用于客户端 sanity check;
-                        has_token=false 时为 0。
+                        当前 token 字符长度 (rotate 生成的是 43); 用于客户端
+                        sanity check; has_token=false 时为 null。
                     rotated_at:
                       type: string
                       description: |
@@ -2893,9 +2884,11 @@ class SystemRoutesMixin:
                         过时为空字符串。
                     age_seconds:
                       type: integer
+                      nullable: true
                       description: |
                         距 rotated_at 的秒数 (server 当前时刻 - rotated_at);
-                        用于前端展示 "X days ago" 等友好时间。
+                        用于前端展示 "X days ago" 等友好时间。rotated_at 为空、
+                        读不出来或在未来时为 null。
               403:
                 description: 非 loopback 来源
             """

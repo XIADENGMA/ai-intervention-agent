@@ -199,7 +199,9 @@ class _SyncClient:
 
     def get(self, url: str, **_kwargs: Any) -> MagicMock:
         self.gets.append(url)
-        return MagicMock(status_code=200)
+        response = MagicMock(status_code=200)
+        response.json.return_value = {"status": "ok"}
+        return response
 
     def post(self, url: str, **_kwargs: Any) -> MagicMock:
         self.posts.append(url)
@@ -236,7 +238,9 @@ class TestServiceManagerUrls:
 
             async def get(self, url: str, **_kwargs: Any) -> MagicMock:
                 asked.append(url)
-                return MagicMock(status_code=200)
+                response = MagicMock(status_code=200)
+                response.json.return_value = {"status": "ok"}
+                return response
 
         async def main() -> None:
             await sm.ensure_web_ui_running(_config(host), client=Client())

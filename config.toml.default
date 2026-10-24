@@ -65,7 +65,11 @@ bark_timeout = 10
 # - "zh-CN": 简体中文 / Simplified Chinese
 # - "zh-TW": 繁體中文 / Traditional Chinese
 language = "auto"
-# Web 服务监听地址 / Web server listen address (overridden by network_security.bind_interface)
+# 这一项不决定监听地址 / This key does NOT choose the listen address. The Web UI listens on
+# [network_security] bind_interface (default "0.0.0.0") and only falls back to this key when
+# bind_interface is missing, which it never is in a config merged with the defaults. To change
+# the address edit network_security.bind_interface, or set the env var
+# AI_INTERVENTION_AGENT_WEB_UI_HOST.
 host = "127.0.0.1"
 # Web 服务端口 / Web server port - range [1, 65535], ports <1024 require admin privileges
 port = 8080
@@ -100,7 +104,9 @@ ios_a2hs_hint_dismissed = false
 # 网络安全配置 / Network Security Settings
 # ──────────────────────────────────────────────
 [network_security]
-# 绑定网络接口 / Bind network interface (127.0.0.1=local only, 0.0.0.0=all interfaces)
+# 绑定网络接口 / Bind network interface: the address the Web UI listens on
+# (127.0.0.1=local only, 0.0.0.0=all interfaces). The env var
+# AI_INTERVENTION_AGENT_WEB_UI_HOST overrides it.
 bind_interface = "0.0.0.0"
 # 允许访问的网络段 / Allowed network segments
 allowed_networks = [

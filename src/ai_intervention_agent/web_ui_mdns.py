@@ -116,12 +116,17 @@ class MdnsMixin:
                 properties=properties,
                 server=server_fqdn,
             )
-        except (OSError, ValueError) as e:
+        except Exception as e:
+            # zeroconf 对不合格的 service_name（UTF-8 超过 63 字节、含控制字符）抛的
+            # BadTypeInNameException 既不是 OSError 也不是 ValueError；本函数跑在后台线程里，
+            # 漏出去就是 stderr 上一段 traceback，既不降级也不提示该改哪个配置项（R862）。
             logger.warning(
-                f"mDNS ServiceInfo 构造失败（publish_ip={publish_ip!r}），"
-                f"已降级，不影响 Web UI 启动: {e}",
+                f"mDNS ServiceInfo 构造失败（service_name={service_name!r}，"
+                f"publish_ip={publish_ip!r}），已降级，不影响 Web UI 启动: {e}"
+                "（mdns.service_name 按 UTF-8 计不能超过 63 字节，也不能含控制字符）",
                 exc_info=True,
             )
+            print(f"mDNS 发布失败：{e}（已降级为仅通过 IP/localhost 访问）。")
             return
 
         try:
