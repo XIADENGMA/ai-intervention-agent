@@ -313,11 +313,15 @@ class TestTheSequence:
     @posix_only
     def test_the_encoding_does_not_depend_on_the_locale(self, tmp_path: Path) -> None:
         # Windows (cp1252 / gbk) and a bare C locale both default to a narrow encoding.
-        target = tmp_path / "out.txt"
+        # The child's command line has to stay pure ASCII: on Linux a C locale decodes argv as ASCII, so
+        # a `-c` source (or a path) with a non-ASCII character never starts ("Unable to decode the
+        # command from the command line"), while macOS always decodes argv as UTF-8 and lets it through.
+        text = "配置 — żółć"
         script = (
             "import sys; from ai_intervention_agent.config_utils import atomic_write_text; "
-            "atomic_write_text(sys.argv[1], '配置 — żółć')"
+            f"atomic_write_text(sys.argv[1], {text!a})"
         )
+        assert script.isascii()
         environment = {
             **os.environ,
             "LC_ALL": "C",
@@ -328,8 +332,9 @@ class TestTheSequence:
         environment.pop("PYTHONIOENCODING", None)
 
         completed = subprocess.run(
-            [sys.executable, "-c", script, str(target)],
+            [sys.executable, "-c", script, "out.txt"],
             env=environment,
+            cwd=tmp_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -337,7 +342,7 @@ class TestTheSequence:
         )
 
         assert completed.returncode == 0, completed.stderr
-        assert target.read_bytes() == "配置 — żółć".encode()
+        assert (tmp_path / "out.txt").read_bytes() == text.encode("utf-8")
 
 
 # ---------------------------------------------------------------------------
