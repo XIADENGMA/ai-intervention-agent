@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -21,7 +22,13 @@ class TestImportConfig(unittest.TestCase):
     """import_config 方法"""
 
     def _get_manager(self) -> ConfigManager:
-        return ConfigManager()
+        # 私有管理器 + 私有配置文件，用例结束时关掉：save=True 的导入会排一个 3 秒的延迟保存，
+        # 不关的话它落进别的用例里去写那个用例共用的配置文件（见 TestImportConfigLeavesNoSaveBehind）
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        manager = ConfigManager(os.path.join(directory.name, "config.toml"))
+        self.addCleanup(manager.shutdown)
+        return manager
 
     def test_import_non_dict_returns_false(self):
         mgr = self._get_manager()
@@ -94,6 +101,49 @@ class TestImportConfig(unittest.TestCase):
         }
         result = mgr.import_config(data, merge=True, save=False)
         self.assertIsInstance(result, bool)
+
+
+class TestImportConfigLeavesNoSaveBehind(unittest.TestCase):
+    """TestImportConfig 的用例结束时，它们排的延迟保存都已了结。
+
+    ``import_config(save=True)`` 在私有管理器上排一个 3 秒的定时器。定时器活过用例的话，
+    3 秒后它会落进当时正在跑的别的用例里（别的文件也一样），去解析并写那个用例共用的
+    配置文件；``tracemalloc`` 数的是整个进程，R845 的内存测试就这样被一次保存弄红过。
+    """
+
+    def test_every_save_scheduled_by_these_tests_is_done_when_they_end(self):
+        saves: list[threading.Timer] = []
+        real_start = threading.Timer.start
+        this_thread = threading.get_ident()
+
+        def start_and_remember(timer: threading.Timer) -> None:
+            # 只记这个线程（跑用例的线程）起的配置保存定时器，别的线程里起的不算
+            is_a_config_save = (
+                getattr(timer.function, "__func__", None) is ConfigManager._delayed_save
+            )
+            if is_a_config_save and threading.get_ident() == this_thread:
+                saves.append(timer)
+            real_start(timer)
+
+        result = unittest.TestResult()
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestImportConfig)
+        try:
+            with patch.object(threading.Timer, "start", start_and_remember):
+                suite.run(result)
+            # 先数还没了结的，再统一取消：不管结论如何，这里都不留定时器给别的用例
+            left_behind = [timer for timer in saves if not timer.finished.is_set()]
+        finally:
+            for timer in saves:
+                timer.cancel()
+
+        self.assertEqual(result.errors + result.failures, [])
+        # 对照：这些用例确实会排保存（没有的话，下面的断言就空转了）
+        self.assertTrue(saves, "TestImportConfig 里没有用例排保存了，这条测试已经空转")
+        self.assertEqual(
+            left_behind,
+            [],
+            f"{len(left_behind)} 个延迟保存在用例结束后还排着",
+        )
 
 
 class TestDeepMerge(unittest.TestCase):
