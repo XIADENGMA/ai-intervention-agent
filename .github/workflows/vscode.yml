@@ -55,7 +55,7 @@ jobs:
       # harden-runner 仅支持 Linux GitHub-hosted runner；macOS 矩阵行静默跳过
       - name: Harden runner（audit）
         if: runner.os == 'Linux'
-        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: audit
 
@@ -97,7 +97,7 @@ jobs:
         run: npm run vscode:package
 
       - name: 上传 VSIX 产物
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ai-intervention-agent-vsix-${{ matrix.os }}
           path: packages/vscode/*.vsix
