@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,25 @@ if TYPE_CHECKING:
     from ai_intervention_agent.web_ui_rate_limiter import WebUiLimiterProtocol
 
 logger = EnhancedLogger(__name__)
+
+
+# Web 字体的 Content-Type（RFC 8081）。Flask 的 ``send_from_directory`` 用 ``mimetypes``
+# 按扩展名查类型；Python 3.13 及更早自带的表里没有 ``.woff`` / ``.woff2``，只能靠主机的
+# ``mime.types``（``/etc/mime.types`` 等），精简的 Linux 镜像里没有这个文件，MathJax 的字体
+# 就会被当成 ``application/octet-stream`` 发出去（R877）。在这里登记，类型就不再取决于主机。
+_FONT_MIME_TYPES: tuple[tuple[str, str], ...] = (
+    (".woff", "font/woff"),
+    (".woff2", "font/woff2"),
+)
+
+
+def _register_font_mime_types() -> None:
+    """登记 Web 字体的 Content-Type（幂等；主机的 mime.types 里写了别的，也以这里为准）。"""
+    for extension, mime_type in _FONT_MIME_TYPES:
+        mimetypes.add_type(mime_type, extension)
+
+
+_register_font_mime_types()
 
 
 # ``Accept-Encoding: br, gzip`` 时按优先级 br > gzip > identity 返回对应
@@ -189,7 +209,7 @@ class StaticRoutesMixin:
                 filename: 字体文件名（URL路径参数）
 
             返回值：
-                字体文件的二进制内容（application/font-woff等MIME类型）
+                字体文件的二进制内容（font/woff、font/woff2 等 MIME 类型，见 R877）
 
             频率限制：
                 - 已豁免（静态资源不做限流，避免首屏加载被 429 影响）

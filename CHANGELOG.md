@@ -896,6 +896,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   mutants killed) schedules a save in each of the four ways the manager has, reloads, and for any
   timer that was not cancelled does what its thread would do when the time has come, then holds
   the hand-edited file to its bytes; nothing in it waits for a timer.
+- A Web font is answered with the same Content-Type on every host (R877). The Web UI serves the
+  MathJax fonts (`.woff`) through Flask's own static endpoint, and Flask asks the standard
+  library's `mimetypes` for the type of a file by its extension. The table that `mimetypes` ships
+  with has no `.woff` or `.woff2` up to Python 3.13 (3.14 added them), so the answer came from the
+  host's `mime.types`: `font/woff` where the file lists it, `application/octet-stream` in a slim
+  Linux image that has no such file, and whatever an older file says (for example
+  `application/x-font-woff`) on a host that has one. Browsers load a web font whatever its type,
+  so nothing visible broke, but the same file went out with a different header from host to host,
+  and the test of R771 failed in a Python 3.13 container without `/etc/mime.types`.
+  `web_ui_routes/static.py` now registers `font/woff` and `font/woff2` (RFC 8081) with
+  `mimetypes` when it is imported, over whatever the host says. The new module (5 tests, all 5
+  fail on the previous source; 5 of 5 mutants killed) starts a clean interpreter for each
+  scenario, a host without a `mime.types` file and a host whose file says something else,
+  because the type table is process-wide state, and asks Flask for a shipped font; a third check
+  holds every font extension shipped under `static/` to the registration.
 
 ### Removed
 
