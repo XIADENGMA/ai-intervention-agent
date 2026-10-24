@@ -232,8 +232,8 @@ def peak_traced_bytes_in_a_clean_interpreter(
     """在一个只跑这段代码的新解释器里量 ``measured`` 的 ``tracemalloc`` 峰值（字节）。
 
     ``tracemalloc`` 记的是整个进程的分配，不管哪个线程分配的。pytest 进程里总有前面的用例留下的
-    线程：``ConfigManager`` 的延迟保存（``update_section`` 起一个 3 秒的 ``threading.Timer``，
-    ``reload`` 在没有待写入的键时不会取消它）、配置文件的监听线程、任务队列的清理线程……它们醒来
+    线程：``ConfigManager`` 的延迟保存（``update_section`` 起一个 3 秒的 ``threading.Timer``；
+    R876 之前 ``reload`` 在没有待写入的键时不会取消它，现在会）、配置文件的监听线程、任务队列的清理线程……它们醒来
     解析一次 TOML 就分配 2–3 MB，落在测量窗口里，一个断言“峰值小于 256 KiB”的用例就随机失败：
     CI 的 Python 3.13 上红过一次；在 Linux 容器里按 CI 的方式整跑（xdist 4、loadfile），诊断版本四次里
     复现了两次。新解释器里只有主线程，数字只来自被测的代码。

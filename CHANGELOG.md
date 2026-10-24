@@ -881,6 +881,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   outside the lock should get the fixed decoder as well. The docs and the test docstring that
   named FastMCP 4.1.1 now say 4.1. No code changed and no exception was added to the audit
   script; both gates pass again.
+- A reload no longer leaves a save that was scheduled before it to run afterwards (R876). The
+  config file is saved behind a 3 s debounce, and `reload()` (what the file watcher calls when the
+  file changes on disk) and `restore_config()` replace the in-memory config with what is on disk:
+  the external edit wins, and whatever was waiting to be saved is dropped. `_load_config`
+  cancelled the timer only when a key sat in `_pending_changes`, which `set`, `update` and
+  `import_config` fill and `update_section` (the settings page) does not, so after an
+  `update_section` the timer outlived the reload and, up to three seconds later, serialised the
+  config it had just loaded into the file. A hand-written file that lacks keys the defaults have
+  came back with every default key added: in a probe, a 55-byte file edited by hand within the
+  debounce window of a settings change became 1,048 bytes. The timer is now cancelled whether or
+  not a key is pending, by `reload()` and by `restore_config()` alike, and a save scheduled after
+  the reload still runs. The new module (12 tests, 3 of which fail on the previous source; 4 of 4
+  mutants killed) schedules a save in each of the four ways the manager has, reloads, and for any
+  timer that was not cancelled does what its thread would do when the time has come, then holds
+  the hand-edited file to its bytes; nothing in it waits for a timer.
 
 ### Removed
 

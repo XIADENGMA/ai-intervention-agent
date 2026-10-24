@@ -712,7 +712,11 @@ class ConfigManager(
             return False
 
     def _load_config(self):
-        """从磁盘加载配置文件，排除 network_security，合并默认配置。"""
+        """从磁盘加载配置文件，排除 network_security，合并默认配置。
+
+        磁盘上的内容替换内存里的配置（external-edit-wins）：还没写盘的变更随之作废，
+        待写入的键清空，排着的延迟保存取消。
+        """
         with self._lock:
             if self._pending_changes:
                 logger.warning(
@@ -721,9 +725,12 @@ class ConfigManager(
                     f"{sorted(self._pending_changes)}"
                 )
                 self._pending_changes.clear()
-                if self._save_timer is not None:
-                    self._save_timer.cancel()
-                    self._save_timer = None
+            # 定时器不能只在有待写入的键时才取消：update_section 排保存时不记键，它的定时器
+            # 会活过这次加载，到点把刚读进来的配置再序列化写回去，手改过的文件被改写（R876）
+            if self._save_timer is not None:
+                self._save_timer.cancel()
+                self._save_timer = None
+                logger.debug("已取消尚未执行的延迟保存（内存配置被磁盘上的内容替换）")
 
             had_previous_config = bool(self._config)
             previous_config = self._config.copy()

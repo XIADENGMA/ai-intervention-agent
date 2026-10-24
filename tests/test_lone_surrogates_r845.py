@@ -301,8 +301,9 @@ class TestTheMeasurementIsTakenInACleanInterpreter:
     The CI run of 7a99e3dd failed on Python 3.13 with ``AssertionError: 2563213 bytes`` for the
     wide-document test.  ``tracemalloc`` counts what every thread allocates, and a
     ``threading.Timer`` that an earlier test's ``update_section`` had started (the debounced
-    config save, which ``reload`` does not cancel when nothing is pending) fired inside the
-    window and parsed the config with tomlkit: 2-3 MB for a function that allocates 2 KB.
+    config save, which ``reload`` did not cancel when nothing was pending, until R876) fired
+    inside the window and parsed the config with tomlkit: 2-3 MB for a function that allocates
+    2 KB.
     """
 
     def test_a_thread_of_this_process_does_not_change_the_number(self) -> None:
