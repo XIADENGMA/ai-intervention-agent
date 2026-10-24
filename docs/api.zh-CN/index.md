@@ -206,7 +206,7 @@ ChatGPT Desktop / Claude Desktop / Cursor 等客户端原生渲染，避免在�
 - **web_ui_config_sync**: 配置热更新回调 —— 把 `feedback.auto_resubmit_timeout` 与网络安全配置变更同步到运行中的任务 / Web UI 实例
 - **web_ui_mdns**: mDNS / DNS-SD 生命周期 Mixin —— 服务发现、注册、注销
 - **web_ui_mdns_utils**: mDNS 纯函数辅助 —— 主机名规范化、虚拟网卡过滤、IPv4 探测
-- **web_ui_rate_limiter**: Web UI 轻量内存限流器 —— 保留 Flask-Limiter 装饰器兼容面，同时不在 cold path 导入 `flask_limiter`
+- **web_ui_rate_limiter**: Web UI 轻量内存限流器 —— 保留 Flask-Limiter 的装饰器接口（`limit`、`exempt`），不依赖任何第三方包
 - **web_ui_wsgi**: 可选 WSGI app factory，用于生产风格 runner，同时保留本地 Flask dev-server 默认路径
 
 ---

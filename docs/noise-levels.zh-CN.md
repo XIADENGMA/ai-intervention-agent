@@ -139,7 +139,9 @@ error 日志 + 红色状态栏，不能"只打 error 日志不出 toast"或者"�
 
 - 日志等级**只和 IG-6 级别挂钩**，不和业务严重性挂钩
 - critical → `error`；important → `info`；quiet → `debug`
-- 扩展侧 `logLevel` 配置决定 `debug` 是否写入 Output；Web UI 通过 `localStorage.AIIA_LOG_LEVEL` 同步控制
+- 扩展侧 `logLevel` 配置决定 `debug` 是否写入 Output；Web UI 没有对应的设置项：调试输出走
+  `console.debug`（Chrome DevTools 默认不显示这个 Verbose 级别），`multi_task.js` 里的调试辅助函数在
+  设置 `window.AIIA_DEBUG` 之前保持静默
 
 ### 4.4 状态栏通道（VSCode 插件独有）
 

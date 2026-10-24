@@ -1,7 +1,7 @@
 # Observability — Sample Grafana Dashboard
 
 > **R220 / Cycle 11 · F-cycle10-4.** Reference Grafana dashboard JSON
-> covering the `/metrics` endpoint exposed by
+> covering the `/api/system/metrics` endpoint exposed by
 > `src/ai_intervention_agent/web_ui_routes/system.py`. Companion to
 > CR#23's `F-cycle10-4` follow-up: R207 added
 > `aiia_sse_schema_violation_total` but it was never documented in a
@@ -16,7 +16,10 @@
 2. Grafana UI → **Dashboards** → **New** → **Import** → **Upload
    JSON file** → pick `grafana-dashboard.json`.
 3. When prompted, select a Prometheus data source already scraping
-   the AI Intervention Agent's `/metrics` endpoint.
+   the AI Intervention Agent's `/api/system/metrics` endpoint. The
+   Web UI does not serve Prometheus's default path, so the scrape job
+   must set `metrics_path` (the "Verifying the effective config"
+   section of `docs/configuration.md` has a complete job).
 4. Click **Import**. The dashboard appears with `uid:
    aiia-overview-r220` and the title *AI Intervention Agent —
    Overview*.
@@ -125,7 +128,7 @@ silently degrades into a duplicate of the overview).
 - `docs/configuration.md` — `AIIA_SSE_SCHEMA_VALIDATE` env var
   (R205) and how it interacts with `aiia_sse_schema_violation_total`.
 - `src/ai_intervention_agent/web_ui_routes/system.py` —
-  authoritative `/metrics` exposition logic.
+  authoritative `/api/system/metrics` exposition logic.
 - `docs/code-reviews/cr23.md` — origin of the F-cycle10-4 backlog
   item (overview dashboard, R220).
 - `docs/code-reviews/cr24.md` — origin of the F-cycle11-3 backlog

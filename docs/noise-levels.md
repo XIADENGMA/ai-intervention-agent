@@ -161,7 +161,9 @@ trip from `connected` back to `connected` clears that family's counter.
 - Log levels are **tied to IG-6 levels only**, not business severity.
 - critical → `error`; important → `info`; quiet → `debug`.
 - The extension's `logLevel` setting decides whether `debug` writes to
-  Output; the Web UI uses `localStorage.AIIA_LOG_LEVEL` for the same purpose.
+  Output. The Web UI has no such setting: its debug lines use
+  `console.debug` (Chrome's DevTools hide that Verbose level by default), and
+  the debug helper in `multi_task.js` stays silent until `window.AIIA_DEBUG` is set.
 
 ### 4.4 Status-bar channel (VSCode plugin only)
 

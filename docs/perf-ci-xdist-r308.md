@@ -19,8 +19,10 @@ to ci_gate.py (`docs/code-reviews/cr60.md` §2D)
 | `-n 8 --dist=loadfile` | 32.87s | 5.83x | ✅ Stable | Local 8+ core dev |
 | `-n auto (16)` | 33.60s | 5.70x | ✅ Stable | Local high-core dev |
 
-**Decision**: lock CI to `-n 4 --dist=loadfile`. Local devs can opt-in
-to `-n auto` via `AIIA_TEST_WORKERS=auto uv run pytest`.
+**Decision**: lock CI to `-n 4 --dist=loadfile`. Local devs can opt in
+to `-n auto` by running `pytest -n auto --dist=loadfile` directly; a
+`ci_gate.py` switch for it is only a proposal (see "Per-environment
+override" below).
 
 ---
 

@@ -173,8 +173,13 @@ app), 是 v3.8 第 2 个全工业化 pattern (与 R322 idempotent 同 cycle
 发送通知主入口，返回事件ID。types=None 时根据配置自动选择渠道。
 
 skip_unavailable=True 时，没有已注册提供者的渠道（配置里关闭或当前环境不支持）
-被直接丢弃，而不是算作发送失败并重试；一个渠道都不剩就不创建事件，返回 ""。
+被直接丢弃，而不是算作发送失败并重试。
 系统通知的提供者只要环境支持就会注册，所以 system_enabled 在这里单独检查。
+
+一个渠道都不剩就不创建事件，返回 ""：``types`` 是空列表，或自动选择时配置里的渠道
+全关着（声音只开了静音也算）。事件一旦创建，就计入 ``events_total`` 并写进 in-flight
+文件，而没有渠道的事件永远走不到 ``_mark_event_finalized``——它会一直算"在飞行中"，
+重启后还会被当成"上次没投递出去"。
 
 ##### `shutdown(self, wait: bool = False, grace_period: float = 0.0) -> None`
 

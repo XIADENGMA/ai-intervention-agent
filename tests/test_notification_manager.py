@@ -3021,7 +3021,7 @@ class TestBranchCoverage(unittest.TestCase):
     """补充分支覆盖"""
 
     def test_auto_types_all_disabled(self):
-        """types=None 且所有渠道关闭 → 空 types"""
+        """types=None 且所有渠道关闭 → 没有渠道可发，不创建事件（R871）"""
         mgr = _make_manager()
         mgr.config.web_enabled = False
         mgr.config.sound_enabled = False
@@ -3029,7 +3029,8 @@ class TestBranchCoverage(unittest.TestCase):
         mgr.config.system_enabled = False
 
         event_id = mgr.send_notification("t", "m")
-        self.assertNotEqual(event_id, "")
+        self.assertEqual(event_id, "")
+        self.assertEqual(mgr._event_queue, [])
 
     def test_priority_non_string_non_enum(self):
         """priority 传入非字符串非枚举值 → 使用默认"""

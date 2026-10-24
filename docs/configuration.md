@@ -146,7 +146,7 @@ uvx ai-intervention-agent
 >    The default (`["127.0.0.0/8"]`) is loopback-only and is **not**
 >    overridden by the `*_WEB_UI_HOST` env var — they're independent
 >    layers.
-> 2. Consider an `--ssh -L 18080:127.0.0.1:18080` SSH tunnel instead
+> 2. Consider an `ssh -L 18080:127.0.0.1:18080` SSH tunnel instead
 >    of binding to `0.0.0.0` — it gives the same UX from your remote
 >    machine without exposing the port at all.
 > 3. The CLI `ai-intervention-agent --print-config` auto-redacts

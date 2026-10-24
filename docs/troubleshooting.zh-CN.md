@@ -410,9 +410,9 @@ tag。
 
    ```sh
    git clone --depth 1 https://github.com/xiadengma/ai-intervention-agent
-   cd ai-intervention-agent/packages/vscode
+   cd ai-intervention-agent
    npm ci
-   npm run build:vscode      # 产出 dist/vsix/*.vsix
+   npm run vscode:package    # 产出 packages/vscode/*.vsix
    npx --yes ovsx@<新版>.<x>.<y> verify-pat xiadengma -p "$YOUR_OVSX_PAT"
    ```
 

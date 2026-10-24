@@ -121,10 +121,24 @@ class TestMcpToolSchema(unittest.TestCase):
             "interactive_feedback 必须 expose feedback_placeholder MCP 参数",
         )
 
-    def test_schema_mentions_mining_cycle_3(self) -> None:
-        """description 里必须提到来源 + 200-char clamp，方便 LLM 用对。"""
+    def test_description_states_the_clamp_and_the_source_credits_the_origin(
+        self,
+    ) -> None:
+        """给模型看的 description 要写明 200-char clamp，方便 LLM 用对；来源（mining-cycle-3 /
+        gemini-cli）记在源码注释里，不写进每次请求都发给模型的文字（R873）。"""
+        import inspect
+
+        from ai_intervention_agent import server_feedback
+
+        parameter = inspect.signature(server_feedback.interactive_feedback).parameters[
+            "feedback_placeholder"
+        ]
+        description = parameter.default.description
+
+        self.assertIn("200 characters", description)
+        self.assertNotIn("mining-cycle", description)
+        self.assertNotIn("gemini-cli", description)
         self.assertIn("mining-cycle-3", self.src)
-        self.assertIn("200 characters", self.src)
         self.assertIn("gemini-cli", self.src)
 
     def test_post_task_includes_placeholder_in_json_body(self) -> None:

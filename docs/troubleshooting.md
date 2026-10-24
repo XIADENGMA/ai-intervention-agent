@@ -466,9 +466,9 @@ Toolchain upgrades are deliberately tracked PRs, not silent drift:
 
    ```sh
    git clone --depth 1 https://github.com/xiadengma/ai-intervention-agent
-   cd ai-intervention-agent/packages/vscode
+   cd ai-intervention-agent
    npm ci
-   npm run build:vscode      # produces dist/vsix/*.vsix
+   npm run vscode:package    # produces packages/vscode/*.vsix
    npx --yes ovsx@<new>.<x>.<y> verify-pat xiadengma -p "$YOUR_OVSX_PAT"
    ```
 

@@ -214,7 +214,7 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 - **web_ui_config_sync**: Hot-reload callbacks — propagate `feedback.auto_resubmit_timeout` and network-security config changes into running tasks / Web UI instances
 - **web_ui_mdns**: mDNS / DNS-SD lifecycle mixin — service discovery, registration, deregistration
 - **web_ui_mdns_utils**: mDNS pure helpers — hostname normalisation, virtual-NIC filtering, IPv4 detection
-- **web_ui_rate_limiter**: Lightweight in-memory Web UI rate limiter — preserves the Flask-Limiter decorator surface without importing `flask_limiter` on the cold path
+- **web_ui_rate_limiter**: Lightweight in-memory Web UI rate limiter — keeps the Flask-Limiter decorator surface (`limit`, `exempt`) and needs no third-party package
 - **web_ui_wsgi**: Optional WSGI application factory for production-style runners while preserving the local Flask dev-server default
 
 ---

@@ -481,7 +481,7 @@ def _safe_notification_latency_histograms() -> dict[str, dict[str, Any]]:
 
     与 ``_safe_notification_summary`` 同款防御策略：任何错误（import 失败、
     单例还没初始化、histogram 字段不存在）一律 swallow + 返回空 dict。让
-    /metrics 端点宁可少一组 metrics 也不要 5xx。
+    /api/system/metrics 端点宁可少一组 metrics 也不要 5xx。
 
     返回形态与 ``get_provider_latency_histograms_snapshot()`` 完全对齐：
 
@@ -2344,7 +2344,7 @@ class SystemRoutesMixin:
         @self.app.route("/api/system/metrics", methods=["GET"])
         @self.limiter.limit("120 per minute")
         def system_metrics() -> ResponseReturnValue:
-            """T1 (cycle 4)：Prometheus exposition format `/metrics` 端点。
+            """T1 (cycle 4)：Prometheus exposition format `/api/system/metrics` 端点。
 
             ---
             tags:
@@ -2363,7 +2363,7 @@ class SystemRoutesMixin:
                 - job_name: ai-intervention-agent
                   metrics_path: /api/system/metrics
                   static_configs:
-                    - targets: ['localhost:8765']
+                    - targets: ['localhost:8080']
                   scrape_interval: 15s
                 ```
 

@@ -1,7 +1,7 @@
 # 可观测性 — Grafana 仪表盘示例
 
 > **R220 / Cycle 11 · F-cycle10-4。** 这是 AI Intervention Agent
-> `/metrics` 端点（实现位于
+> `/api/system/metrics` 端点（实现位于
 > `src/ai_intervention_agent/web_ui_routes/system.py`）的参考 Grafana
 > 仪表盘 JSON。配套 CR#23 列出的 `F-cycle10-4` 后续项：R207 新增了
 > `aiia_sse_schema_violation_total` 但从未在 "开箱即用" 的面板里被
@@ -14,7 +14,10 @@
 2. Grafana 界面 → **Dashboards** → **New** → **Import** → **Upload
    JSON file**，选择 `grafana-dashboard.json`。
 3. 出现选择 data source 提示时，挑一个已经在抓取 AI Intervention
-   Agent `/metrics` 端点的 Prometheus 数据源。
+   Agent `/api/system/metrics` 端点的 Prometheus 数据源。Web UI 不提供
+   Prometheus 的默认路径，所以抓取任务必须设置 `metrics_path`
+   （`docs/configuration.zh-CN.md` 的“验证当前生效的配置”一节有完整的
+   抓取任务）。
 4. 点 **Import**。仪表盘以 `uid: aiia-overview-r220` 出现，标题为
    *AI Intervention Agent — Overview*。
 
@@ -117,6 +120,6 @@ label 拆分（否则仪表盘会悄悄退化成概览的复制品）。
 - `docs/configuration.zh-CN.md` — `AIIA_SSE_SCHEMA_VALIDATE` 环境
   变量 (R205) 及其与 `aiia_sse_schema_violation_total` 的互动。
 - `src/ai_intervention_agent/web_ui_routes/system.py` — 权威的
-  `/metrics` 暴露逻辑。
+  `/api/system/metrics` 暴露逻辑。
 - `docs/code-reviews/cr23.md` — F-cycle10-4 backlog 项的起源（概览仪表盘 R220）。
 - `docs/code-reviews/cr24.md` — F-cycle11-3 backlog 项的起源（per-provider 钻取 R224）。

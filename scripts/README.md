@@ -192,7 +192,7 @@ diverges.
   source of truth for "how fast is `interactive_feedback` →
   Web-UI today?" Captures the four-stage E2E latency the R20.4
   → R20.13 sprints drove from 1980 ms to 360 ms. Quick API benches
-  stay below the configured 10 req/s Flask-Limiter budget and skip the
+  stay below the Web UI's default limit of 10 requests per second and skip the
   default-run throttle sleeps.
 - [`perf_gate.py`](perf_gate.py) _(R20.14-A)_ — regression gate
   that compares a fresh `perf_e2e_bench.py` snapshot against the

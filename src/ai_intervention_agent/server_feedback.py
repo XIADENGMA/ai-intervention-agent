@@ -1194,7 +1194,7 @@ async def interactive_feedback(
             "directory are displayed (max 8 per message, 8 MB each); any other "
             "local path is replaced by a short note and never read. "
             "Recommended length: 1-2000 characters; soft cap 1,000,000 characters "
-            "(~1 MB UTF-8, R166); inputs longer than the cap are truncated with a "
+            "(~1 MB UTF-8); inputs longer than the cap are truncated with a "
             "trailing ellipsis marker. "
             "Best practices: (1) state the question clearly in the first line; "
             "(2) include the recommended/default answer when proposing options; "
@@ -1207,8 +1207,8 @@ async def interactive_feedback(
         description=(
             "Optional list of predefined choices the user can pick from "
             "(rendered as multi-select checkboxes alongside a free-text reply). "
-            "Two canonical input shapes (v1.6.0+ — the legacy parallel-array "
-            "shape `predefined_options_defaults` was removed in R167; use the "
+            "Two canonical input shapes (the older parallel-array shape "
+            "`predefined_options_defaults` has been removed; use the "
             "dict form below to mark recommended options): "
             "(a) **RECOMMENDED** list[dict] of shape "
             '{"label": str, "default": bool} — mark the recommended option '
@@ -1266,6 +1266,8 @@ async def interactive_feedback(
             "timeout and auto-resubmit countdown."
         ),
     ),
+    # mining-cycle-3 §2.1: borrowed from the ``ask_user`` schema of gemini-cli.  The credit is a
+    # comment, not part of the description: that text goes to the model on every request (R873).
     feedback_placeholder: str | None = Field(
         default=None,
         description=(
@@ -1277,10 +1279,11 @@ async def interactive_feedback(
             "Length: clamped to 200 characters server-side (single-line "
             "placeholders only; longer text is silently truncated and the tool "
             "result does not report it). "
-            "If omitted or empty, the UI uses its default i18n placeholder. "
-            "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user`` schema.)"
+            "If omitted or empty, the UI uses its default i18n placeholder."
         ),
     ),
+    # mining-cycle-3 §2.1: borrowed from ``ask_user.header`` of gemini-cli (credit kept here, not
+    # in the description the model reads; R873).
     header_label: str | None = Field(
         default=None,
         description=(
@@ -1291,8 +1294,7 @@ async def interactive_feedback(
             "useful in multi-task mode where the user juggles 3+ concurrent "
             "feedback requests — the chip lets them visually distinguish "
             "task domains at a glance. If omitted or empty, no chip is shown "
-            "(default existing layout). "
-            "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user.header`` schema.)"
+            "(default existing layout)."
         ),
     ),
     loop_id: str | None = Field(
@@ -1422,22 +1424,23 @@ async def interactive_feedback(
       are accepted but ignored. They prevent the first-call validation
       failures observed when an agent reuses arguments shaped for a
       different feedback MCP server.
-
-    Note: this function is not the MCP registration site itself; `server.py`
-    wraps it with `mcp.tool()` to expose it to MCP clients.
-
-    R25.2: 函数体首行 ``import httpx`` 让下面 ``except httpx.HTTPError`` 在运行时
-    解析符号——本工具被 MCP 客户端首次调用时一次性付 ~55 ms 加载费，而 MCP server
-    cold-start 路径完全不会进入此函数（``server.py`` 顶层 import 时只是定义而已）。
-
-    R44 FastMCP 最佳实践：``ctx`` 关键字参数（FastMCP 自动注入）让本函数可以走
-    ``await _emit_ctx_info(ctx, ...)`` 把 task lifecycle 事件回送给 client
-    （Cursor / Claude Desktop / ChatGPT Desktop）。client 收到后会在 chat
-    sidebar 渲染一行进度日志，让人类用户能"看到工具确实在工作、正在等真人
-    回复"，而不是猜"agent 是不是 hung 住了"。``ctx`` 永远 keyword-only 且
-    默认 None，所以本工具被通过别的入口（pytest 直接调）调用时不会因为缺
-    ctx 而崩；具体安全语义见 ``_emit_ctx_info`` 的 docstring。
     """
+    # 这个 docstring 只写给模型看：FastMCP 把它原样作为工具描述，客户端每次请求都把它放进
+    # 模型的上下文（R873）。给维护者看的说明写在这里，不要写进 docstring。
+    #
+    # 这个函数不是 MCP 的注册点：``server.py`` 用 ``mcp.tool()`` 包装它之后才对客户端可见。
+    #
+    # R25.2: 函数体首行 ``import httpx`` 让下面 ``except httpx.HTTPError`` 在运行时
+    # 解析符号——本工具被 MCP 客户端首次调用时一次性付 ~55 ms 加载费，而 MCP server
+    # cold-start 路径完全不会进入此函数（``server.py`` 顶层 import 时只是定义而已）。
+    #
+    # R44 FastMCP 最佳实践：``ctx`` 关键字参数（FastMCP 自动注入）让本函数可以走
+    # ``await _emit_ctx_info(ctx, ...)`` 把 task lifecycle 事件回送给 client
+    # （Cursor / Claude Desktop / ChatGPT Desktop）。client 收到后会在 chat
+    # sidebar 渲染一行进度日志，让人类用户能"看到工具确实在工作、正在等真人
+    # 回复"，而不是猜"agent 是不是 hung 住了"。``ctx`` 永远 keyword-only 且
+    # 默认 None，所以本工具被通过别的入口（pytest 直接调）调用时不会因为缺
+    # ctx 而崩；具体安全语义见 ``_emit_ctx_info`` 的 docstring。
     import httpx  # used by `except httpx.HTTPError` below; ruff sees the usage
 
     resolved_message: Any = message

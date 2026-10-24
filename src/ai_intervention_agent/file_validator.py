@@ -142,6 +142,11 @@ DANGEROUS_EXTENSIONS = {
 }
 
 
+# 每条模式都得在随机字节里几乎碰不上：扫描最多读 192 KiB（头、尾，超过 128 KiB 时再加中间，各
+# 64 KiB），压缩过的图片像素就是随机字节，三字节的模式在这么多位置里碰巧出现的概率是
+# 196608 / 256**3 = 1.2%（旧的 ``<?=`` 就是这样：约每 100 张大图有一张被丢掉，而且只在日志里
+# 留一行警告）。所以短标记要带上 PHP 语法里必须跟在后面的东西：``<?=`` 后面是变量或反引号命令。
+# tests/test_upload_scan_does_not_drop_clean_images_r869.py 逐条算概率，总和必须低于万分之一。
 MALICIOUS_PATTERNS = [
     rb"<script[^>]*>",
     rb"javascript:",
@@ -149,7 +154,8 @@ MALICIOUS_PATTERNS = [
     rb"document\.write",
     rb"window\.location",
     rb"<\?php",
-    rb"<\?=",
+    rb"<\?=\s*\$[A-Za-z_]",
+    rb"<\?=\s*`[^`\r\n]{1,100}`",
     rb"system\s*\(",
     rb"exec\s*\(",
     rb"#!/bin/",

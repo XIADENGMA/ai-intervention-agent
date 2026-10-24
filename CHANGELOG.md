@@ -787,6 +787,71 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `.checks.notification.status` (prints `null`; the check answers with `ok`). The new module
   (46 tests, 23 of which fail on the previous tree; 57 of 57 mutants killed) holds the
   descriptions to the answers.
+- An image whose bytes happen to contain `<?=` is no longer dropped from the answer (R869). The
+  upload scan looks for text that would be dangerous if an upload were ever served or executed
+  (`<script`, `<?php`, `eval(`, ...) in up to three 64 KiB windows of each file, and one of its
+  seventeen patterns, PHP's short echo tag `<?=`, is three bytes long. Compressed pixels look
+  like random bytes, and three given bytes turn up somewhere in the 196,608 positions the scan
+  reads 1.17% of the time: 69 of 6,002 image files from macOS system folders (1.15%) were
+  refused as suspicious content, among them the 700 KB `Folder_512x512@2x.png` of the system
+  icon set. A refused file is not reported to the user (`extract_uploaded_images` logs a
+  warning and goes on), so `POST /api/tasks/{task_id}/submit` answered `success: true` while
+  the screenshot never reached the agent: about one image in a hundred. The tag now counts only
+  where PHP needs it to be one, followed by a variable (`<?=$_GET[0]?>`) or by a back-quoted
+  command. Random data reaches each of those about once in 100,000 uploads and the whole list
+  once in 16,000 (the old `<?=` alone: once in 85). `<?=phpinfo()?>` and `<?='a'?>` are no
+  longer refused; `system(`, `exec(` and `eval(` still are. The new module (89 tests, 17 of
+  which fail on the previous tree; 36 of 36 mutants killed) computes from the patterns how
+  likely random bytes are to match each one and holds the total below 1 in 10,000, checks the
+  calculation against the regex engine, and checks that an image with `<?=` in its head, middle
+  or tail is kept while the payloads the scan is for are still refused in each window.
+- A notification that has no channel to go to is no longer an event (R871).
+  `NotificationManager.send_notification` created the event first and found out afterwards that
+  nothing could take it: with `types=None` and every channel off in the configuration (a muted sound
+  counts as off), or with an explicit `types=[]`, it returned a real id, counted the event in
+  `events_total` and wrote it into `notification_inflight.json`, and `_process_event` then returned
+  at `if not event.types` without finalizing it. The event stayed in flight for good: `get_status()`
+  kept reporting `events_in_flight` 1, and the next process reported it as a notification that was
+  not delivered last time. Nothing in the project asks for such an event (the MCP server passes
+  `skip_unavailable=True`, the Web UI names its channels), so nothing user-visible broke; the
+  `skip_unavailable` branch already answered `""` for the same case, and the two ways of having no
+  channel disagreed. Both answer `""` now and leave nothing behind. A channel that is named but
+  cannot deliver is still an event that fails and is finalized. The branch-coverage test that
+  asserted the old non-empty id asserts the empty answer. The new module (20 tests, 11 of which fail
+  on the previous tree; 18 of 18 mutants killed) works in a real config directory.
+- The docs no longer tell a reader to run, call or set things that do not exist (R872). Five
+  places did. `docs/troubleshooting.md` and its zh-CN twin told a maintainer upgrading `ovsx` to
+  run `npm run build:vscode` and to look for `dist/vsix/*.vsix`; no `package.json` has that
+  script, and the VSIX comes from `npm run vscode:package` and lands in `packages/vscode/`. Both
+  READMEs, both `docs/observability/README` files and the Grafana dashboard's own comment and
+  description called the Prometheus endpoint `/metrics`, which the Web UI answers with a JSON 404:
+  it is `/api/system/metrics`, so a scrape job left on Prometheus's default `metrics_path`
+  collected nothing and the dashboard the doc imports stayed empty. `docs/noise-levels.md` and its
+  twin said the Web UI takes its log level from `localStorage.AIIA_LOG_LEVEL`, which no script
+  reads; `window.AIIA_DEBUG` is the only switch, for one helper. `docs/perf-ci-xdist-r308.md` said
+  `AIIA_TEST_WORKERS=auto uv run pytest` works while nothing reads the name.
+  `docs/configuration.md` called an SSH tunnel `--ssh -L`. The metrics route's own docstring,
+  which becomes the OpenAPI page, also gave the scrape target as port 8765 where the default is
+  8080. All are corrected, and the real Web UI answers the scrape job the docs now give with 200
+  and `aiia_*` samples. The new module (41 tests, 4 of which fail on the previous docs; 95 of 95
+  mutants killed) reads the living documents and holds every `npm run` script, every backticked
+  endpoint, every `AIIA_*`-style name and every `localStorage` key to the package manifests, the
+  real Web UI's URL map and the code (never `tests/`, and not the copy of VS Code the extension's
+  tests download).
+- The tool definition the model reads says how to use the tool and nothing else (R873). FastMCP
+  serves the docstring of `interactive_feedback` as the tool description, and clients put it in
+  front of the model on every request; it carried a line about which module registers the tool and
+  two paragraphs of Chinese about a lazy import and the `ctx` argument, naming a private helper
+  and the test runner. Four parameter texts also ended in the note of the round or research cycle
+  that added them (`R166`, `R167`, `mining-cycle-3 §2.1`). About 1.2 KB of a definition of about
+  12 KB is gone; the notes live on as comments in the function body and the generated API pages no
+  longer show them. The credit to gemini-cli for `feedback_placeholder` and `header_label`, which
+  two older tests pin in the source, is now a comment above each parameter, and the
+  `predefined_options` text still says the parallel-array form `predefined_options_defaults` has
+  been removed, without the round and the version. The new module (45 tests, 3 of which fail on
+  the previous source; 49 of 49 mutants killed) reads the definition as a client receives it and
+  holds every description in it to English prose, no development-tracking id and no reference to
+  the server's own source. The README test-count floor goes from 12,500+ to 13,000+.
 
 ### Removed
 
@@ -941,6 +1006,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the new Dependabot pull requests #127 to #129 is a code-owner request that comes from `* @xiadengma`
   in `.github/CODEOWNERS`. The header of `dependabot.yml` now says why it does not write `reviewers:`.
   A new test checks that no entry has the option and that `CODEOWNERS` names an owner for every path.
+- The `flask-limiter` dependency, which nothing imported (R870). R452 replaced Flask-Limiter with
+  the in-house `WebUiRateLimiter` and removed the last `import flask_limiter`, but `pyproject.toml`
+  kept `flask-limiter>=4.0.0`: every `uvx` start and `pip install` fetched it with `limits`,
+  `ordered-set`, `deprecated` and `wrapt` (five packages, 105 lines of `uv.lock`), the `limits` pin
+  had to move once for the `packaging` ceiling it set, and both committed `pip-audit` reports list
+  it. Nothing noticed, because the cold-start test only asserts that `flask_limiter` is not
+  loaded. The entry, the mypy override for `flask_limiter`, and the module description in the API
+  index (it said the limiter "preserves the Flask-Limiter decorator surface without importing it
+  on the cold path") are gone or say what is true now. The wheel built from the tree installs 93
+  packages without them, and its Web UI still limits: 75 requests for `/api/skills` (60 per
+  minute) were 60 answers and 15 refusals with `Retry-After`, while a real MCP call, its task
+  and the answer went through. A new test (48 tests, 2 of which fail on the previous tree; 58
+  of 58 mutants killed) compares `[project].dependencies` with an `ast` scan of the package in
+  both directions: every third-party import is declared (or comes with a declared package, or
+  is optional), and every declared package is imported, or is on a short list that says why it
+  runs without an import (`pygments`, `brotli`).
 
 ### Fixed
 

@@ -1,5 +1,5 @@
 {
-  "__comment_r220": "R220 / Cycle 11 · F-cycle10-4: sample Grafana dashboard JSON for AI Intervention Agent /metrics surface. Schema version 38 targets Grafana 9.x / 10.x. All panels reference metrics produced by src/ai_intervention_agent/web_ui_routes/system.py's /metrics endpoint; metric name parity is locked by tests/test_grafana_dashboard_invariant_r220.py. To import: Grafana UI > Dashboards > New > Import > Upload JSON file; pick a Prometheus datasource when prompted.",
+  "__comment_r220": "R220 / Cycle 11 · F-cycle10-4: sample Grafana dashboard JSON for AI Intervention Agent /api/system/metrics surface. Schema version 38 targets Grafana 9.x / 10.x. All panels reference metrics produced by src/ai_intervention_agent/web_ui_routes/system.py's /api/system/metrics endpoint; metric name parity is locked by tests/test_grafana_dashboard_invariant_r220.py. To import: Grafana UI > Dashboards > New > Import > Upload JSON file; pick a Prometheus datasource when prompted.",
   "annotations": {
     "list": [
       {
@@ -16,7 +16,7 @@
       }
     ]
   },
-  "description": "Reference dashboard for ai-intervention-agent /metrics endpoint. Covers SSE health (R134/R202/R207/R51-B/R61), API token age (R204), recent errors (R186), and notification subsystem (R142). Generated for R220 / Cycle 11 · F-cycle10-4.",
+  "description": "Reference dashboard for ai-intervention-agent /api/system/metrics endpoint. Covers SSE health (R134/R202/R207/R51-B/R61), API token age (R204), recent errors (R186), and notification subsystem (R142). Generated for R220 / Cycle 11 · F-cycle10-4.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
