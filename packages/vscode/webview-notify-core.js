@@ -230,7 +230,7 @@
         trigger: 'immediate',
         types: types,
         metadata: {
-          presentation: 'statusBar',
+          presentation: 'auto',
           severity: 'info',
           timeoutMs: 3000,
           isTest: false,

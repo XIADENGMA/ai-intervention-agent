@@ -1185,6 +1185,10 @@ function initializeFileSelection() {
 
 let _imageModalPreviouslyFocusedElement = null;
 let _imageModalKeydownHandlersAttached = false;
+// R903: who opened the image that is showing ("prompt": an image of the agent's message, "": one the
+// user attached), and which opening a late ``load`` event belongs to.
+let _imageModalSource = "";
+let _imageModalOpenSerial = 0;
 
 function _imageModalBackgroundClickHandler(e) {
   const modal = document.getElementById("image-modal");
@@ -1254,24 +1258,73 @@ function _getImageModalPartsForOpen() {
   return { modal, modalImage, modalInfo };
 }
 
-function openImageModal(base64, name, size) {
+// R903: what the caption under the large image says.  An image the user attached has a file size to
+// tell: ``name (12.3 KB)``.  An image of the agent's message has none (the page holds a link to it,
+// not a file), so its caption gives the pixels the browser read from it, ``name (1280 × 720 px)``,
+// as soon as the image has loaded; until then, and if it never does, the name alone.
+function _setImageModalCaption(modalImage, modalInfo, name, size, serial) {
+  if (typeof size === "number" && Number.isFinite(size)) {
+    const _formatNum =
+      (window.AIIA_I18N && window.AIIA_I18N.formatNumber) ||
+      function (n) {
+        return Number(n).toFixed(2);
+      };
+    modalInfo.textContent = t("status.sizeLabelKB", {
+      name: name,
+      size: _formatNum(size / 1024, { maximumFractionDigits: 2 }),
+    });
+    return;
+  }
+
+  const label = name || t("page.imagePreview");
+  modalInfo.textContent = label;
+
+  // ``complete`` is what says the pixels are the ones of this image: while a new ``src`` is still
+  // loading, ``naturalWidth`` can still be the one of the image the element held before.
+  const showPixels = () => {
+    const width = Number(modalImage.naturalWidth);
+    const height = Number(modalImage.naturalHeight);
+    if (!modalImage.complete || !(width > 0) || !(height > 0)) return false;
+    modalInfo.textContent = t("status.imageDimensionsLabel", {
+      name: label,
+      width: String(Math.round(width)),
+      height: String(Math.round(height)),
+    });
+    return true;
+  };
+  if (showPixels() || typeof modalImage.addEventListener !== "function") return;
+  modalImage.addEventListener(
+    "load",
+    () => {
+      if (serial === _imageModalOpenSerial) showPixels();
+    },
+    { once: true },
+  );
+}
+
+// ``size`` is the file size in bytes of an image the user attached; leave it out for an image of the
+// agent's message and pass ``{ source: "prompt" }``, so that it is closed again when that message is
+// written again (``closeImageModalFromPrompt``).
+function openImageModal(base64, name, size, options) {
   const parts = _getImageModalPartsForOpen();
   if (!parts) return false;
 
   const { modal, modalImage, modalInfo } = parts;
   const wasAlreadyOpen = modal.classList.contains("show");
+  const imageName = typeof name === "string" ? name : "";
+
+  _imageModalOpenSerial += 1;
+  _imageModalSource = options && options.source === "prompt" ? "prompt" : "";
 
   modalImage.src = base64;
-  modalImage.alt = name;
-  const _formatNum =
-    (window.AIIA_I18N && window.AIIA_I18N.formatNumber) ||
-    function (n) {
-      return Number(n).toFixed(2);
-    };
-  modalInfo.textContent = t("status.sizeLabelKB", {
-    name: name,
-    size: _formatNum(size / 1024, { maximumFractionDigits: 2 }),
-  });
+  modalImage.alt = imageName;
+  _setImageModalCaption(
+    modalImage,
+    modalInfo,
+    imageName,
+    size,
+    _imageModalOpenSerial,
+  );
 
   if (!wasAlreadyOpen) {
     _imageModalPreviouslyFocusedElement = document.activeElement;
@@ -1306,6 +1359,16 @@ function closeImageModal() {
 
   _detachImageModalKeydownHandlers();
 
+  // R903: nothing is open any more, so a ``load`` that is still on its way has no caption to write,
+  // and the element lets go of the image: up to 8 MB that nobody is looking at, and the pixels of
+  // the next image cannot be read off this one.
+  _imageModalOpenSerial += 1;
+  _imageModalSource = "";
+  const modalImage = document.getElementById("modal-image");
+  if (modalImage && typeof modalImage.removeAttribute === "function") {
+    modalImage.removeAttribute("src");
+  }
+
   if (
     _imageModalPreviouslyFocusedElement &&
     document.contains(_imageModalPreviouslyFocusedElement)
@@ -1325,6 +1388,14 @@ function handleModalKeydown(event) {
   if (event.key === "Escape") {
     closeImageModal();
   }
+}
+
+// R903: the message an image was opened from was written again (another request, or the same one
+// rendered once more), so the large image of the old one goes with it.  An image the user attached is
+// not the message's and stays.
+function closeImageModalFromPrompt() {
+  if (_imageModalSource !== "prompt") return false;
+  return closeImageModal();
 }
 
 function checkBrowserCompatibility() {

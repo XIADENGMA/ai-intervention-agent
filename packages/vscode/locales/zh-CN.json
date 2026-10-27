@@ -1,13 +1,18 @@
 {
   "settings": {
-    "title": "通知设置",
+    "title": "设置",
     "close": "关闭",
     "enabled": "启用通知",
+    "enabledHint": "总开关：关闭后，下面所有的提醒方式都不会发出。",
     "macosNative": "macOS 原生通知",
+    "macosNativeHint": "新请求用 macOS 系统横幅提醒；关闭后，改由 VS Code 右下角的通知提醒。",
     "autoSave": "自动保存",
     "autoSaveTooltip": "修改后会自动同步到服务端",
-    "testNative": "测试原生通知",
+    "testNotify": "测试通知",
     "testBark": "测试 Bark",
+    "notifications": {
+      "title": "通知"
+    },
     "feedback": {
       "title": "反馈",
       "countdown": "自动重调倒计时（秒）",
@@ -67,8 +72,9 @@
       "coreNotReady": "加载失败：通知核心模块未就绪",
       "remoteChanged": "检测到配置已更新（当前有未保存修改），为避免覆盖，本次未自动同步",
       "notifyDisabled": "通知已关闭：请先开启「启用通知」",
-      "macosNotEnabled": "提示：当前未开启「macOS 原生通知」，仍将执行一次测试用于排查…",
+      "countdownInvalid": "请输入 10 到 3600 之间的整数秒数，或输入 0 关闭。",
       "macosTestTriggered": "已触发测试通知：请留意系统通知",
+      "testInAppSent": "已发送测试通知：请看 VS Code 右下角的提示",
       "postFailed": "发送失败：VS Code Webview API 不可用（请尝试关闭/重新打开面板或重载窗口）",
       "testFailed": "测试失败：{{reason}}",
       "testFailedNoUrl": "测试失败：serverUrl 为空",
@@ -78,8 +84,8 @@
       "barkTestSent": "测试通知已发送，请检查设备"
     },
     "test": {
-      "macosTitle": "AI Intervention Agent 测试",
-      "macosMessage": "这是一个 macOS 原生通知测试，如果收到此消息，说明配置正确。"
+      "title": "AI Intervention Agent 测试",
+      "message": "这是一条测试通知，如果你看到了它，说明通知可以正常提醒你。"
     },
     "footer": {
       "versionLink": "AI Intervention Agent {{version}}",
@@ -97,7 +103,7 @@
     "language": "语言"
   },
   "ui": {
-    "settingsBtn": "通知设置",
+    "settingsBtn": "设置",
     "connecting": "正在连接服务器…",
     "noContent": {
       "title": "这里暂时很安静",
@@ -106,6 +112,8 @@
     },
     "form": {
       "optionsLabel": "选项（可多选）",
+      "optionsPin": "固定选项",
+      "optionsPinHint": "把选项固定在输入框上方，随时可见；关闭后选项会跟在内容末尾。",
       "optionsResize": "调整选项区高度",
       "optionsResizeHint": "拖动调整高度，或按 ↑ ↓；双击恢复默认。",
       "placeholder": "请输入反馈内容（支持粘贴图片）…",
@@ -177,7 +185,13 @@
       "unsupportedFormat": "不支持的图片格式：{{type}}",
       "tooLarge": "图片过大：{{size}}MB > 10MB",
       "tooManyFiles": "最多只能上传 {count, plural, other {# 张图片}}",
-      "processingFailedReason": "图片处理失败：{{reason}}"
+      "processingFailedReason": "图片处理失败：{{reason}}",
+      "enlarge": "查看大图",
+      "enlargeNamed": "查看大图：{{name}}",
+      "viewerTitle": "图片预览",
+      "viewerClose": "关闭图片预览",
+      "viewerActualSize": "实际大小",
+      "dimensions": "{{name}} ({{width}} × {{height}} 像素)"
     },
     "notification": {
       "title": "AI 交互反馈",

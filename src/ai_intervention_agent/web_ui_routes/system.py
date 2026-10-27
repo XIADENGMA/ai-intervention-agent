@@ -39,7 +39,6 @@ logger = EnhancedLogger(__name__)
 
 _PROM_INF = float("inf")
 _PROM_NEG_INF = float("-inf")
-_MCP_TOOL_CALL_METRICS_MODULE: Any | None = None
 
 _SSE_COUNTER_FIELD_SPECS: tuple[tuple[str, str, str], ...] = (
     ("aiia_sse_emit_total", "emit_total", "Total SSE events emitted."),
@@ -143,17 +142,17 @@ def get_config() -> Any:
 
 
 def _get_mcp_tool_call_metrics_module() -> Any | None:
-    """Return the MCP metrics module once loaded, retrying after import failure."""
-    global _MCP_TOOL_CALL_METRICS_MODULE
-    module = _MCP_TOOL_CALL_METRICS_MODULE
-    if module is not None:
-        return module
-    try:
-        from ai_intervention_agent import mcp_tool_call_metrics
-    except Exception:
-        return None
-    _MCP_TOOL_CALL_METRICS_MODULE = mcp_tool_call_metrics
-    return mcp_tool_call_metrics
+    """The MCP tool-call metrics module if this process has loaded it, else ``None``.
+
+    Only the MCP middleware increments those counters, and it runs in the MCP server
+    process. The Web UI subprocess that answers ``/api/system/metrics`` never calls
+    it, so there the two snapshots are always empty — and the module imports fastmcp
+    at its top, so importing it for a scrape cost that process about 33 MiB and
+    230 ms to read two empty dicts. This looks the module up and never imports it:
+    a process that does run the middleware has already imported it, and ``None``
+    renders exactly what an empty snapshot does (no ``aiia_mcp_*`` family).
+    """
+    return sys.modules.get("ai_intervention_agent.mcp_tool_call_metrics")
 
 
 _AUTO_DETECT_EDITORS: tuple[tuple[str, list[str]], ...] = (
@@ -181,11 +180,16 @@ def _resolve_loopback_ips() -> set[str]:
 
 
 def _safe_uptime_seconds() -> float | None:
-    """返回进程启动至今的秒数；任何错误返回 None。"""
-    try:
-        from ai_intervention_agent import server
+    """返回进程启动至今的秒数；任何错误返回 None。
 
-        started = getattr(server, "_PROCESS_STARTED_AT_UNIX", None)
+    起点来自 ``process_meta``（只依赖标准库，``web_ui`` 在 import Flask 之前就
+    加载了它），**不要**改回 ``import server``：Web UI 子进程里那会把整个 MCP 栈
+    （约 570 个模块、约 40 MiB）拉进来，而且起点会变成第一次请求的时刻。
+    """
+    try:
+        from ai_intervention_agent import process_meta
+
+        started = getattr(process_meta, "PROCESS_STARTED_AT_UNIX", None)
         if not isinstance(started, int | float):
             return None
         return round(time.time() - float(started), 3)
@@ -274,14 +278,14 @@ def _safe_web_ui_env_overrides() -> dict[str, str] | None:
 def _safe_build_info() -> dict[str, str] | None:
     """返回 ``{git_commit, git_branch, git_dirty}`` build 元信息；失败返回 None。
 
-    R132：把 R63 已有的 ``server._resolve_build_info()`` 投影到 health
+    R132：把 R63 已有的 ``process_meta.resolve_build_info()`` 投影到 health
     端点。比 ``version`` 字段精确（``v1.5.45`` 可能对应过 100 个 commit，
     ``git_commit=fa6f49d`` 只对应一份代码）；监控做 PR rollout 时立刻
     能区分「新版本上线了吗 / 这个实例还在跑老 commit 吗 / 是 dirty 工作
     树吗」三个问题。
 
     实现策略：
-    1. ``_resolve_build_info`` 是 lazy + module-level cache，第一次调
+    1. ``resolve_build_info`` 是 lazy + module-level cache，第一次调
        fork 3 个 ``git`` subprocess，后续只是 dict 浅拷贝——监控按
        10 s 一次 K8s probe 拉这个端点，性能开销可忽略；
     2. pip install / docker / pyinstaller 等没有 ``.git`` 的部署，
@@ -293,9 +297,9 @@ def _safe_build_info() -> dict[str, str] | None:
        御策略）。
     """
     try:
-        from ai_intervention_agent import server
+        from ai_intervention_agent import process_meta
 
-        info = server._resolve_build_info()
+        info = process_meta.resolve_build_info()
         if not isinstance(info, dict):
             return None
         return {

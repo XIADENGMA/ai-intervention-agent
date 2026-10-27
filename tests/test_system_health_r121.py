@@ -225,30 +225,30 @@ class TestSafeUptimeSeconds(unittest.TestCase):
         self.assertGreater(result, 0.0, "uptime 必须 > 0（导入时已开始计时）")
 
     def test_returns_none_on_missing_attribute(self) -> None:
-        """server 模块的 ``_PROCESS_STARTED_AT_UNIX`` 缺失时 graceful 返回 None。"""
-        from ai_intervention_agent import server as server_module
+        """``process_meta`` 的 ``PROCESS_STARTED_AT_UNIX`` 缺失时 graceful 返回 None。"""
+        from ai_intervention_agent import process_meta
 
-        original = server_module._PROCESS_STARTED_AT_UNIX
+        original = process_meta.PROCESS_STARTED_AT_UNIX
         try:
-            del server_module._PROCESS_STARTED_AT_UNIX
+            del process_meta.PROCESS_STARTED_AT_UNIX
             result = system_module._safe_uptime_seconds()
             self.assertIsNone(result, "属性缺失时必须返回 None，而不是抛")
         finally:
-            server_module._PROCESS_STARTED_AT_UNIX = original
+            process_meta.PROCESS_STARTED_AT_UNIX = original
 
     def test_returns_none_on_invalid_type(self) -> None:
-        from ai_intervention_agent import server as server_module
+        from ai_intervention_agent import process_meta
 
-        original = server_module._PROCESS_STARTED_AT_UNIX
+        original = process_meta.PROCESS_STARTED_AT_UNIX
         try:
             # 故意赋 str 测 graceful 降级。原版用的 mypy ``type ignore``
             # 注释 ty 不认（ty 仍报 invalid-assignment），改 ty 原生
             # 语法。
-            server_module._PROCESS_STARTED_AT_UNIX = "not a number"  # ty: ignore[invalid-assignment]
+            process_meta.PROCESS_STARTED_AT_UNIX = "not a number"  # ty: ignore[invalid-assignment]
             result = system_module._safe_uptime_seconds()
             self.assertIsNone(result, "类型不对时必须返回 None")
         finally:
-            server_module._PROCESS_STARTED_AT_UNIX = original
+            process_meta.PROCESS_STARTED_AT_UNIX = original
 
 
 class TestSafeProjectVersion(unittest.TestCase):

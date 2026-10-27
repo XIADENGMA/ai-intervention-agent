@@ -48,7 +48,9 @@ npm install
 - `ai-intervention-agent.logLevel`: extension log level (default: `info`; view: Output → AI Intervention Agent)
 - `ai-intervention-agent.i18n.pseudoLocale` _(experimental)_: when `true`, swaps the active UI bundle for a pseudo-localised one — useful for spotting hardcoded strings, layout overflow, and Unicode issues without leaving English. Default: `false`.
 
-> Notification toggles (Web / sound / system / Bark) are managed inside the panel's **Notification Settings** UI and persisted in the server-side `config.toml`, not in `settings.json`.
+> Notification toggles (Web / sound / system / Bark) are managed in the **Notifications** section of the panel's **Settings** page and persisted in the server-side `config.toml`, not in `settings.json`.
+
+> **How a new request reaches you.** **Enable Notifications** is the master switch: when it is off, nothing is raised. When it is on, each new request is announced by a regular VS Code notification (a toast at the bottom right). If **macOS Native Notification** is on as well and the extension runs on macOS, the macOS banner is the notification and the editor keeps only the quiet status-bar message instead of a toast. A remote or non-macOS host cannot show the banner, so there the toast is always used and the **macOS Native Notification** row is not shown at all. The panel's **Test Notification** button sends a test through exactly this route. While **Enable Notifications** is off, the options under it are dimmed; they can still be edited, so Bark can be set up first.
 
 ## AppleScript executor (macOS only) · security model
 
@@ -62,7 +64,7 @@ The extension ships an internal AppleScript executor (`applescript-executor.ts`)
 - **Log redaction**: `sanitizeForLog()` collapses newlines and truncates to 160 chars before any debug log line is emitted.
 - **No user-supplied scripts**: the only call sites compose the script from constants + `toAppleScriptStringLiteral()`-escaped values pulled from the notification payload.
 
-If you want to disable the AppleScript path entirely, toggle macOS native notifications off in the panel's **Notification Settings** — the executor will not be invoked.
+If you want to disable the AppleScript path entirely, toggle macOS native notifications off in the panel's **Settings** page (Notifications section) — the executor will not be invoked.
 
 > Reporting a security issue in this surface? Follow the
 > repository [`SECURITY.md`](../../.github/SECURITY.md) — please use a
@@ -73,7 +75,7 @@ If you want to disable the AppleScript path entirely, toggle macOS native notifi
 - Native notifications are delivered via a bundled `terminal-notifier` app on macOS (preferred), with a fallback to `osascript display notification`.
 - Notification content shows the task's **feedback content summary** (consistent with Bark push), not just the task ID.
 - Sender attribution (app icon/name) is **best-effort**. The extension tries to attribute notifications to the host editor app (e.g. VS Code / Cursor). If the attribution mechanism is unavailable on your system, notifications may fall back to the default sender.
-- You can enable/disable it in the sidebar panel → **Notification Settings** → **macOS Native Notification** (default: enabled)
+- You can enable/disable it in the sidebar panel → **Settings** → **Notifications** → **macOS Native Notification** (default: enabled; the row is only shown when the extension runs on macOS). With it off, a new request is announced by a VS Code notification instead (see above).
 
 ### macOS notification display settings
 

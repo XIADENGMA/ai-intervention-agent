@@ -10,10 +10,6 @@ MCP 服务器核心 - interactive_feedback 工具、多任务队列、通知集�
 
 读取已安装包版本号，失败时返回开发占位符。
 
-### `_resolve_build_info() -> dict[str, str]`
-
-返回 ``{git_commit, git_branch, git_dirty}``，失败字段填 ``"unknown"``。
-
 ### `reset_sse_stats_cache_for_testing() -> None`
 
 R352 (cycle-39 #C2) · **Test-only**: 清空 ``_sse_stats_cache`` +
@@ -23,11 +19,6 @@ R352 (cycle-39 #C2) · **Test-only**: 清空 ``_sse_stats_cache`` +
 
 R352 (cycle-39 #C2) · **Test-only**: 清空 ``_recent_logs_cache`` +
 重置 timestamp, 让下次 ``_fetch_recent_logs_cached`` 重新拉取。
-
-### `reset_build_info_cache_for_testing() -> None`
-
-R352 (cycle-39 #C2) · **Test-only**: 清空 ``_BUILD_INFO_CACHE`` 让
-下次 ``_resolve_build_info()`` 重新调用 git subprocess。
 
 ### `_build_server_icons() -> list[Icon]`
 

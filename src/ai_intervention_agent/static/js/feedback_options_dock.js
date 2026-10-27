@@ -2,6 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "aiia.feedbackOptionsHeight.v1";
+  const PIN_STORAGE_KEY = "aiia.feedbackOptionsPinned.v1";
   const SCHEMA_VERSION = 1;
   const MIN_HEIGHT_PX = 96;
   const MAX_STORED_HEIGHT_PX = 4000;
@@ -13,6 +14,9 @@
   const RESERVE_VAR = "--aiia-options-reserve";
   const LIST_ID = "options-container";
   const HANDLE_ID = "options-resize-handle";
+  const DOCK_ID = "options-dock";
+  const PIN_BUTTON_ID = "options-pin-btn";
+  const UNPINNED_CLASS = "is-unpinned";
   let activeBinding = null;
 
   function finiteNumberOrNull(value) {
@@ -95,6 +99,40 @@
     }
   }
 
+  // Only "unpinned" is stored: pinned is the default, so a reader who pins again leaves nothing behind.
+  function readPersistedPinned() {
+    try {
+      const raw = localStorage.getItem(PIN_STORAGE_KEY);
+      if (!raw) return true;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return true;
+      if (parsed.schema_version !== SCHEMA_VERSION) return true;
+      return parsed.pinned !== false;
+    } catch (_e) {
+      return true;
+    }
+  }
+
+  function persistPinned(pinned) {
+    try {
+      if (pinned !== false) {
+        localStorage.removeItem(PIN_STORAGE_KEY);
+        return true;
+      }
+      localStorage.setItem(
+        PIN_STORAGE_KEY,
+        JSON.stringify({
+          schema_version: SCHEMA_VERSION,
+          pinned: false,
+          saved_at: Date.now(),
+        }),
+      );
+      return true;
+    } catch (_e) {
+      return false;
+    }
+  }
+
   function disconnectActiveBinding() {
     if (!activeBinding) return;
     const binding = activeBinding;
@@ -108,7 +146,12 @@
     const handle = document.getElementById(HANDLE_ID);
     const root = document.documentElement;
     if (!list || !handle || !root) return null;
+    const dock = document.getElementById(DOCK_ID);
+    const pinButton = document.getElementById(PIN_BUTTON_ID);
+    // A button without its tray (or a tray without its button) cannot be pinned or unpinned: leave both alone.
+    const pinnable = !!(dock && pinButton);
 
+    let pinned = pinnable ? readPersistedPinned() : true;
     let manualHeight = readPersistedHeight();
     let drag = null;
     let observer = null;
@@ -129,7 +172,21 @@
       handle.setAttribute("aria-valuemax", String(bounds.max));
       handle.setAttribute("aria-valuenow", String(now === null ? bounds.min : now));
       const shown = list.offsetHeight;
-      root.style.setProperty(RESERVE_VAR, (shown > 0 ? shown + RESERVE_MARGIN_PX : 0) + "px");
+      // An unpinned list is part of the message, so nothing has to be kept clear of it.
+      const covered = pinned && shown > 0 ? shown + RESERVE_MARGIN_PX : 0;
+      root.style.setProperty(RESERVE_VAR, covered + "px");
+    };
+    const applyPinned = (next) => {
+      pinned = next;
+      if (pinnable) {
+        dock.classList.toggle(UNPINNED_CLASS, !next);
+        pinButton.setAttribute("aria-pressed", next ? "true" : "false");
+      }
+      sync();
+    };
+    const onPinClick = () => {
+      applyPinned(!pinned);
+      persistPinned(pinned);
     };
     const writeHeight = (height) => {
       manualHeight = height;
@@ -213,7 +270,8 @@
     };
 
     writeHeight(manualHeight);
-    sync();
+    applyPinned(pinned);
+    if (pinnable) pinButton.addEventListener("click", onPinClick);
     handle.addEventListener("pointerdown", onPointerDown);
     handle.addEventListener("pointermove", onPointerMove);
     handle.addEventListener("pointerup", endDrag);
@@ -230,8 +288,10 @@
 
     const binding = {
       handle: handle,
+      pinButton: pinnable ? pinButton : null,
       observer: observer,
       destroy: function () {
+        if (pinnable) pinButton.removeEventListener("click", onPinClick);
         handle.removeEventListener("pointerdown", onPointerDown);
         handle.removeEventListener("pointermove", onPointerMove);
         handle.removeEventListener("pointerup", endDrag);
@@ -260,6 +320,7 @@
 
   window.AIIA_FEEDBACK_OPTIONS_DOCK = {
     STORAGE_KEY: STORAGE_KEY,
+    PIN_STORAGE_KEY: PIN_STORAGE_KEY,
     SCHEMA_VERSION: SCHEMA_VERSION,
     MIN_HEIGHT_PX: MIN_HEIGHT_PX,
     MAX_STORED_HEIGHT_PX: MAX_STORED_HEIGHT_PX,
@@ -270,6 +331,8 @@
     resolveKey: resolveKey,
     readPersistedHeight: readPersistedHeight,
     persistHeight: persistHeight,
+    readPersistedPinned: readPersistedPinned,
+    persistPinned: persistPinned,
     init: init,
   };
 })();

@@ -87,6 +87,10 @@ FastMCP 4.1 能动态 add/remove 工具，保留 annotations/tags/version，
     png / jpg / gif / webp / bmp / avif（每条消息最多 8 张，单张不超过 8 MB）；
     其余路径会被替换成一行说明，且不会被读取。详见
     [configuration.zh-CN.md](configuration.zh-CN.md) 中的 `local_image_dirs`。
+  - 查看大图：用户可以点击（或聚焦后按 Enter / 空格）消息里显示的任意图片
+    （无论是否本地图片）查看大图：Web UI 里是一个图片查看窗，VS Code 面板里
+    还带有“适应窗口 / 原始大小”切换。链接里的图片仍然是打开该链接，加载失败的
+    图片不提供此功能。
 - `predefined_options`（array，可选）
   - 预定义选项列表，用户可选择其一或多项（以实际前端交互为准）。**两种规范输入形态**（v1.6.0+）：
     1. **推荐使用** `list[dict]` —— `{ "label": str, "default": bool }`

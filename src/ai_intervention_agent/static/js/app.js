@@ -136,6 +136,45 @@ let _hourglassLifecycleDisposed = false;
 let _hourglassLifecycleRetired = false;
 let _hourglassLifecycleHandlersInstalled = false;
 
+// The loops of the no-task page (the sprout, the three dots) only say "still waiting", and nobody is served by
+// them while the page is hidden or its window is not the one in front: then they stand still where they are
+// (.aiia-ambient-paused on <html> for the CSS ones, pause() for the sprout) and go on from there. Focus is
+// known from events and never from document.hasFocus(): that is false for good in embedded views that never take
+// focus, and a loop frozen for good is worse than one that runs when it need not. So a page that was not told it
+// lost focus keeps animating, and a page that is shown again, restored from the back/forward cache or used (a
+// click, a key, a tap) is in front, whatever the last blur said.
+const AMBIENT_PAUSED_CLASS = "aiia-ambient-paused";
+const AMBIENT_INTERACTION_EVENTS = ["pointerdown", "keydown"];
+let _ambientWindowFocused = true;
+
+function _ambientAnimationsPaused() {
+  return !!(typeof document !== "undefined" && document.hidden) || !_ambientWindowFocused;
+}
+
+function _syncAmbientClass() {
+  try {
+    const root = document.documentElement;
+    if (_ambientAnimationsPaused()) {
+      root.classList.add(AMBIENT_PAUSED_CLASS);
+    } else {
+      root.classList.remove(AMBIENT_PAUSED_CLASS);
+    }
+  } catch (_e) {
+
+  }
+}
+
+function _syncAmbientAnimations() {
+  _syncAmbientClass();
+  _syncHourglassPlayback();
+}
+
+function _setAmbientWindowFocused(focused) {
+  if (_ambientWindowFocused === focused) return;
+  _ambientWindowFocused = focused;
+  _syncAmbientAnimations();
+}
+
 function _isHourglassLifecycleActive(container, token) {
   if (_hourglassLifecycleDisposed) return false;
   if (token !== _hourglassLifecycleToken) return false;
@@ -212,6 +251,8 @@ function installHourglassAnimationLifecycleHandlers() {
     window.addEventListener("pageshow", function (event) {
       if (!event || !event.persisted) return;
       if (typeof document !== "undefined" && document.hidden) return;
+      _ambientWindowFocused = true;
+      _syncAmbientClass();
       initHourglassAnimation();
     });
   } catch (_e) {
@@ -221,14 +262,39 @@ function installHourglassAnimationLifecycleHandlers() {
   try {
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
-        _syncHourglassPlayback();
+        _syncAmbientAnimations();
       } else {
+        // Chrome reports the window's focus after the page is shown again; do not wait for it.
+        _ambientWindowFocused = true;
+        _syncAmbientClass();
         initHourglassAnimation();
       }
     });
   } catch (_e) {
 
   }
+
+  try {
+    window.addEventListener("blur", function () {
+      _setAmbientWindowFocused(false);
+    });
+    window.addEventListener("focus", function () {
+      _setAmbientWindowFocused(true);
+    });
+    AMBIENT_INTERACTION_EVENTS.forEach(function (type) {
+      window.addEventListener(
+        type,
+        function () {
+          _setAmbientWindowFocused(true);
+        },
+        { capture: true, passive: true },
+      );
+    });
+  } catch (_e) {
+
+  }
+
+  _syncAmbientClass();
 }
 
 function retireHourglassAnimation() {
@@ -306,7 +372,7 @@ function _syncHourglassPlayback() {
   if (!animation || !animation.isLoaded) return;
   const container = document.getElementById("hourglass-lottie");
   const shown =
-    !document.hidden &&
+    !_ambientAnimationsPaused() &&
     !!container &&
     container.offsetWidth > 0 &&
     container.offsetHeight > 0;
@@ -597,6 +663,8 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
 
       processPromptImages(element);
 
+      enablePromptImageZoom(element);
+
       const textContent = element.textContent || "";
       if (window.loadMathJaxIfNeeded) {
         window.loadMathJaxIfNeeded(element, textContent);
@@ -821,6 +889,80 @@ function processPromptImages(container) {
       parent.insertBefore(document.createTextNode(alt), image);
     }
     parent.removeChild(image);
+  }
+}
+
+// R903: an image of the agent's message opens large when it is clicked (Enter or Space on it, when
+// Tab has brought focus there).  ``processPromptImages`` decides which images stay; this makes the
+// ones that stayed open.  An image inside a link keeps doing what its link does, and an image the
+// browser could not load has nothing to show, so neither is touched.
+function openPromptImage(image) {
+  if (!image || typeof openImageModal !== "function") return false;
+  if (image.complete && Number(image.naturalWidth) === 0) return false;
+  const src = image.currentSrc || image.src || image.getAttribute("src") || "";
+  if (!src) return false;
+  const alt = (image.getAttribute("alt") || "").trim();
+  return openImageModal(src, alt, undefined, { source: "prompt" });
+}
+
+function _promptImageClickHandler(event) {
+  openPromptImage(event.currentTarget);
+}
+
+function _promptImageKeydownHandler(event) {
+  if (event.defaultPrevented) return;
+  if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+  if (event.key !== "Enter" && event.key !== " " && event.key !== "Spacebar") {
+    return;
+  }
+  // Keeps Space from scrolling the page, and keeps the Enter that opens the image from reaching the
+  // close button that takes focus as the image opens.
+  event.preventDefault();
+  openPromptImage(event.currentTarget);
+}
+
+function _promptImageErrorHandler(event) {
+  const image = event.currentTarget;
+  image.removeAttribute("data-aiia-zoom");
+  image.removeAttribute("tabindex");
+  image.removeAttribute("role");
+  image.removeAttribute("aria-label");
+}
+
+function enablePromptImageZoom(container) {
+  if (!container || typeof container.querySelectorAll !== "function") return;
+
+  // The message was written again: an image opened from the old one has nothing to belong to.
+  if (typeof closeImageModalFromPrompt === "function") {
+    closeImageModalFromPrompt();
+  }
+
+  const images = container.querySelectorAll("img[src]");
+  const imageCount =
+    images && Number.isFinite(images.length) ? images.length : 0;
+  for (let imageIndex = 0; imageIndex < imageCount; imageIndex += 1) {
+    const image = images[imageIndex];
+    if (!image || typeof image.setAttribute !== "function") continue;
+
+    if (image.getAttribute("data-aiia-zoom") === "1") continue;
+    if (typeof image.closest === "function" && image.closest("a[href]")) {
+      continue;
+    }
+    if (image.complete && Number(image.naturalWidth) === 0) continue;
+
+    const alt = (image.getAttribute("alt") || "").trim();
+    image.setAttribute("data-aiia-zoom", "1");
+    image.setAttribute("tabindex", "0");
+    image.setAttribute("role", "button");
+    image.setAttribute(
+      "aria-label",
+      alt
+        ? t("page.imageEnlargeNamed", { name: alt })
+        : t("page.imageEnlarge"),
+    );
+    image.addEventListener("click", _promptImageClickHandler);
+    image.addEventListener("keydown", _promptImageKeydownHandler);
+    image.addEventListener("error", _promptImageErrorHandler);
   }
 }
 

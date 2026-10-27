@@ -65,6 +65,8 @@ interface NotificationConfig {
   macosNativeEnabled: boolean;
 }
 
+const NOTIFICATION_CONFIG_TTL_MS = 5000;
+
 interface TaskData {
   id: string;
   prompt: string;
@@ -644,6 +646,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       if (webviewView.visible) {
         this._armWebviewReadyTimer("shown");
         this._sendMessage({ type: "refresh" });
+        this._sendWindowFocus();
 
         this._sendMessage({ type: "force-repaint" });
         this._sendVisibilityBenchmarkProbe();
@@ -842,6 +845,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         } catch {
 
         }
+        this._sendWindowFocus();
         try {
           if (this._logger && typeof this._logger.event === "function") {
             this._logger.event(
@@ -947,6 +951,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       case "notify":
         this._handleNotify(message);
         break;
+      case "notificationSettingsChanged":
+        this._notificationConfig = null;
+        this._notificationConfigFetchedAt = 0;
+        break;
       case "showInfo":
         this._dispatchNotificationEvent({
           title: "AI Intervention Agent",
@@ -1025,13 +1033,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  _dispatchNotificationEvent(event: Record<string, unknown>): void {
+  _dispatchNotificationEvent(rawEvent: Record<string, unknown>): void {
     try {
       if (
         !this._notificationCenter ||
         typeof this._notificationCenter.dispatch !== "function"
       )
         return;
+      const event = this._resolveNotificationDelivery(rawEvent);
       try {
         this._armRevealPanelOnNextFocus(event);
       } catch {
@@ -1096,6 +1105,46 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  _nativeNotificationsAvailable(): boolean {
+    return process.platform === "darwin";
+  }
+
+  /**
+   * New-task and test notifications ask for `presentation: "auto"`; only the host knows the platform,
+   * so only the host can say what the in-editor part should look like:
+   *  - the macOS banner will be shown (it is switched on and this host runs on macOS): the in-editor
+   *    part stays the quiet status-bar message, the banner is what the user is meant to notice;
+   *  - otherwise the in-editor part is all the user gets, so it is a real VS Code notification (a
+   *    toast), not a three-second status-bar message that is easy to miss. `macos_native` is taken
+   *    out of the list because it cannot be delivered from this host.
+   */
+  _resolveNotificationDelivery(
+    event: Record<string, unknown>,
+  ): Record<string, unknown> {
+    try {
+      const md =
+        event && event.metadata && typeof event.metadata === "object"
+          ? (event.metadata as Record<string, unknown>)
+          : null;
+      if (!md || md.presentation !== "auto") return event;
+      const types = Array.isArray(event.types)
+        ? (event.types as unknown[]).map((t) => String(t))
+        : [];
+      const native =
+        types.includes(NotificationType.MACOS_NATIVE) &&
+        this._nativeNotificationsAvailable();
+      return {
+        ...event,
+        types: native
+          ? types
+          : types.filter((t) => t !== NotificationType.MACOS_NATIVE),
+        metadata: { ...md, presentation: native ? "statusBar" : "toast" },
+      };
+    } catch {
+      return event;
+    }
+  }
+
   _armRevealPanelOnNextFocus(event: Record<string, unknown>): void {
     try {
       const evt =
@@ -1132,6 +1181,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   }
 
   async onWindowFocusChanged(focused: boolean): Promise<void> {
+    this._sendWindowFocus(focused);
     try {
       if (!focused) return;
       const until =
@@ -1326,6 +1376,21 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._postMessage(message);
   }
 
+  _windowIsFocused(): boolean {
+    try {
+      return vscode.window.state.focused !== false;
+    } catch {
+      return true;
+    }
+  }
+
+  // A webview cannot see the window: its own focus and blur follow the element that has the focus (the editor, the
+  // panel), not the VS Code window, so the page is told whether the window is in front and pauses what only decorates
+  // while it is not. Without an argument: how things stand right now.
+  _sendWindowFocus(focused: boolean = this._windowIsFocused()): void {
+    this._sendMessage({ type: "window-focus", focused: focused });
+  }
+
   _postMessage(message: WebviewMessage): void {
     try {
       if (
@@ -1357,7 +1422,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     if (
       !force &&
       this._notificationConfig &&
-      now - this._notificationConfigFetchedAt < 30000
+      now - this._notificationConfigFetchedAt < NOTIFICATION_CONFIG_TTL_MS
     ) {
       return this._notificationConfig;
     }
@@ -1586,7 +1651,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         trigger: "immediate",
         types: types,
         metadata: {
-          presentation: "statusBar",
+          presentation: "auto",
           severity: "info",
           timeoutMs: 3000,
           isTest: false,
@@ -1850,6 +1915,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       "dv",
       "sd",
     ];
+    const hostPlatform = String(process.platform).replace(/[^a-z0-9]/gi, "");
+    const macosRowHidden = hostPlatform === "darwin" ? "" : " hidden";
     const htmlLangLower = htmlLang.toLowerCase();
     const htmlDir = rtlPrefixes.some(
       (p) => htmlLangLower === p || htmlLangLower.startsWith(p + "-"),
@@ -1863,7 +1930,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl} ${cspSource} 'self'; style-src ${cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data: ${serverUrl} ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
-    <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-no-content-fallback-svg-url="${activityIconUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}" data-notify-core-js-url="${webviewNotifyCoreUri}" data-settings-ui-js-url="${webviewSettingsUiUri}">
+    <meta id="aiia-config" data-server-url="${serverUrl}" data-host-platform="${hostPlatform}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-no-content-fallback-svg-url="${activityIconUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}" data-notify-core-js-url="${webviewNotifyCoreUri}" data-settings-ui-js-url="${webviewSettingsUiUri}">
     <script nonce="${nonce}">window.__AIIA_NO_CONTENT_FALLBACK_SVG=${inlineNoContentFallbackSvgLiteral};window.__AIIA_NO_CONTENT_LOTTIE_DATA=${inlineNoContentLottieDataLiteral};window.__AIIA_I18N_LANG=${inlineI18nLangLiteral};window.__AIIA_I18N_AUTO_LANG=${inlineAutoLangLiteral};window.__AIIA_I18N_LOCALE=${inlineI18nLocaleLiteral};window.__AIIA_I18N_ALL_LOCALES=${inlineAllLocalesLiteral};</script>
     <title>AI Intervention Agent</title>
     <link rel="stylesheet" href="${prismCssUri}">
@@ -1964,7 +2031,15 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
                 <div class="options-dock hidden" id="optionsSection">
                     <div class="options-resize-handle" id="optionsResizeHandle" role="separator" aria-orientation="horizontal" aria-controls="optionsContainer" tabindex="0" title="${tl("ui.form.optionsResizeHint")}" aria-label="${tl("ui.form.optionsResize")}" data-i18n-title="ui.form.optionsResizeHint" data-i18n-aria-label="ui.form.optionsResize"></div>
-                    <div class="form-label" data-i18n="ui.form.optionsLabel">${tl("ui.form.optionsLabel")}</div>
+                    <div class="options-head">
+                        <div class="form-label" data-i18n="ui.form.optionsLabel">${tl("ui.form.optionsLabel")}</div>
+                        <button type="button" class="options-pin-btn" id="optionsPinBtn" aria-pressed="true" title="${tl("ui.form.optionsPinHint")}" aria-label="${tl("ui.form.optionsPin")}" data-i18n-title="ui.form.optionsPinHint" data-i18n-aria-label="ui.form.optionsPin">
+                            <svg class="options-pin-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                <line x1="12" y1="17" x2="12" y2="22"></line>
+                                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                            </svg>
+                        </button>
+                    </div>
                     <div class="options-container" id="optionsContainer"></div>
                 </div>
 
@@ -2019,79 +2094,95 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         <div class="toast-host" id="toastHost" aria-live="polite" aria-atomic="true"></div>
 
     <div class="settings-overlay hidden" id="settingsOverlay">
-        <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true">
+        <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" tabindex="-1">
             <div class="settings-header">
-                <div class="settings-title" data-i18n="settings.title">${tl("settings.title")}</div>
-                <button class="settings-close" id="settingsClose" title="${tl("settings.close")}" aria-label="${tl("settings.close")}" data-i18n-title="settings.close" data-i18n-aria-label="settings.close">
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                        <path d="M5 5L15 15"></path>
-                        <path d="M15 5L5 15"></path>
-                    </svg>
-                </button>
+                <div class="settings-title" id="settingsTitle" data-i18n="settings.title">${tl("settings.title")}</div>
+                <div class="settings-header-right">
+                    <span class="settings-auto-save" title="${tl("settings.autoSaveTooltip")}" data-i18n="settings.autoSave" data-i18n-title="settings.autoSaveTooltip">${tl("settings.autoSave")}</span>
+                    <button class="settings-close" id="settingsClose" type="button" title="${tl("settings.close")}" aria-label="${tl("settings.close")}" data-i18n-title="settings.close" data-i18n-aria-label="settings.close">
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                            <path d="M5 5L15 15"></path>
+                            <path d="M15 5L5 15"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
+            <div class="settings-hint" id="settingsHint" role="status" aria-live="polite"></div>
             <div class="settings-body">
+                <div class="settings-section-title" data-i18n="settings.notifications.title">${tl("settings.notifications.title")}</div>
                 <label class="settings-toggle">
-                    <span data-i18n="settings.enabled">${tl("settings.enabled")}</span>
-                    <input type="checkbox" id="notifyEnabled">
+                    <span class="settings-toggle-text">
+                        <span id="notifyEnabledTitle" data-i18n="settings.enabled">${tl("settings.enabled")}</span>
+                        <span class="settings-field-hint" id="notifyEnabledHint" data-i18n="settings.enabledHint">${tl("settings.enabledHint")}</span>
+                    </span>
+                    <input type="checkbox" id="notifyEnabled" aria-labelledby="notifyEnabledTitle" aria-describedby="notifyEnabledHint" aria-controls="settingsChannels">
                 </label>
-                <label class="settings-toggle">
-                    <span data-i18n="settings.macosNative">${tl("settings.macosNative")}</span>
-                    <input type="checkbox" id="notifyMacOSNativeEnabled">
-                </label>
-
-                <div class="settings-divider"></div>
-
-                <label class="settings-toggle">
-                    <span data-i18n="settings.bark.enabled">${tl("settings.bark.enabled")}</span>
-                    <input type="checkbox" id="notifyBarkEnabled" aria-controls="settingsBarkFields">
-                </label>
-                <div class="settings-bark-fields" id="settingsBarkFields" hidden>
-                    <label class="settings-field">
-                        <span class="settings-label" data-i18n="settings.bark.url">${tl("settings.bark.url")}</span>
-                        <input type="text" id="notifyBarkUrl" placeholder="${tl("settings.bark.urlPlaceholder")}" data-i18n-placeholder="settings.bark.urlPlaceholder">
+                <div class="settings-channels" id="settingsChannels">
+                    <label class="settings-toggle" id="settingsMacosRow"${macosRowHidden}>
+                        <span class="settings-toggle-text">
+                            <span id="notifyMacOSNativeTitle" data-i18n="settings.macosNative">${tl("settings.macosNative")}</span>
+                            <span class="settings-field-hint" id="notifyMacOSNativeHint" data-i18n="settings.macosNativeHint">${tl("settings.macosNativeHint")}</span>
+                        </span>
+                        <input type="checkbox" id="notifyMacOSNativeEnabled" aria-labelledby="notifyMacOSNativeTitle" aria-describedby="notifyMacOSNativeHint">
                     </label>
-                    <div class="settings-field">
-                        <label class="settings-label" for="notifyBarkDeviceKey" data-i18n="settings.bark.deviceKey">${tl("settings.bark.deviceKey")}</label>
-                        <div class="settings-secret-row">
-                            <!-- Credential: masked by default with a show/hide toggle; autocomplete / data-*ignore keep browsers and password managers from saving or filling it. -->
-                            <input type="password" id="notifyBarkDeviceKey" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore="true" aria-describedby="settingsBarkDeviceKeyHint" placeholder="${tl("settings.bark.deviceKeyPlaceholder")}" data-i18n-placeholder="settings.bark.deviceKeyPlaceholder">
-                            <button type="button" class="settings-action secondary settings-secret-toggle" id="settingsBarkDeviceKeyToggleBtn" aria-controls="notifyBarkDeviceKey" data-state="hidden" title="${tl("settings.bark.deviceKeyShow")}" aria-label="${tl("settings.bark.deviceKeyShow")}" data-i18n-title="settings.bark.deviceKeyShow">
-                                <svg class="settings-secret-icon secret-icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                                <svg class="settings-secret-icon secret-icon-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                                </svg>
-                            </button>
-                        </div>
-                        <span class="settings-field-hint" id="settingsBarkDeviceKeyHint" data-i18n="settings.bark.deviceKeyHint">${tl("settings.bark.deviceKeyHint")}</span>
+                    <div class="settings-actions">
+                        <button class="settings-action secondary" id="settingsTestNotifyBtn" type="button" data-i18n="settings.testNotify">${tl("settings.testNotify")}</button>
                     </div>
-                    <label class="settings-field">
-                        <span class="settings-label" data-i18n="settings.bark.icon">${tl("settings.bark.icon")}</span>
-                        <input type="text" id="notifyBarkIcon" placeholder="${tl("settings.bark.iconPlaceholder")}" data-i18n-placeholder="settings.bark.iconPlaceholder">
+                    <label class="settings-toggle">
+                        <span data-i18n="settings.bark.enabled">${tl("settings.bark.enabled")}</span>
+                        <input type="checkbox" id="notifyBarkEnabled" aria-controls="settingsBarkFields">
                     </label>
-                    <label class="settings-field">
-                        <span class="settings-label" data-i18n="settings.bark.action">${tl("settings.bark.action")}</span>
-                        <select id="notifyBarkAction">
-                            <option value="none" data-i18n="settings.bark.actionNone">${tl("settings.bark.actionNone")}</option>
-                            <option value="url" data-i18n="settings.bark.actionUrl">${tl("settings.bark.actionUrl")}</option>
-                            <option value="copy" data-i18n="settings.bark.actionCopy">${tl("settings.bark.actionCopy")}</option>
-                        </select>
-                    </label>
-                    <label class="settings-field">
-                        <span class="settings-label" data-i18n="settings.bark.urlTemplate">${tl("settings.bark.urlTemplate")}</span>
-                        <input type="text" id="notifyBarkUrlTemplate" placeholder="${tl("settings.bark.urlTemplatePlaceholder")}" data-i18n-placeholder="settings.bark.urlTemplatePlaceholder">
-                        <span class="settings-field-hint" data-i18n="settings.bark.urlTemplateHint">${tl("settings.bark.urlTemplateHint")}</span>
-                    </label>
-                    <div class="settings-field bark-base-url-status" id="settingsBarkBaseUrlStatus" hidden>
-                        <span class="settings-label" data-i18n="settings.bark.baseUrlStatusTitle">${tl("settings.bark.baseUrlStatusTitle")}</span>
-                        <span class="settings-field-hint" id="settingsBarkBaseUrlMessage"></span>
-                        <span class="settings-field-hint" id="settingsBarkBaseUrlSuggestion"></span>
-                        <div class="settings-bark-base-url-actions">
-                            <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlCopyBtn" hidden data-i18n="settings.bark.baseUrlCopyLan">${tl("settings.bark.baseUrlCopyLan")}</button>
-                            <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlRecheckBtn" data-i18n="settings.bark.baseUrlRecheck">${tl("settings.bark.baseUrlRecheck")}</button>
+                    <div class="settings-bark-fields" id="settingsBarkFields" hidden>
+                        <label class="settings-field">
+                            <span class="settings-label" data-i18n="settings.bark.url">${tl("settings.bark.url")}</span>
+                            <input type="text" id="notifyBarkUrl" placeholder="${tl("settings.bark.urlPlaceholder")}" data-i18n-placeholder="settings.bark.urlPlaceholder">
+                        </label>
+                        <div class="settings-field">
+                            <label class="settings-label" for="notifyBarkDeviceKey" data-i18n="settings.bark.deviceKey">${tl("settings.bark.deviceKey")}</label>
+                            <div class="settings-secret-row">
+                                <!-- Credential: masked by default with a show/hide toggle; autocomplete / data-*ignore keep browsers and password managers from saving or filling it. -->
+                                <input type="password" id="notifyBarkDeviceKey" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore="true" aria-describedby="settingsBarkDeviceKeyHint" placeholder="${tl("settings.bark.deviceKeyPlaceholder")}" data-i18n-placeholder="settings.bark.deviceKeyPlaceholder">
+                                <button type="button" class="settings-action secondary settings-secret-toggle" id="settingsBarkDeviceKeyToggleBtn" aria-controls="notifyBarkDeviceKey" data-state="hidden" title="${tl("settings.bark.deviceKeyShow")}" aria-label="${tl("settings.bark.deviceKeyShow")}" data-i18n-title="settings.bark.deviceKeyShow">
+                                    <svg class="settings-secret-icon secret-icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg class="settings-secret-icon secret-icon-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                            <span class="settings-field-hint" id="settingsBarkDeviceKeyHint" data-i18n="settings.bark.deviceKeyHint">${tl("settings.bark.deviceKeyHint")}</span>
+                        </div>
+                        <label class="settings-field">
+                            <span class="settings-label" data-i18n="settings.bark.icon">${tl("settings.bark.icon")}</span>
+                            <input type="text" id="notifyBarkIcon" placeholder="${tl("settings.bark.iconPlaceholder")}" data-i18n-placeholder="settings.bark.iconPlaceholder">
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label" data-i18n="settings.bark.action">${tl("settings.bark.action")}</span>
+                            <select id="notifyBarkAction">
+                                <option value="none" data-i18n="settings.bark.actionNone">${tl("settings.bark.actionNone")}</option>
+                                <option value="url" data-i18n="settings.bark.actionUrl">${tl("settings.bark.actionUrl")}</option>
+                                <option value="copy" data-i18n="settings.bark.actionCopy">${tl("settings.bark.actionCopy")}</option>
+                            </select>
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label" data-i18n="settings.bark.urlTemplate">${tl("settings.bark.urlTemplate")}</span>
+                            <input type="text" id="notifyBarkUrlTemplate" placeholder="${tl("settings.bark.urlTemplatePlaceholder")}" data-i18n-placeholder="settings.bark.urlTemplatePlaceholder">
+                            <span class="settings-field-hint" data-i18n="settings.bark.urlTemplateHint">${tl("settings.bark.urlTemplateHint")}</span>
+                        </label>
+                        <div class="settings-field bark-base-url-status" id="settingsBarkBaseUrlStatus" hidden>
+                            <span class="settings-label" data-i18n="settings.bark.baseUrlStatusTitle">${tl("settings.bark.baseUrlStatusTitle")}</span>
+                            <span class="settings-field-hint" id="settingsBarkBaseUrlMessage"></span>
+                            <span class="settings-field-hint" id="settingsBarkBaseUrlSuggestion"></span>
+                            <div class="settings-bark-base-url-actions">
+                                <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlCopyBtn" hidden data-i18n="settings.bark.baseUrlCopyLan">${tl("settings.bark.baseUrlCopyLan")}</button>
+                                <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlRecheckBtn" data-i18n="settings.bark.baseUrlRecheck">${tl("settings.bark.baseUrlRecheck")}</button>
+                            </div>
+                        </div>
+                        <div class="settings-actions">
+                            <button class="settings-action secondary" id="settingsTestBarkBtn" type="button" data-i18n="settings.testBark">${tl("settings.testBark")}</button>
                         </div>
                     </div>
                 </div>
@@ -2123,15 +2214,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     </div>
                 </div>
 
-                <div class="settings-divider"></div>
-
-                <div class="settings-actions">
-                    <button class="settings-action secondary" id="settingsTestNativeBtn" data-i18n="settings.testNative">${tl("settings.testNative")}</button>
-                    <button class="settings-action secondary" id="settingsTestBarkBtn" data-i18n="settings.testBark">${tl("settings.testBark")}</button>
-                    <div class="settings-actions-right">
-                        <span class="settings-auto-save" title="${tl("settings.autoSaveTooltip")}" data-i18n="settings.autoSave" data-i18n-title="settings.autoSaveTooltip">${tl("settings.autoSave")}</span>
-                    </div>
-                </div>
                 <div class="settings-footer" id="settingsFooter">
                     <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer" data-i18n-title="settings.footer.versionLinkTitle" title="${tl("settings.footer.versionLinkTitle")}">
                         <svg viewBox="0 0 24 24" fill="currentColor" class="github-icon" width="14" height="14" aria-hidden="true" focusable="false">
@@ -2140,8 +2222,23 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                         <span class="settings-footer-link-text" data-i18n="settings.footer.versionLink" data-i18n-version="${extensionVersion}">${tl("settings.footer.versionLink", { version: extensionVersion })}</span>
                     </a>
                 </div>
-                <div class="settings-hint" id="settingsHint"></div>
             </div>
+        </div>
+    </div>
+
+    <div class="image-viewer hidden" id="imageViewer" role="dialog" aria-modal="true" aria-label="${tl("ui.image.viewerTitle")}" data-i18n-aria-label="ui.image.viewerTitle">
+        <div class="image-viewer-stage" id="imageViewerStage">
+            <img class="image-viewer-img" id="imageViewerImg" alt="">
+        </div>
+        <div class="image-viewer-caption" id="imageViewerCaption"></div>
+        <div class="image-viewer-toolbar">
+            <button class="image-viewer-btn" id="imageViewerZoom" type="button" aria-pressed="false" title="${tl("ui.image.viewerActualSize")}" aria-label="${tl("ui.image.viewerActualSize")}" data-i18n-title="ui.image.viewerActualSize" data-i18n-aria-label="ui.image.viewerActualSize">1:1</button>
+            <button class="image-viewer-btn" id="imageViewerClose" type="button" title="${tl("ui.image.viewerClose")}" aria-label="${tl("ui.image.viewerClose")}" data-i18n-title="ui.image.viewerClose" data-i18n-aria-label="ui.image.viewerClose">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M5 5L15 15"></path>
+                    <path d="M15 5L5 15"></path>
+                </svg>
+            </button>
         </div>
     </div>
 

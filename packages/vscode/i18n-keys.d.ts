@@ -56,6 +56,7 @@ export type I18nKey =
   | "settings.config.pathPlaceholder"
   | "settings.config.title"
   | "settings.enabled"
+  | "settings.enabledHint"
   | "settings.feedback.countdown"
   | "settings.feedback.countdownHint"
   | "settings.feedback.promptSuffix"
@@ -69,10 +70,10 @@ export type I18nKey =
   | "settings.footer.versionLinkTitle"
   | "settings.hint.barkTestSent"
   | "settings.hint.coreNotReady"
+  | "settings.hint.countdownInvalid"
   | "settings.hint.loadFailed"
   | "settings.hint.loadFailedReason"
   | "settings.hint.loading"
-  | "settings.hint.macosNotEnabled"
   | "settings.hint.macosTestTriggered"
   | "settings.hint.noChange"
   | "settings.hint.notifyDisabled"
@@ -86,13 +87,16 @@ export type I18nKey =
   | "settings.hint.testFailed"
   | "settings.hint.testFailedHttp"
   | "settings.hint.testFailedNoUrl"
+  | "settings.hint.testInAppSent"
   | "settings.hint.testing"
   | "settings.hint.timeout"
   | "settings.macosNative"
-  | "settings.test.macosMessage"
-  | "settings.test.macosTitle"
+  | "settings.macosNativeHint"
+  | "settings.notifications.title"
+  | "settings.test.message"
+  | "settings.test.title"
   | "settings.testBark"
-  | "settings.testNative"
+  | "settings.testNotify"
   | "settings.title"
   | "statusBar.clickToOpen"
   | "statusBar.connected"
@@ -123,18 +127,26 @@ export type I18nKey =
   | "ui.countdown.remaining"
   | "ui.form.insertCode"
   | "ui.form.optionsLabel"
+  | "ui.form.optionsPin"
+  | "ui.form.optionsPinHint"
   | "ui.form.optionsResize"
   | "ui.form.optionsResizeHint"
   | "ui.form.placeholder"
   | "ui.form.submit"
   | "ui.form.uploadImage"
   | "ui.image.decodeFailed"
+  | "ui.image.dimensions"
+  | "ui.image.enlarge"
+  | "ui.image.enlargeNamed"
   | "ui.image.invalid"
   | "ui.image.processingFailedReason"
   | "ui.image.readFailed"
   | "ui.image.tooLarge"
   | "ui.image.tooManyFiles"
   | "ui.image.unsupportedFormat"
+  | "ui.image.viewerActualSize"
+  | "ui.image.viewerClose"
+  | "ui.image.viewerTitle"
   | "ui.noContent.connecting"
   | "ui.noContent.title"
   | "ui.noContent.waiting"
@@ -221,6 +233,7 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "settings.config.pathPlaceholder",
   "settings.config.title",
   "settings.enabled",
+  "settings.enabledHint",
   "settings.feedback.countdown",
   "settings.feedback.countdownHint",
   "settings.feedback.promptSuffix",
@@ -234,10 +247,10 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "settings.footer.versionLinkTitle",
   "settings.hint.barkTestSent",
   "settings.hint.coreNotReady",
+  "settings.hint.countdownInvalid",
   "settings.hint.loadFailed",
   "settings.hint.loadFailedReason",
   "settings.hint.loading",
-  "settings.hint.macosNotEnabled",
   "settings.hint.macosTestTriggered",
   "settings.hint.noChange",
   "settings.hint.notifyDisabled",
@@ -251,13 +264,16 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "settings.hint.testFailed",
   "settings.hint.testFailedHttp",
   "settings.hint.testFailedNoUrl",
+  "settings.hint.testInAppSent",
   "settings.hint.testing",
   "settings.hint.timeout",
   "settings.macosNative",
-  "settings.test.macosMessage",
-  "settings.test.macosTitle",
+  "settings.macosNativeHint",
+  "settings.notifications.title",
+  "settings.test.message",
+  "settings.test.title",
   "settings.testBark",
-  "settings.testNative",
+  "settings.testNotify",
   "settings.title",
   "statusBar.clickToOpen",
   "statusBar.connected",
@@ -288,18 +304,26 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "ui.countdown.remaining",
   "ui.form.insertCode",
   "ui.form.optionsLabel",
+  "ui.form.optionsPin",
+  "ui.form.optionsPinHint",
   "ui.form.optionsResize",
   "ui.form.optionsResizeHint",
   "ui.form.placeholder",
   "ui.form.submit",
   "ui.form.uploadImage",
   "ui.image.decodeFailed",
+  "ui.image.dimensions",
+  "ui.image.enlarge",
+  "ui.image.enlargeNamed",
   "ui.image.invalid",
   "ui.image.processingFailedReason",
   "ui.image.readFailed",
   "ui.image.tooLarge",
   "ui.image.tooManyFiles",
   "ui.image.unsupportedFormat",
+  "ui.image.viewerActualSize",
+  "ui.image.viewerClose",
+  "ui.image.viewerTitle",
   "ui.noContent.connecting",
   "ui.noContent.title",
   "ui.noContent.waiting",

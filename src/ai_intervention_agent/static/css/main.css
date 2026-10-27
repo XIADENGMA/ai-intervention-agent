@@ -730,6 +730,17 @@ h1 {
   animation-delay: -0.6s;
 }
 
+/* Nobody is served by a loop they cannot see. While the page is hidden or its window is not the one in front,
+   app.js puts .aiia-ambient-paused on <html>, and everything that moves on the no-task page (the dots, and the
+   sprout drawn in their place when the animation cannot be loaded) stands still where it is and goes on from
+   there. The sprout of the animation itself is paused by the script. */
+.aiia-ambient-paused #no-content-container,
+.aiia-ambient-paused #no-content-container *,
+.aiia-ambient-paused #no-content-container *::before,
+.aiia-ambient-paused #no-content-container *::after {
+  animation-play-state: paused;
+}
+
 .no-content-buttons {
   display: none;
   margin-top: 2rem;
@@ -1950,7 +1961,7 @@ h1 {
   max-height: min(var(--aiia-options-height, 40vh), 70vh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 1.25rem 1rem 0.5rem;
+  padding: 1.75rem 1rem 0.5rem;
   padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
   background: var(--bg-secondary);
   border: 1px solid var(--border-secondary);
@@ -2019,6 +2030,89 @@ h1 {
 }
 
 .options-container.hidden + .options-resize-handle {
+  display: none;
+}
+
+/* The pin button sits in the top strip of the tray (the list pads that strip
+   for it), opposite the grip. Pinned, which is the default, the tray is stuck to
+   the bottom of the window. Unpinned, feedback_options_dock.js adds
+   .is-unpinned and the tray is set down at the end of the message instead,
+   unframed and as tall as its options, the way the list looked before the tray
+   existed. */
+.options-pin-btn {
+  position: absolute;
+  top: 0.125rem;
+  right: 0.875rem;
+  z-index: 2;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.options-pin-btn::after {
+  content: "";
+  position: absolute;
+  inset: -0.25rem;
+}
+
+.options-pin-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  transition: transform 0.15s ease;
+}
+
+.options-pin-btn[aria-pressed="true"] {
+  color: var(--primary-600);
+}
+
+.options-pin-btn[aria-pressed="true"] .options-pin-icon {
+  fill: currentColor;
+}
+
+.options-pin-btn[aria-pressed="false"] .options-pin-icon {
+  transform: rotate(45deg);
+}
+
+.options-pin-btn:hover {
+  background: var(--bg-hover);
+}
+
+.options-pin-btn[aria-pressed="false"]:hover {
+  color: var(--text-primary);
+}
+
+.options-container.hidden ~ .options-pin-btn {
+  display: none;
+}
+
+.options-dock.is-unpinned {
+  position: relative;
+  bottom: auto;
+  z-index: auto;
+}
+
+.options-dock.is-unpinned .options-container {
+  max-height: none;
+  overflow: visible;
+  padding: 1.75rem 0 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.options-dock.is-unpinned .options-resize-handle {
   display: none;
 }
 
@@ -2567,9 +2661,12 @@ h1 {
   justify-content: center;
 }
 
+/* R903: the window, not the box around the image: that box has no height of its own for 100% to be a
+   share of, so an image taller than wide kept its own size and was cut off by the window. */
 .image-modal img {
-  max-width: 100%;
-  max-height: 100%;
+  max-width: 90vw;
+  max-height: 80vh;
+  max-height: 80dvh;
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
@@ -2598,11 +2695,16 @@ h1 {
   transform: scale(1.1);
 }
 
+/* R903: at least as wide as the image, wider when its text is (a tall image is a narrow strip). */
 .image-modal-info {
   position: absolute;
   bottom: -50px;
-  left: 0;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  min-width: 100%;
+  max-width: 90vw;
+  box-sizing: border-box;
   text-align: center;
   color: white;
   background: rgba(0, 0, 0, 0.5);
@@ -2649,6 +2751,10 @@ h1 {
     bottom: 10px;
     left: 10px;
     right: 10px;
+    transform: none;
+    width: auto;
+    min-width: 0;
+    max-width: none;
     font-size: 12px;
   }
 
@@ -2906,6 +3012,13 @@ h1 {
   max-width: 100%;
   height: auto;
   border-radius: 8px;
+}
+
+/* R903: an image of the agent's message opens large when it is clicked (enablePromptImageZoom);
+   the focus ring is the page's own (:focus-visible), and a tap does not wait for a double-tap. */
+.markdown-content img[data-aiia-zoom="1"] {
+  cursor: zoom-in;
+  touch-action: manipulation;
 }
 
 .markdown-content code {

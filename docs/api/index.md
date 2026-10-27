@@ -142,6 +142,7 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 - [i18n](i18n.md)
 - [local_images](local_images.md)
 - [mcp_tool_call_metrics](mcp_tool_call_metrics.md)
+- [process_meta](process_meta.md)
 - [protocol](protocol.md)
 - [remote_environment](remote_environment.md)
 - [runtime_constants](runtime_constants.md)
@@ -199,6 +200,7 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 - **i18n**: Lightweight back-end i18n (request-language detection + locale-keyed message lookup)
 - **local_images**: Local images in a prompt — finds Markdown / HTML image references, reads them only inside the allowed folders (realpath, symlink, type and size checks) and rewrites them to per-task image URLs
 - **mcp_tool_call_metrics**: MCP tool call counter middleware (R187 / T2) — feeds `aiia_mcp_tool_calls_total{tool,status}` Prometheus metric in `/api/system/metrics`
+- **process_meta**: Process start time and git build info in a standard-library-only module — shared by the MCP server and the Web UI's `/api/system/health` / `/api/system/metrics`, so the Web UI process never imports `server` (the whole MCP stack) to answer them (R904)
 - **runtime_constants**: Cheap-to-import runtime timeout constants shared by Web UI, task queue, and server config
 - **rw_lock**: Lightweight read/write lock primitive shared by queue and compatibility tests
 - **shared_types**: Shared TypedDict definitions

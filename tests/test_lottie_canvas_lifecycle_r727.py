@@ -931,7 +931,13 @@ class TestSourceContracts(unittest.TestCase):
         body = _function_body(self.app, "installHourglassAnimationLifecycleHandlers")
         hidden_branch = body[body.index("if (document.hidden)") :]
         hidden_branch = hidden_branch[: hidden_branch.index("} else {")]
-        self.assertIn("_syncHourglassPlayback()", hidden_branch)
+        # R902: the hidden branch goes through _syncAmbientAnimations(), which freezes the CSS loops of the
+        # no-task state and then calls _syncHourglassPlayback() (that is what pauses the canvas).
+        self.assertIn("_syncAmbientAnimations()", hidden_branch)
+        self.assertIn(
+            "_syncHourglassPlayback()",
+            _function_body(self.app, "_syncAmbientAnimations"),
+        )
         self.assertNotIn("disposeHourglassAnimationLifecycle", hidden_branch)
 
     def test_page_switches_resync_the_canvas(self) -> None:

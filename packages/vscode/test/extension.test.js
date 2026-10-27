@@ -107,7 +107,7 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('requestClipboardText'))
     assert.ok(webviewUi.includes('clipboardText'))
     assert.ok(webviewJs.includes('id="notifyMacOSNativeEnabled"'))
-    assert.ok(webviewJs.includes('id="settingsTestNativeBtn"'))
+    assert.ok(webviewJs.includes('id="settingsTestNotifyBtn"'))
 
     // 设置面板 footer 外链回归点：VS Code webview 默认禁止
     // <a target="_blank" href="https://...">  直接 navigate（点击后无反应），
@@ -141,11 +141,11 @@ suite('Extension Test Suite', () => {
     // 阶段 C：统一 NotificationEvent 分发（Webview → Extension）
     assert.ok(webviewUi.includes("type: 'notify'"))
     assert.ok(notifyCore.includes('macos_native'))
-    // 设置面板：原生通知测试应为“手动触发”，不依赖复杂诊断链路
+    // 设置面板：通知测试应为“手动触发”，不依赖复杂诊断链路（R898：测的是用户实际会收到的通知，不再只测 macOS 原生通知）
     // Quote-agnostic：源码 prettier 切到 double-quote 后不能让单 quote 锁假 fail（与 145 行同一原因）
     assert.ok(
-      settingsUi.includes("kind: 'test_macos_native'") ||
-        settingsUi.includes('kind: "test_macos_native"')
+      settingsUi.includes("kind: 'test_notification'") ||
+        settingsUi.includes('kind: "test_notification"')
     )
     // 轮询协同：Webview 上报 tasks stats（用于扩展状态栏降频）
     assert.ok(webviewUi.includes("type: 'tasksStats'"))

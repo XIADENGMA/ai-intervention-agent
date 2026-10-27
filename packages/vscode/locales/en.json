@@ -1,13 +1,18 @@
 {
   "settings": {
-    "title": "Notification Settings",
+    "title": "Settings",
     "close": "Close",
     "enabled": "Enable Notifications",
+    "enabledHint": "Master switch: when it is off, none of the options below raises a notification.",
     "macosNative": "macOS Native Notification",
+    "macosNativeHint": "Show a macOS banner for each new request. When it is off, VS Code shows a notification instead.",
     "autoSave": "Auto-save",
     "autoSaveTooltip": "Changes are automatically synced to the server",
-    "testNative": "Test Native",
+    "testNotify": "Test Notification",
     "testBark": "Test Bark",
+    "notifications": {
+      "title": "Notifications"
+    },
     "feedback": {
       "title": "Feedback",
       "countdown": "Auto-resubmit countdown (seconds)",
@@ -67,8 +72,9 @@
       "coreNotReady": "Load failed: notification core module not ready",
       "remoteChanged": "Config updated remotely (unsaved local changes); skipped auto-sync to prevent overwrite",
       "notifyDisabled": "Notifications are off: enable \"Enable Notifications\" first",
-      "macosNotEnabled": "Note: macOS Native Notification is off; running a diagnostic test anyway…",
+      "countdownInvalid": "Enter a whole number of seconds from 10 to 3600, or 0 to turn it off.",
       "macosTestTriggered": "Test notification sent: check your system notifications",
+      "testInAppSent": "Test notification sent: look for it at the bottom right of VS Code",
       "postFailed": "Send failed: VS Code Webview API unavailable (try reopening the panel or reloading the window)",
       "testFailed": "Test failed: {{reason}}",
       "testFailedNoUrl": "Test failed: serverUrl is empty",
@@ -78,8 +84,8 @@
       "barkTestSent": "Bark test notification sent, please check your device"
     },
     "test": {
-      "macosTitle": "AI Intervention Agent Test",
-      "macosMessage": "This is a macOS native notification test. If you see this, the config is correct."
+      "title": "AI Intervention Agent Test",
+      "message": "This is a test notification. If you can see it, notifications reach you."
     },
     "footer": {
       "versionLink": "AI Intervention Agent {{version}}",
@@ -97,7 +103,7 @@
     "language": "Language"
   },
   "ui": {
-    "settingsBtn": "Notification Settings",
+    "settingsBtn": "Settings",
     "connecting": "Connecting to server…",
     "noContent": {
       "title": "All quiet for now",
@@ -106,6 +112,8 @@
     },
     "form": {
       "optionsLabel": "Options (multi-select)",
+      "optionsPin": "Pin options",
+      "optionsPinHint": "Keep the options above the input box. Turn off to place them at the end of the message.",
       "optionsResize": "Resize options panel",
       "optionsResizeHint": "Drag to resize, or press ↑ ↓. Double-click to reset.",
       "placeholder": "Enter feedback (paste images supported)…",
@@ -177,7 +185,13 @@
       "unsupportedFormat": "Unsupported image format: {{type}}",
       "tooLarge": "Image too large: {{size}}MB > 10MB",
       "tooManyFiles": "Maximum {count, plural, one {# image} other {# images}} allowed",
-      "processingFailedReason": "Image processing failed: {{reason}}"
+      "processingFailedReason": "Image processing failed: {{reason}}",
+      "enlarge": "View larger image",
+      "enlargeNamed": "View larger image: {{name}}",
+      "viewerTitle": "Image preview",
+      "viewerClose": "Close image preview",
+      "viewerActualSize": "Actual size",
+      "dimensions": "{{name}} ({{width}} × {{height}} px)"
     },
     "notification": {
       "title": "AI Intervention Agent",

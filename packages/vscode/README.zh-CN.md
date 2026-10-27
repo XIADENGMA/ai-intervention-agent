@@ -47,7 +47,9 @@ npm install
 - `ai-intervention-agent.logLevel`：日志级别（默认 `info`；查看位置：Output → AI Intervention Agent）
 - `ai-intervention-agent.i18n.pseudoLocale` _（实验性）_：开启后用 pseudo-localised 文案替换当前 UI 语言包；用于在不切英文环境的前提下排查硬编码字符串、布局溢出与 Unicode 渲染问题。默认 `false`。
 
-> 通知开关（Web / 声音 / 系统 / Bark）由面板内的 **通知设置** 维护，并写入服务端 `config.toml`，不放在 VS Code 的 `settings.json` 里。
+> 通知开关（Web / 声音 / 系统 / Bark）由面板 **设置** 页的 **通知** 部分维护，并写入服务端 `config.toml`，不放在 VS Code 的 `settings.json` 里。
+
+> **新请求怎么提醒你。** **启用通知** 是总开关：关闭时什么提醒都不会发出。开启时，每个新请求都会弹出一条普通的 VS Code 通知（右下角的提示）；如果同时开启了 **macOS 原生通知**，并且扩展运行在 macOS 上，则以 macOS 横幅作为提醒，编辑器里只保留安静的状态栏消息，不再弹提示。远程或非 macOS 的宿主发不出横幅，所以那里总是用右下角的提示，面板里也不会显示 **macOS 原生通知** 这一行。面板里的 **测试通知** 按钮走的就是这条路径。**启用通知** 关闭时，它下面的选项会变暗，但仍可编辑，所以可以先把 Bark 配好。
 
 ## AppleScript executor（仅 macOS）· 安全模型
 
@@ -61,7 +63,7 @@ npm install
 - **日志脱敏**：`sanitizeForLog()` 折行 + 截断至 160 字符后才允许进入 debug 日志。
 - **不接受用户脚本**：仅有的调用点用常量 + `toAppleScriptStringLiteral()` 转义后的通知字段拼装脚本。
 
-若想完全关闭这条路径，在面板的 **通知设置** 中关掉 macOS 原生通知，执行器就不会被触发。
+若想完全关闭这条路径，在面板 **设置** 页的通知部分关掉 macOS 原生通知，执行器就不会被触发。
 
 > 在这条路径里发现安全问题？请按仓库
 > [`SECURITY.zh-CN.md`](../../.github/SECURITY.zh-CN.md) 流程上报；走私有 GitHub
@@ -72,7 +74,7 @@ npm install
 - macOS 原生通知优先通过内置的 `terminal-notifier` 发送，失败时回退为 `osascript display notification`。
 - 通知内容将显示任务的**反馈内容摘要**（与 Bark 推送一致），而非仅显示任务 ID。
 - 通知的“归属/图标/应用名”属于**尽力而为**：扩展会尝试将通知归属到宿主编辑器（VS Code / Cursor 等）。若系统环境不支持该归属机制，通知可能回退为默认发送方显示。
-- 如需开关：侧边栏面板 → **通知设置** → **macOS 原生通知**（默认开启）
+- 如需开关：侧边栏面板 → **设置** → **通知** → **macOS 原生通知**（默认开启；只有扩展运行在 macOS 上时才显示这一行）。关闭后，新请求改由 VS Code 通知提醒（见上）。
 
 ### macOS 通知展示方式设置
 

@@ -5,14 +5,19 @@
     "source": "scripts/gen_zhtw_from_zhcn.py"
   },
   "settings": {
-    "title": "通知設定",
+    "title": "設定",
     "close": "關閉",
     "enabled": "啟用通知",
+    "enabledHint": "總開關：關閉後，下面所有的提醒方式都不會發出。",
     "macosNative": "macOS 原生通知",
+    "macosNativeHint": "新請求用 macOS 系統橫幅提醒；關閉後，改由 VS Code 右下角的通知提醒。",
     "autoSave": "自動儲存",
     "autoSaveTooltip": "修改後會自動同步到伺服器端",
-    "testNative": "測試原生通知",
+    "testNotify": "測試通知",
     "testBark": "測試 Bark",
+    "notifications": {
+      "title": "通知"
+    },
     "feedback": {
       "title": "回饋",
       "countdown": "自動重新調用倒數計時（秒）",
@@ -72,8 +77,9 @@
       "coreNotReady": "載入失敗：通知核心模組未就緒",
       "remoteChanged": "檢測到設定已更新（目前有未儲存修改），為避免覆寫，本次未自動同步",
       "notifyDisabled": "通知已關閉：請先開啟「啟用通知」",
-      "macosNotEnabled": "提示：目前未開啟「macOS 原生通知」，仍將執行一次測試用於排查…",
+      "countdownInvalid": "請輸入 10 到 3600 之間的整數秒數，或輸入 0 關閉。",
       "macosTestTriggered": "已觸發測試通知：請留意系統通知",
+      "testInAppSent": "已傳送測試通知：請看 VS Code 右下角的提示",
       "postFailed": "傳送失敗：VS Code Webview API 無法使用（請嘗試關閉/重新打開面板或重載視窗）",
       "testFailed": "測試失敗：{{reason}}",
       "testFailedNoUrl": "測試失敗：serverUrl 為空",
@@ -83,8 +89,8 @@
       "barkTestSent": "測試通知已傳送，請檢查裝置"
     },
     "test": {
-      "macosTitle": "AI Intervention Agent 測試",
-      "macosMessage": "這是一個 macOS 原生通知測試，如果收到此消息，說明設定正確。"
+      "title": "AI Intervention Agent 測試",
+      "message": "這是一則測試通知，如果你看到了它，說明通知可以正常提醒你。"
     },
     "footer": {
       "versionLink": "AI Intervention Agent {{version}}",
@@ -102,7 +108,7 @@
     "language": "語言"
   },
   "ui": {
-    "settingsBtn": "通知設定",
+    "settingsBtn": "設定",
     "connecting": "正在連線伺服器…",
     "noContent": {
       "title": "這裡暫時很安靜",
@@ -111,6 +117,8 @@
     },
     "form": {
       "optionsLabel": "選項（可多選）",
+      "optionsPin": "固定選項",
+      "optionsPinHint": "把選項固定在輸入框上方，隨時可見；關閉後選項會跟在內容末尾。",
       "optionsResize": "調整選項區高度",
       "optionsResizeHint": "拖動調整高度，或按 ↑ ↓；雙擊恢復預設。",
       "placeholder": "請輸入回饋內容（支援貼上圖片）…",
@@ -182,7 +190,13 @@
       "unsupportedFormat": "不支援的圖片格式：{{type}}",
       "tooLarge": "圖片過大：{{size}}MB > 10MB",
       "tooManyFiles": "最多只能上傳 {count, plural, other {# 張圖片}}",
-      "processingFailedReason": "圖片處理失敗：{{reason}}"
+      "processingFailedReason": "圖片處理失敗：{{reason}}",
+      "enlarge": "查看大圖",
+      "enlargeNamed": "查看大圖：{{name}}",
+      "viewerTitle": "圖片預覽",
+      "viewerClose": "關閉圖片預覽",
+      "viewerActualSize": "實際大小",
+      "dimensions": "{{name}} ({{width}} × {{height}} 像素)"
     },
     "notification": {
       "title": "AI 交互回饋",

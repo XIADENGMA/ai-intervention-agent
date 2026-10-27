@@ -160,6 +160,7 @@ const sandbox = {
   processStrikethrough() {},
   processLinks() {},
   processPromptImages() {},
+  enablePromptImageZoom() {},
   _debugLog() {},
   _scheduleNextFrame(callback) { frames.push(callback); },
 };

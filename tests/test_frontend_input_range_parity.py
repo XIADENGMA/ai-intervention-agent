@@ -115,16 +115,20 @@ class TestFrontendInputMaxParity(unittest.TestCase):
         )
 
     def test_vscode_settings_ui_js_max_check(self) -> None:
-        """``packages/vscode/webview-settings-ui.js``: ``v <= N``。"""
+        """``packages/vscode/webview-settings-ui.js``: ``FEEDBACK_COUNTDOWN_MAX = N``。
+
+        R900 之前上限是 change 回调里的 ``v <= N`` 早返回（超出就静默不保存）；现在
+        输入框按服务端的规则把值收进 [MIN, MAX]（0 = 关闭），上限是一个具名常量。
+        """
         text = _read(REPO_ROOT / "packages" / "vscode" / "webview-settings-ui.js")
-        m = re.search(r"v\s*<=\s*(\d+)", text)
+        m = re.search(r"FEEDBACK_COUNTDOWN_MAX\s*=\s*(\d+)", text)
         self.assertIsNotNone(m)
         assert m is not None
         self.assertEqual(
             int(m.group(1)),
             self.expected,
-            f"packages/vscode/webview-settings-ui.js: v <= {m.group(1)} but "
-            f"AUTO_RESUBMIT_TIMEOUT_MAX={self.expected}",
+            f"packages/vscode/webview-settings-ui.js: FEEDBACK_COUNTDOWN_MAX = "
+            f"{m.group(1)} but AUTO_RESUBMIT_TIMEOUT_MAX={self.expected}",
         )
 
 

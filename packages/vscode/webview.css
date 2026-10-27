@@ -383,6 +383,17 @@ body {
   animation-delay: -0.6s;
 }
 
+/* Nobody is served by a loop they cannot see. While the page is hidden or the VS Code window is not in front,
+   webview-ui.js puts .aiia-ambient-paused on <html>, and everything that moves in the no-task state (the dots, the
+   status light, the spinner drawn in place of the sprout when it cannot be loaded) stands still where it is and goes
+   on from there. The sprout itself is paused by the script. */
+.aiia-ambient-paused #noContentState,
+.aiia-ambient-paused #noContentState *,
+.aiia-ambient-paused #noContentState *::before,
+.aiia-ambient-paused #noContentState *::after {
+  animation-play-state: paused;
+}
+
 @keyframes no-content-dot {
   0%,
   100% {
@@ -632,6 +643,95 @@ body {
   font-weight: 600;
   color: var(--vscode-foreground);
   margin-bottom: 2px;
+}
+
+/* The label and the pin button share a row. The button pulls itself in with
+   negative margins (its margin box is no taller than a line of the label, so
+   the row is as tall as the label alone was) and is painted above the grip,
+   which it overlaps by a pixel or two at the top. Pinned (the default) the
+   dock sits between the message and the input box. Unpinned, webview-ui.js
+   moves it to the end of the message and adds .is-unpinned: the card it was
+   before the dock existed, as tall as its options, with nothing to drag. */
+.options-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.options-head .form-label {
+  margin-bottom: 0;
+}
+
+.options-pin-btn {
+  position: relative;
+  z-index: 3;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: -5px 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.options-pin-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.options-pin-btn[aria-pressed="true"] {
+  opacity: 1;
+  color: var(
+    --vscode-inputOption-activeForeground,
+    var(--vscode-foreground)
+  );
+  background: var(
+    --vscode-inputOption-activeBackground,
+    rgba(127, 127, 127, 0.25)
+  );
+  border-color: var(--vscode-inputOption-activeBorder, transparent);
+}
+
+.options-pin-btn[aria-pressed="true"] .options-pin-icon {
+  fill: currentColor;
+}
+
+.options-pin-btn[aria-pressed="false"] .options-pin-icon {
+  transform: rotate(45deg);
+}
+
+.options-pin-btn:hover {
+  opacity: 1;
+  background: var(
+    --vscode-toolbar-hoverBackground,
+    var(--vscode-list-hoverBackground)
+  );
+}
+
+.options-dock.is-unpinned {
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  overflow: visible;
+}
+
+.options-dock.is-unpinned .options-resize-handle {
+  display: none;
+}
+
+.options-dock.is-unpinned .options-container {
+  flex: none;
+  overflow: visible;
 }
 
 .textarea-wrapper {
@@ -1060,6 +1160,111 @@ body {
   background: rgba(220, 38, 38, 0.9);
 }
 
+/* R903: an image of the agent's message and the thumbnail of an attachment open large when clicked. */
+.markdown-content img[data-aiia-zoom],
+.image-preview img[data-aiia-zoom] {
+  cursor: zoom-in;
+}
+
+/* R903: the image viewer.  The panel is narrow, so an image shown to fit is hardly larger than the one in
+   the message; the viewer is for its second state (.is-actual): the image at its own size, to scroll through. */
+.image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(3px);
+}
+
+.image-viewer-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  padding: 44px 12px 4px;
+  overflow: hidden;
+}
+
+.image-viewer.is-actual .image-viewer-stage {
+  overflow: auto;
+}
+
+.image-viewer-img {
+  margin: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.image-viewer.can-enlarge .image-viewer-img {
+  cursor: zoom-in;
+}
+
+.image-viewer.is-actual .image-viewer-img {
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
+}
+
+.image-viewer-caption {
+  flex: 0 0 auto;
+  padding: 6px 12px 10px;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.image-viewer-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.image-viewer-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-viewer-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.image-viewer-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.image-viewer-btn[aria-pressed="true"] {
+  background: var(--vscode-button-background);
+  border-color: transparent;
+  color: var(--vscode-button-foreground);
+}
+
+.image-viewer-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
 .loading {
   display: flex;
   flex-direction: column;
@@ -1109,6 +1314,11 @@ body {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
+/* The dialog takes focus when it opens (tabindex -1) so that Tab starts inside it; the controls show their own ring. */
+.settings-panel:focus {
+  outline: none;
+}
+
 .settings-header {
   display: flex;
   align-items: center;
@@ -1121,6 +1331,12 @@ body {
 .settings-title {
   font-size: 12px;
   font-weight: 600;
+}
+
+.settings-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .settings-close {
@@ -1177,6 +1393,29 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.settings-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-toggle input[type="checkbox"] {
+  flex: none;
+}
+
+/* Everything the master switch controls. Muted when it is off, but still usable: you can set Bark up first. */
+.settings-channels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: opacity 0.15s ease;
+}
+
+.settings-channels.is-muted {
+  opacity: 0.6;
 }
 
 .settings-field {
@@ -1339,13 +1578,6 @@ body {
   flex-wrap: wrap;
 }
 
-.settings-actions-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
 .settings-action {
   border: 1px solid rgba(127, 127, 127, 0.22);
   background: var(--vscode-button-background);
@@ -1379,9 +1611,14 @@ body {
   font-size: 11px;
   color: var(--vscode-foreground);
   opacity: 0.85;
-  min-height: 16px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.settings-hint:empty {
+  display: none;
 }
 
 .settings-hint.aiia-has-message {
@@ -1547,7 +1784,8 @@ body {
   gap: 6px;
   padding: 0 8px;
   pointer-events: none;
-  z-index: 999;
+  /* above the settings dialog (2000): the messages it raises are for the person looking at it */
+  z-index: 2100;
 }
 
 .toast {

@@ -1,45 +1,69 @@
-"""R657: ``/metrics`` reuses the MCP metrics module binding within scrapes."""
+"""R657: ``/metrics`` reuses the MCP metrics module binding within scrapes.
+
+R904 changed how the helper finds the module. It used to import it on first use and
+keep the binding; it now only looks it up in ``sys.modules`` and never imports it,
+because the Web UI process that serves ``/metrics`` never runs the middleware (its two
+snapshots are always empty there) and the module imports fastmcp, which cost that
+process about 33 MiB and 230 ms for a scrape. What R657 asked for stays: one lookup
+per scrape, shared by the counter and the latency family, and a failure of one family
+does not hide the other.
+"""
 
 from __future__ import annotations
 
+import builtins
 import inspect
-from collections.abc import Mapping
+import sys
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 
 from ai_intervention_agent.web_ui_routes import system as system_module
 
+_MODULE_KEY = "ai_intervention_agent.mcp_tool_call_metrics"
 
-def test_cached_mcp_metrics_module_returns_without_import_work() -> None:
+
+def test_a_loaded_mcp_metrics_module_is_returned_without_import_work() -> None:
     fake_module = SimpleNamespace()
 
-    with patch.object(system_module, "_MCP_TOOL_CALL_METRICS_MODULE", fake_module):
+    with patch.dict(sys.modules, {_MODULE_KEY: fake_module}):
         with patch(
             "builtins.__import__",
-            side_effect=AssertionError("cached module should avoid import"),
+            side_effect=AssertionError("a loaded module needs no import"),
         ):
             assert system_module._get_mcp_tool_call_metrics_module() is fake_module
 
 
-def test_mcp_metrics_import_failure_does_not_poison_cache() -> None:
-    original_import = __import__
+def test_a_module_that_is_not_loaded_is_not_imported_for_a_scrape() -> None:
+    real_import = builtins.__import__
+    asked_for: list[str] = []
 
-    def _raise_for_mcp_metrics(
-        name: str,
-        globals: Mapping[str, object] | None = None,
-        locals: Mapping[str, object] | None = None,
-        fromlist: tuple[str, ...] = (),
-        level: int = 0,
-    ) -> object:
-        if name == "ai_intervention_agent" and "mcp_tool_call_metrics" in fromlist:
-            raise ImportError("metrics module unavailable")
-        return original_import(name, globals, locals, fromlist, level)
+    def _record(name: str, *args: Any, **kwargs: Any) -> Any:
+        asked_for.append(name)
+        return real_import(name, *args, **kwargs)
 
-    with patch.object(system_module, "_MCP_TOOL_CALL_METRICS_MODULE", None):
-        with patch("builtins.__import__", side_effect=_raise_for_mcp_metrics):
-            assert system_module._get_mcp_tool_call_metrics_module() is None
-        assert system_module._MCP_TOOL_CALL_METRICS_MODULE is None
-        assert system_module._get_mcp_tool_call_metrics_module() is not None
+    with patch.dict(sys.modules):
+        sys.modules.pop(_MODULE_KEY, None)
+        with patch("builtins.__import__", side_effect=_record):
+            found = system_module._get_mcp_tool_call_metrics_module()
+        assert _MODULE_KEY not in sys.modules, "the lookup must not load the module"
+
+    assert found is None
+    assert not [name for name in asked_for if "mcp_tool_call_metrics" in name]
+
+
+def test_a_blocked_module_entry_means_no_module() -> None:
+    with patch.dict(sys.modules, {_MODULE_KEY: None}):  # type: ignore[dict-item]
+        assert system_module._get_mcp_tool_call_metrics_module() is None
+
+
+def test_the_lookup_follows_the_module_table_not_an_old_binding() -> None:
+    first, second = SimpleNamespace(), SimpleNamespace()
+
+    with patch.dict(sys.modules, {_MODULE_KEY: first}):
+        assert system_module._get_mcp_tool_call_metrics_module() is first
+    with patch.dict(sys.modules, {_MODULE_KEY: second}):
+        assert system_module._get_mcp_tool_call_metrics_module() is second
 
 
 def test_render_uses_one_mcp_metrics_module_lookup_for_counter_and_latency() -> None:
@@ -122,7 +146,8 @@ def test_render_no_longer_imports_mcp_metrics_functions_twice() -> None:
 
     assert "from ai_intervention_agent.mcp_tool_call_metrics import" not in source
     assert source.count("_get_mcp_tool_call_metrics_module()") == 1
-    assert (
-        helper_source.count("from ai_intervention_agent import mcp_tool_call_metrics")
-        == 1
+    assert "import mcp_tool_call_metrics" not in helper_source
+    assert "importlib" not in helper_source
+    assert 'sys.modules.get("ai_intervention_agent.mcp_tool_call_metrics")' in (
+        helper_source
     )

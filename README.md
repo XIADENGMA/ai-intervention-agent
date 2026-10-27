@@ -207,7 +207,7 @@ Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
 - Multi-task tabs: concurrent requests with independent countdowns, per-task draft autosave, and auto re-submit that keeps long sessions alive (your typed text and checked options are submitted at zero, never an empty prompt)
 - Typing-hold: the countdown auto-extends while you type and never fires mid-input (web page and VS Code extension alike)
 - Skill and command picker: type `/` in the feedback box to insert an installed Agent Skill or custom command (Cursor / Claude Code / Codex layouts, auto-detected or set with `[feedback] skill_dirs`)
-- Local images in prompts: write `![alt](path/to/image.png)` in the message and the Web UI shows the file; only images inside your workspace folders and the temp directory are read (adjust with `[feedback] local_image_dirs`)
+- Local images in prompts: write `![alt](path/to/image.png)` in the message and the Web UI shows the file; only images inside your workspace folders and the temp directory are read (adjust with `[feedback] local_image_dirs`); click any image in the message to see it larger (Web UI and VS Code panel)
 - Agent-loop context: per-task `header_label` context chips, `feedback_placeholder` hints, and loop engineering metadata (`loop_id`, `loop_phase`, `success_criteria`)
 - Notifications: web / sound / system / Bark (iOS push), plus custom notification sound upload
 - SSH / LAN friendly: works behind port forwarding; mDNS publishes a `<host>.local` URL when supported
@@ -244,7 +244,7 @@ Embeds the interaction panel into VS Code's sidebar so you never switch to a bro
 
 - Install: from [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent) (the extension registry that Cursor, VSCodium, Windsurf and other VS Code-based editors use), or download the VSIX from [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest). Microsoft's VS Code does not search Open VSX, so install the VSIX there: Command Palette → **Extensions: Install from VSIX...**
 - Key setting: `ai-intervention-agent.serverUrl` must match your Web UI URL (e.g. `http://localhost:8080`; change the port via `web_ui.port` in [`config.toml.default`](config.toml.default))
-- More: `ai-intervention-agent.logLevel` and macOS native notifications (on by default, toggle in the sidebar's Notification Settings panel). The full settings list and the AppleScript executor security model are in [`packages/vscode/README.md`](packages/vscode/README.md)
+- More: `ai-intervention-agent.logLevel` and macOS native notifications (on by default, toggle in the sidebar panel's Settings page). The full settings list and the AppleScript executor security model are in [`packages/vscode/README.md`](packages/vscode/README.md)
 
 ## Configuration
 
@@ -294,7 +294,7 @@ On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and po
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp) (poliva) | ~310 | Direct ancestor fork (see Acknowledgements); minimal Python MCP, single feedback dialog. |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp) (Pursue-LLL) | ~30 | Independent smaller-scale fork emphasising minimal dependencies. |
 
-Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/api/system/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (13,500+ tests + 1,300+ subtests across 40 audit cycles), and releases run through a 4-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
+Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/api/system/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (14,000+ tests + 1,300+ subtests across 40 audit cycles), and releases run through a 4-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
 
 Feature gaps (contributions welcome): Speech-to-Text input, always-on-top native window, Cursor usage monitoring, multi-tab session merging UI.
 

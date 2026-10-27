@@ -64,7 +64,7 @@ ALLOWLIST_VALUES: frozenset[str] = frozenset(
         "测试通知已发送",
         "Connected",
         "Disconnected",
-        "Notification Settings",
+        "Settings",
         "Retry",
     }
 )

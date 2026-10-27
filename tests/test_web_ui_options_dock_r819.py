@@ -1088,6 +1088,7 @@ class TestLifecycle:
                 "HEIGHT_VAR",
                 "MAX_STORED_HEIGHT_PX",
                 "MIN_HEIGHT_PX",
+                "PIN_STORAGE_KEY",
                 "RESERVE_VAR",
                 "SCHEMA_VERSION",
                 "STORAGE_KEY",
@@ -1095,7 +1096,9 @@ class TestLifecycle:
                 "init",
                 "normalizeStoredHeight",
                 "persistHeight",
+                "persistPinned",
                 "readPersistedHeight",
+                "readPersistedPinned",
                 "resolveKey",
             ]
         )

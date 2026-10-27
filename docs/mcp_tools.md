@@ -99,6 +99,11 @@ Request **interactive user feedback** through the Web UI (browser or VS Code Web
     workspace folders or the temp directory are shown (max 8 per message, 8 MB
     each); anything else is replaced by a one-line note and never read. See
     `local_image_dirs` in [configuration.md](configuration.md).
+  - Looking closer: the user can click (or focus and press Enter / Space) any
+    image the message shows, local or not, to see it larger: a viewer in the
+    Web UI, and one with a fit / actual-size switch in the VS Code panel.
+    Images inside a link keep opening the link, and an image that failed to
+    load is not offered.
 - `predefined_options` (array, optional)
   - Predefined choices the user can pick from. **Two canonical input shapes** (v1.6.0+):
     1. **RECOMMENDED** `list[dict]` — objects of shape

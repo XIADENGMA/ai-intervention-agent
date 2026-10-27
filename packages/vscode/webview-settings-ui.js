@@ -202,6 +202,18 @@
   let feedbackConfigDebounceTimer = null;
   let pendingDebouncedFeedbackConfigUpdates = null;
 
+  // What had focus when the dialog opened, to give it back when it closes.
+  let settingsOpener = null;
+  // The parts of the page made inert while the dialog is open (only those this code changed).
+  let settingsInertElements = [];
+  // The countdown the server holds, to put back when what was typed is not a number.
+  let lastFeedbackCountdown = 240;
+
+  const SETTINGS_FOCUSABLE_SELECTOR =
+    'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  const FEEDBACK_COUNTDOWN_MIN = 10;
+  const FEEDBACK_COUNTDOWN_MAX = 3600;
+
   let uiInitialized = false;
 
   function setSettingsHint(message, isError, autoClearMs) {
@@ -280,6 +292,15 @@
     if (!enabled) setBarkDeviceKeyRevealed(false);
   }
 
+  // The master switch gates every channel (the server sends nothing when it is off), so the channels
+  // under it look inactive. They stay usable: Bark can be set up before the master switch is turned on.
+  function syncChannelsMuted() {
+    const master = document.getElementById("notifyEnabled");
+    const channels = document.getElementById("settingsChannels");
+    if (!master || !channels) return;
+    channels.classList.toggle("is-muted", !master.checked);
+  }
+
   function populateSettingsForm(settings) {
     isPopulatingSettingsForm = true;
     try {
@@ -304,6 +325,7 @@
       setValue("notifyBarkAction", s.barkAction);
       setValue("notifyBarkUrlTemplate", s.barkUrlTemplate);
       syncBarkFieldsVisibility();
+      syncChannelsMuted();
     } finally {
       isPopulatingSettingsForm = false;
     }
@@ -493,13 +515,95 @@
     return true;
   }
 
+  function focusElement(el) {
+    if (!el || typeof el.focus !== "function") return false;
+    try {
+      el.focus({ preventScroll: true });
+      return true;
+    } catch (_e) {
+      try {
+        el.focus();
+        return true;
+      } catch (_e2) {
+        return false;
+      }
+    }
+  }
+
+  // While the dialog is open nothing behind it can be reached: not by the pointer, Tab or a screen reader.
+  // The toast host stays live (it carries the messages the dialog raises); only what this code made inert
+  // is made reachable again, so a part of the page that was inert before stays that way.
+  function setBackgroundInert(on) {
+    if (!on) {
+      const held = settingsInertElements;
+      settingsInertElements = [];
+      for (const el of held) {
+        try {
+          el.removeAttribute("inert");
+        } catch (_e) {
+          // the element is gone; nothing to give back
+        }
+      }
+      return;
+    }
+    const body = document.body;
+    if (!body || !body.children) return;
+    for (const child of Array.from(body.children)) {
+      const tag = String(child.tagName || "").toLowerCase();
+      if (
+        tag === "script" ||
+        tag === "style" ||
+        tag === "link" ||
+        tag === "template"
+      ) {
+        continue;
+      }
+      if (child.id === "settingsOverlay" || child.id === "toastHost") continue;
+      if (child.hasAttribute("inert")) continue;
+      try {
+        child.setAttribute("inert", "");
+        settingsInertElements.push(child);
+      } catch (_e) {
+        // not an element we can mark; leave it
+      }
+    }
+  }
+
+  // Where focus goes when the dialog closes: back to what opened it; failing that to the settings button
+  // that is on screen (the toolbar has one, the page without a task has its own).
+  function restoreFocusAfterSettings() {
+    const opener = settingsOpener;
+    settingsOpener = null;
+    if (opener && document.contains(opener)) {
+      focusElement(opener);
+      if (document.activeElement === opener) return;
+    }
+    // A button that is not on screen cannot take focus, so the check after the call passes it by.
+    for (const id of ["settingsBtn", "settingsBtnNoContent"]) {
+      const button = document.getElementById(id);
+      if (!button) continue;
+      focusElement(button);
+      if (document.activeElement === button) return;
+    }
+  }
+
   function openSettingsOverlay() {
     const overlay = document.getElementById("settingsOverlay");
+    const wasOpen = isSettingsOverlayOpen();
+    if (!wasOpen) {
+      const active = document.activeElement;
+      settingsOpener = active && active !== document.body ? active : null;
+    }
     if (overlay) overlay.classList.remove("hidden");
+    if (!wasOpen) {
+      setBackgroundInert(true);
+      focusElement(document.getElementById("settingsPanel"));
+    }
     startSettingsAutoRefresh();
   }
 
   function closeSettingsOverlay() {
+    const wasOpen = isSettingsOverlayOpen();
     flushSettingsAutoSaveBeforeClose();
     _flushPendingFeedbackConfigSaveFromUi();
     const overlay = document.getElementById("settingsOverlay");
@@ -511,6 +615,75 @@
     } catch (_e) {
 
     }
+    if (wasOpen) {
+      setBackgroundInert(false);
+      restoreFocusAfterSettings();
+    }
+  }
+
+  // Tab stays inside the dialog: the controls that can take focus right now (a collapsed Bark group has none).
+  function settingsTabStops() {
+    const panel = document.getElementById("settingsPanel");
+    if (!panel || typeof panel.querySelectorAll !== "function") return [];
+    return Array.from(panel.querySelectorAll(SETTINGS_FOCUSABLE_SELECTOR)).filter(
+      (el) => {
+        if (el.disabled || el.hidden) return false;
+        return (
+          typeof el.getClientRects !== "function" ||
+          el.getClientRects().length > 0
+        );
+      },
+    );
+  }
+
+  function trapSettingsTab(event) {
+    const panel = document.getElementById("settingsPanel");
+    const stops = settingsTabStops();
+    if (stops.length === 0) {
+      event.preventDefault();
+      focusElement(panel);
+      return;
+    }
+    const active = document.activeElement;
+    const inside = !!(panel && active && panel.contains(active));
+    const first = stops[0];
+    const last = stops[stops.length - 1];
+    if (event.shiftKey) {
+      if (!inside || active === panel || active === first) {
+        event.preventDefault();
+        focusElement(last);
+      }
+    } else if (!inside || active === last) {
+      event.preventDefault();
+      focusElement(first);
+    }
+  }
+
+  function onSettingsKeydown(event) {
+    if (!isSettingsOverlayOpen()) return;
+    if (event.defaultPrevented || event.isComposing || event.keyCode === 229) {
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSettingsOverlay();
+      return;
+    }
+    if (event.key === "Tab") trapSettingsTab(event);
+  }
+
+  // What the server does with a countdown: 0 turns auto-resubmit off, anything else is held to 10..3600.
+  // null: not a number (the field is put back and the user is told).
+  function normalizeFeedbackCountdown(raw) {
+    const text = String(raw === undefined || raw === null ? "" : raw).trim();
+    if (!text) return null;
+    const n = Number(text);
+    if (!Number.isFinite(n)) return null;
+    if (n === 0) return 0;
+    return Math.min(
+      FEEDBACK_COUNTDOWN_MAX,
+      Math.max(FEEDBACK_COUNTDOWN_MIN, Math.round(n)),
+    );
   }
 
   async function openSettings() {
@@ -629,6 +802,7 @@
       } catch (e) {
 
       }
+      postMessage({ type: "notificationSettingsChanged" });
 
       const hasPendingSave = settingsAutoSavePending;
       lastNotificationSettingsHash = mergedHash;
@@ -671,33 +845,45 @@
     }
   }
 
-  function testMacOSNativeNotification() {
+  function nativeNotificationsAvailable() {
+    // The extension host decides: a remote or non-macOS host cannot raise a macOS banner.
+    const el = document.getElementById("aiia-config");
+    const platform = el ? el.getAttribute("data-host-platform") : "";
+    return !platform || platform === "darwin";
+  }
+
+  function testNotification() {
     try {
       const updates = collectSettingsForm();
       if (updates && updates.enabled === false) {
         setSettingsHint(t("settings.hint.notifyDisabled"), true);
         return;
       }
-      if (!updates || !updates.macosNativeEnabled) {
-        setSettingsHint(t("settings.hint.macosNotEnabled"), true, 2000);
-      } else {
-        setSettingsHint(t("settings.hint.macosTestTriggered"), false, 2000);
-      }
+      const wantsNative = !!(updates && updates.macosNativeEnabled);
+      const bannerShown = wantsNative && nativeNotificationsAvailable();
+      // Both keys are spelled out in full on purpose: the i18n scans only find plain string literals.
+      const hintText = bannerShown
+        ? t("settings.hint.macosTestTriggered")
+        : t("settings.hint.testInAppSent");
+      setSettingsHint(hintText, false, 2000);
 
       const posted = postMessage({
         type: "notify",
         event: {
-          title: t("settings.test.macosTitle"),
-          message: t("settings.test.macosMessage"),
+          title: t("settings.test.title"),
+          message: t("settings.test.message"),
           trigger: "immediate",
-          types: ["macos_native"],
+          types: wantsNative ? ["vscode", "macos_native"] : ["vscode"],
           metadata: {
             isTest: true,
             diagnostic: true,
-            kind: "test_macos_native",
+            kind: "test_notification",
+            presentation: "auto",
+            severity: "info",
+            timeoutMs: 3000,
           },
           source: "webview-settings-ui",
-          dedupeKey: "test:macos_native",
+          dedupeKey: "test:notification",
         },
       });
       if (!posted) {
@@ -920,8 +1106,8 @@
       const settingsOverlay = document.getElementById("settingsOverlay");
       const settingsPanel = document.getElementById("settingsPanel");
       const settingsClose = document.getElementById("settingsClose");
-      const settingsTestNativeBtn = document.getElementById(
-        "settingsTestNativeBtn",
+      const settingsTestNotifyBtn = document.getElementById(
+        "settingsTestNotifyBtn",
       );
       const settingsTestBarkBtn = document.getElementById(
         "settingsTestBarkBtn",
@@ -929,11 +1115,8 @@
 
       if (settingsClose)
         settingsClose.addEventListener("click", closeSettingsOverlay);
-      if (settingsTestNativeBtn)
-        settingsTestNativeBtn.addEventListener(
-          "click",
-          testMacOSNativeNotification,
-        );
+      if (settingsTestNotifyBtn)
+        settingsTestNotifyBtn.addEventListener("click", testNotification);
       if (settingsTestBarkBtn)
         settingsTestBarkBtn.addEventListener("click", testBark);
       const barkKeyToggleBtn = document.getElementById(
@@ -975,10 +1158,16 @@
       const fbSuffix = document.getElementById("feedbackPromptSuffix");
       if (fbCountdown) {
         fbCountdown.addEventListener("change", () => {
-          const v = parseInt(fbCountdown.value, 10);
-
-          if (!isNaN(v) && v >= 0 && v <= 3600)
-            _queueFeedbackConfigSaveFromUi({ frontend_countdown: v });
+          const v = normalizeFeedbackCountdown(fbCountdown.value);
+          if (v === null) {
+            fbCountdown.value = String(lastFeedbackCountdown);
+            setSettingsHint(t("settings.hint.countdownInvalid"), true);
+            return;
+          }
+          // show what the server will keep, not what was typed
+          if (fbCountdown.value !== String(v)) fbCountdown.value = String(v);
+          lastFeedbackCountdown = v;
+          _queueFeedbackConfigSaveFromUi({ frontend_countdown: v });
         });
       }
       if (fbPrompt) {
@@ -1024,10 +1213,14 @@
           const id = t && t.id ? String(t.id) : "";
           if (!id || !id.startsWith("notify")) return;
           if (id === "notifyBarkEnabled") syncBarkFieldsVisibility();
+          if (id === "notifyEnabled") syncChannelsMuted();
           markSettingsDirty();
         };
         settingsPanel.addEventListener("input", maybeMarkDirty);
         settingsPanel.addEventListener("change", maybeMarkDirty);
+      }
+      if (typeof document.addEventListener === "function") {
+        document.addEventListener("keydown", onSettingsKeydown);
       }
     } catch (e) {
 
@@ -1052,6 +1245,8 @@
           const c = data.config;
           if (loadEpoch === feedbackConfigEditEpoch) {
             el("feedbackCountdown", c.frontend_countdown ?? 240);
+            const held = normalizeFeedbackCountdown(c.frontend_countdown ?? 240);
+            if (held !== null) lastFeedbackCountdown = held;
             el("feedbackResubmitPrompt", c.resubmit_prompt ?? "");
             el("feedbackPromptSuffix", c.prompt_suffix ?? "");
           }

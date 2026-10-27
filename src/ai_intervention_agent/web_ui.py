@@ -37,6 +37,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
 
+# /api/system/health reports the uptime of this process from ``process_meta``, whose
+# first import is the start time: so it is imported before Flask (a few hundred ms).
+from ai_intervention_agent import process_meta as _process_meta  # isort: skip  # noqa: F401
+
 from flask import (
     Flask,
     jsonify,

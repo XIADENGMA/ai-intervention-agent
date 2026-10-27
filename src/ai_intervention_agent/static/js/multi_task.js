@@ -2908,6 +2908,10 @@ async function updateDescriptionDisplay(prompt) {
       processPromptImages(descriptionElement);
     }
 
+    if (typeof enablePromptImageZoom === "function") {
+      enablePromptImageZoom(descriptionElement);
+    }
+
     _debugLog("Synchronous Markdown render complete");
 
     const textContent = descriptionElement.textContent || "";

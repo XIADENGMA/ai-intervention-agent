@@ -162,7 +162,102 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `test_feat_footer_link_plugin.py` (now 21) fail on the old stylesheet: the resting colour is the
   secondary one, the hover colour is the normal one and differs from it, and no rule of the link uses a
   `--vscode-textLink-*` colour.
+- The options of a request can be unpinned, so they go back to the end of the message as they were
+  before the tray and the dock existed (R901). R818 and R819 pinned the multi-select options above the
+  input box (VS Code panel) and to the bottom of the window (Web UI); that stays the default, and each
+  surface now has a pin button on the options themselves: in the Web UI in a 28 px strip at the top of
+  the tray, in the panel on the row of its "Options (multi-select)" label. Pressed (a filled pin) is
+  pinned. Turned off (an outlined pin, tilted) the options are what they were: in the Web UI the tray
+  stops being sticky and is the unframed list at the end of the page, as tall as its options, with no
+  grip and nothing kept clear at the bottom of the page; in the panel the dock moves into the scroller
+  after the message, as tall as its options, and back to exactly where it was when pinned again, and
+  the focus stays on the button across the move (a moved element loses it). The choice is remembered
+  (`aiia.feedbackOptionsPinned.v1` in `localStorage`; `optionsPinned` in the webview state): only
+  "unpinned" is stored, so no value, a damaged one or one of another version means pinned, and a browser
+  that refuses storage leaves the button working for that page. Toggling never touches the height set
+  with the grip or the scroll position, and a task without options shows neither the button nor an empty
+  strip. The label ("Pin options", "固定选项", "固定選項") does not change with the state, so a screen
+  reader says "Pin options, toggle button, pressed" and never a label that contradicts it. In the Web UI
+  the button rests in the theme's secondary text colour and is the darker brand orange (`--primary-600`)
+  when pressed: at least 3 : 1 against the tray and against the page in the dark theme and in both ways
+  of getting the light one (WCAG 1.4.11; the lighter brand orange is 2.96 : 1 on the light tray, and the
+  tertiary text colour is kept for struck-through text, R257). Measured in a
+  real Chrome 156 on a 14-finding message with 12 options: pinned, the tray is the same box as before
+  (360 px at 1280 x 900, 358 px at 390 x 844) and the page the same height, the list 8 px lower inside
+  it; unpinned, the page is the old page plus the 28 px strip (3 430 px -> 3 458 px at 1280 x 900), and
+  on a 390 px phone 28 px more above the list and 8 px less under it (3 736 px -> 3 756 px; the list used
+  to be a flex item of the form, whose margin did not collapse into the next block, and is now inside the
+  tray). In a real VS Code 1.110.0, driven by real mouse and key events, the pinned dock is the same box
+  as in the previous extension (the list at y 399, 265 px tall: the button's negative margins keep the row
+  as tall as the label alone), a click, Enter and Space toggle it with the focus ring staying on the
+  button, Tab goes from the grip to the button to the first option, the choice survives the sidebar being
+  hidden and shown again, a short task shows its three options right under its message and a task
+  without options shows nothing, in the dark and the light theme, with no console error or warning. 90 tests in
+  `test_options_unpin_r901.py`, 80 of which fail on the old files (the template and stylesheet of both
+  surfaces, every rule the unpinned layout undoes and the weight of its selectors, the button's
+  contrast in each theme, the real script of each surface in Node, the saved state, the strings); the
+  other 10 are controls (the default state, a page without the button or the tray, the label that does
+  not change, rules that must stay); 102 one-point mutants are all caught. The surface test of the Web
+  script (R819) lists its three new exports.
+- What moves on the no-task page stands still while nobody is looking at it (R902). The sprout, the three
+  progress dots and the other CSS loops of the no-task page (Web UI) and of the no-task state of the panel
+  (VS Code) ran for as long as the page was open; only the sprout of the Web page stopped, and only when its
+  tab was hidden. Now everything on the page stops where it is while the page is hidden or its window is not in
+  front, and goes on from there when it is back (the sprout from the frame where it stopped; nothing is rebuilt
+  or fetched again). The Web page learns it from the browser's own events (blur and focus of the window, the
+  tab being hidden or shown, a page restored from the back/forward cache, and any click or key press in the
+  page as a safety net) and never asks the document whether it has focus, which an embedded view answers "no"
+  for good; a page nobody told anything keeps moving. The panel cannot see its window, so the extension host
+  tells it (`window-focus`): on every change of the window state, when the panel reports ready and when it is
+  shown again; a panel shown or reloaded while the window is behind comes up frozen. Measured in real programs
+  with real focus changes (medians of three, % of one core): Chrome 156 on a 120 Hz display, the old page
+  16.2 % in front and 17.1 % with another app in front, now 16.9 % and 1.8 %; VS Code 1.110.0, the no-task
+  panel, 14.9 % in the webview process (35.6 % counting every process) in front and 0.18 % (0.9 %) with the
+  window behind; no console warning or error. Limits: a Web page that is loaded while its window is behind, or
+  whose window never owned the focus, moves until the first focus, blur or use; the panel follows the window,
+  so a visible panel in a window in front moves while the editor has the focus; the breathing status light in
+  the panel's no-task state is frozen with the rest, the one in the header is not. 55 tests in
+  `test_no_task_animations_pause_r902.py`, 46 of which fail on the old files (the other 9 are controls); 86
+  one-point mutants of the five sources are all caught; 4 more tests run the real `WebviewProvider` in a real
+  VS Code.
 
+- An image in the agent's message can be opened large (R903). TODO "界面优化 10" (a voice note that was
+  written down garbled; what it asks for is a way to click an image the page shows and look at it
+  large). An image of a message (`![alt](path)`, which the server hands out as
+  `/api/tasks/<id>/images/<n>`, or any other image the page keeps) was shown at the width of the message
+  and no larger: a 1920 × 1080 screenshot was 604 px wide on the Web page and 253 px in the VS Code
+  panel, and the only picture that could be looked at large was a file the user had attached (in the Web
+  modal; the panel had nothing). Now every image of the message that the browser managed to load is a
+  button: the pointer over it is `zoom-in`, Tab reaches it, it is named
+  (`View larger image: <alt text>`, or `View larger image` when there is no alt text; en, zh-CN, zh-TW)
+  and a click, Enter or Space opens it (Space does not scroll the page; a chord such as Ctrl+Enter, or a
+  key somebody else already took, opens nothing). An image inside a link keeps opening its link, and one
+  that could not be loaded, or fails later, is not offered. Web UI: it opens in the modal the
+  attachments already used; the caption of a message image gives its size in pixels
+  (`wide screenshot (1920 × 1080 px)`, once it has loaded, never that of the picture before it) and that
+  of an attachment its file size as before; Escape, the close button and a click on the backdrop close
+  it and focus goes back to the image; the modal lets go of the picture when it closes, and a late load
+  cannot write into the caption of another opening. VS Code panel: it opens in a viewer of its own, a
+  dialog (`aria-modal`) over the panel, at first fitted to the panel; the `1:1` button (dimmed while
+  there is nothing to enlarge) shows the picture at its own size on a stage that scrolls, and a click on
+  the picture does the same around the spot that was clicked, and back; Escape closes it and the page
+  behind never hears that key, Tab stays on the buttons that are on, and focus goes back to what opened
+  it. The thumbnails of the attachments open in the same viewer, which closes by itself when the
+  attachment it shows is taken off the list; one opened from the message closes when the message is
+  written again. New strings: `page.imageEnlarge`, `page.imageEnlargeNamed`,
+  `status.imageDimensionsLabel` (page) and
+  `ui.image.{enlarge, enlargeNamed, viewerTitle, viewerClose, viewerActualSize, dimensions}` (panel), in
+  en, zh-CN, zh-TW and the pseudo locale. Checked in real programs with real mouse and key events:
+  Chrome 156 (1280 × 900 and 390 × 844) and VS Code 1.110.0 (a 299 px sidebar, dark and light), without
+  a console warning or error; in the panel a 1920 × 1080 screenshot is 253 × 142 in the message, 275 ×
+  155 in the viewer and 1920 × 1080 at 1:1 (scrolled to the spot that was clicked), a 600 × 3000 capture
+  253 × 1265, 146 × 731 and 600 × 3000. 131 tests in `test_image_click_to_enlarge_r903.py` (the real
+  code of both surfaces in Node against a small DOM that models focus, listeners in both phases, an
+  image that loads late and one that is gone; the markup; both stylesheets and the minified ones the
+  page loads; the strings in four locales), 127 of which fail on the old files (the other 4 are
+  controls); 272 one-point mutants are all caught; 5 host tests (`image-viewer.test.js`) render the real
+  panel page in a real VS Code, 4 of them fail on the old `webview.ts`, and 15 one-point mutants of its
+  markup are all caught.
 ### Fixed
 
 - A task could be closed under a user who was still typing (R883). While you type, the page keeps
@@ -318,6 +413,144 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   work, but R21.4 ships `.br` files next to the `.gz` ones with `brotli>=1.2.1` as a runtime
   dependency; and its "about 360 ms from the tool call to the page" was the Web UI's own cold
   start: the first call took about 2.0 s until R888.
+- With only "Enable Notifications" on and "macOS Native Notification" off, the VS Code panel gave no
+  notification at all (R898). A new request was announced by a status-bar message that vanishes after
+  three seconds, and the switch for the macOS banner, which is on by default on every platform, did
+  nothing on a Linux, Windows or remote host. Tried in a real VS Code 1.110.0 (the panel opened through
+  its command, a real task created through the Web UI's API, the workbench read through DevTools):
+  the status bar read "Review the diff" for a moment and no toast appeared, with the panel in view
+  and with the sidebar closed. New requests and the test button now ask the extension host for
+  `presentation: "auto"` and the host, which alone knows its platform, decides: when the banner is on
+  and the host is macOS, the in-editor part stays the quiet status-bar message and the banner is the
+  notification, as before; in every other case the in-editor part is a regular VS Code notification
+  and `macos_native` is left out of the delivery list. The same real VS Code now shows
+  "AI Intervention Agent: Review the diff" as a toast bottom right, panel in view or hidden;
+  "Enable Notifications" off still raises nothing. The "Test Native" button
+  was a macOS-only diagnostic that ran even with the banner off, and said so ("running a diagnostic
+  test anyway"); it is now "Test Notification" (`测试通知`) and goes the same way a request does (a
+  toast, plus the banner when it is on and possible) with a hint that says where to look (the keys
+  `settings.testNative` and `settings.test.macos*` became `settings.testNotify` and
+  `settings.test.title` / `message`, `settings.hint.macosNotEnabled` is gone and
+  `settings.hint.testInAppSent` is new, in en, zh-CN, zh-TW and the pseudo locale). Two smaller
+  things: the host remembered the notification settings for 30 s, so a switch you had just turned
+  took effect on the request after that; a successful save now tells the host to forget them
+  (`notificationSettingsChanged`) and the memory is 5 s. The README of the extension (both
+  languages) describes the route. 17 tests in `test_vscode_notification_test_button_r898.py`, 16 of
+  which fail on the old files (the test button in every combination of banner, platform and master
+  switch, no host connection, the event's dedupe key, the save message, the keys), and 16 host
+  tests that run in a real VS Code (`host-notification-delivery.test.js`: the delivery per platform
+  and switch, the toast and the status-bar message actually shown by the VS Code API, the settings
+  cache); the VS Code host suite goes from 99 to 115 passing tests.
+- The settings page of the VS Code panel had no clear structure or logic (R899). Looked at in a real
+  VS Code 1.110.0 (the panel opened through its command, the page scrolled, a dark and a light theme):
+  the title said "Notification Settings" over a page that also holds the feedback and the
+  configuration settings; the first two rows had no heading, and "Enable Notifications" and "macOS
+  Native Notification" were bare switches (nothing said that the first is a master switch, or what
+  the second does and what happens without it); the macOS row was offered on Windows, Linux and
+  remote hosts, where it can never work; the two test buttons sat in a row at the very bottom, two
+  screens away from the switches they test, next to the "Auto-save" badge; an empty status line
+  reserved a strip under the header on every visit; and turning the master switch off left every
+  channel looking active. The page is now "Settings" with a "Notifications" section (then
+  "Feedback" and "Configuration"). The header holds the title, the "Auto-save" badge and the close
+  button; the status line takes no room until it has something to say; the master switch carries a
+  line that says what it does, and `aria-controls` for the channels under it: the macOS row, the
+  "Test Notification" button and Bark, in one group that is dimmed (not disabled: Bark can be set up
+  first) while the master switch is off. The macOS row is rendered only when the extension host is
+  macOS, with a line that says a VS Code notification is used when it is off; a hidden row keeps its
+  saved value, so a Windows window that saves the Bark key leaves "macOS banner: on" alone. "Test
+  Bark" ends the Bark fields. The panel is a labelled dialog (`aria-labelledby`) and every button
+  declares `type="button"`. `settings.title` and `ui.settingsBtn` are "Settings", "设置" and "設定"
+  (one word for the button and the page it opens), and `settings.notifications.title`,
+  `settings.enabledHint` and `settings.macosNativeHint` are new, in en, zh-CN, zh-TW and the pseudo
+  locale; the duplicate-value check now allows "Settings", and the zh-TW generator's character table
+  learned `横` (the new zh-CN hint says `横幅`, and a fresh derivation left it Simplified). The READMEs
+  (the extension's and the root ones, both languages) call the page "Settings". 23 tests in
+  `test_vscode_settings_structure_r899.py`, 19 of which fail on the old files (the dialog, the
+  header, the status line, the section order, the wiring of the master switch, the channel group,
+  the macOS row, the test buttons, the missing bottom row, the button types, two styles, the
+  strings, the muting on load and on change); the other four are controls (a page without the
+  group, the saved macOS value kept on two platforms, the `[hidden]` rule). 14 one-point mutants are
+  all caught. 4 host tests that run in a real VS Code (`settings-structure.test.js`: the row is
+  rendered visible on macOS and hidden on every other platform, the platform the script is told,
+  the labelled dialog), 3 of which fail on the old extension; the VS Code host suite goes from 115
+  to 119 passing tests.
+- The settings page of the VS Code panel is a dialog in its markup but did not behave like one
+  (R900). Driven by real key events in a real VS Code 1.110.0: focus stayed on the settings button
+  behind the backdrop (a keyboard user was "inside" a dialog they could not reach with Tab, and a
+  screen reader read the page behind it); Tab from the last control left the dialog and Shift+Tab
+  from the first landed on the button behind it; Escape did nothing; closing the dialog left focus
+  on the page body; the messages the dialog raises ("Synced", "Test notification sent", a failed
+  save) were toasts under the dialog (the real hit test at the centre of the toast returned the
+  backdrop: z-index 999 against 2000); and the countdown field kept whatever was typed: 5 was shown
+  while the server held 10, 5000 was shown and silently not saved, an emptied field stayed empty,
+  and 1e2 was read as 1 by `parseInt` and saved as 10. Opening the dialog now moves focus into it
+  (the dialog itself, `tabindex="-1"`, without a ring of its own) and makes the rest of the page
+  `inert` - only what this code marked, so a part that was inert before stays inert, and the toast
+  host stays live. Tab and Shift+Tab wrap inside, leaving out disabled, `hidden` and collapsed
+  controls. Escape closes it (not while an input method is composing, not when something else
+  already handled the key, not when it is closed). Closing gives focus back to what opened it, or
+  else to the settings button that is on screen (the toolbar has one, the page without a task has
+  its own). The toast host sits above the dialog (2100 against 2000). The countdown field shows what
+  the server will keep - 0 stays 0 (auto-resubmit off), anything else is held to 10..3600 as the
+  server does - and puts back what is not a number, with a message (`settings.hint.countdownInvalid`,
+  in en, zh-CN, zh-TW and the pseudo locale). 70 tests in `test_vscode_settings_dialog_r900.py` (the
+  real script in Node against a small DOM that models focus, `inert` and document-level key events;
+  the markup; the two styles; the strings; the limits the field shares with the server), 48 of which
+  fail on the old files; the other 22 are controls (keys that must be left alone, Tab inside the
+  dialog, values the field must keep). 48 one-point mutants are all caught. The parity test that
+  pinned the extension's old `v <= 3600` check (`test_frontend_input_range_parity.py`) now pins the
+  `FEEDBACK_COUNTDOWN_MAX` constant that replaced it.
+- The large image of the Web UI was cut off when it was tall, and its caption broke when the picture was
+  narrow (R903). The modal limited the image to `max-height: 100%` of a box that has no height of its
+  own (`.image-modal-content` only has `max-height: 90%`), so the limit was none: in a 1280 × 900 window
+  an attachment of 600 × 3000 kept its size and 1050 px of it were cut off at the top and the same at
+  the bottom, with its caption (37 px high) at 868 to 905, partly below the window; in a 390 × 844
+  window a picture of the same file was 351 × 1755 and 456 px of it were cut off at both ends; an 800 ×
+  800 picture filled the window from 50 to 850 with its caption pressed against the lower edge (863 to
+  900). The caption was as wide as the picture (`left: 0; right: 0`), so a long name wrapped inside a
+  narrow one: `quarterly-report-dashboard-screenshot-2026-10-27.png (120.56 KB)` under a 160 × 100 icon
+  took 4 lines, 98 px, and covered the icon. The image is now limited to the window (`max-width: 90vw`,
+  `max-height: 80vh`, then `80dvh` for the browsers that know it, so the address bar of a phone does not
+  hide the lower part) and `object-fit: contain` keeps its shape; the caption is `max-content` wide, at
+  least as wide as the picture and at most `90vw`, centred under it. The same files in the same windows
+  now: 600 × 3000 is 144 × 720 at y = 90 with its caption (144 × 37) at y = 823; 800 × 800 is 720 × 720
+  (its caption at 823); the long name is one line of 442 × 37 under the icon; wide and small pictures
+  are laid out as before (1152 × 648 and 160 × 100). On a phone the caption stays pinned inside the
+  picture as it was (`bottom: 10px`; the rule for the phone now also undoes the centring): the tall
+  capture is 135 × 675 at y = 84 there, with a caption of two lines inside the strip, and a long name
+  under a small picture still covers it (4 lines in both versions; left alone). Measured in Chrome 156
+  by calling `openImageModal()` the way a click on a thumbnail does, against the old files and the new
+  ones; the stylesheet and its minified copy are pinned by the tests of R903.
+- A health check or a metrics scrape no longer makes the Web UI load the whole MCP stack, and
+  `uptime_seconds` counts from the start of the process (R904). The Web UI subprocess answers
+  `/api/system/health` and `/api/system/metrics`. To read a start time and a build id, the helpers
+  behind them did `from ai_intervention_agent import server`, and the metrics lookup imported
+  `mcp_tool_call_metrics`, which imports fastmcp at its top: the first call of either endpoint
+  loaded about 570 modules (fastmcp, mcp, pydantic, starlette, uvicorn, cryptography, ...) into a
+  process that never runs MCP code, and they stay loaded. In a real Web UI process (Python 3.13,
+  20 s old, after the requests a page in use makes) the first health call took 329 ms and the
+  footprint went from 41.0 to 81.9 MiB (the metrics lookup alone: 230 ms and 33 MiB). And because
+  `server` set "the start" when it was first imported, the first request became the birth of the
+  process: that same process, 20.26 s old, answered `uptime_seconds: 0.27` (`aiia_uptime_seconds`
+  the same), so the figure of a Web UI that had run for hours was the age of its first probe.
+  The start time and the build info now live in `process_meta`, a module that needs nothing but the
+  standard library; `web_ui` imports it before Flask and `server` before fastmcp, so each process
+  counts from its own start, and `server` keeps no copy (`server._resolve_build_info`,
+  `server.reset_build_info_cache_for_testing` and `server._PROCESS_STARTED_AT_UNIX` are gone). The
+  metrics helper only looks the counters module up in `sys.modules` and never imports it: the
+  counters are filled by the MCP middleware, which only the MCP process runs, so in the Web UI
+  process both snapshots were always empty, and "no module" renders what "empty" did (no
+  `aiia_mcp_*` family). The same real Web UI process now: the first health call adds 0.6 MiB and
+  takes 70 ms (four small modules it still imports: `notification_manager`, `notification_models`,
+  `service_manager`, `server_config`), `uptime_seconds` is 20.243 s for a process that is 20.25 s
+  old, the same when `/api/system/metrics` is asked first, and the MCP stack is not loaded after
+  either call. The fields of both answers are unchanged. 44 tests in
+  `test_health_metrics_stay_out_of_the_mcp_stack_r904.py` (a fresh interpreter built like the Web
+  UI process, asked for each endpoint first; a static guard over every module of the Web UI side;
+  the import order of both entry modules; one definition of the start and of the build info), 15 of
+  which fail on the old code; 25 one-point mutants are all caught. Seven older tests that read
+  `server._resolve_build_info` or the metrics-module cache now read `process_meta` or pin the
+  lookup-only contract.
 
 ## [1.9.0] - 2026-10-25
 

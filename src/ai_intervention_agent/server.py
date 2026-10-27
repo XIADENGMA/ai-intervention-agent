@@ -68,7 +68,11 @@ import threading
 import time
 from typing import cast
 
-_PROCESS_STARTED_AT_UNIX: float = time.time()
+# The process start time and the build info live in ``process_meta``: the Web UI
+# process answers /api/system/health too, and must not import this module (the whole
+# MCP stack) to read them. First import of ``process_meta`` is the start time, so it
+# comes before the slow imports below (fastmcp alone takes about a second).
+from ai_intervention_agent import process_meta  # isort: skip
 
 from fastmcp import FastMCP
 from mcp.types import Icon, ToolAnnotations
@@ -191,60 +195,6 @@ def _resolve_server_version() -> str:
         return "0.0.0+local"
 
 
-_BUILD_INFO_CACHE: dict[str, str] = {}
-_BUILD_INFO_CACHE_LOCK: threading.Lock = threading.Lock()
-
-
-def _resolve_build_info() -> dict[str, str]:
-    """返回 ``{git_commit, git_branch, git_dirty}``，失败字段填 ``"unknown"``。"""
-    global _BUILD_INFO_CACHE
-    if _BUILD_INFO_CACHE:
-        return _BUILD_INFO_CACHE.copy()
-
-    with _BUILD_INFO_CACHE_LOCK:
-        if _BUILD_INFO_CACHE:
-            return _BUILD_INFO_CACHE.copy()
-
-        import subprocess as _subprocess
-        from pathlib import Path as _Path
-
-        repo_root = _Path(__file__).resolve().parent
-        cache: dict[str, str] = {}
-
-        def _git(args: list[str]) -> str:
-            try:
-                out = _subprocess.check_output(
-                    ["git", *args],
-                    cwd=str(repo_root),
-                    stderr=_subprocess.DEVNULL,
-                    timeout=2.0,
-                )
-                return out.decode("utf-8", errors="replace").strip()
-            except Exception:
-                return "unknown"
-
-        cache["git_commit"] = _git(["rev-parse", "--short", "HEAD"])
-        cache["git_branch"] = _git(["rev-parse", "--abbrev-ref", "HEAD"])
-
-        try:
-            porc = (
-                _subprocess.check_output(
-                    ["git", "status", "--porcelain"],
-                    cwd=str(repo_root),
-                    stderr=_subprocess.DEVNULL,
-                    timeout=2.0,
-                )
-                .decode("utf-8", errors="replace")
-                .strip()
-            )
-            cache["git_dirty"] = "yes" if porc else "no"
-        except Exception:
-            cache["git_dirty"] = "unknown"
-
-        _BUILD_INFO_CACHE = cache
-        return cache.copy()
-
-
 def reset_sse_stats_cache_for_testing() -> None:
     """R352 (cycle-39 #C2) · **Test-only**: 清空 ``_sse_stats_cache`` +
     重置 timestamp, 让下次 ``_fetch_sse_stats_cached`` 重新拉取。"""
@@ -263,14 +213,6 @@ def reset_recent_logs_cache_for_testing() -> None:
         _recent_logs_cache.clear()
         _recent_logs_cache_key = ""
         _recent_logs_cache_ts = 0.0
-
-
-def reset_build_info_cache_for_testing() -> None:
-    """R352 (cycle-39 #C2) · **Test-only**: 清空 ``_BUILD_INFO_CACHE`` 让
-    下次 ``_resolve_build_info()`` 重新调用 git subprocess。"""
-    global _BUILD_INFO_CACHE
-    with _BUILD_INFO_CACHE_LOCK:
-        _BUILD_INFO_CACHE = {}
 
 
 def _build_server_icons() -> list[Icon]:
@@ -561,7 +503,7 @@ def server_info_resource() -> dict[str, object]:
     }
 
     try:
-        info["build"] = _resolve_build_info()
+        info["build"] = process_meta.resolve_build_info()
     except Exception as build_exc:
         info["build"] = {"error": f"{type(build_exc).__name__}: {build_exc}"}
 
@@ -576,9 +518,9 @@ def server_info_resource() -> dict[str, object]:
         )
 
         runtime_info["python_implementation"] = _platform.python_implementation()
-        runtime_info["started_at_unix"] = round(_PROCESS_STARTED_AT_UNIX, 3)
+        runtime_info["started_at_unix"] = round(process_meta.PROCESS_STARTED_AT_UNIX, 3)
         runtime_info["uptime_seconds"] = round(
-            time.time() - _PROCESS_STARTED_AT_UNIX, 3
+            time.time() - process_meta.PROCESS_STARTED_AT_UNIX, 3
         )
     except Exception as runtime_exc:
         runtime_info["error"] = f"{type(runtime_exc).__name__}: {runtime_exc}"

@@ -292,11 +292,12 @@ class TestMarkup:
         ]
         assert [n.attr("data-i18n") for n in labels] == ["settings.bark.deviceKey"]
 
-    def test_the_plugin_test_button_follows_the_checkbox_not_the_group(self) -> None:
-        # It sits in the bottom action row; the script hides it with the group.
+    def test_the_plugin_test_button_ends_the_group_it_tests(self) -> None:
+        # R899 moved it from the bottom action row to the end of the Bark fields, next to what it tests.
+        # (The script still hides it together with the checkbox, see the runtime tests below.)
         plugin = SURFACES["plugin"]
         button = plugin.dom.get("settingsTestBarkBtn")
-        assert not button.inside(plugin.dom.get(plugin.group))
+        assert button.inside(plugin.dom.get(plugin.group))
 
 
 # --------------------------------------------------------------------------- the strings

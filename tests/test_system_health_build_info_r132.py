@@ -2,7 +2,8 @@
 
 背景
 ----
-R63 早就在 ``server._resolve_build_info()`` 里 lazy 解析了 git_commit
+R63 早就在 ``server._resolve_build_info()`` 里（R904 起搬到 ``process_meta.resolve_build_info()``，
+Web UI 子进程读它不该 import MCP 栈）lazy 解析了 git_commit
 / git_branch / git_dirty 三个 build 元信息（用于 ``aiia://server/info``
 MCP resource）。R121-A 把 health 端点扩展到 K8s probe 主流形态时只
 带了 ``version`` / ``uptime_seconds`` / ``config_file_path``——但是
@@ -37,14 +38,14 @@ R132 把 R63 既有的 ``_resolve_build_info()`` 投影到 health 顶层
 测试覆盖三个层面（共 9 cases / 3 invariant classes）：
 
 1.  **handler 顶层暴露** — ``system_health()`` body 含 ``"build"`` 顶层
-    字段 + 调用 ``_safe_build_info()`` helper（不直接调 ``server._resolve_build_info``，
+    字段 + 调用 ``_safe_build_info()`` helper（不直接调 ``process_meta.resolve_build_info``，
     保留 R53-F 的"handler 不直接读 server module"契约）；Swagger
     docstring 描述 ``build`` 字段。
 2.  **helper 行为契约** — ``_safe_build_info`` 在 module 级别可调；
     正常情况下返回 dict，含三个字段 + 字段值都是 str；任何 import
-    错误 / 异常都 graceful 返回 None；`server._resolve_build_info`
+    错误 / 异常都 graceful 返回 None；`process_meta.resolve_build_info`
     返回非 dict 时返回 None。
-3.  **R53-F / R121-A 回归** — handler body 不含 ``server._resolve_build_info()``
+3.  **R53-F / R121-A 回归** — handler body 不含 ``process_meta.resolve_build_info()``
     直接调用（必须走 helper）；不引入新 ``get_config()`` 调用；
     既有 ``version`` / ``uptime_seconds`` / ``config_file_path`` 字段
     仍存在；``status`` enum 三个值不变。
@@ -101,16 +102,16 @@ class TestBuildInfoExposedInHandler(unittest.TestCase):
         self.assertIn(
             "_safe_build_info()",
             self.body,
-            "build 字段必须走 _safe_build_info() helper（避免 handler 直接调 server._resolve_build_info）",
+            "build 字段必须走 _safe_build_info() helper（避免 handler 直接调 process_meta.resolve_build_info）",
         )
 
     def test_handler_does_not_call_resolve_build_info_directly(self) -> None:
-        # handler 不能绕过 helper 直接调 ``server._resolve_build_info``，
+        # handler 不能绕过 helper 直接调 ``process_meta.resolve_build_info``，
         # 否则任何抛异常的修改都会让 health 端点 5xx
         self.assertNotIn(
-            "_resolve_build_info()",
+            "resolve_build_info()",
             self.body,
-            "handler 不能直接调 server._resolve_build_info()，必须走 _safe_build_info helper",
+            "handler 不能直接调 process_meta.resolve_build_info()，必须走 _safe_build_info helper",
         )
 
     def test_swagger_doc_describes_build_field(self) -> None:
@@ -152,28 +153,28 @@ class TestSafeBuildInfoHelper(unittest.TestCase):
 
     def test_returns_none_when_resolve_build_info_returns_non_dict(self) -> None:
         with patch(
-            "ai_intervention_agent.server._resolve_build_info",
+            "ai_intervention_agent.process_meta.resolve_build_info",
             return_value="not a dict",
         ):
             result = system_module._safe_build_info()
             self.assertIsNone(
                 result,
-                "_resolve_build_info 返回非 dict 时必须 graceful 返回 None",
+                "resolve_build_info 返回非 dict 时必须 graceful 返回 None",
             )
 
     def test_returns_none_on_resolve_exception(self) -> None:
         with patch(
-            "ai_intervention_agent.server._resolve_build_info",
+            "ai_intervention_agent.process_meta.resolve_build_info",
             side_effect=RuntimeError("simulated git subprocess failure"),
         ):
             result = system_module._safe_build_info()
             self.assertIsNone(
                 result,
-                "_resolve_build_info 抛异常时必须 graceful 返回 None（health 端点不应 5xx）",
+                "resolve_build_info 抛异常时必须 graceful 返回 None（health 端点不应 5xx）",
             )
 
     def test_unknown_values_pass_through_when_dot_git_missing(self) -> None:
-        # 模拟 pip 部署没 .git 的场景：_resolve_build_info 返回全 "unknown"
+        # 模拟 pip 部署没 .git 的场景：resolve_build_info 返回全 "unknown"
         # helper 仍应返回 dict（保留 R63 契约：unknown 不是失败）
         fake_info = {
             "git_commit": "unknown",
@@ -181,7 +182,7 @@ class TestSafeBuildInfoHelper(unittest.TestCase):
             "git_dirty": "unknown",
         }
         with patch(
-            "ai_intervention_agent.server._resolve_build_info",
+            "ai_intervention_agent.process_meta.resolve_build_info",
             return_value=fake_info,
         ):
             result = system_module._safe_build_info()

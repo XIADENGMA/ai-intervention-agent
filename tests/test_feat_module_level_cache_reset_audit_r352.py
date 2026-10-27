@@ -17,7 +17,8 @@ R352 修复的真实问题
 
 1. ``server.py:_BUILD_INFO_CACHE`` (dict) — 一旦填充就在进程生命周期内
    不刷, 测试 mock subprocess 后无法 reset cache, mock 的返回值不会被
-   读取
+   读取（R904 起这份缓存和它的 reset helper 搬到了 ``process_meta.py``，
+   Web UI 子进程读 build 信息不必 import MCP 栈）
 2. ``server_feedback.py:_FEEDBACK_COUNTERS`` (dict[str, int]) — 累计型
    counter, 跨测试不归零会污染断言
 
@@ -51,7 +52,7 @@ SRC_DIR = REPO_ROOT / "src" / "ai_intervention_agent"
 # 已知有 reset helper 的 module-level cache (whitelist)
 KNOWN_CACHES_WITH_RESET: dict[str, tuple[str, str]] = {
     "_BUILD_INFO_CACHE": (
-        "server.py",
+        "process_meta.py",
         "reset_build_info_cache_for_testing",
     ),
     "_FEEDBACK_COUNTERS": (
@@ -93,7 +94,7 @@ class TestLayer1ResetHelpersExist:
     """Layer 1: 两个 reset helper 都存在且可调用。"""
 
     def test_reset_build_info_cache_helper_exists(self):
-        from ai_intervention_agent.server import (
+        from ai_intervention_agent.process_meta import (
             reset_build_info_cache_for_testing,
         )
 
@@ -111,17 +112,17 @@ class TestLayer2ResetBehavior:
     """Layer 2: reset 后 cache 内容真的被清空。"""
 
     def test_reset_build_info_cache_clears(self):
-        from ai_intervention_agent import server
+        from ai_intervention_agent import process_meta
 
         # 先填充 cache
-        server._BUILD_INFO_CACHE["test_key"] = "test_value"
-        assert server._BUILD_INFO_CACHE.get("test_key") == "test_value"
+        process_meta._BUILD_INFO_CACHE["test_key"] = "test_value"
+        assert process_meta._BUILD_INFO_CACHE.get("test_key") == "test_value"
 
         # reset 后清空
-        server.reset_build_info_cache_for_testing()
-        assert server._BUILD_INFO_CACHE == {}, (
+        process_meta.reset_build_info_cache_for_testing()
+        assert process_meta._BUILD_INFO_CACHE == {}, (
             f"R352-L2: _BUILD_INFO_CACHE not fully cleared after reset: "
-            f"{server._BUILD_INFO_CACHE}"
+            f"{process_meta._BUILD_INFO_CACHE}"
         )
 
     def test_reset_feedback_counters_zeros(self):
@@ -139,12 +140,12 @@ class TestLayer3ResetIdempotency:
     """Layer 3: 重复调用 reset 安全 (不抛异常, 不改变 already-reset 状态)。"""
 
     def test_reset_build_info_cache_idempotent(self):
-        from ai_intervention_agent import server
+        from ai_intervention_agent import process_meta
 
-        server.reset_build_info_cache_for_testing()
-        server.reset_build_info_cache_for_testing()
-        server.reset_build_info_cache_for_testing()
-        assert server._BUILD_INFO_CACHE == {}
+        process_meta.reset_build_info_cache_for_testing()
+        process_meta.reset_build_info_cache_for_testing()
+        process_meta.reset_build_info_cache_for_testing()
+        assert process_meta._BUILD_INFO_CACHE == {}
 
     def test_reset_feedback_counters_idempotent(self):
         from ai_intervention_agent import server_feedback

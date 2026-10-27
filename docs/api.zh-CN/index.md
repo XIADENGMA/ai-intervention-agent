@@ -134,6 +134,7 @@ ChatGPT Desktop / Claude Desktop / Cursor 等客户端原生渲染，避免在�
 - [i18n](i18n.md)
 - [local_images](local_images.md)
 - [mcp_tool_call_metrics](mcp_tool_call_metrics.md)
+- [process_meta](process_meta.md)
 - [protocol](protocol.md)
 - [remote_environment](remote_environment.md)
 - [runtime_constants](runtime_constants.md)
@@ -191,6 +192,7 @@ ChatGPT Desktop / Claude Desktop / Cursor 等客户端原生渲染，避免在�
 - **i18n**: 后端轻量 i18n（请求语言检测 + 本地化消息查表）
 - **local_images**: 提示词里的本地图片 —— 识别 Markdown / HTML 图片引用，只在允许的目录内读取（realpath、符号链接、类型与大小检查），并改写成按任务提供的图片 URL
 - **mcp_tool_call_metrics**: MCP 工具调用计数器中间件（R187 / T2）—— 为 `/api/system/metrics` 的 `aiia_mcp_tool_calls_total{tool,status}` Prometheus 指标提供数据源
+- **process_meta**: 进程启动时间与 git 构建信息（只依赖标准库）—— MCP 服务器与 Web UI 的 `/api/system/health`、`/api/system/metrics` 共用；Web UI 进程回答这两个端点时不必 import `server`（整个 MCP 栈）（R904）
 - **runtime_constants**: 低成本导入的运行时超时常量，供 Web UI、任务队列与 server config 共享
 - **rw_lock**: 轻量读写锁原语，供队列与兼容性测试复用
 - **shared_types**: 共享 TypedDict 类型定义

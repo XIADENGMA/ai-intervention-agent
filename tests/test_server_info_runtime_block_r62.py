@@ -10,7 +10,9 @@
 * 全部走 stdlib（``sys`` / ``platform`` / ``time``），零依赖；
 * 整个块在一个 ``try`` 里：任一字段失败都走 ``error`` 兜底，不影响顶层
   ``info`` 的其他块；
-* ``_PROCESS_STARTED_AT_UNIX`` 是 module-level 常量，进程生命周期内不变。
+* ``process_meta.PROCESS_STARTED_AT_UNIX`` 是 module-level 常量，进程生命周期内不变
+  （R904 起它在 ``process_meta``，原先是 ``server._PROCESS_STARTED_AT_UNIX``：
+  Web UI 子进程的 health 端点读它，不该为此 import MCP 栈）。
 
 覆盖：
 
@@ -19,7 +21,7 @@
 * ``uptime_seconds`` 是非负 float 且 = ``time.time() - started_at_unix``；
 * ``started_at_unix`` 是 module-level 常量，多次调用保持一致；
 * R44 老字段仍然在（不破坏 R44 的契约）；
-* ``_PROCESS_STARTED_AT_UNIX`` 在 server module 里被定义为 float。
+* ``PROCESS_STARTED_AT_UNIX`` 在 ``process_meta`` 里被定义为 float。
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import unittest
 from typing import cast
 
 import ai_intervention_agent.server as server
+from ai_intervention_agent import process_meta
 
 
 class TestRuntimeBlockShape(unittest.TestCase):
@@ -87,7 +90,7 @@ class TestUptimeSemantics(unittest.TestCase):
         self.assertEqual(
             rt1["started_at_unix"],
             rt2["started_at_unix"],
-            "_PROCESS_STARTED_AT_UNIX 应该在整个进程生命周期内不变",
+            "PROCESS_STARTED_AT_UNIX 应该在整个进程生命周期内不变",
         )
 
     def test_uptime_seconds_grows_monotonically(self) -> None:
@@ -126,15 +129,15 @@ class TestRuntimeBlockDoesNotBreakOtherBlocks(unittest.TestCase):
 
 class TestModuleLevelConstant(unittest.TestCase):
     def test_constant_exists(self) -> None:
-        self.assertTrue(hasattr(server, "_PROCESS_STARTED_AT_UNIX"))
+        self.assertTrue(hasattr(process_meta, "PROCESS_STARTED_AT_UNIX"))
 
     def test_constant_is_float(self) -> None:
-        self.assertIsInstance(server._PROCESS_STARTED_AT_UNIX, float)
+        self.assertIsInstance(process_meta.PROCESS_STARTED_AT_UNIX, float)
 
     def test_constant_is_close_to_now_at_module_level(self) -> None:
         # 测试时刻与 module load 时刻可能差几秒（pytest collection 时长），
         # 但不应该超过 24h（即时戳本身合法）
-        delta = time.time() - server._PROCESS_STARTED_AT_UNIX
+        delta = time.time() - process_meta.PROCESS_STARTED_AT_UNIX
         self.assertGreater(delta, -1.0)  # 启动不应在未来
         self.assertLess(delta, 86400.0)  # < 1 天
 

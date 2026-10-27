@@ -470,6 +470,69 @@
     }
   }
 
+  // The loops of the no-task page only say "still waiting", and nobody is served by them while the page is hidden or
+  // the VS Code window is not the one in front: then they stand still where they are (.aiia-ambient-paused on <html>
+  // for the CSS ones, pause() for the sprout) and go on from there. A webview cannot see the window: its own focus and
+  // blur follow the element that has the focus (the editor, this panel), so the extension host says whether the window
+  // is in front ('window-focus'). A page that was not told keeps animating, and a page that is used (a click, a key)
+  // is in front, whatever the host said last.
+  const AMBIENT_PAUSED_CLASS = 'aiia-ambient-paused'
+  let ambientWindowFocused = true
+
+  function ambientAnimationsPaused() {
+    return !!(typeof document !== 'undefined' && document.hidden) || !ambientWindowFocused
+  }
+
+  function syncNoContentHourglassPlayback() {
+    const animation = noContentHourglassAnimation
+    if (!animation || !animation.isLoaded) return
+    try {
+      if (ambientAnimationsPaused()) {
+        animation.pause()
+      } else {
+        animation.play()
+      }
+    } catch (_) {
+
+    }
+  }
+
+  function syncAmbientAnimations() {
+    try {
+      const root = document.documentElement
+      if (ambientAnimationsPaused()) {
+        root.classList.add(AMBIENT_PAUSED_CLASS)
+      } else {
+        root.classList.remove(AMBIENT_PAUSED_CLASS)
+      }
+    } catch (_) {
+
+    }
+    syncNoContentHourglassPlayback()
+  }
+
+  function setAmbientWindowFocused(focused) {
+    if (ambientWindowFocused === focused) return
+    ambientWindowFocused = focused
+    syncAmbientAnimations()
+  }
+
+  function initAmbientAnimations() {
+    try {
+      document.addEventListener('visibilitychange', syncAmbientAnimations)
+      const interactionEvents = ['pointerdown', 'keydown']
+      interactionEvents.forEach(type => {
+        window.addEventListener(type, () => setAmbientWindowFocused(true), {
+          capture: true,
+          passive: true
+        })
+      })
+    } catch (_) {
+
+    }
+    syncAmbientAnimations()
+  }
+
   let lottieLoadPromise = null
   let noContentLottieDataPromise = null
   let noContentLottieInitInFlight = false
@@ -1246,6 +1309,7 @@
           }
           noContentLottieRetryAttempt = 0
           updateNoContentHourglassColor()
+          syncNoContentHourglassPlayback()
         })
 
         noContentHourglassAnimation.addEventListener('error', () => {
@@ -1277,6 +1341,7 @@
   let pendingImageUploadCounts = {}
   let textareaManualRows = null
   let optionsManualHeight = null
+  let optionsPinned = true
   let countdownTimer = null
 
   let autoSubmitAttempted = {}
@@ -1385,6 +1450,9 @@
       if (WEBVIEW_HELPERS && typeof WEBVIEW_HELPERS.normalizeStoredOptionsHeight === 'function') {
         optionsManualHeight = WEBVIEW_HELPERS.normalizeStoredOptionsHeight(s.optionsManualHeight)
       }
+      if (s.optionsPinned === false) {
+        optionsPinned = false
+      }
     } catch (e) {
 
     }
@@ -1409,6 +1477,7 @@
           typeof optionsManualHeight === 'number' && Number.isFinite(optionsManualHeight)
             ? optionsManualHeight
             : null,
+        optionsPinned: optionsPinned,
         savedAt: Date.now()
       })
     }, UI_STATE_SAVE_DEBOUNCE_MS)
@@ -2175,6 +2244,39 @@
     handle.addEventListener('focus', syncAria)
   }
 
+  function initOptionsPin() {
+    const dock = document.getElementById('optionsSection')
+    const button = document.getElementById('optionsPinBtn')
+    const form = document.getElementById('feedbackForm')
+    const scroller = form ? form.querySelector('.scrollable-content') : null
+    const composer = form ? form.querySelector('.fixed-input-area') : null
+    if (!dock || !button || !form || !scroller || !composer) return
+
+    // Pinned: a child of the form between the message and the input box. Unpinned: the last child of the message.
+    const place = pinned => {
+      if (pinned) {
+        if (dock.parentElement !== form) form.insertBefore(dock, composer)
+      } else if (dock.parentElement !== scroller) {
+        scroller.appendChild(dock)
+      }
+      dock.classList.toggle('is-unpinned', !pinned)
+      button.setAttribute('aria-pressed', pinned ? 'true' : 'false')
+    }
+
+    place(optionsPinned)
+    button.addEventListener('click', () => {
+      optionsPinned = !optionsPinned
+      place(optionsPinned)
+      // Moving a node drops its focus, and the button was just used: keep it where the reader left it.
+      try {
+        button.focus({ preventScroll: true })
+      } catch (err) {
+        button.focus()
+      }
+      schedulePersistUiState()
+    })
+  }
+
   function setupEventListeners() {
     try {
       const submitBtn = document.getElementById('submitBtn')
@@ -2308,6 +2410,9 @@
       })
 
       initOptionsResize()
+      initOptionsPin()
+      initAmbientAnimations()
+      initImageViewer()
 
       log('Event listeners installed')
     } catch (error) {
@@ -3838,6 +3943,9 @@
   let markdownRenderSeq = 0
 
   function schedulePromptEnhancements(markdownContent, promptKey, renderSeq) {
+    // R903: the images are marked at once (a click on one must not wait for an idle moment); the rest waits.
+    enablePromptImageZoom(markdownContent)
+
 
     scheduleLowPriorityWork(() => {
       if (renderSeq !== markdownRenderSeq) return
@@ -5758,9 +5866,314 @@
     }
   }
 
+  // R903: an image of the agent's message, or one the user attached, opens large when it is clicked
+  // (Enter or Space on it, when Tab has brought focus there).  The viewer is a dialog of its own
+  // (#imageViewer).  The panel is narrow, so an image shown to fit is hardly larger than the one in the
+  // message; what the viewer is for is its second state, the image at its own size, to scroll through.
+  // A click on the image, or the 1:1 button, goes from one state to the other.
+  const IMAGE_VIEWER_ACTUAL_CLASS = 'is-actual'
+  const IMAGE_VIEWER_ENLARGE_CLASS = 'can-enlarge'
+  let imageViewerOpener = null
+  let imageViewerSource = ''
+  let imageViewerKeydownAttached = false
+
+  function imageViewerParts() {
+    const viewer = document.getElementById('imageViewer')
+    const stage = document.getElementById('imageViewerStage')
+    const image = document.getElementById('imageViewerImg')
+    const caption = document.getElementById('imageViewerCaption')
+    const zoom = document.getElementById('imageViewerZoom')
+    const close = document.getElementById('imageViewerClose')
+    if (!viewer || !stage || !image || !caption || !zoom || !close) return null
+    return { viewer, stage, image, caption, zoom, close }
+  }
+
+  function isImageViewerOpen() {
+    const viewer = document.getElementById('imageViewer')
+    return !!viewer && !viewer.classList.contains('hidden')
+  }
+
+  function focusImageViewerElement(el) {
+    try {
+      el.focus({ preventScroll: true })
+      return true
+    } catch (_e) {
+      try {
+        el.focus()
+        return true
+      } catch (_e2) {
+        return false
+      }
+    }
+  }
+
+  function isImageViewerActual(parts) {
+    return parts.viewer.classList.contains(IMAGE_VIEWER_ACTUAL_CLASS)
+  }
+
+  // True when the image at its own size is larger than what is on screen now.
+  function imageViewerCanEnlarge(parts) {
+    const image = parts.image
+    const width = Number(image.naturalWidth)
+    const height = Number(image.naturalHeight)
+    if (!image.complete || !(width > 0) || !(height > 0)) return false
+    return width > image.clientWidth + 1 || height > image.clientHeight + 1
+  }
+
+  // The 1:1 button is there while there is something to switch to (and, at its own size, to switch back).
+  function syncImageViewerZoom(parts) {
+    const actual = isImageViewerActual(parts)
+    const canToggle = actual || imageViewerCanEnlarge(parts)
+    parts.zoom.disabled = !canToggle
+    parts.zoom.setAttribute('aria-pressed', actual ? 'true' : 'false')
+    parts.viewer.classList.toggle(IMAGE_VIEWER_ENLARGE_CLASS, canToggle)
+  }
+
+  // ``name (1280 x 720 px)`` once the image has loaded; the name alone before that, or if it never does.
+  function paintImageViewerCaption(parts) {
+    const label = parts.image.alt || t('ui.image.viewerTitle')
+    const width = Number(parts.image.naturalWidth)
+    const height = Number(parts.image.naturalHeight)
+    if (parts.image.complete && width > 0 && height > 0) {
+      parts.caption.textContent = t('ui.image.dimensions', {
+        name: label,
+        width: String(Math.round(width)),
+        height: String(Math.round(height))
+      })
+    } else {
+      parts.caption.textContent = label
+    }
+  }
+
+  // ``anchor``: where on the image the pointer was, as a share of its size; that spot ends up in the middle
+  // of the view when the image goes to its own size (the middle of the image when there is none).
+  function setImageViewerActual(parts, actual, anchor) {
+    if (actual === isImageViewerActual(parts)) return
+    parts.viewer.classList.toggle(IMAGE_VIEWER_ACTUAL_CLASS, actual)
+    const stage = parts.stage
+    if (actual) {
+      const x = anchor ? anchor.x : 0.5
+      const y = anchor ? anchor.y : 0.5
+      stage.scrollLeft = parts.image.offsetLeft + x * parts.image.offsetWidth - stage.clientWidth / 2
+      stage.scrollTop = parts.image.offsetTop + y * parts.image.offsetHeight - stage.clientHeight / 2
+    } else {
+      stage.scrollLeft = 0
+      stage.scrollTop = 0
+    }
+    syncImageViewerZoom(parts)
+  }
+
+  function toggleImageViewerActual(anchor) {
+    const parts = imageViewerParts()
+    if (!parts || !isImageViewerOpen() || parts.zoom.disabled) return
+    setImageViewerActual(parts, !isImageViewerActual(parts), anchor)
+  }
+
+  function onImageViewerImageClick(event) {
+    const parts = imageViewerParts()
+    if (!parts) return
+    let anchor = null
+    const rect = parts.image.getBoundingClientRect()
+    // ``detail`` is 0 for a click that a key made (the button's own), which has no pointer to follow
+    if (event.detail > 0 && rect.width > 0 && rect.height > 0) {
+      anchor = {
+        x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+        y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height))
+      }
+    }
+    toggleImageViewerActual(anchor)
+  }
+
+  function onImageViewerImageLoad() {
+    const parts = imageViewerParts()
+    if (!parts || !isImageViewerOpen()) return
+    paintImageViewerCaption(parts)
+    syncImageViewerZoom(parts)
+  }
+
+  function onImageViewerResize() {
+    if (!isImageViewerOpen()) return
+    const parts = imageViewerParts()
+    if (parts) syncImageViewerZoom(parts)
+  }
+
+  // Tab stays on the two buttons (the 1:1 one is skipped while it is off).
+  function trapImageViewerTab(event, parts) {
+    const stops = [parts.zoom, parts.close].filter(el => !el.disabled)
+    if (stops.length === 0) {
+      event.preventDefault()
+      return
+    }
+    const active = document.activeElement
+    const first = stops[0]
+    const last = stops[stops.length - 1]
+    const inside = !!active && stops.includes(active)
+    if (event.shiftKey) {
+      if (!inside || active === first) {
+        event.preventDefault()
+        focusImageViewerElement(last)
+      }
+    } else if (!inside || active === last) {
+      event.preventDefault()
+      focusImageViewerElement(first)
+    }
+  }
+
+  function onImageViewerKeydown(event) {
+    if (!isImageViewerOpen()) return
+    if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeImageViewer()
+      return
+    }
+    if (event.key === 'Tab') {
+      const parts = imageViewerParts()
+      if (parts) trapImageViewerTab(event, parts)
+    }
+  }
+
+  // ``source``: 'prompt' for an image of the agent's message, 'attachment' for one the user attached;
+  // ``opener``: what takes focus back when the viewer closes.
+  function openImageViewer(src, name, source, opener) {
+    const parts = imageViewerParts()
+    if (!parts || !src) return false
+    const wasOpen = isImageViewerOpen()
+    if (!wasOpen) {
+      const active = document.activeElement
+      imageViewerOpener = opener || (active && active !== document.body ? active : null)
+    }
+    imageViewerSource = source === 'prompt' ? 'prompt' : 'attachment'
+
+    // every image opens to fit, from the top left
+    parts.viewer.classList.remove(IMAGE_VIEWER_ACTUAL_CLASS)
+    parts.stage.scrollLeft = 0
+    parts.stage.scrollTop = 0
+    parts.image.alt = typeof name === 'string' ? name.trim() : ''
+    parts.image.src = src
+    parts.viewer.classList.remove('hidden')
+    paintImageViewerCaption(parts)
+    syncImageViewerZoom(parts)
+
+    if (!wasOpen) {
+      document.addEventListener('keydown', onImageViewerKeydown, true)
+      imageViewerKeydownAttached = true
+      focusImageViewerElement(parts.close)
+    }
+    return true
+  }
+
+  function closeImageViewer() {
+    const parts = imageViewerParts()
+    if (!parts || !isImageViewerOpen()) return false
+    parts.viewer.classList.add('hidden')
+    parts.viewer.classList.remove(IMAGE_VIEWER_ACTUAL_CLASS, IMAGE_VIEWER_ENLARGE_CLASS)
+    // The element lets go of the image: up to 8 MB that nobody is looking at.
+    parts.image.removeAttribute('src')
+    parts.image.alt = ''
+    parts.caption.textContent = ''
+    if (imageViewerKeydownAttached) {
+      document.removeEventListener('keydown', onImageViewerKeydown, true)
+      imageViewerKeydownAttached = false
+    }
+    imageViewerSource = ''
+    const opener = imageViewerOpener
+    imageViewerOpener = null
+    if (opener && document.contains(opener)) focusImageViewerElement(opener)
+    return true
+  }
+
+  // An attachment that was taken off the list while it was open large has nothing left to show.
+  function closeImageViewerIfAttachmentGone() {
+    if (imageViewerSource !== 'attachment') return
+    const image = document.getElementById('imageViewerImg')
+    const src = image ? image.getAttribute('src') : null
+    const stillThere =
+      !!src && Array.isArray(uploadedImages) && uploadedImages.some(item => item && item.data === src)
+    if (!stillThere) closeImageViewer()
+  }
+
+  function initImageViewer() {
+    const parts = imageViewerParts()
+    if (!parts) return
+    parts.close.addEventListener('click', closeImageViewer)
+    parts.zoom.addEventListener('click', () => toggleImageViewerActual(null))
+    parts.image.addEventListener('click', onImageViewerImageClick)
+    parts.image.addEventListener('load', onImageViewerImageLoad)
+    parts.viewer.addEventListener('click', event => {
+      if (event.target === parts.viewer || event.target === parts.stage) closeImageViewer()
+    })
+    window.addEventListener('resize', onImageViewerResize)
+  }
+
+  function openZoomableImage(image) {
+    if (!image) return false
+    // an image the browser could not load has nothing to show
+    if (image.complete && Number(image.naturalWidth) === 0) return false
+    const src = image.currentSrc || image.src || ''
+    if (!src) return false
+    const alt = (image.getAttribute('alt') || '').trim()
+    return openImageViewer(src, alt, image.getAttribute('data-aiia-zoom'), image)
+  }
+
+  function onZoomableImageClick(event) {
+    openZoomableImage(event.currentTarget)
+  }
+
+  function onZoomableImageKeydown(event) {
+    if (event.defaultPrevented || event.isComposing) return
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
+    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+    // Keeps Space from scrolling the panel, and the Enter that opens the viewer from reaching the button
+    // that takes focus as it opens.
+    event.preventDefault()
+    openZoomableImage(event.currentTarget)
+  }
+
+  function onZoomableImageError(event) {
+    const image = event.currentTarget
+    image.removeAttribute('data-aiia-zoom')
+    image.removeAttribute('tabindex')
+    image.removeAttribute('role')
+    image.removeAttribute('aria-label')
+  }
+
+  function makeImageZoomable(image, source) {
+    if (!image || typeof image.setAttribute !== 'function') return
+    if (image.getAttribute('data-aiia-zoom')) return
+    const alt = (image.getAttribute('alt') || '').trim()
+    image.setAttribute('data-aiia-zoom', source)
+    image.setAttribute('tabindex', '0')
+    image.setAttribute('role', 'button')
+    image.setAttribute(
+      'aria-label',
+      alt ? t('ui.image.enlargeNamed', { name: alt }) : t('ui.image.enlarge')
+    )
+    image.addEventListener('click', onZoomableImageClick)
+    image.addEventListener('keydown', onZoomableImageKeydown)
+    image.addEventListener('error', onZoomableImageError)
+  }
+
+  // The images of the message.  One inside a link keeps doing what its link does.
+  function enablePromptImageZoom(container) {
+    if (!container || typeof container.querySelectorAll !== 'function') return
+    // The message was written again: an image opened from the old one has nothing to belong to.
+    if (imageViewerSource === 'prompt') closeImageViewer()
+    const images = container.querySelectorAll('img')
+    for (let i = 0; i < images.length; i += 1) {
+      const image = images[i]
+      if (!image) continue
+      if (typeof image.closest === 'function' && image.closest('a[href]')) continue
+      if (image.complete && Number(image.naturalWidth) === 0) continue
+      makeImageZoomable(image, 'prompt')
+    }
+  }
+
   function renderUploadedImages() {
     const container = document.getElementById('uploadedImages')
     if (!container) return
+    closeImageViewerIfAttachmentGone()
     container.innerHTML = ''
 
     uploadedImages.forEach((image, index) => {
@@ -5771,6 +6184,7 @@
       img.src = image.data
 
       img.alt = image && image.name ? String(image.name) : ''
+      makeImageZoomable(img, 'attachment')
 
       const removeBtn = document.createElement('button')
       removeBtn.className = 'image-remove'
@@ -5936,6 +6350,9 @@
         break
       case 'visibility-benchmark-probe':
         handleVisibilityBenchmarkProbe(message)
+        break
+      case 'window-focus':
+        setAmbientWindowFocused(message.focused !== false)
         break
       case 'switchToTask':
 
