@@ -633,7 +633,7 @@ Web UI 里的“访问被拒绝”提示是另一回事：它表示页面请求�
 
 **症状**：agent 调用 `interactive_feedback`，大约 120 秒后（Cursor 的命令行 agent 里大约 60 秒后）工具结果（或 Cursor 的 MCP 日志）显示 `MCP error -32001: Request timed out`。问题当时还在页面上，或者已经从页面上消失，你之后输入的回答也没有到达 agent。
 
-**含义**：客户端放弃了一个沉默太久的调用。等人回答很慢，而客户端会给每个工具调用设一个空闲超时（Cursor IDE 3.27：120 秒）。等待期间，服务器每 20 秒发送一次进度通知（`progress` 是已等待的秒数，消息内容为 `Waiting for human feedback (N s)`）。收到进度就重置空闲计时的客户端（Cursor IDE 就是这样）会一直等到调用结束：你回答的时候、打开着的面板倒计时到点自动提交的时候（`frontend_countdown`），或者服务器自己的上限到了、返回重新提交提示的时候（`frontend_countdown` + 40 秒，至少 260；只有倒计时已关闭或已走完时，`backend_max_wait` 才会限制它，见 [`configuration.zh-CN.md`](configuration.zh-CN.md#feedback)）。
+**含义**：客户端放弃了一个沉默太久的调用。等人回答很慢，而客户端会给每个工具调用设一个空闲超时（Cursor IDE 3.27：120 秒）。等待期间，服务器每 20 秒发送一次进度通知（`progress` 是已等待的秒数，消息内容为 `Waiting for human feedback (N s)`）。收到进度就重置空闲计时的客户端（Cursor IDE 就是这样）会一直等到调用结束：你回答的时候、打开着的面板倒计时到点自动提交的时候（`frontend_countdown`），或者服务器自己的上限到了、返回重新提交提示的时候（`frontend_countdown` + 40 秒，至少 260；只有倒计时已关闭或已走完时，`backend_max_wait` 才会限制它，见 [`configuration.zh-CN.md`](configuration.zh-CN.md#feedback反馈超时)）。
 
 - 1.8.12 及更早的版本在等待期间什么都不发。请升级到更新的版本并重启 MCP 服务端。
 - 不要求进度的客户端（不发送进度令牌）收不到通知，仍按它自己的空闲超时计时。如果客户端有这个设置，请调大；或者调小 `frontend_countdown`，让打开着的面板抢在它之前提交。

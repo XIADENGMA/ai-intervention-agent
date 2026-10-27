@@ -201,6 +201,27 @@ def _reset_feedback_failure_streak():
     reset()
 
 
+@pytest.fixture(autouse=True)
+def _reset_inflight_feedback_tasks():
+    """每个用例结束后清空“退出时要关闭的任务”清单（R905）。
+
+    ``interactive_feedback`` 把它在 Web UI 里建的任务登记在一个进程级清单里，进程退出
+    （``ServiceManager.cleanup_all``）时对清单里剩下的任务发真实的 HTTP 关闭请求。用例
+    里被取消、被桩替换的调用会把条目留下；留到 pytest 进程退出时，请求就会发往某个本机
+    端口，那里说不定正跑着开发者自己的 Web UI。只在模块已经被导入时才动它。
+    """
+
+    def reset() -> None:
+        module = sys.modules.get("ai_intervention_agent.server_feedback")
+        clear = getattr(module, "reset_inflight_tasks_for_testing", None)
+        if clear is not None:
+            clear()
+
+    reset()
+    yield
+    reset()
+
+
 def snapshot_global_log_levels() -> Callable[[], None]:
     """记录 root logger、root 上所有 handler 和 werkzeug 当前的级别，返回还原它们的函数。"""
     root = logging.getLogger()

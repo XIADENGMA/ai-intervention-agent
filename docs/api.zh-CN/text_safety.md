@@ -5,7 +5,7 @@
 孤立代理项（lone surrogate）清洗：保证文本一定能编码成 UTF-8。
 
 为什么需要（R845）
-~~~~~~~~~~~~~~~~~~
+------------------
 Python 的 ``str`` 可以装下 U+D800–U+DFFF 区间里**没有配成一对**的码点，而这样的字符串没有任何
 UTF-8 / JSON 编码：``"\ud800".encode()`` 抛 ``UnicodeEncodeError``，pydantic-core 的 JSON 序列化抛
 ``PydanticSerializationError``。标准库 ``json.loads`` 却乐意造出它们：

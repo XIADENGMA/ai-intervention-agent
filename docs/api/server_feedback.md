@@ -38,6 +38,20 @@
 
 ### `async _revive_web_ui(config: server_config.WebUIConfig, task_id: str, watch: _WebUILossWatch) -> None`
 
+### `_track_task(task_id: str, base_url: str) -> None`
+
+### `_untrack_task(task_id: str) -> None`
+
+### `_install_exit_safety_net() -> None`
+
+### `_close_tasks_then_die(signum: int, frame: Any) -> None`
+
+### `_install_sigterm_closer() -> None`
+
+### `reset_inflight_tasks_for_testing() -> None`
+
+### `_close_inflight_tasks_sync() -> None`
+
 ### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int, client: Any | None = None) -> None`
 
 ### `_retire_detached_cleanup(future: asyncio.Future[None]) -> None`

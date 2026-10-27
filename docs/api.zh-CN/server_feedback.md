@@ -204,6 +204,82 @@ R825：Web UI 进程没了，重新起它；失败只记日志，等待照旧。
 新进程启动时会把持久化的任务恢复出来（``TaskQueue._restore``），所以正在等的
 任务通常还在。``CancelledError`` 照常往外抛。
 
+### `_track_task(task_id: str, base_url: str) -> None`
+
+R905：登记一个即将在 Web UI 里创建的任务，并确保进程退出时有人来收拾它。
+
+### `_untrack_task(task_id: str) -> None`
+
+R905：任务已经收场（见 ``_INFLIGHT_TASKS``），退出时不用再管它。
+
+### `_install_exit_safety_net() -> None`
+
+R905：让每一种「还有机会运行代码」的退出，都先把还在等的任务关掉（幂等）。
+
+三条路各管一种退出，少一条就有一类退出把任务留在 Web UI 里：
+
+- ``ServiceManager.cleanup_all`` 的退出前回调：Ctrl-C 和异常重试经 ``server.cleanup_services``
+  走到那里，而它马上要终止本进程起的 Web UI，任务必须在那之前关掉；
+- atexit：IDE 关窗口的正常情形是关 stdin，``mcp.run`` 随后返回，进程走 atexit 退出。
+  不能只靠 ``ServiceManager`` 自己的 atexit：直接复用另一个窗口起的 Web UI 的进程里
+  它根本不存在；
+- SIGTERM：见 ``_install_sigterm_closer``。
+
+这里**不去**构造 ``ServiceManager``。它在主线程里构造会装上自己的 SIGINT / SIGTERM 处理，
+那个处理 ``raise KeyboardInterrupt`` 展开主线程，随后解释器退出时 ``threading._shutdown``
+要等 anyio 里阻塞在 stdin 上的非守护线程，stdin 没关就永远等下去（真实 stdio 服务复现：
+SIGTERM 之后进程不退出）。
+
+### `_close_tasks_then_die(signum: int, frame: Any) -> None`
+
+R905：SIGTERM 的处理——先把还在等的任务关掉，再让进程照原样被这个信号结束。
+
+没有人处理 SIGTERM 时，信号一到进程就地结束，atexit 一个也不跑。``ServiceManager`` 自己的
+处理在真实服务里从来没装上：它是在 ``asyncio.to_thread`` 的工作线程里第一次被创建的，
+``signal.signal`` 只能在主线程调用，会抛 ValueError，被当成「非主线程，跳过」。
+
+关完任务后把处置恢复成默认，再给自己补发同一个信号：进程仍然以「被 SIGTERM 终止」退出
+（退出码 -15 不变），也不像 ``raise KeyboardInterrupt`` 那样要等解释器退出时阻塞在 stdin
+上的线程。Web UI 子进程的去留不归这里管，和从前一样不动它。
+
+### `_install_sigterm_closer() -> None`
+
+R905：SIGTERM 还是默认处置时，装上 ``_close_tasks_then_die``（幂等）。
+
+已经有处理的（``ServiceManager`` 的，宿主进程的）或被忽略的（SIG_IGN）都不去覆盖：前者会
+走到 ``cleanup_all`` 的退出前回调，后者是启动者的明确要求。非主线程装不了信号处理
+（ValueError），静默跳过，下一次登记任务时再试。
+
+### `reset_inflight_tasks_for_testing() -> None`
+
+**仅供测试**：清空退出时要关闭的任务清单，并撤掉为它装的退出路径（conftest 的 autouse 夹具调用）。
+
+清单和退出路径跟着模块活整个 pytest 进程。前一个用例留下的条目会在进程退出时被
+``_close_inflight_tasks_sync`` 拿去向某个端口发真实的 HTTP 请求，那个端口上说不定
+正跑着开发者自己的 Web UI；装在 pytest 进程上的 SIGTERM 处理同理，不该留给后面的用例。
+
+### `_close_inflight_tasks_sync() -> None`
+
+R905 · 进程退出前，把本进程还在等的任务从 Web UI 里关掉（同步，尽力而为）。
+
+现象（真实 stdio MCP 服务 + 真实 Web UI 子进程复现）：agent 的 ``interactive_feedback``
+还在等人回答，用户关掉 IDE 窗口。MCP 客户端关 stdin，SDK 的 anyio 作用域取消 handler，
+``wait_for_task_completion`` 的清理（R13·B1，经 R775 的 ``_run_to_completion`` 放进独立
+task）刚发出第一个请求，事件循环就结束了，``asyncio.run`` 把还没跑完的 task 全部取消，
+close 一次也没发出去；随后 atexit 终止本进程起的 Web UI。任务留在 Web UI 的队列里，
+起 Web UI 的窗口先关则留在 ``tasks-<port>.json`` 里，下一个 Web UI 把它恢复出来。
+它的调用者已经不存在，没有人会收到答案：用户在页面最前面看到的是旧问题，新问题排在
+它后面，回答旧问题的话字打进了空里（R13 docstring 的 T4 / T5）。另一个窗口还开着时同样：
+关掉的那个窗口的问题留在共用的 Web UI 里。
+
+这里在退出路径上同步地补上那一步（挂在哪几条路径上见 ``_install_exit_safety_net``）：
+不依赖事件循环，在 ``ServiceManager.cleanup_all`` 终止 Web UI **之前**运行，对每个还登记着
+的任务 ``POST /api/tasks/<id>/close``。已经 COMPLETED 的任务 close 路由会跳过（答案不会
+被误删），不存在的回 404，都算收场。Web UI 连不上、超时、被限流都只记日志：总时长受
+``_SHUTDOWN_CLOSE_BUDGET_S`` 限制，退出不会被它拖住。
+
+进程被 SIGKILL、断电这类没有机会运行任何代码的退出，这里无能为力。
+
 ### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int, client: Any | None = None) -> None`
 
 R13·B1 · timeout / cancel 路径的 ghost-task 兜底清理。
@@ -236,6 +312,9 @@ loop 关闭时会 warn。
 
 ``client`` 用于 ``wait_for_task_completion`` 热路径复用已创建的
 AsyncClient；留空时保持历史行为，便于单测和旧调用方直接使用本 helper。
+
+R905：得到 200 / 404（任务已经不在队列里）时，把任务从 ``_INFLIGHT_TASKS`` 去掉；
+其它结果它还留在清单里，进程退出时 ``_close_inflight_tasks_sync`` 再试一次。
 
 ### `_retire_detached_cleanup(future: asyncio.Future[None]) -> None`
 
@@ -284,6 +363,12 @@ cancel scope 取消 handler 时，直接写在 ``finally`` 里 ``await`` 的清�
 ``_WEB_UI_LOST_PROBES`` 次被拒绝连接，就调用 ``ensure_web_ui_running`` 重新
 起 Web UI，它会把持久化的任务恢复出来，等待照常继续；没被恢复就是 404，
 马上拿到“请重新调用”的提示。每次中断最多 ``_WEB_UI_REVIVE_MAX`` 次尝试。
+
+【R905 进程退出】上面的清理都靠事件循环，而 stdin 关闭、SIGTERM 时循环马上就结束，
+还没发出去的 close 随 ``asyncio.run`` 一起被取消，任务留在 Web UI 里成了没人在等的
+幽灵。等待没有拿到答案、close 也没得到确认的任务留在 ``_INFLIGHT_TASKS`` 里，
+``ServiceManager.cleanup_all`` 在终止 Web UI 之前由 ``_close_inflight_tasks_sync``
+同步地关掉它们。拿到答案时（本函数的返回值）任务从清单里去掉。
 
 ### `launch_feedback_ui(summary: str, predefined_options: list[str] | None = None, task_id: str | None = None, timeout: int = 300) -> dict[str, Any]`
 

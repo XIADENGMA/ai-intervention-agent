@@ -37,6 +37,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -550,6 +551,27 @@ def health_check_service(config: WebUIConfig) -> bool:
         return False
 
 
+_pre_shutdown_hooks: list[Callable[[], None]] = []
+
+
+def register_pre_shutdown_hook(hook: Callable[[], None]) -> None:
+    """R905：登记一个在 ``ServiceManager.cleanup_all`` 终止任何服务进程**之前**运行的回调。
+
+    ``cleanup_all`` 是 atexit、``server.cleanup_services``（Ctrl-C、异常重试）以及管理器自己
+    的信号处理（它在主线程创建时才装得上）共同经过的一步。需要在 Web UI 还活着的时候做点事
+    （关掉本进程还在等的任务）的模块把回调挂在这里，不用各自去抢 atexit 的先后顺序。
+    同一个回调只登记一次。
+    """
+    if hook not in _pre_shutdown_hooks:
+        _pre_shutdown_hooks.append(hook)
+
+
+def unregister_pre_shutdown_hook(hook: Callable[[], None]) -> None:
+    """R905：``register_pre_shutdown_hook`` 的反操作；回调没登记过就什么也不做。"""
+    if hook in _pre_shutdown_hooks:
+        _pre_shutdown_hooks.remove(hook)
+
+
 class ServiceManager:
     """服务进程生命周期管理器（线程安全单例）"""
 
@@ -720,6 +742,12 @@ class ServiceManager:
         logger.warning(f"端口 {host}:{port} 在 {timeout}秒内未释放")
 
     def cleanup_all(self, shutdown_notification_manager: bool = True) -> None:
+        for hook in tuple(_pre_shutdown_hooks):
+            try:
+                hook()
+            except Exception as e:
+                logger.warning(f"退出前的回调出错（已忽略）: {e}", exc_info=True)
+
         with self._lock:
             processes_to_cleanup = list(self._processes.items())
 

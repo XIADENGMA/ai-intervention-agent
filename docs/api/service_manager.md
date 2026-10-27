@@ -38,6 +38,10 @@
 
 ### `health_check_service(config: WebUIConfig) -> bool`
 
+### `register_pre_shutdown_hook(hook: Callable[[], None]) -> None`
+
+### `unregister_pre_shutdown_hook(hook: Callable[[], None]) -> None`
+
 ### `invalidate_web_ui_config_cache() -> None`
 
 ### `get_web_ui_config() -> tuple[WebUIConfig, int]`

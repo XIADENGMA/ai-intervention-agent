@@ -27,7 +27,9 @@ from ai_intervention_agent.web_ui_routes._request_body import (
     optional_json_object,
 )
 from ai_intervention_agent.web_ui_routes._task_answer import (
+    no_answer_response,
     refused_answer_response,
+    request_holds_an_answer,
 )
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
 
@@ -2466,7 +2468,28 @@ class TaskRoutesMixin:
                     message:
                       type: string
               400:
-                description: 请求参数错误（选项格式不正确）
+                description: |
+                  请求不能用，任务保持未回答：``selected_options`` 不是字符串数组的 JSON 文本
+                  （``error`` 是说明文字，没有 ``status`` 和 ``message``）；或者请求里没有答案
+                  （``error`` 固定为 ``invalid_body``）——不是表单（空体、JSON、纯文本、读不了的
+                  multipart），或者是表单却既没有 ``feedback_text`` 也没有 ``selected_options``，
+                  也没有上传文件
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 仅 ``invalid_body`` 时出现
+                    error:
+                      type: string
+                      description: 取值 ``invalid_body``，或 ``selected_options`` 格式错误时的说明文字
+                    message:
+                      type: string
+                      description: 仅 ``invalid_body`` 时出现；人类可读的说明（语言随请求的 Accept-Language）
               413:
                 description: |
                   请求超过上传上限：整个请求大于 ``MAX_CONTENT_LENGTH``
@@ -2514,6 +2537,16 @@ class TaskRoutesMixin:
 
                 if not task:
                     return jsonify({"success": False, "error": "任务不存在"}), 404
+
+                # R912：下面的 ``request.form.get(...)`` 对任何不是表单的请求体都给出默认值
+                # ""（没有文字）和 "[]"（没有勾选）。没有这一道检查时，空体、装着真答案的
+                # JSON、``null``、读不了的 multipart、没有答案字段的表单都会以空答案完成任务，
+                # 并答 200：agent 把空答案当作用户的回复，页面上的问题消失，真答案再也送不进去
+                # （第二个答案是 409）。这里不收 JSON：本路由只声明表单（``consumes``），三个
+                # 第一方客户端也只发表单。读表单时 Werkzeug 抛的 413 由下面的
+                # ``except HTTPException`` 原样放行（R800）。
+                if not request_holds_an_answer():
+                    return no_answer_response(task_id)
 
                 feedback_text = request.form.get("feedback_text", "")
                 selected_options_raw = request.form.get("selected_options", "[]")

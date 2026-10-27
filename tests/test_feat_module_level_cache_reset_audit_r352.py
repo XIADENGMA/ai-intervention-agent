@@ -75,6 +75,10 @@ KNOWN_CACHES_WITH_RESET: dict[str, tuple[str, str]] = {
         "mcp_tool_call_metrics.py",
         "reset_mcp_tool_call_stats",  # 已存在 (R190)
     ),
+    "_INFLIGHT_TASKS": (
+        "server_feedback.py",
+        "reset_inflight_tasks_for_testing",  # R905：退出时要关闭的任务清单
+    ),
 }
 
 # 不需要 reset 的 module-level state (frozen / immutable / lookup-only /
@@ -87,6 +91,9 @@ EXEMPT_MODULE_STATE: set[str] = {
     "_SERVER_ICONS",  # server.py, computed at import then frozen
     "_pending_acquisitions",  # task_queue.py, transient request-tracking,
     # 函数返回前 try/finally 会 pop
+    "_pre_shutdown_hooks",  # service_manager.py (R905), 退出前回调的登记表：
+    # 登记的都是模块级函数且只登记一次，不是缓存；登记者自己的
+    # reset 夹具（server_feedback.reset_inflight_tasks_for_testing）负责撤销
 }
 
 

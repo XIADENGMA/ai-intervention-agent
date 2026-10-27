@@ -258,6 +258,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   controls); 272 one-point mutants are all caught; 5 host tests (`image-viewer.test.js`) render the real
   panel page in a real VS Code, 4 of them fail on the old `webview.ts`, and 15 one-point mutants of its
   markup are all caught.
+- `BarkNotificationProvider.send` is now one small method per step (R907). It was a single method of
+  203 lines (McCabe 42) that validated the settings, chose the click action, copied the allowed fields
+  of the event, worked out the timeout, posted and judged the answer, and every earlier change to the
+  click link (the loopback guards of R42, the custom schemes of R706, the trimmed address of R823) had
+  been made inside that one nest. `send` is now 31 lines (McCabe 6) and calls `_validated_payload`,
+  `_apply_click_action` (which uses `_click_url`, `_click_url_from_event`, `_click_url_from_template`
+  and `_copy_text`), `_apply_metadata_fields`, `_timeout_seconds` and `_handle_response`; the largest
+  of them is 47 lines (McCabe 7). Nothing that a Bark server or a log reader can see changes: the same
+  request body for the same settings and event, the same timeout, the same return value, and the same
+  log call (level and text) for every reason. A differential run of the old and the new module over
+  54,000 random combinations of settings, event and answer, which reach every statement and branch of
+  the old method, found no difference in the return value, the requests, the log calls or the event
+  afterwards. 137 tests in `test_bark_send_steps_r907.py` pin the behaviour step by step (15 reasons for
+  sending nothing, the body, the click action in all its forms, the timeout, the answer and the three
+  ways a request fails; several are behaviour that no test had looked at: a key of blanks, an empty
+  template, an unreadable timeout, the copy action without metadata, an event whose metadata is
+  `None`). Every one of them passes on the old code too, and 170 one-point mutants of the new code are
+  all caught. The one deliberately silent `except Exception: pass` of the old method (keeping the
+  failure detail on a debug event must never turn a failed push into a crash) moved with the answer
+  handling to `_handle_response`; its entry in the R120 baseline now names it there (two lines).
+
 ### Fixed
 
 - A task could be closed under a user who was still typing (R883). While you type, the page keeps
@@ -551,6 +572,173 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   which fail on the old code; 25 one-point mutants are all caught. Seven older tests that read
   `server._resolve_build_info` or the metrics-module cache now read `process_meta` or pin the
   lookup-only contract.
+- A question that was still waiting for its answer outlived the window that had asked it, and a
+  SIGTERM ended the server with no clean-up at all (R905). When a window is closed while
+  `interactive_feedback` waits, the MCP client closes stdin and the server exits. The clean-up of an
+  abandoned wait (R13, kept out of the caller's cancellation by R775) is a task of the event loop,
+  and the loop ended at once: `asyncio.run` cancelled the task before its first request had come
+  back (the DEBUG log shows the cancellation and then nothing), so the task stayed in the Web UI with
+  nobody left to answer it. Real stdio MCP servers and real Web UI children (Python 3.11) showed
+  four ways to lose it. One window, closed: the Web UI it had started was terminated at exit and the
+  task stayed in `tasks-<port>.json`; the next session on that port restored it and listed it
+  first, as the active task, with the new question behind it, so what the person typed into it went
+  nowhere. Two windows sharing a Web UI, the one that had only used it closed: its task stayed
+  pending in the live Web UI for as long as that lived. The window that had started the Web UI
+  closed while the other still waited: the Web UI came back after 8.7 s (R825) with the dead
+  question active and the live one pending behind it. And SIGTERM, which is what an IDE sends when
+  it does not close stdin first: the process ended on the spot (status -15, no atexit), and the
+  SIGINT / SIGTERM handlers of `ServiceManager` that were meant to catch it had never been installed
+  in a real server, because its first instance is built in the worker thread of `asyncio.to_thread`,
+  where `signal.signal` raises ValueError, which was logged at DEBUG as "not the main thread" and
+  forgotten. `interactive_feedback` now lists every task it creates (`_INFLIGHT_TASKS`) and takes it
+  off the list when the answer was handed to the caller, when a close was confirmed (200 or 404),
+  when the Web UI refused the task (4xx) or when the request never left (connection refused); a 5xx
+  or an unanswered request may come after the queue took the task and keeps it listed. The first
+  listing installs three exit paths for `_close_inflight_tasks_sync`, which closes what is still
+  listed with one synchronous request each, from its own client and without the event loop (1 s for
+  a request, 1.5 s for all of them, proxies ignored): a hook that `ServiceManager.cleanup_all` runs
+  before it terminates anything (Ctrl-C and the retry after an error get there through
+  `cleanup_services`), an atexit callback (a closed stdin), and a SIGTERM handler that closes the
+  tasks and then lets the process die of the signal as before (status -15, at once; the Web UI child
+  is left alone as before), installed only when SIGTERM is at its default. It does not build a
+  `ServiceManager`: one built on the main thread installs handlers whose `KeyboardInterrupt` leaves
+  the interpreter waiting, on its way out, for the thread that reads stdin, and a real server did
+  not exit within 15 s after SIGTERM (the dump of `faulthandler`: the main thread in
+  `threading._shutdown`, the anyio worker thread in the read of stdin). The same four cases, old
+  then new: the snapshot kept the task, then there is none and the next session lists only its own
+  question as active; the task of the closed window stayed pending, then it is gone and the task of
+  the window that still waits is untouched; the revived Web UI held both tasks with the dead one
+  active, then only the live one, active, and its answer is delivered; after SIGTERM the task stayed
+  active in the Web UI that outlived the process, then that Web UI has no task (exit status -15,
+  0.0 s, in both). SIGKILL, a crash and a power cut run no code and leave the task where it was.
+  52 tests in `test_shutdown_closes_waiting_tasks_r905.py` (a real child interpreter against a
+  loopback Web UI, with and without a `ServiceManager` built in a worker thread the way a real server
+  does: the runner cancels the call and the loop ends at once, Ctrl-C, and SIGTERM with a thread
+  blocked on the open stdin pipe; the order in `cleanup_all`; the close requests against a real server
+  and against one that never answers, with a clock the test moves; the exit paths one by one; the
+  list through every way a call can end), 50 of which fail on the old code (4 by behaviour, the rest
+  need the new functions; the 2 that pass are the Ctrl-C ones, which asyncio's own handling already
+  covered); 44 one-point mutants are all caught.
+- A Bark click-link template that could not be rendered cost the whole push (R906).
+  `render_bark_url_template` promised to turn a template it cannot render into an empty URL, after
+  which the push goes out without a link, but it caught only `ValueError` and `IndexError`.
+  `str.format` also raises `AttributeError` for `{task.id}` (the dotted way most systems spell it:
+  `task` is not a placeholder, so it stays the text `{task}`, and a text has no attribute `id`),
+  `{task_id.foo}` and `{event_id.a.b}`; `TypeError` for `{task_id[abc]}`, `{task_id[-1]}` and
+  `{task_id[1:2]}` (a text is indexed by an integer, and `-1` and `1:2` are not integers inside a
+  format field); and `MemoryError` for a width no string can have (`{task_id:>9223372036854775807}`).
+  All of them reached the broad `except` at the end of `BarkNotificationProvider.send`: nothing was
+  posted, `send()` returned `False`, the log held "Bark通知发送失败: 'str' object has no attribute
+  'id'" with a traceback and nothing that named the template, and the *Test* button of the settings
+  page answered 500 "send failed" although the Bark server was fine. Against a real HTTP server
+  standing in for Bark, old then new: no request, `send()` false and the Test button 500; then one
+  `POST /push` without a `url`, `send()` true and the Test button 200. A template with a brace that
+  is not closed or an index past the end was already handled and is unchanged. The renderer now
+  catches `Exception` (not `BaseException`: an interrupt is not a bad template), logs one warning
+  that names the template and the kind of failure (`error=AttributeError: ...`) and returns the
+  empty URL. `docs/configuration.md` says what happens to a template that cannot be rendered and
+  that a `{name}` that is not a placeholder stays in the URL as written. 113 tests in
+  `test_bark_url_template_never_drops_a_push_r906.py` (every kind of broken template against the
+  renderer, against the provider with a real loopback Bark server, and against the Test button of the
+  Web UI; controls that a template which renders gives the same text as before; 6000 seeded random
+  templates that must never raise and must give what plain `str.format_map` gives whenever it can
+  render them; also run on Python 3.12, 3.13 and 3.14), 48 of which fail on the old code (4 only by
+  the new wording of the warning); 19 one-point mutants are all caught.
+- Neither contributor-guide catalogue was a table, and one generated API page was a single block of
+  code (R908). On GitHub and in the Markdown preview of an editor a table is shown only when its
+  delimiter row has as many cells as its header, every cell of a row beyond the width of the header
+  is dropped, and a fenced block that is opened and never closed turns the rest of its page into
+  code; none of that can be seen in the source. Checking every Markdown file of the repository
+  against those rules, and rendering the pages in question with markdown-it, found four things. The
+  delimiter row of the catalogue in `docs/contributor-guide-invariant-tests.md` and in its zh-CN
+  twin had five cells under a header of four (since 2026-07-26), so neither catalogue, some 280 rows
+  each, was a table: both showed as raw pipes. Behind that were 19 rows that would have lost their
+  last cells once the delimiter was right: 11 ended in a stray empty cell and 8 had a pipe in a code
+  span, which splits a cell unless it is escaped. `docs/code-reviews/cr21.md` had one more row with
+  a pipe in a code span. And in `docs/api.zh-CN/text_safety.md` the explanation and the whole list
+  of functions were one block of code, because the module docstring of R845 underlined a heading
+  with a row of tildes (the reStructuredText way), which Markdown reads as a fence that never closes
+  (no heading, one code block; now an `h2` for the explanation, an `h2` for the functions and an
+  `h3` for each of the four). The delimiter rows have four cells, the stray cells are gone, the
+  pipes in cells are escaped, and the docstring underlines its heading with dashes (the generated
+  page follows; nothing else changes). 75 tests in `test_markdown_renders_as_written_r908.py` check
+  every Markdown file of the repository (the delimiter row and every body row against the header
+  under the GFM rule; no file ending inside a fence under the CommonMark rule), compare with
+  markdown-it (each catalogue is one table of four cells a row; the generated page has its sections
+  and no code block) and pin the checker with its own controls and with the file listing on small
+  trees (also run on Python 3.12, 3.13 and 3.14); 5 of them fail on the old documents, and 64
+  one-point mutants of the checker are all caught.
+- The Test button of the Bark settings left an HTTP connection open for every press (R909). `POST
+  /api/test-bark` builds a `BarkNotificationProvider` from the form of the settings page for each
+  press, sends one push through it and answers; the provider owns an `httpx.Client`, and nothing
+  ever closed it. Letting it go out of scope did not close the connection either: an `httpx`
+  response is part of a reference cycle (httpx 0.28.1), and through its stream it keeps the
+  connection pool, and the idle keep-alive connection in it, alive until the cyclic garbage
+  collector happens to run. Against a Bark stand-in that keeps its connections open, with the
+  collector switched off, the server still had 1, 2 and 3 connections open after the first, second
+  and third press (none after `gc.collect()`), and under the `filterwarnings = error` of the test
+  suite the leaked sockets surfaced as `ResourceWarning: unclosed <socket.socket ...>` in whichever
+  test the collector happened to run in. The route now closes the provider in a `finally` around the
+  send, and builds it after the event, so an event that cannot be built no longer leaves one behind;
+  the server sees no connection open after any press, however it ended. The answers are unchanged.
+  12 tests in `test_test_bark_closes_its_provider_r909.py` use a real loopback Bark server and the
+  real provider (the push goes through; the server refuses it with a reason; the address is rejected
+  before anything leaves; `send` raises; the event cannot be built; three presses in a row; the
+  connection ends with the garbage collector off; the five answers that must not change; also run on
+  Python 3.12, 3.13 and 3.14). The 7 about closing fail on the old code and the 5 about the answers
+  pass on both; 8 one-point mutants of the change are all caught.
+- A link in the Chinese troubleshooting guide pointed at a section that does not exist (R910).
+  `docs/troubleshooting.zh-CN.md`, in the entry about a client that gave up on a call that had been
+  silent for too long, sent the reader to `configuration.zh-CN.md#feedback` (since commit e46e1e8f).
+  That is the anchor of the English page. The Chinese heading reads `feedback（反馈/超时）`, and a
+  renderer makes the anchor `feedback反馈超时` of it: the full-width parentheses and the slash are
+  dropped, the Chinese words stay. `#feedback` matched nothing, so the link opened the top of a
+  456-line page, while its English twin linked the section properly. The link check that already
+  existed (`test_docs_links_no_rot.py`) stops at the `#`, so nothing could have noticed; it was the
+  only dead one of the 41 anchor links in the Markdown of the repository. The link now carries the
+  right anchor. 62 tests in `test_markdown_anchor_links_resolve_r910.py` parse every Markdown file
+  with markdown-it, collect the anchors (headings, underlined ones too, and the `id` and `name` of
+  raw HTML) and the links (reference style too; code spans and fenced blocks excluded), and check
+  each link that has a fragment and points into a Markdown file that exists; a dead one is reported
+  with its file, line, destination and the anchors it probably meant. The rule that turns a heading
+  into an anchor is GitHub's, and it was checked against `github-slugger` 2.0.0, the npm package
+  that implements it: 30 headings whose expected anchors come from the package, all 4,443 headings of
+  the repository, 400 random sequences of repeated headings (the numbering and its collisions), every
+  Unicode code point (770 of 1.1 million differ: circled capital letters and scripts newer than the
+  package) and 200,000 random strings of the characters headings are made of (no difference). 1 of
+  the 62 fails on the old document, and 66 one-point mutants of the checker and of the
+  documents are all caught.
+- `POST /api/tasks/<id>/submit`, and `POST /api/submit` for forms, ended a question with an empty
+  answer, and answered `200`, when the request held no answer (R912). The route the page and the VS
+  Code panel use reads `request.form.get("feedback_text", "")` and
+  `request.form.get("selected_options", "[]")`, and a request that is not a form gives it both
+  defaults. So no body at all, a JSON document that held the real answer (the text and the ticks
+  were thrown away and the sender was told "submitted"), `null`, an array, JSON that does not
+  parse, plain text, bytes, a multipart body that Werkzeug cannot read (no boundary, a boundary
+  that does not match, cut off, zero bytes), an answer that sat in the query string, and a form
+  that has other fields only (`user_input=...`) all completed the question with
+  `{"user_input": "", "selected_options": []}`. The agent takes that for the user's reply, the
+  question disappears from the page, and the real answer sent afterwards is a `409` (R851). R829
+  had closed the same hole for the unreadable bodies of `/api/submit`; its form branch still took
+  a form with no answer field in it (`user_input=...`, a few junk pairs) and completed the task it
+  named, or the active one. On the real stdio MCP server with its Web UI, each of six such bodies
+  on the task route, and four such forms on `/api/submit`, made the agent's `interactive_feedback`
+  call return "用户未提供任何内容" (the user provided nothing). A request that has neither
+  `feedback_text` nor `selected_options` (empty or not, with other fields beside them or not) and
+  no uploaded file is now `400 {"success": false, "status": "error", "error": "invalid_body",
+  "message": ...}` on both routes (one helper holds the rule), with the message in English,
+  Simplified and Traditional Chinese naming both fields and both encodings; the question stays
+  open and untouched, with no status event, and the next proper form is taken. The page, the VS
+  Code panel and the auto-resubmit always send both fields, also when nothing was typed or ticked,
+  so nothing they send changes: on the same real server those bodies are `400` and the agent
+  keeps waiting until a form arrives, and a real Chrome 156 typing into the real page gets `200`
+  and the agent receives the typed text. What R829 decided stays: on `/api/submit` a JSON object,
+  an empty one included, is an answer for the active task (the R348 baseline posts `{}`), and the
+  unreadable JSON bodies keep their own `invalid_json` / `invalid_body` answers. The checks keep
+  their order: `404` for a task that is not there, then the body, then the old `selected_options`
+  `400`s, then the `409`. The task route still takes no JSON (its OpenAPI text says
+  `multipart/form-data` and now lists the `400`; the `/api/submit` text names the form case and
+  `success`). 149 tests, 105 of which fail on the old code; 44 one-point mutants are all caught.
 
 ## [1.9.0] - 2026-10-25
 

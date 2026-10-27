@@ -24,7 +24,15 @@ Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。
 
 ### `render_bark_url_template(template: str, params: dict[str, Any]) -> str`
 
-安全渲染 Bark 点击 URL 模板。
+安全渲染 Bark 点击 URL 模板；任何渲染失败都退化为空 URL，不抛异常。
+
+模板是 ``str.format`` 语法，``params`` 里没有的名字原样保留（``{foo}`` 渲染为
+``{foo}``）。模板写坏时——括号不成对、``{0}`` / ``{task_id[99]}`` 越界、
+``{task_id.foo}`` 取不存在的属性、``{task_id[abc]}`` 用非整数下标、格式说明符
+非法——一律记 warning 并返回空串：调用方 ``BarkNotificationProvider.send`` 据此
+发出不带点击链接的推送，而不是因为一个异常把整条推送丢掉（R906：此前只接住
+``ValueError`` / ``IndexError``，``AttributeError`` / ``TypeError`` 会一路抛到
+``send`` 最外层，推送整条没发出去）。
 
 ### `create_notification_providers(config) -> dict[NotificationType, BaseNotificationProvider]`
 

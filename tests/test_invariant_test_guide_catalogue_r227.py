@@ -241,5 +241,61 @@ class TestRecentInvariantsCataloged(unittest.TestCase):
         )
 
 
+# R906 follow-up: one catalogue row per line.
+#
+# The commit of R906 put its row on the end of the R905 line in both guides (the newline went missing), so
+# each table showed one row of eight cells where two rows belonged, and the second test never had a row of
+# its own. Nothing noticed: every guard above only asks whether a test path is *mentioned* somewhere. A row
+# is a cell with an id, a cell with the test path and two more cells; two of those openers on one line
+# can only be two rows that ran together.
+_ROW_OPENER_RE = re.compile(
+    r"\|[ \t]*[^|`\n]+?[ \t]*\|[ \t]*`tests/test_[A-Za-z0-9_]+\.py`[ \t]*\|"
+)
+
+
+def _lines_holding_more_than_one_row(guide: Path) -> list[int]:
+    lines = guide.read_text(encoding="utf-8").split("\n")
+    return [
+        number
+        for number, line in enumerate(lines, start=1)
+        if len(_ROW_OPENER_RE.findall(line)) > 1
+    ]
+
+
+class TestEveryCatalogueRowHasItsOwnLine(unittest.TestCase):
+    def test_en_guide_has_no_two_rows_on_one_line(self) -> None:
+        self.assertEqual(
+            _lines_holding_more_than_one_row(GUIDE_EN),
+            [],
+            "EN guide: a catalogue row was appended to the end of the previous row's line "
+            "(a missing newline); the table then shows one wide row instead of two.",
+        )
+
+    def test_zh_guide_has_no_two_rows_on_one_line(self) -> None:
+        self.assertEqual(
+            _lines_holding_more_than_one_row(GUIDE_ZH),
+            [],
+            "zh-CN guide: a catalogue row was appended to the end of the previous row's line "
+            "(a missing newline); the table then shows one wide row instead of two.",
+        )
+
+    def test_the_check_sees_two_rows_on_one_line(self) -> None:
+        # a control for the pattern itself: it must fire on the shape the R906 commit left behind,
+        # and stay quiet on two rows that are on two lines
+        row_a = "| R905    | `tests/test_a_r905.py`   | Pattern A | text of a. |"
+        row_b = "| R906    | `tests/test_b_r906.py`   | Pattern B | text of b. |"
+        glued = row_a + row_b[1:]
+        self.assertEqual(len(_ROW_OPENER_RE.findall(glued)), 2)
+        self.assertEqual(len(_ROW_OPENER_RE.findall(row_a)), 1)
+        self.assertEqual(len(_ROW_OPENER_RE.findall(row_b)), 1)
+        self.assertEqual(
+            [
+                len(_ROW_OPENER_RE.findall(line))
+                for line in (row_a + "\n" + row_b).split("\n")
+            ],
+            [1, 1],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

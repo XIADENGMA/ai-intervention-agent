@@ -150,6 +150,9 @@ CALLS: dict[str, dict[int | None, set[str]]] = {
     "refused_answer_response": answers(
         _function(ROUTES / "_task_answer.py", "refused_answer_response")
     )[0],
+    "no_answer_response": answers(
+        _function(ROUTES / "_task_answer.py", "no_answer_response")
+    )[0],
 }
 # What the app answers for every route.
 APP_WIDE: dict[int, set[str]] = {

@@ -104,8 +104,8 @@
     },
     {
       "file": "src/ai_intervention_agent/notification_providers.py",
-      "lineno": 527,
-      "qualified_name": "BarkNotificationProvider.send"
+      "lineno": 501,
+      "qualified_name": "BarkNotificationProvider._handle_response"
     },
     {
       "file": "src/ai_intervention_agent/server_config.py",

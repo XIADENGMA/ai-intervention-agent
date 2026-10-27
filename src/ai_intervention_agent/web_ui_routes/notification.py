@@ -324,7 +324,6 @@ class NotificationRoutesMixin:
                             self.bark_url_template = test_url_template
 
                     temp_config = TempConfig()
-                    bark_provider = BarkNotificationProvider(temp_config)
 
                     test_metadata: dict[str, Any] = {
                         "test": True,
@@ -349,7 +348,17 @@ class NotificationRoutesMixin:
                         metadata=test_metadata,
                     )
 
-                    success = bark_provider.send(test_event)
+                    # R909: the provider owns an HTTP client and lives for this one press of
+                    # the button, so it is closed here. Left to the garbage collector, the
+                    # connection to the Bark server stayed open until the cyclic collector ran
+                    # (an httpx response is part of a reference cycle that keeps the pool, and
+                    # the idle connection in it, alive after the client is gone). ``close()``
+                    # does not raise, so it cannot hide how the push ended.
+                    bark_provider = BarkNotificationProvider(temp_config)
+                    try:
+                        success = bark_provider.send(test_event)
+                    finally:
+                        bark_provider.close()
 
                     if success:
                         return jsonify(

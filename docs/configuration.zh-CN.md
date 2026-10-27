@@ -452,3 +452,5 @@ bark_url_template = "shortcuts://run-shortcut?name=ai%20intervention%20agent"
 > `bark_url_template` 接受任意 `scheme://` 深链（不限于 http/https）；
 > 快捷指令名称含空格时需 URL 编码（空格 → `%20`）。若想点击通知直接用
 > 浏览器打开对应任务页，保持默认值 `{base_url}/?task_id={task_id}` 即可。
+>
+> 占位符只有 `{task_id}`、`{event_id}`、`{base_url}`；其他 `{名称}` 会原样留在 URL 里。模板无法渲染时（花括号没有配对、`{task.id}`、`{task_id[abc]}` 这类写法），推送照常发出，只是不带点击链接，日志里有一条指明该模板的警告。

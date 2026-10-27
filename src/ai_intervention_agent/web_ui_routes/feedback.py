@@ -19,7 +19,9 @@ from ai_intervention_agent.web_ui_routes._request_body import (
     require_json_object,
 )
 from ai_intervention_agent.web_ui_routes._task_answer import (
+    no_answer_response,
     refused_answer_response,
+    request_holds_an_answer,
 )
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
 
@@ -179,10 +181,17 @@ class FeedbackRoutesMixin:
                       type: boolean
                       description: 提交后是否清空 textarea (前端 UX 提示)
               400:
-                description: 请求体不能用（只出现在既没有文件也没有表单字段、按 JSON 读体的提交上）
+                description: |
+                  请求体不能用，任务保持未回答：表单里既没有 ``feedback_text`` 也没有
+                  ``selected_options``（也没有文件）；或者既没有文件也没有表单字段，按 JSON 读体时
+                  读不了（空体、纯文本、语法错、嵌套过深）或不是 JSON 对象
                 schema:
                   type: object
                   properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 仅表单里没有答案时出现
                     status:
                       type: string
                       enum: [error]
@@ -190,7 +199,7 @@ class FeedbackRoutesMixin:
                     error:
                       type: string
                       enum: [invalid_json, invalid_body, invalid_value]
-                      description: invalid_json=无法解析（空体、语法错、含嵌套超过 32 层）/缺 JSON Content-Type，invalid_body=不是 JSON 对象，invalid_value=task_id / feedback_text / user_input 不是字符串
+                      description: invalid_json=无法解析（空体、语法错、含嵌套超过 32 层）/缺 JSON Content-Type，invalid_body=不是 JSON 对象，或表单里没有答案，invalid_value=task_id / feedback_text / user_input 不是字符串
                     fields:
                       type: array
                       items:
@@ -279,6 +288,11 @@ class FeedbackRoutesMixin:
                     request, include_metadata=True
                 )
             elif request.form:
+                # R912：表单里既没有 feedback_text 也没有 selected_options（也没有文件）
+                # 不是答案：原来取默认值，以空答案完成目标任务并答 200，与
+                # /api/tasks/<id>/submit 的同一个洞一起堵上。JSON 对象照旧（R829）。
+                if not request_holds_an_answer():
+                    return no_answer_response()
                 requested_task_id = request.form.get("task_id", "").strip()
                 feedback_text = request.form.get("feedback_text", "").strip()
                 selected_options_str = request.form.get("selected_options", "[]")

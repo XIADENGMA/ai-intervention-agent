@@ -195,6 +195,19 @@ R25.2: ``except httpx.HTTPError`` 在函数体内引用 ``httpx``，但走到这
 走 LEGB 查询，``httpx`` 是模块级名（来自 ``TYPE_CHECKING`` block 在运行期不存在），
 所以这里需要再次本地 import 把 ``httpx`` 引入函数局部命名空间。
 
+### `register_pre_shutdown_hook(hook: Callable[[], None]) -> None`
+
+R905：登记一个在 ``ServiceManager.cleanup_all`` 终止任何服务进程**之前**运行的回调。
+
+``cleanup_all`` 是 atexit、``server.cleanup_services``（Ctrl-C、异常重试）以及管理器自己
+的信号处理（它在主线程创建时才装得上）共同经过的一步。需要在 Web UI 还活着的时候做点事
+（关掉本进程还在等的任务）的模块把回调挂在这里，不用各自去抢 atexit 的先后顺序。
+同一个回调只登记一次。
+
+### `unregister_pre_shutdown_hook(hook: Callable[[], None]) -> None`
+
+R905：``register_pre_shutdown_hook`` 的反操作；回调没登记过就什么也不做。
+
 ### `invalidate_web_ui_config_cache() -> None`
 
 CR#16 F-5：清空 ``get_web_ui_config()`` 的 TTL 缓存（public helper）。

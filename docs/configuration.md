@@ -492,3 +492,8 @@ bark_url_template = "shortcuts://run-shortcut?name=ai%20intervention%20agent"
 > http/https); URL-encode spaces in the shortcut name (space → `%20`).
 > To open the task page directly in the browser instead, keep the default
 > `{base_url}/?task_id={task_id}`.
+>
+> `{task_id}`, `{event_id}` and `{base_url}` are the placeholders; any other
+> `{name}` stays in the URL as written. A template that cannot be rendered (a brace
+> that is not closed, `{task.id}`, `{task_id[abc]}`) does not stop the push: it goes
+> out without a click link, and the log carries one warning that names the template.

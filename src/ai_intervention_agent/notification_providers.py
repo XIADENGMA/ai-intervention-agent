@@ -83,7 +83,16 @@ def _coerce_bark_format_value(value: Any) -> str:
 
 
 def render_bark_url_template(template: str, params: dict[str, Any]) -> str:
-    """安全渲染 Bark 点击 URL 模板。"""
+    """安全渲染 Bark 点击 URL 模板；任何渲染失败都退化为空 URL，不抛异常。
+
+    模板是 ``str.format`` 语法，``params`` 里没有的名字原样保留（``{foo}`` 渲染为
+    ``{foo}``）。模板写坏时——括号不成对、``{0}`` / ``{task_id[99]}`` 越界、
+    ``{task_id.foo}`` 取不存在的属性、``{task_id[abc]}`` 用非整数下标、格式说明符
+    非法——一律记 warning 并返回空串：调用方 ``BarkNotificationProvider.send`` 据此
+    发出不带点击链接的推送，而不是因为一个异常把整条推送丢掉（R906：此前只接住
+    ``ValueError`` / ``IndexError``，``AttributeError`` / ``TypeError`` 会一路抛到
+    ``send`` 最外层，推送整条没发出去）。
+    """
     tpl = (template or "").strip()
     if not tpl:
         return ""
@@ -94,9 +103,10 @@ def render_bark_url_template(template: str, params: dict[str, Any]) -> str:
 
     try:
         return _BARK_TEMPLATE_FORMATTER.vformat(tpl, (), safe_params).strip()
-    except (ValueError, IndexError) as exc:
+    except Exception as exc:
         logger.warning(
-            f"渲染 Bark URL 模板失败: template={tpl!r} error={exc}; 已退化为空 URL"
+            f"渲染 Bark URL 模板失败: template={tpl!r} "
+            f"error={type(exc).__name__}: {exc}; 已退化为空 URL"
         )
         return ""
 
@@ -285,6 +295,217 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 f"{type(e).__name__}: {self._sanitize_error_text(str(e))}",
             )
 
+    def _validated_payload(
+        self, event: NotificationEvent
+    ) -> tuple[str, dict[str, Any]] | None:
+        """校验配置与事件文本，返回 ``(Bark 服务器地址, 请求体)``。
+
+        不该发送时记一条日志并返回 ``None``（日志的级别和措辞按原因区分：配置不完整、
+        地址格式无效、设备密钥为空、标题为空、消息为空）。
+        """
+        # 地址多半是从聊天、笔记里复制来的，末尾带一个空格或换行很常见：空格会变成
+        # ``POST /push%20``（404），换行直接让 httpx 抛 InvalidURL；而协议头本来就不区分
+        # 大小写（RFC 3986 §3.1），``HTTPS://`` 同样有效（R823）。
+        bark_url = _stripped(self.config.bark_url)
+        if not bark_url or not self.config.bark_device_key:
+            logger.warning("Bark配置不完整，跳过发送")
+            return None
+
+        if not bark_url.lower().startswith(("http://", "https://")):
+            logger.error(f"Bark URL 格式无效: {bark_url}")
+            return None
+
+        device_key_stripped = self.config.bark_device_key.strip()
+        title_stripped = event.title.strip() if event.title else ""
+        message_stripped = event.message.strip() if event.message else ""
+
+        if not device_key_stripped:
+            logger.error("Bark device_key 为空字符串")
+            return None
+
+        if not title_stripped:
+            logger.warning(f"Bark通知标题为空，跳过发送: {event.id}")
+            return None
+
+        if not message_stripped:
+            logger.warning(f"Bark通知消息为空，跳过发送: {event.id}")
+            return None
+
+        bark_data: dict[str, Any] = {
+            "title": title_stripped,
+            "body": message_stripped,
+            "device_key": device_key_stripped,
+        }
+
+        bark_icon = _stripped(self.config.bark_icon)
+        if bark_icon:
+            bark_data["icon"] = bark_icon
+
+        return bark_url, bark_data
+
+    def _apply_click_action(
+        self, bark_data: dict[str, Any], event: NotificationEvent
+    ) -> None:
+        """按 ``bark_action`` 往请求体里加点击行为：``url`` / ``copy`` / 直接给出的 http(s) 地址。"""
+        bark_action = (self.config.bark_action or "").strip()
+        if not bark_action or bark_action == "none":
+            return
+
+        if bark_action == "url":
+            url_value = self._click_url(event)
+            if url_value:
+                bark_data["url"] = url_value
+            else:
+                logger.debug(
+                    f"Bark 点击行为为 url，但未提供可用链接，已忽略: {event.id}"
+                )
+        elif bark_action == "copy":
+            bark_data["copy"] = self._copy_text(event) or bark_data["body"]
+        elif bark_action.lower().startswith(("http://", "https://")):
+            if _bark_url_is_loopback(bark_action):
+                logger.warning(
+                    f"bark_action 是回环地址 {bark_action!r}，已抑制 url 字段；"
+                    "请改用具体的 LAN/公网 URL 或 url/copy 枚举"
+                )
+            else:
+                bark_data["url"] = bark_action
+        else:
+            logger.debug(f"未知 bark_action='{bark_action}'，已忽略: {event.id}")
+
+    def _click_url(self, event: NotificationEvent) -> str | None:
+        """点击跳转链接：事件自带的优先，没有可用的再按 ``bark_url_template`` 渲染。"""
+        return self._click_url_from_event(event) or self._click_url_from_template(event)
+
+    @staticmethod
+    def _click_url_from_event(event: NotificationEvent) -> str | None:
+        """事件元数据里第一个合法且不是回环地址的链接（``url`` / ``web_ui_url`` / ``action_url`` / ``link``）。"""
+        if not event.metadata:
+            return None
+        for key in ("url", "web_ui_url", "action_url", "link"):
+            value = event.metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                candidate = value.strip()
+                if not _is_acceptable_bark_click_url(candidate):
+                    logger.warning(
+                        f"event.metadata['{key}']={candidate!r} "
+                        "不是合法跳转 URL，已忽略此候选"
+                    )
+                    continue
+                if _bark_url_is_loopback(candidate):
+                    logger.warning(
+                        f"event.metadata['{key}']={candidate!r} 是回环地址，"
+                        "手机端 Bark 无法跳转，已忽略此候选"
+                    )
+                    continue
+                return candidate
+        return None
+
+    def _click_url_from_template(self, event: NotificationEvent) -> str | None:
+        """用 ``bark_url_template`` 渲染点击链接；渲染不出合法、非回环的 URL 时返回 ``None``。"""
+        template = getattr(self.config, "bark_url_template", "") or ""
+        if not template:
+            return None
+
+        base_url = ""
+        if event.metadata and isinstance(event.metadata.get("base_url"), str):
+            base_url = event.metadata.get("base_url", "")
+        task_id = _coerce_bark_format_value((event.metadata or {}).get("task_id", ""))
+        params: dict[str, Any] = {
+            # ``{task_id}`` 是 URL 的一个分量，先做百分号编码：
+            # ``#`` / ``&`` / 空格否则会让点击链接指向别处或失效。
+            "task_id": quote(task_id, safe=""),
+            "event_id": event.id or "",
+            "base_url": (base_url or "").rstrip("/"),
+        }
+        rendered = render_bark_url_template(template, params)
+
+        if _is_acceptable_bark_click_url(rendered):
+            if _bark_url_is_loopback(rendered):
+                logger.warning(
+                    f"bark_url_template 渲染结果命中回环地址 {rendered!r}，"
+                    "已抑制 url 字段；建议将 network_security.bind_interface "
+                    "改为 0.0.0.0，或在设置面板配置 external_base_url "
+                    "为 LAN/公网 URL"
+                )
+                return None
+            return rendered
+
+        if rendered:
+            hint = ""
+            if "{base_url}" in template and not base_url:
+                hint = (
+                    "；base_url 为空（监听地址 network_security.bind_interface "
+                    "是回环地址且没有配置 external_base_url），"
+                    "请在设置面板配置 web_ui.external_base_url 或启用 mDNS"
+                )
+            logger.warning(
+                f"bark_url_template 渲染结果不是合法 URL，已忽略: {rendered!r}{hint}"
+            )
+        return None
+
+    @staticmethod
+    def _copy_text(event: NotificationEvent) -> str | None:
+        """事件元数据里指定的要复制的文本（``copy`` / ``copy_text`` / ``copyContent``），没有则 ``None``。"""
+        if event.metadata:
+            for key in ("copy", "copy_text", "copyContent"):
+                value = event.metadata.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
+    def _apply_metadata_fields(
+        self, bark_data: dict[str, Any], event: NotificationEvent
+    ) -> None:
+        """把元数据里允许透传的标量字段（``group`` / ``level`` / ``sound`` ……）并入请求体。"""
+        if not event.metadata:
+            return
+        for key, value in event.metadata.items():
+            if key in self._RESERVED_KEYS:
+                continue
+            if key not in self._ALLOWED_METADATA_KEYS:
+                continue
+            if isinstance(value, (str, int, float, bool, type(None))):
+                bark_data[key] = value
+
+    def _timeout_seconds(self) -> int:
+        """请求超时秒数：取 ``bark_timeout``，至少 1；读不出整数时用 10。"""
+        try:
+            return max(int(getattr(self.config, "bark_timeout", 10)), 1)
+        except (TypeError, ValueError):
+            return 10
+
+    def _handle_response(self, event: NotificationEvent, response: Any) -> bool:
+        """按状态码判定成功与否；失败时脱敏记日志，调试 / 测试事件还把详情留在 ``event.metadata``。"""
+        if 200 <= response.status_code < 300:
+            logger.info(
+                f"Bark通知发送成功: {event.id} (状态码: {response.status_code})"
+            )
+            return True
+
+        try:
+            error_detail = response.json()
+        except Exception:
+            error_detail = response.text
+        sanitized_detail = self._sanitize_error_text(str(error_detail))
+
+        try:
+            is_debug = bool(getattr(self.config, "debug", False))
+            is_test_event = bool(
+                isinstance(event.metadata, dict) and event.metadata.get("test")
+            )
+            if is_debug or is_test_event:
+                event.metadata["bark_error"] = {
+                    "status_code": response.status_code,
+                    "detail": sanitized_detail[:800],
+                }
+        except Exception:
+            pass
+
+        logger.error(
+            f"Bark通知发送失败: {response.status_code} - {sanitized_detail[:800]}"
+        )
+        return False
+
     def send(self, event: NotificationEvent) -> bool:
         """HTTP POST 发送通知到 Bark，返回成功与否"""
         try:
@@ -292,192 +513,20 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 logger.debug("Bark通知已禁用")
                 return False
 
-            # 地址多半是从聊天、笔记里复制来的，末尾带一个空格或换行很常见：空格会变成
-            # ``POST /push%20``（404），换行直接让 httpx 抛 InvalidURL；而协议头本来就不区分
-            # 大小写（RFC 3986 §3.1），``HTTPS://`` 同样有效（R823）。
-            bark_url = _stripped(self.config.bark_url)
-            if not bark_url or not self.config.bark_device_key:
-                logger.warning("Bark配置不完整，跳过发送")
+            checked = self._validated_payload(event)
+            if checked is None:
                 return False
+            bark_url, bark_data = checked
 
-            if not bark_url.lower().startswith(("http://", "https://")):
-                logger.error(f"Bark URL 格式无效: {bark_url}")
-                return False
-
-            device_key_stripped = self.config.bark_device_key.strip()
-            title_stripped = event.title.strip() if event.title else ""
-            message_stripped = event.message.strip() if event.message else ""
-
-            if not device_key_stripped:
-                logger.error("Bark device_key 为空字符串")
-                return False
-
-            if not title_stripped:
-                logger.warning(f"Bark通知标题为空，跳过发送: {event.id}")
-                return False
-
-            if not message_stripped:
-                logger.warning(f"Bark通知消息为空，跳过发送: {event.id}")
-                return False
-
-            bark_data = {
-                "title": title_stripped,
-                "body": message_stripped,
-                "device_key": device_key_stripped,
-            }
-
-            bark_icon = _stripped(self.config.bark_icon)
-            if bark_icon:
-                bark_data["icon"] = bark_icon
-
-            bark_action = (self.config.bark_action or "").strip()
-            if bark_action and bark_action != "none":
-                if bark_action in ("url", "copy"):
-                    if bark_action == "url":
-                        url_value = None
-                        if event.metadata:
-                            for key in ("url", "web_ui_url", "action_url", "link"):
-                                value = event.metadata.get(key)
-                                if isinstance(value, str) and value.strip():
-                                    candidate = value.strip()
-                                    if not _is_acceptable_bark_click_url(candidate):
-                                        logger.warning(
-                                            f"event.metadata['{key}']={candidate!r} "
-                                            "不是合法跳转 URL，已忽略此候选"
-                                        )
-                                        continue
-                                    if _bark_url_is_loopback(candidate):
-                                        logger.warning(
-                                            f"event.metadata['{key}']={candidate!r} 是回环地址，"
-                                            "手机端 Bark 无法跳转，已忽略此候选"
-                                        )
-                                        continue
-                                    url_value = candidate
-                                    break
-
-                        if not url_value:
-                            template = (
-                                getattr(self.config, "bark_url_template", "") or ""
-                            )
-                            if template:
-                                base_url = ""
-                                if event.metadata and isinstance(
-                                    event.metadata.get("base_url"), str
-                                ):
-                                    base_url = event.metadata.get("base_url", "")
-                                task_id = _coerce_bark_format_value(
-                                    (event.metadata or {}).get("task_id", "")
-                                )
-                                params: dict[str, Any] = {
-                                    # ``{task_id}`` 是 URL 的一个分量，先做百分号编码：
-                                    # ``#`` / ``&`` / 空格否则会让点击链接指向别处或失效。
-                                    "task_id": quote(task_id, safe=""),
-                                    "event_id": event.id or "",
-                                    "base_url": (base_url or "").rstrip("/"),
-                                }
-                                rendered = render_bark_url_template(template, params)
-
-                                if _is_acceptable_bark_click_url(rendered):
-                                    if _bark_url_is_loopback(rendered):
-                                        logger.warning(
-                                            f"bark_url_template 渲染结果命中回环地址 {rendered!r}，"
-                                            "已抑制 url 字段；建议将 network_security.bind_interface "
-                                            "改为 0.0.0.0，或在设置面板配置 external_base_url "
-                                            "为 LAN/公网 URL"
-                                        )
-                                    else:
-                                        url_value = rendered
-                                elif rendered:
-                                    hint = ""
-                                    if "{base_url}" in template and not base_url:
-                                        hint = (
-                                            "；base_url 为空（监听地址 network_security.bind_interface "
-                                            "是回环地址且没有配置 external_base_url），"
-                                            "请在设置面板配置 web_ui.external_base_url 或启用 mDNS"
-                                        )
-                                    logger.warning(
-                                        f"bark_url_template 渲染结果不是合法 URL，已忽略: "
-                                        f"{rendered!r}{hint}"
-                                    )
-
-                        if url_value:
-                            bark_data["url"] = url_value
-                        else:
-                            logger.debug(
-                                f"Bark 点击行为为 url，但未提供可用链接，已忽略: {event.id}"
-                            )
-                    else:
-                        copy_value = None
-                        if event.metadata:
-                            for key in ("copy", "copy_text", "copyContent"):
-                                value = event.metadata.get(key)
-                                if isinstance(value, str) and value.strip():
-                                    copy_value = value.strip()
-                                    break
-                        bark_data["copy"] = copy_value or message_stripped
-                else:
-                    if bark_action.lower().startswith(("http://", "https://")):
-                        if _bark_url_is_loopback(bark_action):
-                            logger.warning(
-                                f"bark_action 是回环地址 {bark_action!r}，已抑制 url 字段；"
-                                "请改用具体的 LAN/公网 URL 或 url/copy 枚举"
-                            )
-                        else:
-                            bark_data["url"] = bark_action
-                    else:
-                        logger.debug(
-                            f"未知 bark_action='{bark_action}'，已忽略: {event.id}"
-                        )
-
-            if event.metadata:
-                for key, value in event.metadata.items():
-                    if key in self._RESERVED_KEYS:
-                        continue
-                    if key not in self._ALLOWED_METADATA_KEYS:
-                        continue
-                    if isinstance(value, (str, int, float, bool, type(None))):
-                        bark_data[key] = value
-
-            try:
-                timeout_seconds = max(int(getattr(self.config, "bark_timeout", 10)), 1)
-            except (TypeError, ValueError):
-                timeout_seconds = 10
+            self._apply_click_action(bark_data, event)
+            self._apply_metadata_fields(bark_data, event)
 
             response = self.session.post(
                 bark_url,
                 json=bark_data,
-                timeout=timeout_seconds,
+                timeout=self._timeout_seconds(),
             )
-
-            if 200 <= response.status_code < 300:
-                logger.info(
-                    f"Bark通知发送成功: {event.id} (状态码: {response.status_code})"
-                )
-                return True
-            else:
-                try:
-                    error_detail = response.json()
-                except Exception:
-                    error_detail = response.text
-                sanitized_detail = self._sanitize_error_text(str(error_detail))
-
-                try:
-                    is_debug = bool(getattr(self.config, "debug", False))
-                    is_test_event = bool(
-                        isinstance(event.metadata, dict) and event.metadata.get("test")
-                    )
-                    if is_debug or is_test_event:
-                        event.metadata["bark_error"] = {
-                            "status_code": response.status_code,
-                            "detail": sanitized_detail[:800],
-                        }
-                except Exception:
-                    pass
-
-                logger.error(
-                    f"Bark通知发送失败: {response.status_code} - {sanitized_detail[:800]}"
-                )
-                return False
+            return self._handle_response(event, response)
 
         except httpx.TimeoutException:
             logger.error(f"Bark通知发送超时: {event.id}", exc_info=True)
