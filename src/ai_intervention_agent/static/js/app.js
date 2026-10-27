@@ -595,6 +595,8 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
 
       processLinks(element);
 
+      processPromptImages(element);
+
       const textContent = element.textContent || "";
       if (window.loadMathJaxIfNeeded) {
         window.loadMathJaxIfNeeded(element, textContent);
@@ -725,6 +727,8 @@ function processStrikethrough(container) {
 // "data:" destinations in place as links that only the CSP stops.
 // Same policy as the VS Code webview's sanitizePromptHtml: web links open in
 // a new tab, everything the browser could not follow for the user is text.
+// (The images of the message follow the same webview's rule too: see
+// classifyPromptImage below.)
 function classifyPromptLink(href) {
   // Browsers drop tabs and newlines anywhere, and control characters and
   // spaces at the ends, before they read the scheme: classify what they read.
@@ -770,9 +774,65 @@ function processLinks(container) {
   }
 }
 
+// R886: the images of the agent's message follow the rule the VS Code webview has for them
+// (sanitizePromptHtml -> normalizeUrl(url, 'img')): ``marked`` hands every ``![alt](src)``
+// destination to the DOM unchanged, so ``javascript:`` / ``vbscript:`` and every scheme the page
+// has no use for (``file:``, ``blob:``, ``ftp:``, custom ones) stayed in the page as ``<img src>``.
+// The CSP refuses them, but only by logging a violation per image, and only while the header
+// reaches the page; the other client never had them in its DOM.  Kept: ``data:image/*``, a path on
+// this origin (taken as it is: some strings that start with a slash do not parse as a URL at all),
+// and whatever the URL parser reads as http(s), which covers a relative path, ``//host/...`` and an
+// in-page ``#`` reference.  Everything else is dropped by that last test, ``javascript:`` and
+// ``vbscript:`` included, and it is also how an obfuscated ``java\tscript:`` is told apart: by what
+// the browser would read, not by how the text looks.
+function classifyPromptImage(src) {
+  const target = typeof src === "string" ? src.trim() : "";
+  if (target === "") return "drop";
+  if (/^\s*data:image\//i.test(target)) return "keep";
+  if (target.charAt(0) === "/" && target.charAt(1) !== "/") return "keep";
+  try {
+    const url = new URL(target, window.location.href);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? "keep"
+      : "drop";
+  } catch (_e) {
+    return "drop";
+  }
+}
+
+// An image that is dropped leaves its alt text where it was (a dropped link leaves its label),
+// so the sentence around it still reads.
+function processPromptImages(container) {
+  if (!container || typeof container.querySelectorAll !== "function") return;
+
+  const images = container.querySelectorAll("img[src]");
+  const imageCount =
+    images && Number.isFinite(images.length) ? images.length : 0;
+  for (let imageIndex = 0; imageIndex < imageCount; imageIndex += 1) {
+    const image = images[imageIndex];
+    if (!image) continue;
+
+    if (classifyPromptImage(image.getAttribute("src")) === "keep") continue;
+
+    const parent = image.parentNode;
+    if (!parent) continue;
+    const alt = image.getAttribute("alt");
+    if (alt) {
+      parent.insertBefore(document.createTextNode(alt), image);
+    }
+    parent.removeChild(image);
+  }
+}
+
 async function loadConfig() {
   try {
-    const response = await fetchWithTimeout("/api/config", undefined, 10000);
+    // R891: this page renders ``config.prompt`` itself (marked) and never uses the
+    // HTML the server renders from it, so ask the server not to render it at all.
+    const response = await fetchWithTimeout(
+      "/api/config?html=0",
+      undefined,
+      10000,
+    );
     config = await response.json();
 
     if (!config.has_content) {

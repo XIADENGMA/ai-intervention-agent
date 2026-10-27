@@ -290,10 +290,12 @@ async def _emit_ctx_info(
 _PROGRESS_KEEPALIVE_INTERVAL_S = 20.0
 """Seconds between two progress notifications while a person is being waited for (R820).
 
-Cursor gives a tool call an idle timeout (120 s by default) that every ``notifications/progress``
-for the call restarts, for up to an hour in total; the TypeScript MCP SDK's own default is 60 s.
-At 20 s a client with a 60 s idle timeout can lose one beat and still hold on, and the cost is
-three tiny messages a minute.
+The Cursor IDE gives a tool call an idle timeout (120 s by default) that every
+``notifications/progress`` for the call restarts, for up to an hour in total; the TypeScript MCP
+SDK's own default is 60 s. At 20 s a client with a 60 s idle timeout can lose one beat and still
+hold on, and the cost is three tiny messages a minute. Cursor's command-line agent and
+``agent acp`` use that 60 s as a fixed timeout that progress does not restart, so no beat helps
+there.
 """
 
 
@@ -302,12 +304,13 @@ async def _client_keepalive(ctx: FastMCPContext | None) -> AsyncIterator[None]:
     """R820: while the block runs, tell the client every 20 s that the call is still alive.
 
     ``interactive_feedback`` waits for a person, which takes longer than the idle timeout
-    clients put on a tool call (Cursor: 120 s). The server sent nothing in the meantime, so a
-    question that was not answered, or auto-submitted by an open panel, within two minutes
+    clients put on a tool call (Cursor IDE: 120 s). The server sent nothing in the meantime, so
+    a question that was not answered, or auto-submitted by an open panel, within two minutes
     ended in ``MCP error -32001: Request timed out`` and the reply that came later went to a
     request nobody waited for. A client that sent a progress token restarts its idle timer on
     every ``notifications/progress``; one that did not, gets nothing (``report_progress`` is a
-    no-op without a token); one that does not restart on progress is unaffected.
+    no-op without a token); one that does not restart on progress is unaffected, and still
+    gives up at its own limit (Cursor's command-line agent and ``agent acp``: a fixed 60 s).
 
     Design:
 
@@ -599,9 +602,15 @@ _DEADLINE_EXTENSION_PROBE_MAX: int = 50
 """R689（TODO#13）：backend 超时前允许探测"任务倒计时是否被用户延长"的
 最大次数。
 
-正常场景远达不到上限：手动 extend 受 ``COUNTDOWN_EXTENDS_MAX``（默认 3）
-约束、typing auto-extend 复用同一配额，因此探测最多个位数。上限仅防御
-pathological 场景（例如自定义 backend 无限返回 remaining_time>0），确保
+手动 extend 受 ``COUNTDOWN_EXTENDS_MAX``（默认 3）约束，所以靠手动延长
+探测最多个位数。R883 起 typing auto-extend（``reason="typing"``）不占这
+份配额：用户只要还在输入，页面在剩余 ≤15 s 时续 60 s，也就是约每 60 s 续一次，
+任务就一直活着，这正是本探测要看到的 ``remaining_time>0``。连续输入时每次
+探测落在剩余 14–75 s 之间，等待 ``remaining + BACKEND_BUFFER`` = 54–115 s，
+50 次合计 45–96 分钟。输入延长自己另有上限（``COUNTDOWN_TYPING_EXTENDS_MAX``，
+30 次 ≈ 30 分钟连续输入），比这里短，所以总是页面先收到拒绝、转而提交已输入的
+内容，而不是 backend 先放弃任务；这个探测上限只防御 pathological 场景
+（例如自定义 backend 无限返回 remaining_time>0），确保
 ``wait_for_task_completion`` 不会变成永不返回的僵尸协程。"""
 
 
@@ -827,9 +836,19 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         R685: client 在进入 stream 前即时通过 ``service_manager.get_async_client``
         获取（而不是复用函数开头捕获的引用）——配置热更新会关闭旧 client，
         即时获取保证拿到的是可用（或重建后）的 pooled client。
+
+        R887: 收到完成事件后先跳出 ``async with``，等 stream 完整关闭，再取结果、
+        ``completion.set()``。以前是在 stream 里面 ``completion.set(); return``：主
+        流程被唤醒后立刻在 ``finally`` 里 ``sse_task.cancel()``，取消正好落在
+        ``response.aclose()`` 中途。httpx/httpcore 的关闭挡不住 asyncio 自己的取消
+        （上游 encode/httpx#3782，至今没有修复），这条 SSE 连接就留在池里不关了：
+        每完成一次调用，MCP 多一个 FD，Web UI 多一个线程、一个 FD 和一个订阅者，
+        空闲也不回收。这样改了之后唤醒主流程的 ``completion.set()`` 是本任务最后
+        一件事，没有可以被取消打断的关闭了。
         """
         import httpx
 
+        completed_via_sse = False
         try:
             stream_client = service_manager.get_async_client(config)
             async with stream_client.stream(
@@ -853,11 +872,13 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
                         and ev.get("new_status") == "completed"
                     ):
                         logger.info(f"SSE 检测到任务完成: {task_id}")
-                        r = await _fetch_result()
-                        if r is not None:
-                            result_box[0] = r
-                        completion.set()
-                        return
+                        completed_via_sse = True
+                        break
+            if completed_via_sse:
+                r = await _fetch_result()
+                if r is not None:
+                    result_box[0] = r
+                completion.set()
         except asyncio.CancelledError:
             raise
         except Exception as e:

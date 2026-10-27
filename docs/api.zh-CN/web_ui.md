@@ -92,6 +92,14 @@ Return task option defaults without eager fallback allocation.
 
 Return task remaining time, reusing a caller-provided monotonic snapshot.
 
+### `_render_plain_text_fallback(text: str) -> str`
+
+把消息原样放进一个 ``<pre><code>``（已转义），不做任何 Markdown 处理。
+
+只用 ``pre`` / ``code`` 和 ``pre`` 上的 ``class``：VS Code webview 的
+``sanitizePromptHtml`` 会删掉 ``style``，所以换行靠 ``webview.css`` 里已有的
+``.markdown-content pre code { white-space: pre-wrap }``，不靠内联样式。
+
 ### `_compute_file_version(file_path_str: str) -> str`
 
 根据文件 mtime 生成 8 位版本字符串，按 ``file_path_str`` 缓存。
@@ -277,7 +285,9 @@ R26.3 lazy-init 行为：
 缓存语义
 --------
 - **key**：完整 prompt 字符串（避免 hash 冲突；prompt 长度受
-  ``PROMPT_MAX_LENGTH`` 上限保护，R166 起单条最多 ~100KB）。
+  ``MAX_MESSAGE_LENGTH`` 上限保护，单条最多 1,000,000 个字符；
+  ``PROMPT_MAX_LENGTH``（100,000）只限制 ``resubmit_prompt`` 和
+  ``prompt_suffix``，不管任务消息）。
 - **value**：渲染后的 HTML 字符串。
 - **容量**：16 条（远大于 ``max_tasks=10``，合理场景命中率 ~100%）。
 - **LRU 实现**：``dict`` 插入顺序保证（Python 3.7+），命中时
@@ -296,6 +306,11 @@ R26.3 lazy-init 行为：
     - HTML未进行额外的XSS过滤，依赖Markdown库的安全性
     - cache 不在 ``/api/update`` 时显式失效——新 prompt 会作为新 key
       进入 cache，旧 key 自然 LRU evict，简化逻辑且无正确性问题。
+    - R892：超过 ``_MD_RENDER_MAX_CHARS``（200,000 个字符）的文本不渲染，直接
+      返回转义后的 ``<pre><code>`` 纯文本（见 ``_render_plain_text_fallback``），
+      也不进 cache：``markdown`` 处理一大段不含空行的文本是超线性的，100 万字符
+      （MCP 工具的上限）要约 2 s；直接 ``POST /api/tasks`` 的任务只受任务队列
+      10 MB 的硬上限约束，500 万字符 45 s 都没渲染完，期间 Web UI 的一个线程被占满。
 
 ##### `setup_routes(self) -> None`
 

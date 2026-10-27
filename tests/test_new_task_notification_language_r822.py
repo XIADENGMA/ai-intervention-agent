@@ -58,8 +58,18 @@ TRANSLATING = "{ t(key, params) { return '<<' + key + '|' + JSON.stringify(param
 
 
 def _harness(
-    case_js: str, *, document: str, secure: bool, i18n: str | None = TRANSLATING
+    case_js: str,
+    *,
+    document: str,
+    secure: bool,
+    i18n: str | None = TRANSLATING,
+    later_scripts: str = "",
 ) -> str:
+    """The fake browser around ``notification-manager.js``.
+
+    ``later_scripts`` is JavaScript run in the same global scope *after* the notification
+    script, as the page does with the scripts that follow it (R884: ``app.js`` is one).
+    """
     i18n_entry = f"AIIA_I18N: {i18n}," if i18n else ""
     return textwrap.dedent(
         f"""
@@ -97,6 +107,7 @@ def _harness(
         sandbox.window = sandbox;
         vm.createContext(sandbox);
         vm.runInContext(code, sandbox);
+        {later_scripts}
 
         const manager = sandbox.__notificationManager;
         const shown = [];
@@ -262,12 +273,15 @@ class TestAnInsecurePageStillTellsTheUserAboutTheRequest:
 
 
 def _helper(call: str, i18n: str | None) -> Any:
-    case = f"report({{ value: sandbox.t({call}) }});"
+    case = f"report({{ value: sandbox.tOrFallback({call}) }});"
     return _run(case, VISIBLE, True, i18n)["value"]
 
 
 class TestTheTranslationHelperKeepsItsContract:
-    """``t(key, params)`` is used all over the script; the optional third argument is new."""
+    """``tOrFallback(key, params)`` is used all over the script; the optional third argument is new.
+
+    (R884: it was called ``t`` until the page's other ``t`` replaced it; see that test.)
+    """
 
     def test_without_a_fallback_the_key_is_the_answer_when_there_is_no_module(
         self,

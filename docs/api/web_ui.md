@@ -16,6 +16,8 @@
 
 ### `_task_remaining_time(task: Any, now_monotonic: float) -> int`
 
+### `_render_plain_text_fallback(text: str) -> str`
+
 ### `_compute_file_version(file_path_str: str) -> str`
 
 ### `_get_module_static_dir() -> Path`

@@ -230,7 +230,11 @@ class TestServiceManagerUrls:
         ("host", "base"),
         [("127.0.0.1", f"http://127.0.0.1:{PORT}"), ("::1", f"http://[::1]:{PORT}")],
     )
-    def test_the_async_health_check(self, host: str, base: str) -> None:
+    def test_the_async_health_check(
+        self, monkeypatch: pytest.MonkeyPatch, host: str, base: str
+    ) -> None:
+        # R888：异步健康检查先做 TCP 预检；这里的假 client 没有真的监听者，固定成“端口开着”
+        monkeypatch.setattr(sm, "is_web_service_running", lambda *_a, **_k: True)
         asked: list[str] = []
 
         class Client:

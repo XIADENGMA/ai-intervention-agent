@@ -5,7 +5,7 @@
 故意不做 HTML 转义（textContent 自动转义已足够，ICU ``#`` / mustache
 再做转义会双编码），与 react-intl 同契约。
 
-调用方契约（可审计）：任何把 ``t(…)`` / ``_t(…)`` / ``hVal`` 等写入
+调用方契约（可审计）：任何把 ``t(…)`` / ``_t(…)`` / ``tOrFallback(…)`` / ``hVal`` 等写入
 ``.innerHTML`` 的行，必须在同行或前一个连续注释块里带 ``AIIA-XSS-SAFE:``
 标记（典型场景：dev-authored locale + 无用户输入；或走过
 ``sanitizePromptHtml``）。
@@ -49,8 +49,12 @@ EXCLUDE_FILE_PATTERNS = (
 SAFETY_MARKER = "AIIA-XSS-SAFE:"
 
 # i18n.js translateDOM 里 ``hEl.innerHTML = hVal``（data-i18n-html 分支）也要同样带标记，不特判
+#
+# R884：``tOrFallback(`` 也算——它是 notification-manager.js 里原来叫 ``t`` 的那个 helper，
+# 改名之后 ``\bt\(`` 看不到它，写进 ``.innerHTML`` 的那一行就会从这条守卫里漏掉。
 INNERHTML_T_CALL = re.compile(
-    r"\.innerHTML\s*[+]?=\s*[^;]*?(?:\bt\(|\b_t\(|\bt\s*\(|\bhVal\b|\b__domSecT\b)"
+    r"\.innerHTML\s*[+]?=\s*[^;]*?"
+    r"(?:\bt\(|\b_t\(|\bt\s*\(|\btOrFallback\(|\bhVal\b|\b__domSecT\b)"
 )
 
 # 空行或 ``//`` / ``/*`` / ``*`` 均视为「属于前置注释块」；marker 只要在连续注释块内出现即可
@@ -127,6 +131,7 @@ class TestInnerHtmlSafetyComment(unittest.TestCase):
             "button.textContent = t('status.copied')",
             "element.innerText = _t('page.label')",
             "span.setAttribute('aria-label', t('aria.close'))",
+            "document.title = tOrFallback('notify.titleFlash', { message: message })",
         ]
         for src in safe_lines:
             with self.subTest(src=src):
@@ -140,6 +145,7 @@ class TestInnerHtmlSafetyComment(unittest.TestCase):
             "hint.innerHTML = `${svg}${_t('page.noContent.newTasks', { count: count })}`",
             "if (hVal !== hKey) hEl.innerHTML = hVal",
             "button.innerHTML = `${copyIconSvg}${__domSecT('page.copyFailed')}`",
+            "banner.innerHTML = tOrFallback('notify.titleFlash', { message: message })",
         ]
         for src in unsafe_lines:
             with self.subTest(src=src):

@@ -131,6 +131,7 @@ def _poll_harness(case_js: str) -> str:
         const fetchRequests = [];
         const timeouts = [];
         const intervals = [];
+        const windowListeners = [];
         const sandbox = {{
           Date,
           Error,
@@ -221,7 +222,9 @@ def _poll_harness(case_js: str) -> str:
             origin: 'http://127.0.0.1',
             pathname: '/',
           }},
-          addEventListener() {{}},
+          addEventListener(type, handler) {{
+            windowListeners.push({{ type, handler }});
+          }},
           removeEventListener() {{}},
           dispatchEvent() {{}},
           CustomEvent: function CustomEvent(type, init) {{
@@ -249,6 +252,7 @@ def _poll_harness(case_js: str) -> str:
           showNewTaskNotification() {{}},
           __fetchRequests: fetchRequests,
           __timeouts: timeouts,
+          __windowListeners: windowListeners,
         }};
         sandbox.window = sandbox;
         sandbox.globalThis = sandbox;

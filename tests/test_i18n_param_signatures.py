@@ -129,6 +129,59 @@ class TestCommentStripping:
         assert out.count("\n") == text.count("\n")
 
 
+class TestFallbackHelperIsScanned:
+    """R884：``tOrFallback`` 是 notification-manager.js 里原来叫 ``t`` 的 helper。
+
+    改名之后它的一参 / 二参调用必须还被对账，否则 ``{message}`` 之类的占位符
+    漏传也不会有人发现。三参形式（带 fallback 句子）和以前的 ``t(`` 一样不在
+    这个扫描器的静态可解析范围内。
+    """
+
+    def test_one_and_two_argument_calls_are_found(self, tmp_path: Path) -> None:
+        source = tmp_path / "x.js"
+        source.write_text(
+            "tOrFallback('a.b', { count });\n"
+            "tOrFallback('c.d');\n"
+            "obj.tOrFallback('e.f');\n"
+            "mytOrFallback('g.h');\n",
+            encoding="utf-8",
+        )
+        sites = CHK._iter_call_sites(source)
+        assert [(key, body) for _line, key, body in sites] == [
+            ("a.b", "{ count }"),
+            ("c.d", None),
+        ]
+
+    def test_a_missing_param_through_the_helper_is_reported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path
+        web_locales = root / "src" / "ai_intervention_agent" / "static" / "locales"
+        web_js = root / "src" / "ai_intervention_agent" / "static" / "js"
+        vscode_locales = root / "packages" / "vscode" / "locales"
+        web_locales.mkdir(parents=True)
+        web_js.mkdir(parents=True)
+        vscode_locales.mkdir(parents=True)
+        (web_locales / "en.json").write_text(
+            '{ "hello": "Hi {{user}}!" }', encoding="utf-8"
+        )
+        (vscode_locales / "en.json").write_text("{}", encoding="utf-8")
+        (web_js / "notification-manager.js").write_text(
+            "var y = tOrFallback('hello', { wrong: 1 });\n", encoding="utf-8"
+        )
+        monkeypatch.setattr(CHK, "ROOT", root)
+        monkeypatch.setattr(CHK, "WEB_LOCALES_DIR", web_locales)
+        monkeypatch.setattr(CHK, "WEB_JS_DIR", web_js)
+        monkeypatch.setattr(
+            CHK, "TEMPLATES_DIR", root / "src" / "ai_intervention_agent" / "templates"
+        )
+        monkeypatch.setattr(CHK, "VSCODE_LOCALES_DIR", vscode_locales)
+        monkeypatch.setattr(CHK, "VSCODE_PKG_DIR", root / "packages" / "vscode")
+        issues = CHK.scan()["web"]
+        assert {it["key"] for it in issues} == {"hello"}
+        assert ("wrong",) in {tuple(it["extra"]) for it in issues if it["extra"]}
+
+
 class TestEndToEndScan:
     """对已提交 tree 跑 live 扫描——回归即挂 CI。"""
 

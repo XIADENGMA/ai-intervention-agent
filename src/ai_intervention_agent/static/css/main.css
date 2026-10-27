@@ -4238,9 +4238,9 @@ code,
 }
 
 .countdown-ring svg circle {
-  transition:
-    stroke-dashoffset 0.3s ease,
-    stroke 0.2s;
+  /* 倒计时圈每秒走一格；给 stroke-dashoffset 加 0.3s 过渡会让主线程每秒约
+     20 次样式重算（stroke-dashoffset 不走合成器），所以只保留变色过渡（R889）。 */
+  transition: stroke 0.2s;
 }
 
 .task-tab.active .countdown-ring svg circle {

@@ -10,7 +10,9 @@
 
 1. textarea input 事件刷新输入活跃时间戳；
 2. 倒计时 tick 在剩余 ≤ 触发窗口且用户正在输入时调用 extend endpoint
-   自动延长（受服务端 extends_max 配额约束）；
+   自动延长。R883 起带 ``reason: "typing"``：不占手动 extends_max 配额，单个
+   任务另有输入延长上限（``COUNTDOWN_TYPING_EXTENDS_MAX``）；详见
+   ``test_typing_extension_keeps_the_task_alive_r883.py``；
 3. 倒计时归零时优先提交用户已输入文本 / 已勾选选项；无输入才回落到
    resubmit_prompt 原路径。
 """
@@ -282,7 +284,7 @@ class TestVscodeSourceContract(unittest.TestCase):
         self.assertIn(
             "/extend",
             helper.group(0),
-            "R689: 插件端 typing-hold 必须复用服务端 extend endpoint（配额可见）",
+            "R689: 插件端 typing-hold 必须复用服务端 extend endpoint（R883: reason=typing）",
         )
 
 

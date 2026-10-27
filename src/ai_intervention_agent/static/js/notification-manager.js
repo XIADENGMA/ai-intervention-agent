@@ -1,6 +1,12 @@
 // The i18n module answers with the key itself when it has no entry. A caller that cannot show a
 // raw key (a desktop notification) passes the sentence to use instead as ``fallback``.
-function t(key, params, fallback) {
+//
+// R884: this used to be called ``t``, like the two-argument helper in app.js, and the page loads
+// both as classic scripts into one global scope: app.js loads later, so *its* ``t`` replaced this
+// one and the ``fallback`` was silently ignored - a notification with no translation showed the
+// raw key.  The two were never copies of each other.  Each file now owns its own name, which is
+// also why this one still works when the file is loaded alone.
+function tOrFallback(key, params, fallback) {
   try {
     if (window.AIIA_I18N && typeof window.AIIA_I18N.t === 'function') {
       const text = window.AIIA_I18N.t(key, params)
@@ -900,8 +906,8 @@ class NotificationManager {
     const message =
       summary ||
       (count === 1 && taskIdCount === 1
-        ? t('notify.newTask', { id: taskIds[0] }, `New task added: ${taskIds[0]}`)
-        : t('page.noContent.newTasks', { count }, `Received ${count} new task(s)`))
+        ? tOrFallback('notify.newTask', { id: taskIds[0] }, `New task added: ${taskIds[0]}`)
+        : tOrFallback('page.noContent.newTasks', { count }, `Received ${count} new task(s)`))
 
     let pageAway = false
     try {
@@ -953,11 +959,11 @@ class NotificationManager {
     const reason = options && typeof options === 'object' ? options.reason || 'unknown' : 'unknown'
 
     const reasonHintMap = {
-      permission_denied: () => t('status.notifFallbackPermDenied'),
-      permission_default: () => t('status.notifFallbackPermDefault'),
-      permission_disabled: () => t('status.notifFallbackPermDisabled'),
-      unsupported: () => t('status.notifFallbackUnsupported'),
-      insecure_context: () => t('status.notifFallbackInsecure')
+      permission_denied: () => tOrFallback('status.notifFallbackPermDenied'),
+      permission_default: () => tOrFallback('status.notifFallbackPermDefault'),
+      permission_disabled: () => tOrFallback('status.notifFallbackPermDisabled'),
+      unsupported: () => tOrFallback('status.notifFallbackUnsupported'),
+      insecure_context: () => tOrFallback('status.notifFallbackInsecure')
     }
     let toastMessage = `${title}: ${message}`
     const hintFn = reasonHintMap[reason]
@@ -1011,7 +1017,7 @@ class NotificationManager {
     this._titleFlashInterval = setInterval(() => {
       const originalTitle =
         this._titleFlashOriginalTitle !== null ? this._titleFlashOriginalTitle : document.title
-      document.title = flashCount % 2 === 0 ? t('notify.titleFlash', { message: message }) : originalTitle
+      document.title = flashCount % 2 === 0 ? tOrFallback('notify.titleFlash', { message: message }) : originalTitle
       flashCount++
 
       if (flashCount >= maxFlashes) {

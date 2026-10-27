@@ -124,6 +124,16 @@ Combined with R20.10's import cost: the full Web UI subprocess cold start
 went from ~1980 ms → ~360 ms (-82%). The "AI calls tool → user sees UI"
 latency is now dominated by the AI client's network RTT, not by us.
 
+> **Correction (R888).** The ~360 ms is the Web UI subprocess cold start
+> (import + spawn → listen, the `scripts/perf_e2e_bench.py` slices). A real first
+> `interactive_feedback` call also waited about 1.5 s more: `ensure_web_ui_running`
+> probed `/api/health` before starting anything, and the pooled client's transport
+> (`retries=http_max_retries`, default 3) retried the refused connection on
+> httpcore's fixed 0 / 0.5 / 1.0 s schedule first, so the page showed the task
+> after ≈2.0 s (measured on 1.9.0). R888 checks the port with a TCP connect
+> first and starts the Web UI at once when nothing listens: the first call is
+> ≈0.5 s now.
+
 ### Trade-offs
 
 - The "mDNS 已发布" stdout line now appears **after** "Running on http://..."
@@ -365,9 +375,13 @@ across 63 files. The biggest single win: `tex-mml-chtml.js` 1173 KB → 264 KB
 
 **Compression threshold:** 500 bytes (matches `flask-compress`'s
 `COMPRESS_MIN_SIZE` default). Smaller files don't benefit from gzip's 18-byte
-header overhead. We deliberately avoid Brotli — it's another 15–20% smaller
-than gzip, but adds a `pip install brotli` runtime dependency. Future
-R20.x round may revisit if metrics justify it.
+header overhead. R20.14-D shipped gzip only: Brotli is another 15–20% smaller
+than gzip, but needed a `brotli` runtime dependency.
+
+**Update — Brotli shipped in R21.4.** `scripts/precompress_static.py` now also
+writes `<file>.br` siblings, `_send_with_optional_gzip` prefers `br` over `gzip`
+over the original file (`Vary: Accept-Encoding` as before), and
+`brotli>=1.2.1` is a declared runtime dependency (`pyproject.toml`).
 
 **Workflow:**
 
@@ -419,9 +433,9 @@ following candidates were investigated but rejected:
 - **Aggressive image format conversion** — Auto-convert paste-uploaded
   PNG to WebP. Modern browsers handle both fine; the user's clipboard PNG
   is what they expect to upload.
-- **Brotli pre-compression** — 15–20% smaller than gzip but requires the
-  `brotli` Python package as a runtime dep. Defer until a measured user-
-  facing transfer-size complaint shows up.
+- **Brotli pre-compression** — declined when this was written, shipped
+  later as R21.4 (see the update under R20.14-D): `.br` siblings next to the
+  `.gz` ones, `brotli>=1.2.1` as a runtime dependency.
 - **VSIX bundle size reduction** — `mathjax/` is 2.0 MB inside the VSIX.
   Removing it would break the offline math rendering on webview. CDN
   fallback isn't an option (VSCode webview CSP restricts external loads).
@@ -436,7 +450,7 @@ following candidates were investigated but rejected:
 git clone https://github.com/xiadengma/ai-intervention-agent
 cd ai-intervention-agent
 uv sync --all-extras
-uv run python scripts/precompress_static.py    # generate .gz siblings
+uv run python scripts/precompress_static.py    # generate .gz and .br siblings
 uv run python scripts/perf_e2e_bench.py --format table
 
 # Compare against baseline
@@ -457,8 +471,6 @@ regression.
 The R20.x batch closed out the user's stated four-layer roadmap. Plausible
 R21+ directions:
 
-- **Brotli pre-compression** — once we have telemetry showing transfer size
-  is the bottleneck for a user (e.g., remote tunnel users on slow links).
 - **HTTP/2 + server push** — would require swapping Flask's stdlib server.
   Best paired with a separate "production deployment guide" RFC.
 - **Service worker for offline asset caching** — the notification service

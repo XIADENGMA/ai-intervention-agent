@@ -45,7 +45,11 @@ DATA_I18N_RE = re.compile(
 JS_T_CALL_RE = re.compile(
     # cr40 cycle health-fix #3：加 ``AIIA_I18N.t(...)`` 命名空间识别
     # multi_task.js 用 ``window.AIIA_I18N.t("page.taskTabCopyHint")``
-    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
+    #
+    # R884：新增 ``tOrFallback('key', params, fallback)`` — notification-manager.js 的本地
+    # helper（i18n 没有这个 key 时显示 fallback 句子）。它原来也叫 ``t``，和 app.js 的全局
+    # ``t`` 同名，改名之后扫描器必须认得新名字，否则 7 个真在用的 key 会被报成孤儿。
+    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel|tOrFallback)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
 )
 
 

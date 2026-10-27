@@ -120,6 +120,7 @@ _DATA_I18N_RE = re.compile(r'data-i18n(?:-[a-z][\w-]*)?="([^"]+)"')
 #   - __vuT('key')   — validation-utils.js 的本地 helper（避开 import 循环）
 #   - __domSecT('key') — dom-security.js 的本地 helper（同上）
 #   - __ncT('key')   — webview-notify-core.js 的本地 helper（P8 新增）
+#   - tOrFallback('key', params, fallback) — notification-manager.js 的本地 helper（R884）
 # 负向先行 ``(?<![.\w])`` 避免把 ``obj.t('foo')`` 这类属性访问误判成翻译。
 _JS_T_CALL_RE = re.compile(
     # ``\(\s*`` 而不是 ``\(``：Prettier 把
@@ -140,7 +141,12 @@ _JS_T_CALL_RE = re.compile(
     # 标准 helper，``_resolveLabel`` 被漏导致 4 个真在用 key
     # (page.iosA2hs.{title,desc,dismissAriaLabel,dismissTitle}) 误判
     # dead。同步到 scripts/check_i18n_orphan_keys.py。
-    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
+    #
+    # R884：新增 ``tOrFallback('key', params, fallback)`` 识别 — notification-manager.js
+    # 的本地 helper（原来叫 ``t``，和 app.js 的全局 ``t`` 重名，改名后旧正则漏掉它，
+    # ``notify.newTask`` 等 7 个真在用的 key 被误判 dead）。同步到
+    # scripts/check_i18n_orphan_keys.py。
+    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel|tOrFallback)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
 )
 
 

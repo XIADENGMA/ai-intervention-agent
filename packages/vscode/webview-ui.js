@@ -1283,9 +1283,14 @@
 
   let lastFeedbackTypingAtMs = 0
   let typingAutoExtendInFlight = false
+  let typingAutoExtendNextAtMs = 0
   let typingAutoExtendBlockedTasks = {}
   const TYPING_HOLD_IDLE_MS = 10 * 1000
   const TYPING_HOLD_TRIGGER_S = 15
+  // R883: at least this long between two typing extensions, whether the last one worked or
+  // not.  A failing request (429, 5xx, offline) would otherwise be retried on every
+  // one-second tick; 6 s keeps the panel under the 10-per-minute limit of the extend route.
+  const TYPING_EXTEND_MIN_GAP_MS = 6 * 1000
 
   let pendingInputFocusAtMs = 0
   const PENDING_FOCUS_FRESH_MS = 15 * 1000
@@ -4989,23 +4994,33 @@
 
   function maybeAutoExtendCountdownForTyping(taskId, remaining) {
     if (!taskId) return
-    if (remaining <= 0 || remaining > TYPING_HOLD_TRIGGER_S) return
+    // R883: no "remaining <= 0" cut-off.  While the panel holds at zero because the user is
+    // still typing, the task is still on the backend for BACKEND_BUFFER more seconds, and one
+    // more extension is what keeps it there; skipping it let the backend close a task
+    // somebody was typing into.  `!(x <= n)` also rejects NaN.
+    if (!(remaining <= TYPING_HOLD_TRIGGER_S)) return
     if (!isUserActivelyTyping()) return
     if (typingAutoExtendInFlight) return
     if (typingAutoExtendBlockedTasks[taskId]) return
+    if (Date.now() < typingAutoExtendNextAtMs) return
 
     typingAutoExtendInFlight = true
+    typingAutoExtendNextAtMs = Date.now() + TYPING_EXTEND_MIN_GAP_MS
+    // R883: `reason: 'typing'` tells the server not to charge the quota of manual extensions.
     fetch(SERVER_URL + '/api/tasks/' + encodeURIComponent(taskId) + '/extend', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ seconds: 60 })
+      body: JSON.stringify({ seconds: 60, reason: 'typing' })
     })
       .then(resp => resp.json().then(data => ({ ok: resp.ok, data })))
       .then(res => {
         if (!res.ok || !res.data || !res.data.success) {
           const code = (res.data && res.data.code) || 'unknown'
           if (code === 'extends_limit_reached') {
-
+            // The server will not extend this task for typing any more: either the task has
+            // used up its typing extensions (30), or the server is from before R883 and
+            // charges them to the 3 manual ones and ignores `reason`.  Stop asking, and stop
+            // holding at zero (see tick): the typed text is submitted instead.
             typingAutoExtendBlockedTasks[taskId] = true
           }
           log('Typing auto-extend rejected for ' + taskId + ': ' + code)
@@ -5069,7 +5084,9 @@
       if (remainingSeconds <= 0) {
 
         if (isUserActivelyTyping()) {
-          return
+          // R883: hold only while the server may still extend; once it has refused
+          // (typingAutoExtendBlockedTasks), fall through and submit what was typed.
+          if (!typingAutoExtendBlockedTasks[taskId]) return
         }
         autoSubmit()
       }

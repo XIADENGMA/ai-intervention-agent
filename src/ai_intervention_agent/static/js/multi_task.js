@@ -124,8 +124,22 @@ if (typeof window.lastFeedbackTypingAtMs === "undefined") {
 if (typeof window.__aiiaTypingAutoExtendInFlight === "undefined") {
   window.__aiiaTypingAutoExtendInFlight = false;
 }
+if (typeof window.__aiiaTypingAutoExtendNextAtMs === "undefined") {
+  window.__aiiaTypingAutoExtendNextAtMs = 0;
+}
+// R883: tasks whose typing extensions the server has refused for good (422
+// extends_limit_reached).  For these the page stops asking AND stops holding at zero:
+// holding would only wait for the backend to close the task, so the typed text is
+// submitted instead.
+if (typeof window.__aiiaTypingAutoExtendBlocked === "undefined") {
+  window.__aiiaTypingAutoExtendBlocked = {};
+}
 var TYPING_HOLD_IDLE_MS = 10 * 1000;
 var TYPING_HOLD_TRIGGER_S = 15;
+// R883: at least this long between two typing extensions, whether the last one worked or
+// not.  A failing request (429, 5xx, offline) would otherwise be retried on every
+// one-second tick; 6 s keeps the page under the 10-per-minute limit of the extend route.
+var TYPING_EXTEND_MIN_GAP_MS = 6 * 1000;
 
 // The page has ONE clipboard write path: DOMSecurity.writeTextToClipboard (Clipboard
 // API, then a selection copy that cleans up after itself).  It must be called before
@@ -1881,7 +1895,12 @@ function scheduleNextTasksPoll(delayMs) {
     async () => {
       const ok = await fetchAndApplyTasks("poll");
       if (ok) {
-        tasksPollBackoffMs = TASKS_POLL_BASE_MS;
+        // R890: while SSE is connected the poll stays a 30 s safety net (what changes is pushed
+        // as task_changed). This used to go back to 2 s on every success, so the 30 s that
+        // onopen sets lasted only until the first poll and a connected page polled every 2 s.
+        tasksPollBackoffMs = _sseConnected
+          ? TASKS_POLL_SSE_FALLBACK_MS
+          : TASKS_POLL_BASE_MS;
       } else {
         tasksPollBackoffMs = getNextBackoffMs(tasksPollBackoffMs);
       }
@@ -2467,6 +2486,37 @@ function _installTabsOverflowHintListeners(tabs) {
   }
 }
 
+function taskTabCopyHint() {
+  return (
+    (typeof window !== "undefined" &&
+      window.AIIA_I18N &&
+      typeof window.AIIA_I18N.t === "function" &&
+      window.AIIA_I18N.t("page.taskTabCopyHint")) ||
+    "Double-click to copy ID · Shift+double-click to copy link"
+  );
+}
+
+// R885: the tooltip of a tab is built here, with the task id in front of the hint, so no
+// ``data-i18n`` attribute names it and ``translateDOM()`` cannot find it: after a language
+// switch (``aiia:langchange``) it kept the old language on every tab until the tabs were next
+// rebuilt.
+function refreshTaskTabTooltips() {
+  const tooltipSuffix = taskTabCopyHint();
+  const spans = document.querySelectorAll(
+    ".task-tab-text[data-copyable-task-id]",
+  );
+  for (let index = 0; index < spans.length; index += 1) {
+    const span = spans[index];
+    const taskId = span.getAttribute("data-copyable-task-id");
+    span.title = `${taskId}\n${tooltipSuffix}`;
+    span.setAttribute("data-copy-hint-suffix", tooltipSuffix);
+  }
+}
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("aiia:langchange", refreshTaskTabTooltips);
+}
+
 function createTaskTab(task) {
   const tab = document.createElement("div");
   tab.className = "task-tab";
@@ -2506,12 +2556,7 @@ function createTaskTab(task) {
 
   textSpan.textContent = displayName;
 
-  const tooltipSuffix =
-    (typeof window !== "undefined" &&
-      window.AIIA_I18N &&
-      typeof window.AIIA_I18N.t === "function" &&
-      window.AIIA_I18N.t("page.taskTabCopyHint")) ||
-    "Double-click to copy ID · Shift+double-click to copy link";
+  const tooltipSuffix = taskTabCopyHint();
   textSpan.title = `${task.task_id}\n${tooltipSuffix}`;
   textSpan.setAttribute("data-copy-hint-suffix", tooltipSuffix);
 
@@ -2861,6 +2906,10 @@ async function updateDescriptionDisplay(prompt) {
 
     if (typeof processLinks === "function") {
       processLinks(descriptionElement);
+    }
+
+    if (typeof processPromptImages === "function") {
+      processPromptImages(descriptionElement);
     }
 
     _debugLog("Synchronous Markdown render complete");
@@ -3416,26 +3465,29 @@ function isUserActivelyTyping() {
 function maybeAutoExtendCountdownForTyping(taskId, remaining) {
   if (typeof fetch === "undefined") return;
   if (taskId !== activeTaskId) return;
-  if (remaining <= 0 || remaining > TYPING_HOLD_TRIGGER_S) return;
+  // R883: no "remaining <= 0" cut-off.  While the page holds at zero because the user is
+  // still typing, the task is still on the backend for BACKEND_BUFFER more seconds, and
+  // one more extension is what keeps it there; skipping it let the backend close a task
+  // somebody was typing into.  `!(x <= n)` also rejects NaN.
+  if (!(remaining <= TYPING_HOLD_TRIGGER_S)) return;
   if (!isUserActivelyTyping()) return;
   if (window.__aiiaTypingAutoExtendInFlight) return;
+  if (window.__aiiaTypingAutoExtendBlocked[taskId]) return;
+  if (Date.now() < window.__aiiaTypingAutoExtendNextAtMs) return;
 
   var task = findTaskById(window.currentTasks || [], taskId);
   if (!task) return;
   if ((task.auto_resubmit_timeout || 0) <= 0) return;
-  if (
-    typeof task.extends_used === "number" &&
-    typeof task.extends_max === "number" &&
-    task.extends_used >= task.extends_max
-  ) {
-    return;
-  }
 
+  // R883: a typing extension does not draw on the quota of manual extensions
+  // (extends_used / extends_max), so there is no quota check here any more.  The server
+  // takes `reason: "typing"` as "do not charge the quota".
   window.__aiiaTypingAutoExtendInFlight = true;
+  window.__aiiaTypingAutoExtendNextAtMs = Date.now() + TYPING_EXTEND_MIN_GAP_MS;
   fetch("/api/tasks/" + encodeURIComponent(taskId) + "/extend", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ seconds: 60 }),
+    body: JSON.stringify({ seconds: 60, reason: "typing" }),
   })
     .then(function (resp) {
       return resp.json().then(function (data) {
@@ -3444,6 +3496,9 @@ function maybeAutoExtendCountdownForTyping(taskId, remaining) {
     })
     .then(function (res) {
       if (!res.ok || !res.data || !res.data.success) {
+        if (res.data && res.data.code === "extends_limit_reached") {
+          window.__aiiaTypingAutoExtendBlocked[taskId] = true;
+        }
 
         if (res.data && typeof res.data.extends_used === "number") {
           var failedTask = findTaskById(window.currentTasks || [], taskId);
@@ -3543,7 +3598,9 @@ function tickTaskCountdown(taskId) {
   if (entry.remaining <= 0) {
 
     if (taskId === activeTaskId && isUserActivelyTyping()) {
-      return;
+      // R883: hold only while the server may still extend; once it has refused,
+      // fall through and submit what was typed (see __aiiaTypingAutoExtendBlocked).
+      if (!window.__aiiaTypingAutoExtendBlocked[taskId]) return;
     }
 
     entry.timer = null;

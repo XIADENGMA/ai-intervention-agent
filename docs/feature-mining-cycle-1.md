@@ -171,6 +171,12 @@ can pull off the top of the queue.
   - **SSE `task_updated` broadcast**: Avoided to keep
     `sse_event_schemas.py` stable. Multi-client sync via 5s polling
     (seconds-level latency acceptable).
+    **Later (R890, the code is what counts)**: no `task_updated` event
+    exists and none was added; the page polled every 2 s, not 5 s.
+    `extend` and `freeze` now emit a `task_changed` whose `old_status`
+    equals `new_status`, which every consumer already treats as "refresh
+    soon", so the schema kept its event types, and the page polls every
+    30 s instead of 2 s while the event stream is connected.
 - **Regression**: `tests/test_feat_countdown_extend.py` — 39 cases
   covering Task model + endpoint + HTML + CSS + JS + i18n + anchors.
 

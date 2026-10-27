@@ -234,8 +234,11 @@ class TestCssClass(unittest.TestCase):
     def test_tick_zero_guard_keeps_task_alive_while_typing_r699(self) -> None:
         """R699：倒计时归零但用户仍在输入时，tick 不得触发自动提交。
 
-        typing-hold（R689）只在 extend 配额内自动延长；配额耗尽后本守卫
-        兜底——保持 timer 存活并跳过提交，直到用户停止输入。
+        typing-hold（R689）在剩余 ≤ 15 s 时自动延长；归零时延长请求还在路上、
+        或这次请求失败了（离线、5xx）时本守卫兜底——保持 timer 存活并跳过提交，
+        直到用户停止输入。R883：服务器明确拒绝（``extends_limit_reached``，
+        输入延长已达上限）之后不再保持，转而提交已输入的内容，否则页面是在等
+        backend 把任务关掉。
         """
         js = JS_PATH.read_text(encoding="utf-8")
         # 定位改用代码特征（旧实现以注释行为锚，注释已清理）：

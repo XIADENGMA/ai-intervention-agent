@@ -170,6 +170,7 @@ locale 处理，照搬 anti-FOUC 模式：`localStorage.getItem
 | `__ncT` | `packages/vscode/webview-notify-core.js` | 本地 helper (P8) |
 | `AIIA_I18N.t` | `static/js/i18n.js`（命名空间） | multi_task.js dot-access |
 | `_resolveLabel` | `static/js/ios_a2hs_hint.js` | 带 fallback 的 i18n |
+| `tOrFallback` | `static/js/notification-manager.js` | 带 fallback 的 i18n (R884) |
 
 **加新 wrapper 时**：以下两个文件**必须 lockstep**
 更新，否则会悄悄破坏 i18n orphan/dead-key 检测：
@@ -177,20 +178,30 @@ locale 处理，照搬 anti-FOUC 模式：`localStorage.getItem
 1. `scripts/check_i18n_orphan_keys.py` → `JS_T_CALL_RE`
 2. `tests/test_runtime_behavior.py` → `_JS_T_CALL_RE`
 
+另有三处各自保留了一份 wrapper 清单。wrapper 没登记到那里，
+它的 call site 就悄悄失去那项检查，而且不会有任何失败（R884）：
+
+3. `scripts/check_i18n_param_signatures.py` → `_T_CALL_RE`
+4. `tests/test_i18n_used_keys_exist.py` → `_CALLSITE_RES`
+5. `tests/test_i18n_innerhtml_safety_comment.py` → `INNERHTML_T_CALL`
+
 **正则模式**：
 
 ```
-(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
+(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel|tOrFallback|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
 ```
 
 在 `(?:...)` alternation 里加你的函数名。运行：
 
 ```bash
 pytest tests/test_i18n_orphan_keys.py \
-       tests/test_runtime_behavior.py::TestI18nDeadKeys
+       tests/test_runtime_behavior.py::TestI18nDeadKeys \
+       tests/test_i18n_param_signatures.py \
+       tests/test_i18n_used_keys_exist.py \
+       tests/test_i18n_innerhtml_safety_comment.py
 ```
 
-确认无 orphan/dead-key false-positive。
+确认无 orphan/dead-key false-positive，其余三处的检查也都认得新 wrapper。
 
 ---
 

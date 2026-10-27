@@ -149,7 +149,11 @@ class TestCssContract(unittest.TestCase):
 
 
 class TestTickTypingGuardR700(unittest.TestCase):
-    """R700：倒计时归零但用户仍在输入时，webview tick 不得触发 autoSubmit。"""
+    """R700：倒计时归零但用户仍在输入时，webview tick 不得触发 autoSubmit。
+
+    例外（R883）：服务器已明确拒绝输入延长（``extends_limit_reached``）之后不再保持，
+    转而提交已输入的内容；见 ``test_typing_extension_keeps_the_task_alive_r883.py``。
+    """
 
     def test_tick_zero_guard_present(self) -> None:
         js = WEBVIEW_UI_JS.read_text(encoding="utf-8")

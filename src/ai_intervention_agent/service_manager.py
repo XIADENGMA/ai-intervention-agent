@@ -315,6 +315,12 @@ def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
     R25.2: ``import httpx`` 在函数体首行，首次调用时触发 ~55 ms 加载并写入
     ``sys.modules``，后续调用走 cache 几乎零成本；MCP 主进程在收到首个工具调用
     前完全不会进入此函数，故 cold-start 不付这 55 ms。
+
+    R893: ``verify=False``：这个客户端只请求 ``server_config.get_target_base_url`` 给出的
+    地址，那是写死的 ``http://`` 本机回环，用不到 TLS。httpx 默认会为每个传输建一个装载
+    CA 证书包的 SSL 上下文（实测两个客户端合计约 3.2 MiB，异步客户端首次约 12 ms）；这样
+    改了之后约 1.5 MiB、8 ms。以后要是让它去请求 ``https://`` 地址，要先去掉这里的
+    ``verify=False``。
     """
     import httpx
 
@@ -324,7 +330,9 @@ def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
         with _http_client_lock:
             client = _async_client
             if client is None or client.is_closed:
-                transport = httpx.AsyncHTTPTransport(retries=config.max_retries)
+                transport = httpx.AsyncHTTPTransport(
+                    retries=config.max_retries, verify=False
+                )
                 client = httpx.AsyncClient(
                     transport=transport,
                     timeout=httpx.Timeout(config.timeout, connect=5.0),
@@ -343,6 +351,9 @@ def get_sync_client(config: WebUIConfig) -> httpx.Client:
 
     R25.2: 与 ``get_async_client`` 同样的延迟加载策略——首次调用付 55 ms，
     后续命中 ``sys.modules`` cache。
+
+    R893: 同 ``get_async_client``，只请求 ``http://`` 本机回环，``verify=False``（首次
+    建客户端约 2.9 ms → 0.13 ms）。
     """
     import httpx
 
@@ -352,7 +363,9 @@ def get_sync_client(config: WebUIConfig) -> httpx.Client:
         with _http_client_lock:
             client = _sync_client
             if client is None or client.is_closed:
-                transport = httpx.HTTPTransport(retries=config.max_retries)
+                transport = httpx.HTTPTransport(
+                    retries=config.max_retries, verify=False
+                )
                 client = httpx.Client(
                     transport=transport,
                     timeout=httpx.Timeout(config.timeout, connect=5.0),
@@ -1333,18 +1346,28 @@ async def ensure_web_ui_running(
     ``/api/health`` 的响应必须是本服务的（见 ``_is_this_web_ui``）才算“已经在运行”；
     别的程序占着端口并回 200 时走启动流程，``start_web_service`` 发现端口被占用后
     抛 ``port_in_use``，而不是把任务发给那个程序。
+
+    R888：先做一次 TCP 预检（``health_check_service`` 同款），端口上没有任何进程在
+    听就不发 HTTP 探测，直接去启动。``get_async_client`` 的传输层带
+    ``retries=max_retries``，对“连接被拒绝”httpcore 按固定退避（0 / 0.5 / 1.0 s）
+    重试，默认 3 次共白等 1.5 s；而真正起 Web UI 子进程到能连只要约 0.2 s，所以
+    冷启动后的第一次调用要 2.0 s 才看得到页面，预检后是 0.5 s 左右。
     """
     try:
-        health_client = client
-        if health_client is None or getattr(health_client, "is_closed", False) is True:
-            health_client = get_async_client(config)
-        response = await health_client.get(
-            f"{get_target_base_url(config.host, config.port)}/api/health",
-            timeout=2,
-        )
-        if _is_this_web_ui(response, config):
-            logger.debug("Web UI 已经在运行")
-            return
+        if await asyncio.to_thread(is_web_service_running, config.host, config.port):
+            health_client = client
+            if (
+                health_client is None
+                or getattr(health_client, "is_closed", False) is True
+            ):
+                health_client = get_async_client(config)
+            response = await health_client.get(
+                f"{get_target_base_url(config.host, config.port)}/api/health",
+                timeout=2,
+            )
+            if _is_this_web_ui(response, config):
+                logger.debug("Web UI 已经在运行")
+                return
     except Exception as e:
         logger.debug(f"Web UI 健康检查失败，将尝试启动: {e}", exc_info=True)
 

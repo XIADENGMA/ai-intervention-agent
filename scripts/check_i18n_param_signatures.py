@@ -51,7 +51,7 @@ VENDOR_JS = {
 _T_CALL_RE = re.compile(
     r"""
     (?<![.\w])
-    (?:_?tl?|hostT|__vuT|__domSecT|__ncT)
+    (?:_?tl?|hostT|__vuT|__domSecT|__ncT|tOrFallback)
     \(
       \s*
       (['"])([a-zA-Z][a-zA-Z0-9_.]+)\1        # literal key

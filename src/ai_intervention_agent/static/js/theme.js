@@ -13,6 +13,7 @@ const ThemeManager = (function () {
   let mediaQuery = null;
   let systemPreferenceListenerInstalled = false;
   let storageSyncListenerInstalled = false;
+  let languageSyncListenerInstalled = false;
 
   function detectSystemPreference() {
     const query = getSystemPreferenceMediaQuery();
@@ -196,6 +197,20 @@ const ThemeManager = (function () {
     }
   }
 
+  // R885: the button's label says which theme is on ("Theme: Dark"), but the page also gives it a
+  // ``data-i18n-title`` with the generic "Toggle theme"; ``translateDOM()`` writes that over the
+  // label on every language switch, and nothing wrote the label back.
+  function setupLanguageSync() {
+    if (languageSyncListenerInstalled) return;
+
+    try {
+      window.addEventListener('aiia:langchange', updateToggleButton);
+      languageSyncListenerInstalled = true;
+    } catch (e) {
+
+    }
+  }
+
   return {
 
     init: function (options = {}) {
@@ -212,6 +227,8 @@ const ThemeManager = (function () {
       bindExistingButtons();
 
       setupStorageSync();
+
+      setupLanguageSync();
 
       console.debug('Theme manager initialized:', currentTheme);
     },

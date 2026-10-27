@@ -18,7 +18,7 @@ graph LR
         A4[CLI<br/>--print-config / --version]
     end
 
-    subgraph Backend["AIIA backend (single Python process)"]
+    subgraph Backend["AIIA backend (MCP server process + Web UI subprocess)"]
         B1[MCP server<br/>stdio + interactive_feedback]
         B2[Flask web server<br/>/api/* + SSE bus]
         B3[Task queue<br/>RW-lock + persist]
@@ -138,7 +138,7 @@ sequenceDiagram
     Agent->>AIIA: interactive_feedback
     UI->>Human: countdown ring
     Human->>UI: starts typing feedback
-    Note over UI: ≤15s left and typed in the last 10s:<br/>POST /api/tasks/{id}/extend (+60s, max 3 per task)<br/>at 0 while still typing: waits (typing-hold)
+    Note over UI: ≤15s left and typed in the last 10s:<br/>POST /api/tasks/{id}/extend (+60s, reason=typing, max 30 per task)<br/>at 0 while still typing: waits (typing-hold)<br/>refused (cap reached): submits what was typed
     Human->>UI: stops typing + submits
     UI->>AIIA: POST /api/tasks/{id}/submit
     AIIA->>Agent: SSE task_changed (completed) (full reply)
@@ -168,7 +168,8 @@ See [`mcp_tools.md#loop-engineering-parameters-long-autonomous-runs`](mcp_tools.
 - **Per-task draft autosave** — switching tabs never loses an
   in-progress reply
 - **Typing-hold auto-extension** — the countdown extends itself while
-  you type and never fires mid-input
+  you type and never fires mid-input (up to 30 extensions a task, apart
+  from the manual quota; past that, what you typed is submitted, not lost)
 - **Custom notification sound** — upload a short audio file for a
   distinct Agent-mode chime
 - **Per-task images** — paste screenshots inline, returned to the agent

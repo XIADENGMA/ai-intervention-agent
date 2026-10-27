@@ -10,7 +10,8 @@ locale JSON 中存在。
     ``data-i18n*`` 属性由 ``translateDOM`` 处理）；
   * 识别的 call site（codebase 稳定）：``t('key')`` / ``__vuT('key')``
     （validation-utils）/ ``__domSecT('key')``（dom-security）/
-    ``_t('key')``（multi_task）/ ``data-i18n*="key"``；
+    ``_t('key')``（multi_task）/ ``tOrFallback('key', params, fallback)``
+    （notification-manager，R884）/ ``data-i18n*="key"``；
   * 动态 key（``t(variable)`` / ``t('prefix.' + suffix)``）无法静态解析，
     刻意跳过——接受这个 trade-off，不禁模板 key 构造。
 
@@ -46,6 +47,9 @@ _CALLSITE_RES: tuple[re.Pattern[str], ...] = (
     re.compile(r"__vuT\(\s*(['\"])([\w.-]+)\1"),
     re.compile(r"__domSecT\(\s*(['\"])([\w.-]+)\1"),
     re.compile(r"(?<![.\w])_t\(\s*(['\"])([\w.-]+)\1"),
+    # R884：notification-manager.js 的 helper（原名 ``t``，和 app.js 的全局 ``t`` 重名）。
+    # 它的 fallback 句子会盖住「key 不存在」，所以 key 写错时页面不会出声，只能在这里查。
+    re.compile(r"(?<![.\w])tOrFallback\(\s*(['\"])([\w.-]+)\1"),
 )
 
 # HTML data-i18n* attributes (single-segment or multi-segment suffix).
@@ -168,6 +172,36 @@ class TestI18nUsedKeysExist(unittest.TestCase):
                 + "\nFix: add the missing key to static/locales/*.json "
                 "(keep en.json and zh-CN.json in structural parity)."
             )
+
+
+class TestFallbackHelperKeysAreChecked(unittest.TestCase):
+    """R884: the keys passed to ``tOrFallback`` are checked like any other.
+
+    ``tOrFallback(key, params, fallback)`` in ``notification-manager.js`` shows the fallback
+    sentence when the i18n module has no entry, so a mistyped key never shows on the page.
+    Only this scan can see it, and it can only see a name it knows.
+    """
+
+    HELPER_CALL = re.compile(r"""(?<![.\w])tOrFallback\(\s*['"]([\w.-]+)['"]""")
+
+    def test_every_literal_key_of_the_helper_is_collected(self) -> None:
+        path = STATIC_JS_DIR / "notification-manager.js"
+        stripped = _strip_comments(path.read_text(encoding="utf-8"))
+        literal = set(self.HELPER_CALL.findall(stripped))
+        self.assertGreaterEqual(
+            len(literal),
+            5,
+            msg="notification-manager.js no longer calls tOrFallback with literal "
+            "keys; if the helper was renamed, register the new name in every i18n scanner "
+            "(.github/CONTRIBUTING.md, section 3.quater) and update this test",
+        )
+        collected = _collect_js_keys()
+        for key in sorted(literal):
+            with self.subTest(key=key):
+                self.assertTrue(
+                    any(ref_path == path for ref_path, _line in collected.get(key, [])),
+                    msg=f"key {key!r} is passed to tOrFallback but this scan does not see it",
+                )
 
 
 if __name__ == "__main__":

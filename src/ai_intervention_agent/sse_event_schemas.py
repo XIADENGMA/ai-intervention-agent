@@ -24,7 +24,11 @@ EVENT_SCHEMAS: dict[str, EventSchema] = {
         optional_fields=frozenset({"stats"}),
         description=(
             "A feedback task transitioned between states (pending → "
-            "active → completed / failed / cancelled). Subscribers update "
+            "active → completed / failed / cancelled), or — with "
+            "``old_status == new_status`` — its countdown changed (R890: "
+            "extend / freeze, or a new default countdown in the config), "
+            "which only asks subscribers to re-read the "
+            "task list. Subscribers update "
             "the activity dashboard and PWA status bar in response. "
             "``stats`` field (optional) carries the current per-status "
             "task counts so subscribers can refresh totals without an "

@@ -98,6 +98,11 @@ INTERNAL_FIELDS: frozenset[str] = frozenset(
         # R726 — 提示词里引用的本地图片字节, 仅存内存, ``exclude=True``
         # 不进任何序列化; 前端只通过 ``/api/tasks/<id>/images/<n>`` 取图
         "prompt_images",
+        # R883 — 「输入即延长」已用的次数, 和手动配额 ``extends_used`` 分开计,
+        # 只在 ``Task.extend_deadline`` 与 ``/extend`` 路由里用; 页面不需要这个
+        # 数 —— 配额用完时它收到的是 ``422 extends_limit_reached`` —— 所以不
+        # 序列化进任何 GET 响应
+        "typing_extends_used",
     }
 )
 

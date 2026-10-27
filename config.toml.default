@@ -80,6 +80,8 @@ http_request_timeout = 30
 # HTTP 最大重试次数 / HTTP max retries - range [0, 20]
 http_max_retries = 3
 # HTTP 重试延迟(秒) / HTTP retry delay (seconds) - range [0, 60]
+# 目前未生效 / Currently has no effect: the value is validated, but nothing reads it. The
+# retries of http_max_retries wait on httpx's fixed schedule (0, 0.5, 1.0, 2.0 ... seconds).
 http_retry_delay = 1.0
 # 日志级别 / Log level of the MCP server and of the Web UI process. Each process reads it
 # once when it starts; restart the MCP server after an edit.
@@ -219,10 +221,11 @@ service_name = "AI Intervention Agent"
 # - frontend_countdown <= 0: backend_wait = max(backend_max_wait, 260s)
 # - otherwise: backend_wait = min(max(frontend_countdown + 40s, 260s), backend_max_wait)
 # - 两种情况下后端都至少等待 260s，backend_max_wait < 260 时按 260 处理 / Either way the backend waits at least 260s: a backend_max_wait below 260 acts as 260
+# - 这只是第一次等待：到时倒计时若仍有剩余（比它长，或被输入/延长拉长），后端继续等到倒计时结束再加 40s（最多再问 50 次），所以 backend_max_wait 只在倒计时已关闭或已走完时才是硬上限 / That is the first wait only: if the countdown still has time left when it ends (it is longer, or typing or an extension lengthened it), the backend keeps waiting until the countdown ends plus 40s (asking at most 50 more times), so backend_max_wait is a hard limit only when the countdown is off or has already run out
 # ──────────────────────────────────────────────
 [feedback]
 # 后端最大等待时间(秒) / Backend max wait time (seconds) - range [10, 7200]
-# 限制后端轮询最大时间 / Limits max backend polling time to prevent indefinite wait
+# 限制后端第一次等待的最长时间（规则见上） / Limits the first backend wait (see the rules above)
 backend_max_wait = 600
 # 前端自动重调倒计时(秒) / Frontend auto-resubmit countdown (seconds) - range [10, 3600], 0=disabled
 # 参考 Cursor 5分钟超时 / Based on Cursor 5-min session timeout, recommend 4 min (240s)

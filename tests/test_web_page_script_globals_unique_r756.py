@@ -12,6 +12,15 @@ loads later) replaced with a better one, and that nothing in its own file
 called; the copy was dead and would have changed the behaviour if the load
 order ever flipped. The lock reads the real script lists out of the template
 and out of ``webview.ts`` and fails on any new clash.
+
+R884: the lock first let one pair through, ``t`` in ``app.js`` and
+``notification-manager.js``, on the grounds that it was "the same two-line
+helper".  It was not: ``app.js`` has ``t(key, params)`` and the notification
+file had ``t(key, params, fallback)``.  ``app.js`` loads later, so on the page
+the weaker one won and a notification with no translation showed the raw key
+instead of its English sentence.  Nothing checked the claim, only *where* the
+two copies lived.  The allow-list is gone: no name is declared by two scripts,
+and the notification file's helper is ``tOrFallback``.
 """
 
 from __future__ import annotations
@@ -37,12 +46,6 @@ VENDORED = frozenset(
         "tex-mml-chtml.js",
     }
 )
-
-# The same two-line helper lives in both files so that each works when a test
-# loads it alone; the later copy does the same thing as the earlier one.
-KNOWN_IDENTICAL_COPIES = {
-    "t": frozenset({"app.js", "notification-manager.js"}),
-}
 
 _SCRIPT_TAG = re.compile(r"<script\b(?P<attrs>[^>]*)>", re.IGNORECASE | re.DOTALL)
 _HTML_SRC = re.compile(r'(?<![\w-])src="/static/js/(?P<name>[\w.\-]+\.js)(?:\?[^"]*)?"')
@@ -111,14 +114,7 @@ def declarations(directory: Path, scripts: list[str]) -> dict[str, set[str]]:
 
 
 def clashes(owners: dict[str, set[str]]) -> dict[str, set[str]]:
-    found: dict[str, set[str]] = {}
-    for name, files in owners.items():
-        if len(files) < 2:
-            continue
-        if KNOWN_IDENTICAL_COPIES.get(name) == files:
-            continue
-        found[name] = files
-    return found
+    return {name: files for name, files in owners.items() if len(files) > 1}
 
 
 def _format(found: dict[str, set[str]]) -> str:
@@ -193,10 +189,9 @@ class TestDeclarationScanner:
         owners = {"x": {"a.js", "b.js"}, "y": {"a.js"}}
         assert clashes(owners) == {"x": {"a.js", "b.js"}}
 
-    def test_a_known_copy_is_not_a_clash_until_a_third_file_joins(self) -> None:
-        pair = {"t": {"app.js", "notification-manager.js"}}
-        assert clashes(pair) == {}
-        assert clashes({"t": {"app.js", "notification-manager.js", "x.js"}})
+    def test_there_is_no_allowed_pair(self) -> None:
+        # R884: one pair used to be waved through as "identical copies" and was not.
+        assert clashes({"t": {"app.js", "notification-manager.js"}})
 
 
 class TestWebUiPage:
@@ -207,13 +202,10 @@ class TestWebUiPage:
             f"(the later script replaces or breaks the earlier one): {_format(found)}"
         )
 
-    def test_known_identical_copies_are_still_copies(self) -> None:
+    def test_the_two_translation_helpers_each_have_their_own_name(self) -> None:
         owners = declarations(WEB_JS_DIR, web_ui_scripts())
-        for name, files in KNOWN_IDENTICAL_COPIES.items():
-            assert owners.get(name) == files, (
-                f"{name!r} is no longer declared by exactly {sorted(files)}; "
-                "drop it from KNOWN_IDENTICAL_COPIES"
-            )
+        assert owners["t"] == {"app.js"}
+        assert owners["tOrFallback"] == {"notification-manager.js"}
 
     def test_the_dead_mobile_check_is_gone(self) -> None:
         owners = declarations(WEB_JS_DIR, web_ui_scripts())

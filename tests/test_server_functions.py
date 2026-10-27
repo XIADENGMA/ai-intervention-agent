@@ -2855,8 +2855,15 @@ class TestStartWebServicePortInUse(unittest.TestCase):
 #  ensure_web_ui_running (async)
 # ═══════════════════════════════════════════════════════════════════════════
 class TestEnsureWebUIRunningExtended(unittest.TestCase):
+    # R888：``ensure_web_ui_running`` 先做 TCP 预检，端口没人听就不发 HTTP 探测直接去启动。
+    # 这几个用例用假 client 模拟“Web UI 在跑”，没有真的监听者，所以把预检固定成“端口开着”，
+    # 否则在没有进程占用该端口的机器上会真的去起一个 Web UI 子进程。
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=True,
+    )
     @patch("ai_intervention_agent.service_manager.get_async_client")
-    def test_already_running(self, mock_get_client):
+    def test_already_running(self, mock_get_client, _mock_port_open):
         from unittest.mock import AsyncMock
 
         mock_resp = MagicMock()
@@ -2869,8 +2876,12 @@ class TestEnsureWebUIRunningExtended(unittest.TestCase):
 
         asyncio.run(server.ensure_web_ui_running(_make_config()))
 
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=True,
+    )
     @patch("ai_intervention_agent.service_manager.get_async_client")
-    def test_uses_provided_async_client(self, mock_get_client):
+    def test_uses_provided_async_client(self, mock_get_client, _mock_port_open):
         """调用方已持有 AsyncClient 时，健康检查不应重复 lookup singleton。"""
         from unittest.mock import AsyncMock
 
@@ -2886,9 +2897,15 @@ class TestEnsureWebUIRunningExtended(unittest.TestCase):
         mock_get_client.assert_not_called()
         mock_client.get.assert_awaited_once()
 
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=True,
+    )
     @patch("ai_intervention_agent.service_manager.start_web_service")
     @patch("ai_intervention_agent.service_manager.get_async_client")
-    def test_health_fail_starts_service(self, mock_get_client, mock_start):
+    def test_health_fail_starts_service(
+        self, mock_get_client, mock_start, _mock_port_open
+    ):
         from unittest.mock import AsyncMock
 
         mock_client = MagicMock()

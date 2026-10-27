@@ -17,7 +17,7 @@ graph LR
         A4[CLI<br/>--print-config / --version]
     end
 
-    subgraph Backend["AIIA 后端 (单 Python 进程)"]
+    subgraph Backend["AIIA 后端 (MCP server 进程 + Web UI 子进程)"]
         B1[MCP server<br/>stdio + interactive_feedback]
         B2[Flask web server<br/>/api/* + SSE bus]
         B3[Task queue<br/>读写锁 + 持久化]
@@ -130,7 +130,7 @@ sequenceDiagram
     Agent->>AIIA: interactive_feedback
     UI->>Human: 倒计时圆环
     Human->>UI: 开始输入反馈
-    Note over UI: 剩余 ≤15s 且 10s 内有输入：<br/>POST /api/tasks/{id}/extend（+60s，每任务最多 3 次）<br/>归零时仍在输入：继续等待（typing-hold）
+    Note over UI: 剩余 ≤15s 且 10s 内有输入：<br/>POST /api/tasks/{id}/extend（+60s，reason=typing，每任务最多 30 次）<br/>归零时仍在输入：继续等待（typing-hold）<br/>被拒绝（到达上限）：提交已输入的内容
     Human->>UI: 停止输入 + 提交
     UI->>AIIA: POST /api/tasks/{id}/submit
     AIIA->>Agent: SSE task_changed（completed）（完整回复）
@@ -158,7 +158,8 @@ prompt 上方渲染 loop 上下文条，并提供可折叠的「历史轮次」�
 - **多任务标签页** — 并发请求各自独立 tab + 独立倒计时圆环
 - **每任务草稿自动保存** — 切换 tab 不丢正在输入的回复
 - **输入即延长（typing-hold）** — 正在输入时倒计时自动延长、归零也
-  绝不打断
+  绝不打断（每任务最多延长 30 次，与手动配额分开；到上限后会提交已
+  输入的内容，不会丢）
 - **自定义通知音效** — 上传短音频，让 Agent 模式任务有独特提示音
 - **每任务图片** — 粘贴截图一起回复，作为 MCP `ImageContent` 块返回
   给 agent

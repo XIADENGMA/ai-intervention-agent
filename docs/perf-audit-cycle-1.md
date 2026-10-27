@@ -65,8 +65,8 @@ i18n 加载）由之前的 R 系列优化稿已经覆盖。
 
 - ❌ `_persist()` 频率：仅在 add/complete/expire 时触发，远低于 read 端
   压力；当前 fsync 成本可接受。
-- ❌ task list 长度上限：`max_tasks` 默认 50；O(N) 操作（如 `get_all_tasks`
-  的 list view 重建）成本 50 × ~10ns = 0.5µs，远小于 lock acquire 成本。
+- ❌ task list 长度上限：`max_tasks` 默认 10；O(N) 操作（如 `get_all_tasks`
+  的 list view 重建）成本 10 × ~10ns = 0.1µs，远小于 lock acquire 成本。
 
 ---
 
@@ -89,6 +89,14 @@ i18n 加载）由之前的 R 系列优化稿已经覆盖。
   其他 client 靠 ~5s 轮询同步。Schema 加 1 个 event type + emit 1 行，
   ROI 高但需要前端配套消费逻辑，留到 cycle-2 配合 Feature Mining cycle-2
   其他 SSE-related 调整一起做。
+  - **后续（R890，已做；写在这里的数字与事实以代码为准）**：`task_extended` /
+    `task_updated` 这类事件从来没有存在过，也没有新增。`extend` / `freeze` 成功后
+    改发一条 `old_status == new_status` 的 `task_changed`——它的三个消费方（网页、
+    VS Code 面板、VS Code 扩展）对同状态事件本来就只是"排一次刷新"，所以不用改
+    schema 的事件类型。此外上面的"~5s 轮询"也不是当时的实际值：网页端一直是 2 s，
+    SSE 已连通时 VS Code 面板是 30 s；同一轮里网页端也对齐成 SSE 已连通时 30 s，
+    一个已打开的页面在续期后约 90 ms 内重读任务列表（8 次实测 87–93 ms；之前取决于 2 s
+    轮询，中位数 1.48 s）。
 
 ---
 
@@ -130,7 +138,7 @@ i18n 加载）由之前的 R 系列优化稿已经覆盖。
 
 ### 5.2 TaskQueue auto-cleanup of expired tasks (low ROI)
 
-- 当前 `max_tasks=50`，到达后 `add_task` 直接 reject。expired 状态的
+- 当前 `max_tasks=10`，到达后 `add_task` 直接 reject。expired 状态的
   task 占用槽位。如果未来调到 max=500 / 5000 用于 batch agent 场景，
   需要后台清理协程。
 - **触发条件**：用户配置 `max_tasks ≥ 500` 或观察到 expired 占比 > 50%。

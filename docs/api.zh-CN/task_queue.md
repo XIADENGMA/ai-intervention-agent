@@ -74,10 +74,27 @@ daemon 后台线程主循环：用 Event 而非裸 ``time.sleep``，方便测试
 feat-countdown-extend (§3.2): 用户主动延长 task 的 auto-resubmit
 倒计时。
 
+``typing_max_extends``（R883）把这次延长标成"输入即延长"：用户还在输入时
+页面每次给倒计时 +60 s，次数记在 ``typing_extends_used``、上限是这个参数，
+不占 ``max_extends`` 的手动配额、也不计入 ``extends_used``。``None``（默认）
+就是手动延长，行为和以前完全一样。
+
+以前两种延长共用 3 次手动配额：配额用完后页面仍按"输入中不提交"一直等，
+而 backend 在最终截止后 ``BACKEND_BUFFER`` 秒就关掉任务（ghost-close）——
+用户还在打字，任务却没了，随后提交得到 404。输入延长必须保留一个上限
+（配额原本的作用就是不让任务被无限挂住），只是上限要大到正常输入碰不到。
+其余校验（已完成 / 已冻结 / 秒数范围）一视同仁。
+
 ##### `freeze_deadline(self) -> tuple[bool, str | None]`
 
-mining-6 Track A (cycle-5 §3.6 derivative): 用户主动把 task 的
-auto-resubmit 倒计时禁用，把 task 变成无 timeout 的"等用户回答"状态。
+mining-6 Track A (cycle-5 §3.6 derivative): 把 task 的 auto-resubmit
+倒计时永久禁用（``auto_resubmit_timeout`` 置 0），页面不再自动提交。
+
+只影响页面上的倒计时：MCP 服务端的等待上限（``backend_wait``，见
+``docs/configuration.zh-CN.md``）不变。冻结后 ``remaining_time`` 为 0，
+``_probe_deadline_extension`` 不会再延期，所以 task 到点仍会被服务端结束并
+返回重新调用提示。两个前端都不显示冻结按钮（R699 / R700），
+``POST /api/tasks/<id>/freeze`` 只有脚本和 API 调用方会用到。
 
 ### `class TaskQueue`
 
@@ -129,6 +146,10 @@ R23.4：合并旧的 get_all_tasks() + get_task_count() 两次 read_lock，
 
 更新所有未完成任务的 auto_resubmit_timeout
 
+R890：倒计时真的变了的任务各通知一次（锁外，``old_status`` 与 ``new_status`` 都是
+任务当前状态，见 ``extend_task_deadline``）。这是配置热更新走的路径：别的窗口里
+同一个任务的倒计时不通知就要等下一次 30 s 兜底轮询，期间按旧倒计时自动提交。
+
 ##### `get_active_task(self) -> Task | None`
 
 获取当前活动任务
@@ -140,12 +161,23 @@ cr32 §3.1 fix：在写锁内执行 ``Task.extend_deadline`` 的读改写原语�
 R835：延长成功后要落盘（锁外）。``auto_resubmit_timeout`` 在快照里；以前这里改了
 内存却不写文件，Web UI 在下一次写盘前重启，延长就丢了。
 
+R883：``typing_max_extends`` 原样传给 ``Task.extend_deadline``（输入即延长，
+不占手动配额）。返回的 ``extends_used`` 始终是手动延长的次数。
+
+R890：延长成功后，在锁外触发一次状态回调，``old_status`` 与 ``new_status`` 都是
+任务当前状态（SSE 上就是一条同状态的 ``task_changed``），让别的客户端立刻重读
+倒计时。
+
 ##### `freeze_task_deadline(self, task_id: str) -> tuple[bool, str | None, int]`
 
 mining-6 Track A: 在写锁内调用 ``Task.freeze_deadline``。
 
+冻结只让页面不再自动提交，不取消服务端的等待上限（见 ``Task.freeze_deadline``）。
+
 R835：冻结成功后要落盘（锁外），否则重启后"不要超时"的任务带着原来的倒计时回来，
 还可能被自动重调。
+
+R890：冻结成功后同样触发一次同状态的状态回调（见 ``extend_task_deadline``）。
 
 ##### `set_active_task(self, task_id: str) -> bool`
 

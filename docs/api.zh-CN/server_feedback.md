@@ -126,12 +126,13 @@ Cursor / Claude Desktop / ChatGPT Desktop 在 chat sidebar 渲染一行
 R820: while the block runs, tell the client every 20 s that the call is still alive.
 
 ``interactive_feedback`` waits for a person, which takes longer than the idle timeout
-clients put on a tool call (Cursor: 120 s). The server sent nothing in the meantime, so a
-question that was not answered, or auto-submitted by an open panel, within two minutes
+clients put on a tool call (Cursor IDE: 120 s). The server sent nothing in the meantime, so
+a question that was not answered, or auto-submitted by an open panel, within two minutes
 ended in ``MCP error -32001: Request timed out`` and the reply that came later went to a
 request nobody waited for. A client that sent a progress token restarts its idle timer on
 every ``notifications/progress``; one that did not, gets nothing (``report_progress`` is a
-no-op without a token); one that does not restart on progress is unaffected.
+no-op without a token); one that does not restart on progress is unaffected, and still
+gives up at its own limit (Cursor's command-line agent and ``agent acp``: a fixed 60 s).
 
 Design:
 

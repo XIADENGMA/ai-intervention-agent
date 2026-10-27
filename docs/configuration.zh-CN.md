@@ -86,7 +86,7 @@ MCP 服务端和它启动的 Web UI 各自每 2 秒检查一次配置文件的�
 | `notification.*`                                                                                                             | Web UI：约 2 秒内。MCP 服务端：每次反馈请求之前                                                                                     |
 | `feedback.*`                                                                                                                 | MCP 服务端：每次反馈请求。Web UI：使用默认倒计时的未完成任务在页面加载后约 2 秒内跟随 `frontend_countdown`                          |
 | `web_ui.language`                                                                                                            | 约 2 秒内                                                                                                                           |
-| `web_ui.http_request_timeout`、`http_max_retries`、`http_retry_delay`                                                        | MCP 服务端：HTTP 客户端会重建，下一次请求使用新值                                                                                   |
+| `web_ui.http_request_timeout`、`http_max_retries`                                                                            | MCP 服务端：HTTP 客户端会重建，下一次请求使用新值                                                                                   |
 | `network_security.allowed_networks`、`blocked_ips`、`access_control_enabled`、`trusted_proxy_hops`、`api_token`              | 正在运行的 Web UI 约 2 秒内应用新规则                                                                                               |
 | `web_ui.port`、`network_security.bind_interface`、`network_security.trusted_hosts`、`mdns.*`、`web_ui.log_level`               | 进程启动时读取一次：请重启 MCP 服务端                                                                                               |
 
@@ -309,7 +309,7 @@ Bark 请求直接发往 `bark_url`，不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_
 | `debug`                | boolean | `false`     | 调试模式                                                                                                                                                                                                                                                                               |
 | `http_request_timeout` | number  | `30`        | HTTP 请求超时（秒），范围 `[1, 600]`                                                                                                                                                                                                                                                   |
 | `http_max_retries`     | number  | `3`         | HTTP 最大重试次数，范围 `[0, 20]`                                                                                                                                                                                                                                                      |
-| `http_retry_delay`     | number  | `1.0`       | HTTP 重试间隔（秒），范围 `[0, 60]`                                                                                                                                                                                                                                                    |
+| `http_retry_delay`     | number  | `1.0`       | HTTP 重试间隔（秒），范围 `[0, 60]`。**目前未生效**：值会被校验，但没有任何地方读取它。`http_max_retries` 的重试按 httpx 固定的间隔等待（0、0.5、1.0、2.0 … 秒），与本项的值无关                                                                                                        |
 | `log_level`            | string  | `"WARNING"` | MCP 服务端和 Web UI 进程的日志级别，各自在启动时读取一次，所以修改后需要重启 MCP 服务端。大小写不敏感，有效值：`"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` / `"CRITICAL"`。可被环境变量 `AI_INTERVENTION_AGENT_LOG_LEVEL` 覆盖（env 优先）。VS Code 扩展使用方应改 VS Code 设置里的 `ai-intervention-agent.logLevel`（独立维度）。 |
 | `external_base_url`    | string  | `""`        | 通知点击跳转使用的外部 Web UI 基地址，例如 `http://ai.local:8080`；留空时优先回退到 mDNS（`http://ai.local:{port}`），再回退到 `http://{host}:{port}`                                                                                                                                  |
 | `ios_a2hs_hint_dismissed` | boolean | `false`  | iOS「安装到桌面」引导横幅的服务端永久关闭状态（R707）。用户点击横幅叉号时经 `POST /api/system/ios-a2hs-dismiss` 自动写为 `true`——之所以存服务端，是因为快捷指令「显示网页」WebView 的 localStorage 跨会话不持久。想重新显示横幅可手动改回 `false`。 |
@@ -369,7 +369,7 @@ Bark 请求直接发往 `bark_url`，不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_
 
 | 配置项               | 类型     | 默认值                                     | 说明                                                                                                                                    |
 | -------------------- | -------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `backend_max_wait`   | number   | `600`                                      | 后端最大等待（秒），范围 `[10, 7200]`                                                                                                   |
+| `backend_max_wait`   | number   | `600`                                      | 后端最大等待（秒），范围 `[10, 7200]`；只限制第一次等待，见下面的超时规则                                                               |
 | `frontend_countdown` | number   | `240`                                      | 前端自动重调倒计时（秒），范围 `[10, 3600]`；`0`（或任意非正整数）禁用                                                                  |
 | `resubmit_prompt`    | string   | `"请立即调用 interactive_feedback 工具"`   | 错误/超时返回的引导语                                                                                                                   |
 | `prompt_suffix`      | string   | `"\n请积极调用 interactive_feedback 工具"` | 追加到用户反馈末尾的提示语。开头的 `\n` 是 TOML 转义的换行符；原样复制到 `config.toml` 即可（加载时 TOML 解析器会把它还原成真实换行）。 |
@@ -388,7 +388,9 @@ Bark 请求直接发往 `bark_url`，不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_
 
 两种情况下后端最终都至少等待 260 秒，所以小于 260 的 `backend_max_wait` 按 260 处理（该键仍接受 `[10, 7200]`）。这个下限是有意的：过小的超时会在用户来得及回答之前就结束任务（见 [troubleshooting.zh-CN.md](troubleshooting.zh-CN.md)）。
 
-调用等待期间，MCP 服务端每 20 秒发送一次进度通知（`progress` 是已等待的秒数，不带总量）。收到进度就重置空闲超时的客户端（例如默认空闲超时为 120 秒的 Cursor）因此会一直等到后端等待结束，而不是以 `MCP error -32001: Request timed out` 失败（见 [troubleshooting.zh-CN.md](troubleshooting.zh-CN.md#20-调用在大约两分钟后以-mcp-error--32001-request-timed-out-结束)）。
+`后端等待` 只是第一次等待。它结束时，服务端会询问 Web UI：这个任务自己的倒计时是否还有剩余。倒计时比 `后端等待` 长，或者被输入、延长拉长了，就还有剩余。这时服务端继续等到倒计时结束再加 40 秒，每次到时再询问一次，最多 50 次。所以 `frontend_countdown = 1800`、`backend_max_wait = 600` 时，调用大约在 1840 秒后结束，而不是 600 秒：只有倒计时已关闭，或到那时已经走完，`backend_max_wait` 才是硬上限。通过 API 冻结的任务（`POST /api/tasks/<id>/freeze`；两个前端都不显示对应的按钮）已经没有倒计时，所以和其他任务一样在 `后端等待` 到点时结束：冻结只是让页面不再自动提交，并不会让服务端不再放弃。
+
+调用等待期间，MCP 服务端每 20 秒发送一次进度通知（`progress` 是已等待的秒数，不带总量）。收到进度就重置空闲超时的客户端（例如默认空闲超时为 120 秒的 Cursor IDE）因此会一直等到后端等待结束，而不是以 `MCP error -32001: Request timed out` 失败。Cursor 的命令行 agent 和它的 `agent acp` 模式不会因为进度而重置：它们的工具调用超时固定为 60 秒，所以等人回答的问题在那里大约一分钟后就会失败，不管上面的数值是多少（见 [troubleshooting.zh-CN.md](troubleshooting.zh-CN.md#20-调用在大约两分钟后以-mcp-error--32001-request-timed-out-结束)）。
 
 **`/` 选择器（`skill_dirs`）**：
 

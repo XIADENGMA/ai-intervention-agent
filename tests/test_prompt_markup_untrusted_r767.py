@@ -159,6 +159,7 @@ const sandbox = {
   processCodeBlocks() {},
   processStrikethrough() {},
   processLinks() {},
+  processPromptImages() {},
   _debugLog() {},
   _scheduleNextFrame(callback) { frames.push(callback); },
 };

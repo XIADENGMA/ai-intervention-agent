@@ -11,7 +11,218 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
-- Nothing yet.
+- The countdown ring no longer keeps the browser redrawing (R889). The ring in a task tab
+  (`.countdown-ring` on the page, `.task-tab-countdown` in the VS Code panel) had
+  `transition: stroke-dashoffset 0.3s ease, stroke 0.2s`, and the script moves the dash offset once
+  a second, so for 0.3 s of every second the page was animating, and `stroke-dashoffset` is not run
+  by the compositor: every frame was a style recalculation on the main thread. With one task open
+  on the real page in Chrome 156 the style was recalculated 19.9 times a second and all Chrome
+  processes together used 6.28 % of a core (renderer 2.67 %, GPU process 3.61 %). Both rules now
+  transition the colour only (the change to the warning colour near the end stays), and the same
+  page needs 1.0 recalculations a second and 0.85 % (renderer 0.37 %, GPU process 0.48 %), medians
+  of three interleaved 20 s runs. The ring now moves one step a second instead of sliding for 0.3 s
+  of it, which shows on a 10 s countdown and not on a 300 s one. 5 tests, all of which fail on the
+  old stylesheets (the ring rule transitions `stroke` and nothing else in both files; no rule under
+  any selector transitions `stroke-dashoffset`; the minified stylesheet that the page loads
+  agrees); 4 one-point mutants are all caught.
+- The browser page no longer makes the server render a Markdown copy of the message that it never
+  shows (R891). `GET /api/config` returns the message twice, as `prompt` (the Markdown) and as
+  `prompt_html` (rendered on the server). The page renders `prompt` itself with `marked` and has
+  never read `prompt_html`; only the VS Code panel does. The first render in a Web UI process
+  imports Python-Markdown and Pygments, so a Web UI that only a browser page used grew by about
+  19 MiB (40.9 to 60.1 MiB) when the page first loaded; its first answer took 82 ms (about 10 ms
+  after that) and was 15,019 bytes for a message of 1,596 characters. `/api/config` now takes
+  `html=0` (any other value, or none, renders as before; the Swagger page documents it), which
+  leaves `prompt_html` an empty string and changes nothing else, and the page asks for
+  `/api/config?html=0`; the VS Code panel still asks without it. The same Web UI now grows by
+  0.6 MiB (41.4 to 42.0 MiB), the first answer takes 8.5 ms (about 4 ms after that) and is 3,509
+  bytes, and a real Chrome shows the same task as before (the heading, four code blocks, three
+  options, the countdown ring). 28 tests, 6 of which fail on the old code; 8 one-point mutants are
+  all caught.
+- A message of more than 200,000 characters is no longer rendered as Markdown on the server
+  (R892). Python-Markdown is superlinear on a long text without blank lines, and Pygments writes
+  its styles inline, so a fenced block comes out many times larger than its text. In a real Web UI
+  `GET /api/config`, which the VS Code panel calls on every refresh, took 0.44 s for a message of
+  400,000 characters, 2.0 s for 1,000,000 (the limit of the MCP tool; the process grew by about
+  50 MiB) and 1.23 s with a 9.2 MB answer for a 400,000-character Python fence; a message of
+  5,000,000 characters, which `POST /api/tasks` still accepts (its cap is 10 MB), timed out after
+  45 s with one thread at a full core and the process at 480 MiB. The render holds a lock, so every
+  other render waited behind it. Over 200,000 characters `render_markdown` now returns the escaped
+  text in `<pre class="aiia-plain-prompt"><code>`, which keeps all of the content and none of the
+  formatting, is not cached, takes no lock and imports nothing; the markup is only what the VS Code
+  panel's sanitizer keeps, and its stylesheet already wraps `pre code`. The same four requests take
+  11 ms, 18 ms, 16 ms (1.1 MB) and 46 ms. At or below the limit nothing changes (a message of
+  20,000 characters took 155 ms on the first request and 4.5 ms after it, before and after alike).
+  The browser page renders `prompt` itself and is not affected, so a very long message shows as
+  plain text only in the VS Code panel and to any other client that reads `prompt_html`. 16 tests,
+  5 of which fail without the limit; 8 one-point mutants are all caught.
+- The two pooled HTTP clients that call the local Web UI no longer load a CA bundle (R893). They
+  only request `http://` addresses on the loopback (`get_target_base_url` builds nothing else), but
+  httpx makes an SSL context with certifi's CA bundle for every transport it creates, so each MCP
+  process (one per IDE window) held about 3.2 MiB for two contexts it never used, and creating the
+  clients took 11.9 ms (async) and 2.9 ms (sync). Both transports are now created with
+  `verify=False`: about 1.5 MiB, 7.9 ms and 0.13 ms (medians of six fresh processes, Python 3.13.15,
+  httpx 0.28.1). 14 tests, 3 of which fail on the old code (creating the clients and requesting a
+  local page load no CA bundle; every transport in `service_manager.py` is created with
+  `verify=False`; and the premise is pinned, since neither module that uses the pooled clients
+  contains an `https://` literal, so the day one of them is pointed at TLS a test fails first); 4
+  one-point mutants are all caught.
+
+### Fixed
+
+- A task could be closed under a user who was still typing (R883). While you type, the page keeps
+  the countdown alive: with 15 s left it asks the server for 60 s more
+  (`POST /api/tasks/<id>/extend`) and at zero it holds instead of auto-submitting. Those extensions
+  drew on the same quota of three as the retired manual `+60 s` button; once it was spent the page
+  went on holding, but the backend does not know about the page. After its first timeout it saw
+  `remaining_time == 0` and closed the task 40 s after the last deadline, about 460 s in with the
+  defaults, so a long answer was lost and the text sent afterwards got a `404` (real Web UI with
+  shrunken timeouts: the task was gone at deadline + 40 s while the page was still holding). Typing
+  now has its own counter. `POST /api/tasks/<id>/extend` takes `reason` (`manual`, the default, or
+  `typing`; anything else is `400 invalid_reason`), a `typing` extension leaves the manual quota
+  alone and is refused with `422 extends_limit_reached` after 30 of them, a cap that the backend's
+  50 deadline probes outlast. The Web page and the VS Code panel send `typing`, also while holding
+  at zero, at least 6 s apart; once the server refuses they stop asking and stop holding, and the
+  typed text is submitted instead of waiting for the backend to give up. A failure that is not a
+  refusal (offline, 5xx) keeps holding. A server older than this change charges typing to the manual
+  three and then refuses, so a new panel talking to it ends the same way as on any refusal. 49
+  tests; five backend mutants and the front ends put back as they were (15 tests red) are all
+  caught. In a real Chromium with the real page and the real `wait_for_task_completion` (shrunken
+  server timeouts, the manual quota spent, 110 s of typing) the old code returned the resubmit
+  prompt after 28.9 s and the task was gone, while the new code asked for 60 s twice and returned
+  the typed answer after 113.9 s.
+- The English fallback of a desktop notification was thrown away on the real page (R884).
+  `notification-manager.js` has a translation helper that takes the sentence to show when the i18n
+  module has no entry for a key, so that a notification outside the browser never reads
+  `page.noContent.newTasks`. The page loads it and, a few lines later, `app.js` as classic scripts
+  into one global scope, and both declared a top-level `function t`: the later one won,
+  `window.t.length` was 2 and the fallback was ignored, so a key missing from the active language
+  reached the notification as its raw key (checked in a real Chromium). R822 had locked the helper
+  by loading the notification script alone, and R756, which forbids one top-level name in two page
+  scripts, let this very pair through as identical copies without comparing them. The helper is now
+  `tOrFallback`, R756 has no allow-list left, and 8 new tests run the real `t` of `app.js` after the
+  notification script in one global scope, as the page does (6 of them red on the old code, and 2 in
+  R756). The i18n scanners that find call sites by name would have read the seven keys as unused, so
+  `tOrFallback` is registered with all five of them, each with a test, and section 3.quater of
+  `CONTRIBUTING.md` lists the five.
+- After switching the language in the settings panel, four texts were left wrong until a reload
+  (R885): the tooltip of each task tab (`Double-click to copy ID ...`), the status message and the
+  suggestion under the Bark base URL, and the `title` and `aria-label` of the theme button (which
+  fell back to the generic `Toggle theme` instead of naming the current theme) and of the
+  open-config-in-IDE button. `translateDOM()` writes only the static sentence of elements that carry
+  a `data-i18n*` attribute, so whatever a script had built was left alone or written over. The
+  settings panel now announces `aiia:langchange` once after it, and the tabs, the theme manager and
+  the settings panel write their own texts again, through the code that wrote them in the first
+  place. 16 tests run the real `i18n.js`, the real `en` and `zh-CN` tables and the real
+  `translateDOM()`; 11 one-point mutants are all caught. In a real Chromium, diffing every text
+  node, `title` and `aria-label` of the switched page against a freshly loaded one found 7
+  differences when switching to English and 5 when switching to Chinese before, and no stale text
+  after. Left as it was: a fresh load in a language other than English still ends with the generic
+  theme tooltip, because the English fallback table arrives after the button was labelled and
+  `translateDOM()` writes over it again; the switched page keeps the state label in every language.
+- The Web UI let an image in the agent's message point anywhere (R886). The VS Code webview drops an
+  `<img>` unless its source is an in-page reference, `data:image/*`, a same-origin path or an
+  http(s) address; the Web UI had a rule for the links of the message (R801) and none for its
+  images, so `![x](javascript:...)` stayed in the page as `<img src="javascript:...">`. Nothing was
+  exploitable (a real Chromium refused it under the page's CSP, and none of 28 script-bearing
+  payloads ran), but the two clients disagreed about what the same message may load. The Web UI now
+  applies the webview's decision to every image, in both places that paint the message, and leaves
+  the alt text of a dropped image behind as text. 106 tests, among them 232 destinations run through
+  both rules side by side; 12 one-point mutants are all caught. On the real page the `https:`,
+  `data:image/png` and same-origin images stay, and the `javascript:`, `vbscript:`, `file:`,
+  `data:text/html` and `ftp:` ones leave their alt text behind; nothing runs.
+- The documentation promised more than the code keeps, in three places. `backend_max_wait` limits
+  only the first wait: a countdown that still has time left (a longer `frontend_countdown`, typing
+  or an extension) keeps the call waiting until it ends plus 40 s, asking at most 50 times, so
+  `frontend_countdown = 1800` with `backend_max_wait = 600` ends after about 1840 s. A task frozen
+  through `POST /api/tasks/<id>/freeze`, for which neither front end shows a button, is still closed
+  at that first wait; freezing stops the page from submitting, not the server from giving up. And
+  only the Cursor IDE restarts its tool-call timeout on progress: Cursor's command-line agent and
+  `agent acp` fail a question that waits for a person after a fixed 60 s, whatever the server sends
+  or the values above are. `docs/configuration.md`, section 20 of `docs/troubleshooting.md`,
+  `config.toml.default`, the docstrings of the freeze route and the R820 row of the contributor
+  guide now say so, in both languages.
+- Every finished `interactive_feedback` call left one SSE connection open (R887). When the answer
+  arrived, the listener woke the waiting call from inside its `async with client.stream(...)`, and
+  the call's `finally` cancelled the listener while `response.aclose()` was still running. httpx and
+  httpcore do not survive a cancellation that lands in the middle of a close (encode/httpx#3782,
+  still open), so the connection stayed in the pool for good: the MCP server gained a file
+  descriptor per call, the Web UI a thread, a file descriptor and an event-bus subscriber per call,
+  and an idle server gave none of it back. Nobody saw it because a config reload rebuilds the pool.
+  Through a real stdio MCP server and its real Web UI, 30 calls took the MCP server from 8 to 39
+  descriptors and the Web UI from 5 to 36 threads; under `ulimit -n 64` the 54th call took 261.8 s,
+  the one after it never reached the page and the log filled with `Too many open files`; under
+  Waitress with `--threads=8`, the setup `docs/deployment.md` documents, the 8th call hung (the
+  first seven answered in 0.33 s each). The listener now leaves the `async with`
+  first, fetches the result and wakes the waiting call as the last thing it does, so there is no
+  close left to interrupt. 3 tests, with a stream whose close takes several event-loop turns like
+  the real one: all 3 fail on the old code (the stream is cancelled in the middle of closing, the
+  result is fetched while the stream is still open); 3 one-point mutants are all caught. The same
+  runs afterwards: the MCP server stays at 8 descriptors and the Web UI at 5 to 6 threads over 30 calls,
+  all 70 calls under `ulimit -n 64` return within 20 ms of the answer, and Waitress answers 20 calls
+  out of 20. Left as it was: the Web UI's descriptor count still moves between 8 and 17, because
+  Werkzeug's development server keeps one kqueue descriptor per closed event stream until Python's
+  garbage collector runs (`gc.collect()` returns all of them); before, the streams that never
+  closed hid it.
+- The first `interactive_feedback` call of a session waited 1.5 s for nothing before the Web UI
+  started (R888). `ensure_web_ui_running` asked `/api/health` over HTTP first, and the pooled
+  client's transport (`retries=http_max_retries`, 3 by default) retries a refused connection on
+  httpcore's fixed 0 / 0.5 / 1.0 s schedule, while the Web UI needs about 0.2 s from spawn to
+  listening. With nothing on the port the task showed up on the page after 2.0 s (2026 ms on
+  loopback with mDNS off; 2046 ms, and 2077 ms on the published 1.9.0, with
+  `bind_interface = "0.0.0.0"` and mDNS on). The function now connects to the port first, the check
+  `health_check_service` already makes, and starts the Web UI at once when nothing listens; a
+  port that answers goes through the HTTP check as before, including the test that it is this Web
+  UI (R856). 5 tests, 3 of which fail on the old code (a closed port gets no HTTP probe, a real
+  `retries=3` transport no longer sits in its 1.5 s backoff, the check does not block the event
+  loop); 6 one-point mutants are all caught. In a real stdio MCP server with its real Web UI the
+  port now opens after about 230 ms instead of about 1800 ms, and the task is on the page after
+  520 to 546 ms in five runs of either configuration.
+- A page that was connected to the event stream still polled the server every 2 s, and a countdown
+  change reached the other windows only through that polling (R890). When the stream opens,
+  `multi_task.js` lowers the poll to 30 s, as its comments and the docs say, but the poll callback
+  wrote 2 s back into the interval after every success, so the 30 s lasted until the first poll:
+  three requests in the first 0.7 s after the page loaded, then nothing for 30 s, then one every 2 s
+  for good. In a real Chrome 156, from 45 s after the load, a connected page asked for the task list
+  30 times a minute and, with a task open, for that task's details as often, 60 requests a minute;
+  the VS Code panel was right all along. Correcting the page alone would have left another window
+  with a stale countdown for up to 30 s, because `POST /api/tasks/<id>/extend` and `/freeze`
+  broadcast nothing and the polling was the only way another client could notice, and a window that
+  still shows the old countdown submits the task when that deadline passes. (The Swagger text of
+  both routes, `docs/perf-audit-cycle-1.md` and `docs/feature-mining-cycle-1.md` spoke of a
+  `task_updated` or `task_extended` event; none ever existed.) Both routes now send a `task_changed`
+  event once the change is stored, outside the queue's lock, with `old_status` equal to
+  `new_status`, and so does the hot reload of the default countdown (`frontend_countdown` in
+  `config.toml`, which moves the deadline of every unfinished task that has no timeout of its own),
+  once for each task it moved (in a real Web UI, `POST /api/update-feedback-config` with
+  `frontend_countdown` 450 moved the open task from 240 s to 450 s and told nobody; the event now
+  arrives within 5 ms). That needs no new event type: the page, the VS Code panel and the extension
+  already answer every `task_changed` by fetching the list again, without comparing the two
+  statuses, and the MCP waiter reacts to `new_status == "completed"` only, which a task that can be
+  extended never has. The page now asks 2 and 2 times a minute, 4 with a task open instead of 60,
+  and an extension made through the API reaches an open page in 89 ms (87 to 93 ms in eight tries)
+  instead of a median of 1.48 s (0.5 to 1.9 s, and 15.7 s on the first try, which waited for the
+  page's first poll). The Swagger text now describes the event and the two audit documents carry a
+  note. 21 tests, 16 of which fail on the old code (the poll returns to 30 s while the stream is
+  connected and to 2 s when it is not, the VS Code panel does the same, both routes announce exactly
+  one event after a success and none after a refusal, the hot reload announces exactly the tasks it
+  moved, the announcement is made outside the lock, the payload passes the event schema, and none of
+  the three consumers compares the statuses); 13 one-point mutants are all caught.
+- The documentation promised more than the code keeps, in six more places. The overview in
+  `README.md` and `README.zh-CN.md` and the diagram in `docs/architecture.md` and
+  `docs/architecture.zh-CN.md` said AIIA is a single Python process; it is two, the MCP server (one
+  per IDE window) and the Web UI subprocess it starts on demand, which every window shares.
+  `web_ui.http_retry_delay` is validated but nothing reads it, and retries wait on httpx's fixed
+  0 / 0.5 / 1.0 s schedule, so `docs/configuration.md` (both languages) and `config.toml.default`
+  now say it has no effect and the hot-reload table no longer lists it. The docstring of
+  `render_markdown` capped a message at about 100 KB through `PROMPT_MAX_LENGTH`; the cap on a
+  task's message is `MAX_MESSAGE_LENGTH`, 1,000,000 characters (`PROMPT_MAX_LENGTH`, 100,000, limits
+  only `resubmit_prompt` and `prompt_suffix`), and `docs/api.zh-CN/web_ui.md` was regenerated.
+  `docs/perf-audit-cycle-1.md` gave `max_tasks` a default of 50; it is 10.
+  `docs/perf-mcp-cold-start.md` (both languages) said Brotli was left out and listed it as future
+  work, but R21.4 ships `.br` files next to the `.gz` ones with `brotli>=1.2.1` as a runtime
+  dependency; and its "about 360 ms from the tool call to the page" was the Web UI's own cold
+  start: the first call took about 2.0 s until R888.
 
 ## [1.9.0] - 2026-10-25
 

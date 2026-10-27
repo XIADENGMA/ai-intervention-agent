@@ -181,6 +181,7 @@ The project has these i18n wrapper functions; all
 | `__ncT` | `packages/vscode/webview-notify-core.js` | local helper (P8) |
 | `AIIA_I18N.t` | `static/js/i18n.js` (namespace) | multi_task.js dot-access |
 | `_resolveLabel` | `static/js/ios_a2hs_hint.js` | fallback-aware i18n |
+| `tOrFallback` | `static/js/notification-manager.js` | fallback-aware i18n (R884) |
 
 **Adding a new wrapper**: you **must** update **both**
 of these files in lockstep, or you'll silently break
@@ -189,16 +190,28 @@ i18n orphan/dead-key detection:
 1. `scripts/check_i18n_orphan_keys.py` → `JS_T_CALL_RE`
 2. `tests/test_runtime_behavior.py` → `_JS_T_CALL_RE`
 
+Three more checks keep their own copy of the wrapper
+list. A wrapper that is missing there loses that check
+for its call sites, and nothing fails (R884):
+
+3. `scripts/check_i18n_param_signatures.py` → `_T_CALL_RE`
+4. `tests/test_i18n_used_keys_exist.py` → `_CALLSITE_RES`
+5. `tests/test_i18n_innerhtml_safety_comment.py` → `INNERHTML_T_CALL`
+
 **Regex pattern**:
 
 ```
-(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
+(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel|tOrFallback|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
 ```
 
 Add your function name to the `(?:...)` alternation.
 Run both `pytest tests/test_i18n_orphan_keys.py` and
 `pytest tests/test_runtime_behavior.py::TestI18nDeadKeys`
-to verify no orphan/dead-key false-positives appear.
+to verify no orphan/dead-key false-positives appear, and
+`pytest tests/test_i18n_param_signatures.py
+tests/test_i18n_used_keys_exist.py
+tests/test_i18n_innerhtml_safety_comment.py` for the
+other three.
 
 ---
 

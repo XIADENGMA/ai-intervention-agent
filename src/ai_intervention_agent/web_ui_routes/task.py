@@ -67,6 +67,23 @@ COUNTDOWN_EXTEND_DEFAULT_SECONDS: int = 60
 COUNTDOWN_EXTEND_SECONDS_MIN: int = 10
 COUNTDOWN_EXTEND_SECONDS_MAX: int = 300
 
+# R883：``POST /api/tasks/<id>/extend`` 的 ``reason``。"manual" 占 ``COUNTDOWN_EXTENDS_MAX``
+# 配额；"typing"（用户还在输入，页面自动续 60 s）不占这份配额、不计入 ``extends_used``，
+# 单独按 ``COUNTDOWN_TYPING_EXTENDS_MAX`` 计数。以前两者共用 3 次，配额用完后页面仍
+# 按"输入中不提交"一直等，而 backend 在最终截止 + ``BACKEND_BUFFER`` 秒关掉了用户正在写的任务。
+COUNTDOWN_EXTEND_REASON_MANUAL: str = "manual"
+COUNTDOWN_EXTEND_REASON_TYPING: str = "typing"
+COUNTDOWN_EXTEND_REASONS: tuple[str, ...] = (
+    COUNTDOWN_EXTEND_REASON_MANUAL,
+    COUNTDOWN_EXTEND_REASON_TYPING,
+)
+# 一个任务最多续 30 次输入延长：页面每次 +60 s，也就是连续不停地输入 30 分钟。
+# 上限必须保留（配额原本的作用就是不让任务被无限挂住，任何本地客户端都能调这个接口），
+# 又要比 backend 探针能撑的时间短——50 次探测每次至少等 54 s，合计不少于 45 分钟
+# （见 ``server_feedback._DEADLINE_EXTENSION_PROBE_MAX``）——这样总是页面先收到 422、
+# 转而提交已输入的内容，而不是 backend 先放弃任务。
+COUNTDOWN_TYPING_EXTENDS_MAX: int = 30
+
 
 def _read_sse_schema_validate_mode() -> str:
     """读 ``AIIA_SSE_SCHEMA_VALIDATE`` 环境变量, 返回合法的 mode。
@@ -1980,9 +1997,21 @@ class TaskRoutesMixin:
                         要延长的秒数；缺省走 COUNTDOWN_EXTEND_DEFAULT_SECONDS
                         (60)。范围 [10, 300]。
                       example: 60
+                    reason:
+                      type: string
+                      enum: [manual, typing]
+                      description: |
+                        延长的原因；缺省 `manual`。`manual` 占
+                        COUNTDOWN_EXTENDS_MAX 配额并计入 `extends_used`；
+                        `typing`（用户还在输入，页面自动续期）不占这份配额、
+                        不计入 `extends_used`，单个任务最多
+                        COUNTDOWN_TYPING_EXTENDS_MAX（30）次。
+                      example: manual
             responses:
               200:
-                description: 延长成功（task_updated 事件已通过 SSE 广播）
+                description: |
+                  延长成功。R890：同时通过 SSE 广播一条 ``task_changed``（``old_status`` 与
+                  ``new_status`` 相同，只表示倒计时变了），其他客户端据此立刻重读任务列表。
                 schema:
                   type: object
                   properties:
@@ -1998,8 +2027,9 @@ class TaskRoutesMixin:
                       type: integer
               400:
                 description: |
-                  请求体无效（seconds 超出 [10, 300] / JSON 解析失败 /
-                  task 已完成 / task 禁用了 auto-resubmit）
+                  请求体无效（seconds 超出 [10, 300] / reason 不是
+                  manual 或 typing / JSON 解析失败 / task 已完成 /
+                  task 禁用了 auto-resubmit）
                 schema:
                   type: object
                   properties:
@@ -2008,11 +2038,11 @@ class TaskRoutesMixin:
                       description: 固定为 false
                     error:
                       type: string
-                      description: '`seconds` 不是整数时是说明文字（`seconds 必须是整数`），其余情况和 `code` 相同（机器可读的原因，不是说明文字）'
+                      description: '`seconds` 不是整数或 `reason` 不是允许的值时是说明文字（`seconds 必须是整数` / `reason 必须是 manual 或 typing`），其余情况和 `code` 相同（机器可读的原因，不是说明文字）'
                     code:
                       type: string
                       description: |
-                        机器可读错误码（如 `invalid_seconds`,
+                        机器可读错误码（如 `invalid_seconds`, `invalid_reason`,
                         `task_completed`, `auto_resubmit_disabled`）
               404:
                 description: task 不存在
@@ -2046,7 +2076,10 @@ class TaskRoutesMixin:
                       type: string
               422:
                 description: |
-                  延长上限已达（extends_used >= COUNTDOWN_EXTENDS_MAX）。
+                  延长上限已达：reason 为 manual 且
+                  extends_used >= COUNTDOWN_EXTENDS_MAX，或 reason 为 typing
+                  且该任务的输入延长已达 COUNTDOWN_TYPING_EXTENDS_MAX 次
+                  （两种延长各计各的，互不占用）。
                   前端按钮应根据 ``extends_used`` 字段提前 disabled，正常
                   路径不会走到 422，但保留作为防御性校验。
                 schema:
@@ -2097,6 +2130,19 @@ class TaskRoutesMixin:
                         }
                     ), 400
 
+                reason = payload.get("reason", COUNTDOWN_EXTEND_REASON_MANUAL)
+                if (
+                    not isinstance(reason, str)
+                    or reason not in COUNTDOWN_EXTEND_REASONS
+                ):
+                    return jsonify(
+                        {
+                            "success": False,
+                            "error": "reason 必须是 manual 或 typing",
+                            "code": "invalid_reason",
+                        }
+                    ), 400
+
                 success, error_code, extends_used, new_timeout = (
                     task_queue.extend_task_deadline(
                         task_id,
@@ -2104,6 +2150,11 @@ class TaskRoutesMixin:
                         max_extends=COUNTDOWN_EXTENDS_MAX,
                         min_seconds=COUNTDOWN_EXTEND_SECONDS_MIN,
                         max_seconds=COUNTDOWN_EXTEND_SECONDS_MAX,
+                        typing_max_extends=(
+                            COUNTDOWN_TYPING_EXTENDS_MAX
+                            if reason == COUNTDOWN_EXTEND_REASON_TYPING
+                            else None
+                        ),
                     )
                 )
                 if error_code == "task_not_found":
@@ -2129,7 +2180,8 @@ class TaskRoutesMixin:
                 )
                 logger.info(
                     f"task_id={task_id} 倒计时延长 +{requested_seconds}s "
-                    f"(extends_used={extends_used}/{COUNTDOWN_EXTENDS_MAX})"
+                    f"(reason={reason}, "
+                    f"extends_used={extends_used}/{COUNTDOWN_EXTENDS_MAX})"
                 )
                 return jsonify(
                     {
@@ -2150,8 +2202,12 @@ class TaskRoutesMixin:
         @self.app.route("/api/tasks/<task_id>/freeze", methods=["POST"])
         @self.limiter.limit("10 per minute")
         def freeze_task_deadline(task_id: str) -> ResponseReturnValue:
-            """mining-6 Track A (cycle-5 §3.6 derivative): 用户主动把指定 task
-            的 auto-resubmit 倒计时永久禁用，让 task 进入"等用户回答"状态。
+            """mining-6 Track A (cycle-5 §3.6 derivative): 把指定 task 的
+            auto-resubmit 倒计时永久禁用，页面不再自动提交。
+
+            只影响页面上的倒计时：服务端的等待上限（``backend_wait``）不变，冻结后的
+            task 到点仍会被结束并返回重新调用提示。两个前端都不显示冻结按钮
+            （R699 / R700），这个接口只给脚本和 API 调用方。
             ---
             tags:
               - Tasks
@@ -2162,7 +2218,9 @@ class TaskRoutesMixin:
                 required: true
             responses:
               200:
-                description: 冻结成功（task.auto_resubmit_timeout 已置 0）
+                description: |
+                  冻结成功（task.auto_resubmit_timeout 已置 0）。R890：同时通过 SSE 广播一条
+                  ``task_changed``（``old_status`` 与 ``new_status`` 相同），其他客户端据此重读倒计时。
                 schema:
                   type: object
                   properties:

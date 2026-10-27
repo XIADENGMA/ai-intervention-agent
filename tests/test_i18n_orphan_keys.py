@@ -3,7 +3,7 @@
 脚本 warn-only（不挂 CI），给贡献者 soft 信号；strict dead-key gate 已在
 ``test_runtime_behavior.py``。本文件锁「扫描器合约」而非 codebase 状态：
   1. ``t(...)`` 提取正则必须认齐我们实际用过的 wrapper（``_t`` / ``tl``
-     / ``hostT`` / ``__vuT`` / ``__domSecT`` / ``__ncT``）；新增 wrapper 忘
+     / ``hostT`` / ``__vuT`` / ``__domSecT`` / ``__ncT`` / ``tOrFallback``）；新增 wrapper 忘
      了改扫描器会让 orphan 报告说谎；
   2. JSON 输出形状稳定（``orphans`` / ``total_keys`` / ``used_keys``
      per surface），给未来 dashboard / PR commenter 用；
@@ -47,6 +47,9 @@ class TestRegexCoversAllWrappers(unittest.TestCase):
             ("__vuT('validation.x')", "validation.x"),
             ("__domSecT('page.y')", "page.y"),
             ("__ncT('notify.z')", "notify.z"),
+            # R884：notification-manager.js 的 helper，带 fallback 的三参形式也要认
+            ("tOrFallback('notify.q')", "notify.q"),
+            ("tOrFallback('notify.r', { id }, `New task: ${id}`)", "notify.r"),
         ]:
             with self.subTest(call=call):
                 matches = JS_T_CALL_RE.findall(call)
@@ -61,6 +64,16 @@ class TestRegexCoversAllWrappers(unittest.TestCase):
         """``myT('foo')`` is NOT one of our wrappers — must be skipped."""
         matches = JS_T_CALL_RE.findall("myT('foo.bar')")
         self.assertEqual(matches, [])
+
+    def test_fallback_helper_lookalikes_not_matched(self) -> None:
+        """R884：``tOrFallback`` 只认裸名；属性访问和带前缀的同名都不算。"""
+        for call in (
+            "obj.tOrFallback('foo.bar')",
+            "mytOrFallback('foo.bar')",
+            "tOrFallbackX('foo.bar')",
+        ):
+            with self.subTest(call=call):
+                self.assertEqual(JS_T_CALL_RE.findall(call), [])
 
     def test_prettier_multiline_call_is_matched(self) -> None:
         """R18.3 reverse-lock：Prettier 把长参数列表切成多行后第一参数前会带

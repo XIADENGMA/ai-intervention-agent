@@ -339,6 +339,27 @@ _MD_EXTENSION_CONFIGS: dict[str, dict[str, Any]] = {
 }
 
 
+# R892：超过这个长度的消息不再走 Markdown 渲染。``markdown`` 处理"一大段不含空行的
+# 文本"是超线性的：40 万字符约 0.44 s，100 万字符（MCP 工具 ``MAX_MESSAGE_LENGTH`` 的
+# 上限）约 2.0 s 且让 Web UI 进程多占约 50 MiB；直接 ``POST /api/tasks`` 的任务只受任务
+# 队列 10 MB 的硬上限约束，500 万字符 45 s 还没渲染完（单核占满，进程 41 → 480 MiB）；
+# 带语言标注的大代码块还会让 Pygments 的行内样式把响应撑到 9 MB（40 万字符的 Python
+# 围栏）。超限的消息退回成转义后的纯文本，内容完整，只是没有格式。
+_MD_RENDER_MAX_CHARS: int = 200_000
+
+
+def _render_plain_text_fallback(text: str) -> str:
+    """把消息原样放进一个 ``<pre><code>``（已转义），不做任何 Markdown 处理。
+
+    只用 ``pre`` / ``code`` 和 ``pre`` 上的 ``class``：VS Code webview 的
+    ``sanitizePromptHtml`` 会删掉 ``style``，所以换行靠 ``webview.css`` 里已有的
+    ``.markdown-content pre code { white-space: pre-wrap }``，不靠内联样式。
+    """
+    import html
+
+    return '<pre class="aiia-plain-prompt"><code>' + html.escape(text) + "</code></pre>"
+
+
 _RTL_LANG_PREFIXES: frozenset[str] = frozenset(
     {
         "ar",
@@ -759,7 +780,9 @@ class WebFeedbackUI(
         缓存语义
         --------
         - **key**：完整 prompt 字符串（避免 hash 冲突；prompt 长度受
-          ``PROMPT_MAX_LENGTH`` 上限保护，R166 起单条最多 ~100KB）。
+          ``MAX_MESSAGE_LENGTH`` 上限保护，单条最多 1,000,000 个字符；
+          ``PROMPT_MAX_LENGTH``（100,000）只限制 ``resubmit_prompt`` 和
+          ``prompt_suffix``，不管任务消息）。
         - **value**：渲染后的 HTML 字符串。
         - **容量**：16 条（远大于 ``max_tasks=10``，合理场景命中率 ~100%）。
         - **LRU 实现**：``dict`` 插入顺序保证（Python 3.7+），命中时
@@ -778,9 +801,16 @@ class WebFeedbackUI(
             - HTML未进行额外的XSS过滤，依赖Markdown库的安全性
             - cache 不在 ``/api/update`` 时显式失效——新 prompt 会作为新 key
               进入 cache，旧 key 自然 LRU evict，简化逻辑且无正确性问题。
+            - R892：超过 ``_MD_RENDER_MAX_CHARS``（200,000 个字符）的文本不渲染，直接
+              返回转义后的 ``<pre><code>`` 纯文本（见 ``_render_plain_text_fallback``），
+              也不进 cache：``markdown`` 处理一大段不含空行的文本是超线性的，100 万字符
+              （MCP 工具的上限）要约 2 s；直接 ``POST /api/tasks`` 的任务只受任务队列
+              10 MB 的硬上限约束，500 万字符 45 s 都没渲染完，期间 Web UI 的一个线程被占满。
         """
         if not text:
             return ""
+        if len(text) > _MD_RENDER_MAX_CHARS:
+            return _render_plain_text_fallback(text)
         with self._md_lock:
             if self.md is None:
                 import markdown
@@ -876,6 +906,17 @@ class WebFeedbackUI(
             ---
             tags:
               - System
+            parameters:
+              - name: html
+                in: query
+                type: string
+                required: false
+                description: |
+                  R891：传 ``0`` 时不在服务端渲染 Markdown，``prompt_html`` 返回空字符串，
+                  ``prompt`` 原样不变。浏览器页面用 ``marked`` 在前端渲染 ``prompt``，从不读
+                  ``prompt_html``，所以请求 ``/api/config?html=0``；VS Code webview 读
+                  ``prompt_html``，不传该参数。其它取值都按没传处理。
+                example: "0"
             responses:
               200:
                 description: 当前任务配置
@@ -887,7 +928,7 @@ class WebFeedbackUI(
                       description: 提示文本（Markdown 原文）
                     prompt_html:
                       type: string
-                      description: 渲染后的 HTML
+                      description: 渲染后的 HTML；请求带 ``html=0`` 时为空字符串
                     predefined_options:
                       type: array
                       nullable: true
@@ -914,6 +955,9 @@ class WebFeedbackUI(
                 description: 服务器内部错误
             """
             try:
+                # R891：浏览器页面用 marked 在前端渲染 ``prompt``，从不读 ``prompt_html``，
+                # 它传 ``?html=0`` 就跳过服务端的 Markdown 渲染；VS Code 不传，行为不变。
+                want_html = request.args.get("html") != "0"
                 try:
                     ui_lang = get_config().get_section("web_ui").get("language", "auto")
                 except Exception:
@@ -929,7 +973,11 @@ class WebFeedbackUI(
                     return jsonify(
                         {
                             "prompt": active_task.prompt,
-                            "prompt_html": self.render_markdown(active_task.prompt),
+                            "prompt_html": (
+                                self.render_markdown(active_task.prompt)
+                                if want_html
+                                else ""
+                            ),
                             "predefined_options": active_task.predefined_options,
                             "predefined_options_defaults": (
                                 _task_predefined_options_defaults(active_task)
@@ -973,7 +1021,11 @@ class WebFeedbackUI(
                         return jsonify(
                             {
                                 "prompt": first_task.prompt,
-                                "prompt_html": self.render_markdown(first_task.prompt),
+                                "prompt_html": (
+                                    self.render_markdown(first_task.prompt)
+                                    if want_html
+                                    else ""
+                                ),
                                 "predefined_options": first_task.predefined_options,
                                 "predefined_options_defaults": (
                                     _task_predefined_options_defaults(first_task)
@@ -1056,7 +1108,7 @@ class WebFeedbackUI(
                             self.current_auto_resubmit_timeout = effective_timeout
 
                     prompt_html = ""
-                    if has_content_snapshot:
+                    if has_content_snapshot and want_html:
                         try:
                             prompt_html = self.render_markdown(prompt_snapshot)
                         except Exception as e:

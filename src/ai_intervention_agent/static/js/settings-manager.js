@@ -59,6 +59,7 @@ class SettingsManager {
     this._languageChangeEpoch = 0;
     this._languagePersistPromise = null;
     this._pendingLanguagePreference = null;
+    this._renderBarkBaseUrlStatus = null;
 
   }
 
@@ -608,6 +609,11 @@ class SettingsManager {
         return this._handleLanguageSelectChange(langSelect.value);
       });
     }
+    if (typeof window.addEventListener === "function") {
+      window.addEventListener("aiia:langchange", () => {
+        this._refreshLanguageDependentTexts();
+      });
+    }
 
     document.addEventListener("click", (e) => {
       if (e.target.id === "settings-panel") {
@@ -993,6 +999,8 @@ class SettingsManager {
         item.hidden = true;
       }
     };
+
+    this._renderBarkBaseUrlStatus = renderStatus;
 
     if (recheckBtn) {
       recheckBtn.addEventListener("click", () => {
@@ -1405,6 +1413,7 @@ class SettingsManager {
         if (changeEpoch !== this._languageChangeEpoch) return;
         i18n.setLang(targetLang);
         i18n.translateDOM();
+        this._announceLanguageChange(targetLang);
       }
 
       if (changeEpoch !== this._languageChangeEpoch) return;
@@ -1413,6 +1422,33 @@ class SettingsManager {
       if (changeEpoch === this._languageChangeEpoch) {
         console.warn("Apply language preference failed:", e);
       }
+    }
+  }
+
+  // R885: ``translateDOM()`` only knows the strings that carry a ``data-i18n*`` attribute, and it
+  // writes the *static* text of each one.  Everything the page builds by script (the tab
+  // tooltips, the theme button's "Theme: Dark", the Bark and open-in-IDE texts that come from a
+  // server answer) was left in the old language, or, where an attribute did name it, put back
+  // to the generic sentence.  A page loaded in the new language builds them in that language, so
+  // the page that has just switched language was a different page from the one a load gives.
+  // This is sent once, after ``translateDOM()``, for each of those owners to write its own text
+  // again.
+  _announceLanguageChange(lang) {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("aiia:langchange", { detail: { lang } }),
+      );
+    } catch (_e) {
+
+    }
+  }
+
+  // The two panels here that show a server answer: ask again, through the code that painted them
+  // on page load, so that a switched page and a freshly loaded one cannot differ.
+  _refreshLanguageDependentTexts() {
+    Promise.resolve(this.initOpenConfigFileButton()).catch(() => {});
+    if (typeof this._renderBarkBaseUrlStatus === "function") {
+      Promise.resolve(this._renderBarkBaseUrlStatus()).catch(() => {});
     }
   }
 

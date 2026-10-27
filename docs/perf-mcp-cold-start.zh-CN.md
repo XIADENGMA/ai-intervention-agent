@@ -111,6 +111,14 @@ web_ui.py, ...])` 到 socket listen，仍然要 **1922 ms** 中位数。深挖
 "AI 调工具 → 用户看到 UI" 的延迟现在主要被 AI 客户端的网络 RTT 主导，
 不再是我们这边的瓶颈。
 
+> **更正（R888）。** ~360 ms 是 Web UI 子进程的冷启动（import + spawn → listen，
+> 即 `scripts/perf_e2e_bench.py` 量的那几段）。真实的第一次 `interactive_feedback`
+> 调用还要多等约 1.5 s：`ensure_web_ui_running` 先探测 `/api/health` 才去启动，
+> 连接池的传输层（`retries=http_max_retries`，默认 3）对被拒绝的连接先按 httpcore
+> 固定的 0 / 0.5 / 1.0 s 重试，页面上要约 2.0 s 才看到任务（在 1.9.0 上测得）。
+> R888 先用 TCP 连接检查端口，端口上没有进程就立刻启动 Web UI：现在第一次调用
+> 约 0.5 s。
+
 ### 取舍
 
 - "mDNS 已发布" 那行 stdout 现在出现在 "Running on http://..." **之后**
@@ -329,9 +337,13 @@ TaskQueue._trigger_status_change
 1916 KB。最大单点收益：`tex-mml-chtml.js` 1173 KB → 264 KB（-77%）。
 
 **压缩阈值：** 500 字节（对齐 `flask-compress` 的 `COMPRESS_MIN_SIZE`
-默认值）。更小的文件 gzip 18 字节头开销不划算。我们故意没用 Brotli ——
-它比 gzip 再小 15–20%，但要 `pip install brotli` 运行时依赖。未来某轮
-R20.x 如果有指标支撑可以再考虑。
+默认值）。更小的文件 gzip 18 字节头开销不划算。R20.14-D 只做了 gzip：
+Brotli 比 gzip 再小 15–20%，但需要 `brotli` 运行时依赖。
+
+**更新 —— Brotli 在 R21.4 上线了。** `scripts/precompress_static.py` 现在
+同时生成 `<file>.br` 副本，`_send_with_optional_gzip` 按 `br` > `gzip` >
+原文件的顺序选择（仍打 `Vary: Accept-Encoding`），`brotli>=1.2.1` 是
+已声明的运行时依赖（`pyproject.toml`）。
 
 **工作流：**
 
@@ -376,8 +388,8 @@ uv run python scripts/precompress_static.py --clean
   但对计时器有序性的细微回归风险大于收益；
 - **激进图像格式转换** —— 自动把粘贴的 PNG 转 WebP。现代浏览器对两者
   支持都很好；用户剪贴板里的 PNG 是他们预期上传的；
-- **Brotli 预压缩** —— 比 gzip 再小 15–20%，但要 `brotli` Python
-  运行时包。等到有用户实测 transfer-size 抱怨再说；
+- **Brotli 预压缩** —— 写这篇时被否决，后来在 R21.4 上线（见 R20.14-D 下的
+  更新）：`.gz` 旁边多了 `.br` 副本，`brotli>=1.2.1` 成为运行时依赖；
 - **VSIX 体积削减** —— `mathjax/` 在 VSIX 里 2.0 MB。删掉会破坏
   webview 离线数学渲染。CDN fallback 不可行（VSCode webview CSP 限制
   外部加载）；
@@ -392,7 +404,7 @@ uv run python scripts/precompress_static.py --clean
 git clone https://github.com/xiadengma/ai-intervention-agent
 cd ai-intervention-agent
 uv sync --all-extras
-uv run python scripts/precompress_static.py    # 生成 .gz 副本
+uv run python scripts/precompress_static.py    # 生成 .gz 和 .br 副本
 uv run python scripts/perf_e2e_bench.py --format table
 
 # 与基线对比
@@ -410,8 +422,6 @@ uv run python scripts/perf_gate.py --results /tmp/perf.json
 
 R20.x 完成了用户最初提出的四层路线图。可能的 R21+ 方向：
 
-- **Brotli 预压缩** —— 等到有遥测显示 transfer size 是某用户的瓶颈
-  （比如远程隧道走慢链路）；
 - **HTTP/2 + server push** —— 需要换 Flask stdlib server。最好和
   独立的「生产部署指南」RFC 配套做；
 - **Service worker 离线资源缓存** —— 通知 service worker 已经存在但
