@@ -929,7 +929,9 @@ class TestCascadeModel:
 class TestStylesheets:
     def test_the_whole_stylesheet_is_read(self, name: str) -> None:
         rules, skipped = stylesheet(name)
-        assert len(rules) > 800, f"{name}: only {len(rules)} rules were read"
+        # A floor, not an exact count: it only has to notice a read that stops halfway.
+        # (839 rules when this was written; deleting a feature's CSS lowers it, 793 after R896.)
+        assert len(rules) > 750, f"{name}: only {len(rules)} rules were read"
         assert not unread_problems(skipped), f"{name}: {unread_problems(skipped)}"
 
     @pytest.mark.parametrize("row", ROWS, ids=ROW_IDS)

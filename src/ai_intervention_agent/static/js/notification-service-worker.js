@@ -1,6 +1,6 @@
 const STATIC_CACHE_NAME = 'aiia-static-v2'
 
-const OFFLINE_CACHE_NAME = 'aiia-offline-v1'
+const OFFLINE_CACHE_NAME = 'aiia-offline-v2'
 const OFFLINE_FALLBACK_URL = '/offline.html'
 
 const MAX_ENTRIES = 200

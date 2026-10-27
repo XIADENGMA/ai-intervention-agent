@@ -240,7 +240,7 @@ def _service_worker_harness(case_js: str) -> str:
 def test_navigation_fetch_event_uses_offline_fallback_after_network_failure() -> None:
     script = _service_worker_harness(
         """
-        sandbox.__stores['aiia-offline-v1'] = new Map([
+        sandbox.__stores['aiia-offline-v2'] = new Map([
           ['/offline.html', new MiniResponse('offline shell', { status: 200 })],
         ]);
         let networkCalls = 0;
@@ -267,7 +267,7 @@ def test_navigation_fetch_event_uses_offline_fallback_after_network_failure() ->
     )
 
     assert _run_node(script) == (
-        '{"body":"offline shell","networkCalls":1,"openedCaches":["aiia-offline-v1"]}'
+        '{"body":"offline shell","networkCalls":1,"openedCaches":["aiia-offline-v2"]}'
     )
 
 

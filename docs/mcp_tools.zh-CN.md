@@ -141,13 +141,15 @@ schema（`additionalProperties: false`）拒绝，且不会创建任务。
 #### Loop 工程参数（长程自主循环）
 
 5 个可选元数据字段，面向**多轮循环工作流**（如 Ralph-loop 式"持续迭代
-直到 TODO 完成"的长会话）。它们承载每次反馈请求背后的*上下文*，让
-人类审阅者在几十轮交互中不丢失脉络。均为纯字符串，随任务存储、跨重启
-持久化，并通过 `GET /api/tasks` / `GET /api/tasks/<id>` /
-`GET /api/config` / `GET /api/tasks/export` 返回——**不改变**工具行为。
+直到 TODO 完成"的长会话）。它们承载每次反馈请求背后的*上下文*。
+均为纯字符串，随任务存储、跨重启持久化，并通过 `GET /api/tasks` /
+`GET /api/tasks/<id>` / `GET /api/config` / `GET /api/tasks/export`
+返回——**不改变**工具行为。页面不会显示它们：Web UI 与 VS Code 面板只
+显示 `iteration_label`（任务标签上的小徽标），所以人必须读到的内容请
+写进 `message`。
 
 - `loop_id`（string，可选，最长 **64** 字符）——同一循环所有轮次共享
-  的稳定标识，如 `"auth-refactor"`。让 UI / 导出可以按长程目标分组。
+  的稳定标识，如 `"auth-refactor"`。让循环台账 / 导出可以按长程目标分组。
 - `loop_objective`（string，可选，最长 **500** 字符）——循环总目标，
   如 `"迁移 auth 到 PyJWT 2.x 且 API 零破坏"`。
 - `loop_phase`（string，可选，最长 **32** 字符）——当前阶段，如
@@ -155,8 +157,8 @@ schema（`additionalProperties: false`）拒绝，且不会创建任务。
 - `success_criteria`（string，可选，最长 **500** 字符）——循环的完成
   标准，如 `"pytest 全绿 + 文档更新"`。
 - `iteration_label`（string，可选，最长 **32** 字符）——人类可读的轮次
-  标记，如 `"iter-3"` / `"round 7/10"`；随任务展示，让审阅者一眼看到
-  循环进度。
+  标记，如 `"iter-3"` / `"round 7/10"`；以小徽标显示在任务标签上，
+  一眼就能看到循环进度。
 
 5 个字段与 `header_label` 走同一套 normalize：首尾空白去除、空串归
 `None`、超长服务端截断、非字符串静默忽略。普通（非循环）调用完全
@@ -165,14 +167,15 @@ schema（`additionalProperties: false`）拒绝，且不会创建任务。
 `loop_objective` 与 `success_criteria` 属于整个 loop，而不是某一轮：首轮
 传入即可（之后只在内容变化时再传）。同一 `loop_id` 的后续轮次省略其中
 一个时，服务端会存入该 loop 最近的值（队列里仍在的最新一轮与台账中
-最后一次给出的值，取较新者），审阅者因此在每一轮的提示上方都能看到目标
-与判据。`loop_phase` 和 `iteration_label` 只描述单独一轮，永远不会沿用。
+最后一次给出的值，取较新者），因此该 loop 的每一轮在 `GET /api/tasks` /
+`GET /api/config` 里都带有目标与判据。`loop_phase` 和 `iteration_label`
+只描述单独一轮，永远不会沿用。
 
 已完成的循环轮次会额外记入有界的内存台账（20 个 loop × 每个 50 轮；
 verdict 文本截断 200 字符、图片只记数量），台账不受常规「完成任务
 10 秒清理」影响且跨服务重启保留。`GET /api/loops` 按 `loop_id` 聚合
-返回台账与该 loop 仍在队列中的任务，让审阅者可以回放「这个目标经历
-了哪几轮、每轮人说了什么」。
+返回台账与该 loop 仍在队列中的任务，让客户端可以回放「这个目标经历
+了哪几轮、每轮人说了什么」（Web UI 和 VS Code 面板都没有它的视图）。
 
 #### 兼容性参数
 

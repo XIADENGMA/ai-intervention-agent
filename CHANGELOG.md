@@ -67,6 +67,101 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `verify=False`; and the premise is pinned, since neither module that uses the pooled clients
   contains an `https://` literal, so the day one of them is pointed at TLS a test fails first); 4
   one-point mutants are all caught.
+- The page with no task no longer shows a bar that slides back and forth, and says something
+  friendlier (R894). Both front ends drew a bar (`animation: loading 1.5s linear infinite`; 240 px
+  on the page, 180 px in the VS Code panel) under "No feedback requests". The slide is a
+  `transform`, but in a real Chrome 156 it still cost a style recalculation on every frame (60 a
+  second), and all Chrome processes together used 12.79 % of a core (renderer 5.08 %, GPU process
+  7.50 %, browser process 0.21 %); with the bar switched off it was 6.07 %. The bar is now three
+  8 px dots that light up from left to right (`.no-content-progress-dot`, in the page and in the
+  panel, where they take the theme's progress colour), animated on `opacity` alone, 1.8 s a cycle
+  in five steps per half cycle (`steps(5, end)`), a third of a cycle apart. The same page uses
+  7.97 % (renderer 3.78 %, GPU process 3.94 %, browser process 0.25 %), medians of five
+  interleaved 12 s runs. The style is still recalculated 60 times a second (the animation runs on
+  the frame clock); what is saved is the redrawing and compositing. The steps are the point: in
+  the prototypes a smooth fade (`ease`, with or without `will-change`) cost 11.6-13.2 % against
+  14.4 % for the old bar in the same run, and toggling a class from a timer saved less than 1.5
+  points more than `steps()`, which does not pay for a timer and its cleanup. The dots therefore
+  change in steps and do not fade smoothly. The title is now "All quiet for now" with "When your
+  AI has a question, it shows up here right away" under it (zh-CN `这里暂时很安静` and
+  `AI 有新问题时，会第一时间出现在这里`; the zh-TW text is written by hand, not converted), and
+  the panel's title says the same. The bar's track, the light theme's second set of colours and
+  the two phone-width rules that shortened the bar by position are gone, and the Reduce Motion
+  exemption of R712 now sits on the dots. The zh-TW generator table
+  (`scripts/gen_zhtw_from_zhcn.py`) gains `静` → `靜`, which the new title uses and which R738's
+  derivation test requires it to cover. The four empty-state pictures in the README (desktop and
+  phone, light and dark) were re-taken from this page with the dots held on one frame, at the same
+  pixel sizes as before. 35 tests, 33 of which fail on the old files; 21 one-point mutants are all
+  caught.
+- The page a browser shows when the service is down no longer strikes its icon through, and says
+  something friendlier (R895). That page (`offline.html`, which the service worker serves when a
+  navigation fails) was a wifi icon struck through by a diagonal line, "Can't reach AI Intervention
+  Agent" and two sentences of explanation; it reads like an error when the service has usually just
+  not come back yet. The icon is now a round, faintly orange badge holding a dot and three arcs that
+  light up from the inside out (`.wave`): `opacity` alone, 1.8 s a cycle in five steps per half
+  cycle (`steps(5, end)`), a sixth of a cycle apart, and still when Reduce Motion is on. In a real
+  Chrome 156 (DPR 2, real GPU) the old page used 1.06 % of a core, the new page 0.50 % held still
+  and 2.91 % lit up (renderer 1.19 %, GPU process 1.59 %, browser process 0.13 %), medians of three
+  interleaved 12 s runs, with no style recalculation at all (an `opacity` animation runs on the
+  compositor). The title and the button now read "Hang on, the service isn't back yet" / "Try
+  again" (zh-CN `稍等，服务还没回来` / `再试试`; the zh-TW text is written by hand). The paragraph
+  that explained what had happened is gone, at the maintainer's request (the status line still says
+  when the service is back), the title wraps in balanced lines, and, since the title no longer
+  names the product, the foot of the card says "AI Intervention Agent" in a colour that keeps 4.5:1
+  against the card in all three theme blocks (at 0.75 opacity the light theme would have dropped to
+  about 3.7:1). A service worker caches this page only when it installs, and a browser whose worker
+  script has not changed never installs again, so `OFFLINE_CACHE_NAME` goes from `aiia-offline-v1`
+  to `aiia-offline-v2`. Tried in a real Chrome against two real Web UI processes on one port: a
+  browser holding the old worker found the new one, cached the new page and deleted
+  `aiia-offline-v1` within seconds, and then showed the new page, in all three languages, once the
+  service was stopped; the control (the new page, the worker bytes unchanged) was still on
+  `aiia-offline-v1` and showing the old page 25 s later. With Reduce Motion nothing animates and
+  all four parts are fully lit; when the service was started again the open page noticed, said so
+  and loaded the real page in 4 s. 31 tests, 28 of which fail on the old files; 35 one-point
+  mutants are all caught. The tests that pinned the old words and the old cache name (R249, R452,
+  R558) follow the new ones, and R558 now also shows `aiia-offline-v1` being deleted.
+- The card under the tab bar that showed a task's loop context is gone, and a code block no longer
+  reacts to the mouse (R896). A task that carried loop fields (`loop_id`, `loop_phase`,
+  `iteration_label`, `loop_objective`, `success_criteria`) drew a card under the tab bar in both
+  front ends: three small chips, an objective line, a success-criteria line and a collapsible
+  "Rounds" list that fetched `GET /api/loops`. In a real Chrome 156 it was 140 px tall on the page
+  (148 px on a 393 px phone), and at the maintainer's request all of it is removed: its markup,
+  styles, scripts (`updateLoopContext`, the history list and its request) and words (`page.loop*`
+  in the page's three languages, `ui.loop.*` in the panel's) are out of the page and the VS Code
+  panel, so a task with loop fields now starts its message 152 px higher (156 px on the phone; in
+  the VS Code panel, 133 px at 360 px wide, measured on the real panel page in Chrome) and any
+  other task is laid out as before. The backend stays as it was: `loop_*` is accepted, stored
+  and carried from round to round, the ledger and `GET /api/loops` still answer, and the tab keeps
+  its small `iter-3` badge. Because the page no longer shows these fields, the descriptions of the
+  five `loop_*` parameters of `interactive_feedback` no longer say that they are "shown above the
+  prompt" (they say where each value goes), and `success_criteria` now tells the agent to put
+  whatever the human must read in `message`. Moving the mouse over a code block also added a large
+  shadow to its container (and, in the dark theme, a brighter border): the base rule says
+  `box-shadow: none`, four rules next to it were there to cancel any hover effect, but two later
+  rules with the same selector put the shadow back and won the cascade. All six
+  `.code-block-container:hover` rules are removed. In a real Chrome 156 (dark and light, desktop
+  and phone) no property of the container differs between mouse away and mouse over (before, the
+  shadow differed in all four and the dark border in two); the copy button's own hover (a
+  light-theme background change) is untouched, and so is the VS Code panel's code toolbar. 39
+  tests, 32 of which fail on the old files (no trace of the card in the page, the panel or their
+  locale files; no loop selector in either stylesheet; the tab badge and the header-chip helper are
+  still there; the tool still takes the five fields and no description promises that the page shows
+  them; the container has no hover rule, never gets a shadow or a transform in any state, and the
+  light copy button still changes on hover); 51 one-point mutants are all caught. The tests of the
+  card in `test_feat_loop_engineering_p1.py` (29) and of its "Rounds" list in
+  `test_loop_context_carries_over_r803.py` (22) went with it.
+- The version link at the foot of the VS Code settings panel ("AI Intervention Agent 1.9.0" with the
+  octocat) rests in the theme's secondary text colour and brightens to its normal text colour when the
+  mouse is over it, like the one on the Web page, instead of turning link blue (R897). The old rule gave
+  it the full foreground at rest and `--vscode-textLink-activeForeground` on hover. Measured in a real
+  Chrome 156 on the real panel page with the Dark Modern and Light Modern values: at rest
+  `rgb(204, 204, 204)` -> `rgb(157, 157, 157)` (dark) and `rgb(59, 59, 59)` -> `rgb(113, 113, 113)`
+  (light); on hover `rgb(77, 170, 252)` -> `rgb(204, 204, 204)` (dark) and `rgb(0, 95, 184)` ->
+  `rgb(59, 59, 59)` (light). The neutral grey background and border (8 % and 18 %, 16 % and 28 % on
+  hover) are as they were, and so is everything else about the link. Three tests of
+  `test_feat_footer_link_plugin.py` (now 21) fail on the old stylesheet: the resting colour is the
+  secondary one, the hover colour is the normal one and differs from it, and no rule of the link uses a
+  `--vscode-textLink-*` colour.
 
 ### Fixed
 

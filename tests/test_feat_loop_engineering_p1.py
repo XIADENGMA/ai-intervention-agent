@@ -1,4 +1,4 @@
-"""Loop engineering P1+P2 契约测试（docs/loop-engineering-design-notes.zh-CN.md）。
+"""Loop engineering 契约测试（docs/loop-engineering-design-notes.zh-CN.md）。
 
 覆盖面：
 
@@ -15,34 +15,25 @@ P1（数据面）：
 6. **MCP 工具**：interactive_feedback 签名含 5 个可选参数，且
    payload 透传代码存在（静态断言，不起真实 server）。
 
-P2（Web UI 展示面，静态断言模式跟随 test_feat_mining3_header_chip.py）：
+界面（R896 精简）：
 
-7. **前端 helper**：updateLoopContext 定义 + 两个调用站点（任务切换
-   cache 路径 + 异步详情路径，与 updateHeaderChip 同步）。
-8. **HTML anchor**：#task-loop-context 及子元素 + data-i18n 标签。
-9. **CSS**：.task-loop-context / .loop-chip / .task-tab-iter。
-10. **tab 轮次徽标**：createTaskTab 渲染 iteration_label。
-11. **i18n key**：5 个 loop key 在 en / zh-CN / zh-TW 三个 locale 全存在。
-
-P4（VS Code webview 对齐，模式跟随 test_webview_task_fields_parity_r691.py）：
-
-12. **webview helper**：updateLoopContext 定义 + updateUI 调用 +
-    tab 轮次徽标渲染。
-13. **webview HTML**：taskLoopContext 及子元素锚点（webview.ts）。
-14. **webview CSS**：.task-loop-context / .loop-chip / .task-tab-iter。
-15. **webview i18n**：ui.loop.* 5 key 在扩展三个 locale 全存在。
+7. **tab 轮次徽标**：Web 的 createTaskTab 与 VS Code webview 的 tab 渲染
+   iteration_label（``.task-tab-iter``）——loop 字段如今留在界面上的唯一
+   位置。标签栏下方的「循环信息卡片」（loop id / 阶段 / 轮次芯片、循环目标、
+   完成标准、「历史轮次」折叠面板）连同它的 i18n 键、样式、脚本已在 R896
+   整体移除，「它不再出现」由 test_loop_card_and_code_hover_gone_r896.py 守护。
 
 P3（完成轮次台账 —— metadata 保留策略）：
 
-16. **台账捕获**：complete_task 记录 loop 成员轮次（verdict 截断、
-    图片只记数量、无 prompt 大字段）；非 loop 任务零记录。
-17. **核心语义**：cleanup 删除任务本体后台账仍可回看（P3 的存在意义）。
-18. **有界性**：每 loop 最多 50 轮（丢最旧）；最多 20 个 loop
+8. **台账捕获**：complete_task 记录 loop 成员轮次（verdict 截断、
+   图片只记数量、无 prompt 大字段）；非 loop 任务零记录。
+9. **核心语义**：cleanup 删除任务本体后台账仍可回看（P3 的存在意义）。
+10. **有界性**：每 loop 最多 50 轮（丢最旧）；最多 20 个 loop
     （驱逐最久未更新）。
-19. **loop 级属性**：objective / success_criteria 最后一个非空值胜出。
-20. **持久化**：台账随快照 round-trip；旧快照缺 key → 空台账兼容；
+11. **loop 级属性**：objective / success_criteria 最后一个非空值胜出。
+12. **持久化**：台账随快照 round-trip；旧快照缺 key → 空台账兼容；
     clear_all_tasks 全量重置。
-21. **HTTP API**：GET /api/loops 返回台账 + live_tasks 投影。
+13. **HTTP API**：GET /api/loops 返回台账 + live_tasks 投影。
 """
 
 from __future__ import annotations
@@ -338,220 +329,36 @@ class TestMcpToolSurface(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# P2：Web UI 展示面（静态断言，模式跟随 test_feat_mining3_header_chip.py）
+# 界面：tab 上的轮次徽标（标签栏下方的循环信息卡片已在 R896 移除）
 # ---------------------------------------------------------------------------
 
 MULTI_TASK_JS = (
     REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "multi_task.js"
 )
-WEB_UI_HTML = REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
 MAIN_CSS = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css" / "main.css"
-LOCALES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
-
-LOOP_I18N_KEYS = (
-    "loopIdTitle",
-    "loopPhaseTitle",
-    "loopIterTitle",
-    "loopObjectiveLabel",
-    "loopCriteriaLabel",
-    # Loop 视图（历史轮次折叠面板）
-    "loopHistoryToggle",
-    "loopHistoryEmpty",
-    "loopHistoryError",
-)
-
-
-class TestFrontendLoopContext(unittest.TestCase):
-    """P2-7/10：multi_task.js 的 helper 定义、调用站点、tab 徽标。"""
-
-    src = MULTI_TASK_JS.read_text(encoding="utf-8")
-
-    def test_helper_defined(self) -> None:
-        self.assertIn("function updateLoopContext(task)", self.src)
-
-    def test_switch_task_cache_path_calls_helper(self) -> None:
-        self.assertIn("updateLoopContext(cachedTask)", self.src)
-
-    def test_load_task_details_calls_helper(self) -> None:
-        self.assertIn("updateLoopContext(task)", self.src)
-
-    def test_helper_uses_textcontent_only(self) -> None:
-        """XSS 边界：helper 主体禁止 innerHTML 赋值。"""
-        start = self.src.index("function updateLoopContext(task)")
-        end = self.src.index("\n}\n", start)
-        body = self.src[start:end]
-        self.assertNotIn("innerHTML", body)
-        self.assertIn("textContent", body)
-
-    def test_tab_iteration_badge_rendered(self) -> None:
-        self.assertIn("task-tab-iter", self.src)
-        self.assertIn("task.iteration_label", self.src)
-
-
-class TestHtmlLoopAnchor(unittest.TestCase):
-    """P2-8：模板锚点 + i18n 标签。"""
-
-    src = WEB_UI_HTML.read_text(encoding="utf-8")
-
-    def test_container_anchor(self) -> None:
-        self.assertIn('id="task-loop-context"', self.src)
-
-    def test_chip_anchors(self) -> None:
-        for element_id in ("loop-chip-id", "loop-chip-phase", "loop-chip-iter"):
-            self.assertIn(f'id="{element_id}"', self.src)
-
-    def test_line_anchors(self) -> None:
-        for element_id in (
-            "loop-objective-line",
-            "loop-objective-value",
-            "loop-criteria-line",
-            "loop-criteria-value",
-        ):
-            self.assertIn(f'id="{element_id}"', self.src)
-
-    def test_i18n_attributes(self) -> None:
-        self.assertIn('data-i18n="page.loopObjectiveLabel"', self.src)
-        self.assertIn('data-i18n="page.loopCriteriaLabel"', self.src)
-        self.assertIn('data-i18n-title="page.loopIdTitle"', self.src)
-
-
-class TestCssLoopStyles(unittest.TestCase):
-    """P2-9：CSS class 定义。"""
-
-    src = MAIN_CSS.read_text(encoding="utf-8")
-
-    def test_classes_defined(self) -> None:
-        for cls in (
-            ".task-loop-context",
-            ".loop-context-chips",
-            ".loop-chip",
-            ".loop-context-line",
-            ".loop-context-label",
-            ".loop-context-value",
-            ".task-tab-iter",
-        ):
-            self.assertIn(cls, self.src)
-
-
-class TestLocaleLoopKeys(unittest.TestCase):
-    """P2-11：三个 locale 都要有 5 个 loop key（parity 由 CI 脚本双保险）。"""
-
-    def test_all_locales_have_loop_keys(self) -> None:
-        for locale in ("en", "zh-CN", "zh-TW"):
-            data = json.loads(
-                (LOCALES_DIR / f"{locale}.json").read_text(encoding="utf-8")
-            )
-            page = data.get("page", {})
-            for key in LOOP_I18N_KEYS:
-                self.assertIn(key, page, f"{locale}.json 缺少 page.{key}")
-                self.assertTrue(
-                    isinstance(page[key], str) and page[key].strip(),
-                    f"{locale}.json page.{key} 必须是非空字符串",
-                )
-
-
-# ---------------------------------------------------------------------------
-# P4：VS Code webview 对齐（模式跟随 test_webview_task_fields_parity_r691.py）
-# ---------------------------------------------------------------------------
-
 VSCODE_DIR = REPO_ROOT / "packages" / "vscode"
 WEBVIEW_UI_JS = VSCODE_DIR / "webview-ui.js"
-WEBVIEW_TS = VSCODE_DIR / "webview.ts"
 WEBVIEW_CSS = VSCODE_DIR / "webview.css"
 
-VSCODE_LOOP_I18N_KEYS = (
-    "idTitle",
-    "phaseTitle",
-    "iterTitle",
-    "objectiveLabel",
-    "criteriaLabel",
-    # Loop 视图（历史轮次折叠面板）
-    "historyToggle",
-    "historyEmpty",
-    "historyError",
-)
 
+class TestTabIterationBadge(unittest.TestCase):
+    """tab 上的 ``iteration_label`` 徽标：Web 与 VS Code 各一份，仍然存在。"""
 
-class TestWebviewLoopContext(unittest.TestCase):
-    """P4-12：webview-ui.js 的 helper、updateUI 调用、tab 徽标。"""
+    def test_web_tab_renders_the_iteration_label(self) -> None:
+        src = MULTI_TASK_JS.read_text(encoding="utf-8")
+        self.assertIn("task-tab-iter", src)
+        self.assertIn("task.iteration_label", src)
 
-    src = WEBVIEW_UI_JS.read_text(encoding="utf-8")
+    def test_web_badge_style_defined(self) -> None:
+        self.assertIn(".task-tab-iter", MAIN_CSS.read_text(encoding="utf-8"))
 
-    def test_helper_defined(self) -> None:
-        self.assertIn("function updateLoopContext(task)", self.src)
+    def test_webview_tab_renders_the_iteration_label(self) -> None:
+        src = WEBVIEW_UI_JS.read_text(encoding="utf-8")
+        self.assertIn("task-tab-iter", src)
+        self.assertIn("task.iteration_label", src)
 
-    def test_update_ui_calls_helper(self) -> None:
-        self.assertIn("updateLoopContext(config)", self.src)
-
-    def test_helper_uses_textcontent_only(self) -> None:
-        start = self.src.index("function updateLoopContext(task)")
-        end = self.src.index("\n  }\n", start)
-        body = self.src[start:end]
-        self.assertNotIn("innerHTML", body)
-        self.assertIn("textContent", body)
-
-    def test_tab_iteration_badge_rendered(self) -> None:
-        self.assertIn("task-tab-iter", self.src)
-        self.assertIn("task.iteration_label", self.src)
-
-
-class TestWebviewLoopAnchor(unittest.TestCase):
-    """P4-13：webview.ts 模板锚点。"""
-
-    src = WEBVIEW_TS.read_text(encoding="utf-8")
-
-    def test_anchors_exist(self) -> None:
-        for element_id in (
-            "taskLoopContext",
-            "loopChipId",
-            "loopChipPhase",
-            "loopChipIter",
-            "loopObjectiveLine",
-            "loopObjectiveValue",
-            "loopCriteriaLine",
-            "loopCriteriaValue",
-        ):
-            self.assertIn(f'id="{element_id}"', self.src)
-
-    def test_i18n_attributes(self) -> None:
-        self.assertIn('data-i18n="ui.loop.objectiveLabel"', self.src)
-        self.assertIn('data-i18n="ui.loop.criteriaLabel"', self.src)
-        self.assertIn('data-i18n-title="ui.loop.idTitle"', self.src)
-
-
-class TestWebviewLoopCss(unittest.TestCase):
-    """P4-14：webview.css class 定义。"""
-
-    src = WEBVIEW_CSS.read_text(encoding="utf-8")
-
-    def test_classes_defined(self) -> None:
-        for cls in (
-            ".task-loop-context",
-            ".loop-context-chips",
-            ".loop-chip",
-            ".loop-context-line",
-            ".loop-context-label",
-            ".loop-context-value",
-            ".task-tab-iter",
-        ):
-            self.assertIn(cls, self.src)
-
-
-class TestWebviewLocaleLoopKeys(unittest.TestCase):
-    """P4-15：扩展三个 locale 的 ui.loop.* 5 key。"""
-
-    def test_all_locales_have_loop_namespace(self) -> None:
-        for locale in ("en", "zh-CN", "zh-TW"):
-            data = json.loads(
-                (VSCODE_DIR / "locales" / f"{locale}.json").read_text(encoding="utf-8")
-            )
-            loop = data.get("ui", {}).get("loop", {})
-            for key in VSCODE_LOOP_I18N_KEYS:
-                self.assertIn(key, loop, f"vscode {locale}.json 缺少 ui.loop.{key}")
-                self.assertTrue(
-                    isinstance(loop[key], str) and loop[key].strip(),
-                    f"vscode {locale}.json ui.loop.{key} 必须是非空字符串",
-                )
+    def test_webview_badge_style_defined(self) -> None:
+        self.assertIn(".task-tab-iter", WEBVIEW_CSS.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -792,85 +599,6 @@ class TestLoopLedgerPersistence(unittest.TestCase):
             self.assertEqual(q.get_loops_snapshot(), [])
         finally:
             q.stop_cleanup()
-
-
-class TestLoopHistoryView(unittest.TestCase):
-    """Loop 视图（历史轮次折叠面板）：web + webview 双端静态契约。
-
-    设计笔记 §3.3 的分组折叠初版：loop 任务的上下文条内提供「历史轮次」
-    toggle，展开时拉取 GET /api/loops 渲染已完成轮次时间线。
-    """
-
-    web_js = MULTI_TASK_JS.read_text(encoding="utf-8")
-    web_html = WEB_UI_HTML.read_text(encoding="utf-8")
-    web_css = MAIN_CSS.read_text(encoding="utf-8")
-    vs_js = WEBVIEW_UI_JS.read_text(encoding="utf-8")
-    vs_ts = WEBVIEW_TS.read_text(encoding="utf-8")
-    vs_css = WEBVIEW_CSS.read_text(encoding="utf-8")
-
-    def test_web_helpers_defined(self) -> None:
-        for symbol in (
-            "function updateLoopHistoryToggle(loopId)",
-            "function collapseLoopHistory()",
-            "async function toggleLoopHistory()",
-            "function buildLoopHistoryRow(round)",
-        ):
-            self.assertIn(symbol, self.web_js)
-
-    def test_web_fetches_loops_endpoint(self) -> None:
-        self.assertIn('"/api/loops"', self.web_js)
-
-    def test_web_stale_render_guard(self) -> None:
-        """await 期间任务切换 → 丢弃过期渲染（loop_id 一致性守卫）。"""
-        self.assertIn("window.__aiiaCurrentLoopId !== loopId", self.web_js)
-
-    def test_web_template_anchors(self) -> None:
-        self.assertIn('id="loop-history-toggle"', self.web_html)
-        self.assertIn('id="loop-history-list"', self.web_html)
-        self.assertIn('data-i18n="page.loopHistoryToggle"', self.web_html)
-
-    def test_web_css_classes(self) -> None:
-        for cls in (
-            ".loop-history-toggle",
-            ".loop-history-list",
-            ".loop-history-row",
-            ".loop-history-verdict",
-            ".loop-history-empty",
-        ):
-            self.assertIn(cls, self.web_css)
-
-    def test_web_history_builder_uses_textcontent_only(self) -> None:
-        start = self.web_js.index("function buildLoopHistoryRow(round)")
-        end = self.web_js.index("\n}\n", start)
-        body = self.web_js[start:end]
-        self.assertNotIn("innerHTML", body)
-        self.assertIn("textContent", body)
-
-    def test_webview_helpers_defined(self) -> None:
-        for symbol in (
-            "function updateLoopHistoryToggle(loopId)",
-            "function collapseLoopHistory()",
-            "async function toggleLoopHistory()",
-            "function buildLoopHistoryRow(round)",
-        ):
-            self.assertIn(symbol, self.vs_js)
-
-    def test_webview_fetches_loops_endpoint(self) -> None:
-        self.assertIn("SERVER_URL + '/api/loops'", self.vs_js)
-
-    def test_webview_template_anchors(self) -> None:
-        self.assertIn('id="loopHistoryToggle"', self.vs_ts)
-        self.assertIn('id="loopHistoryList"', self.vs_ts)
-        self.assertIn('data-i18n="ui.loop.historyToggle"', self.vs_ts)
-
-    def test_webview_css_classes(self) -> None:
-        for cls in (
-            ".loop-history-toggle",
-            ".loop-history-list",
-            ".loop-history-row",
-            ".loop-history-verdict",
-        ):
-            self.assertIn(cls, self.vs_css)
 
 
 class TestLoopsHttpApi(unittest.TestCase):

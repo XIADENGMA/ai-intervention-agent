@@ -486,16 +486,18 @@
       <div id="no-content-container" class="no-content-container">
         <div class="no-content-icon" id="hourglass-lottie"></div>
         <h2 class="no-content-title" data-i18n="page.noContent.title">
-          No feedback requests
+          All quiet for now
         </h2>
         <p
           class="no-content-description"
           data-i18n="page.noContent.description"
         >
-          Keep this page open — new requests will appear automatically
+          When your AI has a question, it shows up here right away
         </p>
-        <div class="no-content-progress">
-          <div class="no-content-progress-bar"></div>
+        <div class="no-content-progress" aria-hidden="true">
+          <span class="no-content-progress-dot"></span>
+          <span class="no-content-progress-dot"></span>
+          <span class="no-content-progress-dot"></span>
         </div>
         <div
           class="button-container no-content-buttons"
@@ -626,99 +628,6 @@
                 >
               </button>
             </div>
-          </div>
-
-          <div
-            class="task-loop-context"
-            id="task-loop-context"
-            style="display: none"
-            role="status"
-          >
-            <div class="loop-context-chips">
-              <span
-                class="loop-chip loop-chip-id"
-                id="loop-chip-id"
-                style="display: none"
-                data-i18n-title="page.loopIdTitle"
-                title="Loop ID"
-              ></span>
-              <span
-                class="loop-chip loop-chip-phase"
-                id="loop-chip-phase"
-                style="display: none"
-                data-i18n-title="page.loopPhaseTitle"
-                title="Loop phase"
-              ></span>
-              <span
-                class="loop-chip loop-chip-iter"
-                id="loop-chip-iter"
-                style="display: none"
-                data-i18n-title="page.loopIterTitle"
-                title="Iteration"
-              ></span>
-            </div>
-            <div
-              class="loop-context-line"
-              id="loop-objective-line"
-              style="display: none"
-            >
-              <span
-                class="loop-context-label"
-                data-i18n="page.loopObjectiveLabel"
-                >Objective</span
-              >
-              <span
-                class="loop-context-value"
-                id="loop-objective-value"
-              ></span>
-            </div>
-            <div
-              class="loop-context-line"
-              id="loop-criteria-line"
-              style="display: none"
-            >
-              <span
-                class="loop-context-label"
-                data-i18n="page.loopCriteriaLabel"
-                >Success criteria</span
-              >
-              <span
-                class="loop-context-value"
-                id="loop-criteria-value"
-              ></span>
-            </div>
-
-            <button
-              type="button"
-              class="loop-history-toggle"
-              id="loop-history-toggle"
-              aria-expanded="false"
-              aria-controls="loop-history-list"
-            >
-              <svg
-                class="loop-history-caret"
-                width="10"
-                height="10"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-                focusable="false"
-              >
-                <polyline points="5 3 11 8 5 13" />
-              </svg>
-              <span data-i18n="page.loopHistoryToggle">Rounds</span>
-              <span class="loop-history-count" id="loop-history-count"></span>
-            </button>
-            <div
-              class="loop-history-list"
-              id="loop-history-list"
-              style="display: none"
-              role="list"
-            ></div>
           </div>
 
           <div

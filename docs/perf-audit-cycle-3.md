@@ -4600,8 +4600,8 @@ await Promise.all(deletions)
 - source invariant 锁定 activate listener 不再出现 `.filter(` /
   `.map(name => caches.delete...)`，并包含 `const deletions = []`、
   `for (const name of cacheNames)`、`await Promise.all(deletions)`；
-- Node VM runtime test 验证只删除旧 `aiia-static-v1` / `aiia-offline-v0`，保留当前
-  `aiia-static-v2` / `aiia-offline-v1`、foreign cache 和非 string entry，并仍调用
+- Node VM runtime test 验证只删除旧 `aiia-static-v1` / `aiia-offline-v0` / `aiia-offline-v1`，保留当前
+  `aiia-static-v2` / `aiia-offline-v2`、foreign cache 和非 string entry，并仍调用
   `clients.claim()`。
 
 外部依据：

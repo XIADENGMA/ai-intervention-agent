@@ -145,9 +145,9 @@ class TestOfflineHtml(unittest.TestCase):
         # 三份内联文案齐备
         self.assertIn('"zh-CN":', self.html)
         self.assertIn('"zh-TW":', self.html)
-        self.assertIn("无法连接", self.html)  # zh-CN 文案
-        self.assertIn("無法連接", self.html)  # zh-TW 文案
-        self.assertIn("Retry", self.html)  # en 文案（静态默认兜底）
+        self.assertIn("稍等，服务还没回来", self.html)  # zh-CN 文案
+        self.assertIn("稍等，服務還沒回來", self.html)  # zh-TW 文案
+        self.assertIn("Try again", self.html)  # en 文案（静态默认兜底）
 
     def test_no_bilingual_mixed_text(self) -> None:
         # 文案不再中英双语并排（如「重试 / Retry」）；语言由运行时单选
@@ -183,7 +183,7 @@ class TestServiceWorkerOfflineSupport(unittest.TestCase):
 
     def test_offline_cache_name_constant(self) -> None:
         self.assertIn("OFFLINE_CACHE_NAME", self.js)
-        self.assertIn("'aiia-offline-v1'", self.js)
+        self.assertIn("'aiia-offline-v2'", self.js)
 
     def test_offline_fallback_url_constant(self) -> None:
         self.assertIn("OFFLINE_FALLBACK_URL", self.js)
@@ -327,8 +327,8 @@ class TestActivateCleanupDoesNotMisfire(unittest.TestCase):
     """确保 OFFLINE_CACHE_NAME 不会被 startsWith('aiia-static-') 误杀."""
 
     def test_static_and_offline_prefixes_distinct(self) -> None:
-        self.assertNotEqual("aiia-static-v2", "aiia-offline-v1")
-        self.assertFalse("aiia-offline-v1".startswith("aiia-static-"))
+        self.assertNotEqual("aiia-static-v2", "aiia-offline-v2")
+        self.assertFalse("aiia-offline-v2".startswith("aiia-static-"))
         self.assertFalse("aiia-static-v2".startswith("aiia-offline-"))
 
 

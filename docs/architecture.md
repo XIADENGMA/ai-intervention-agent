@@ -156,9 +156,10 @@ sequenceDiagram
 Full parameter reference + a complete Agent-mode call example lives in
 [`mcp_tools.md#agent-mode-parameters-cursor--composer--cline--augment--trae`](mcp_tools.md#agent-mode-parameters-cursor--composer--cline--augment--trae).
 
-**Loop engineering** (long autonomous runs): rounds sharing a `loop_id`
-render a loop-context strip above the prompt and a collapsible "Rounds"
-timeline of every completed round's verdict, backed by `GET /api/loops`.
+**Loop engineering** (long autonomous runs): the five optional `loop_*`
+fields are stored with each task; `iteration_label` shows as a small badge
+on the task's tab, and every completed round of a `loop_id` is kept in a
+bounded ledger served by `GET /api/loops`. The page has no loop panel.
 See [`mcp_tools.md#loop-engineering-parameters-long-autonomous-runs`](mcp_tools.md#loop-engineering-parameters-long-autonomous-runs).
 
 ### User-side workflow features (built into the Web UI)

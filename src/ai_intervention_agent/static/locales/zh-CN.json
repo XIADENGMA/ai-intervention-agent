@@ -1,8 +1,8 @@
 {
   "page": {
     "noContent": {
-      "title": "暂无交互反馈请求",
-      "description": "保持页面打开，新请求到达时会自动显示",
+      "title": "这里暂时很安静",
+      "description": "AI 有新问题时，会第一时间出现在这里",
       "newTasks": "收到 {count, plural, other {# 个新的交互反馈请求}}"
     },
     "countdown": "{seconds, plural, other {# 秒后自动重调}}",
@@ -68,15 +68,7 @@
     "copyCode": "复制代码",
     "copied": "已复制",
     "copyFailed": "复制失败",
-    "skipToContent": "跳转到内容",
-    "loopIdTitle": "循环 ID",
-    "loopPhaseTitle": "循环阶段",
-    "loopIterTitle": "轮次",
-    "loopObjectiveLabel": "循环目标",
-    "loopCriteriaLabel": "完成标准",
-    "loopHistoryToggle": "历史轮次",
-    "loopHistoryEmpty": "暂无已完成轮次",
-    "loopHistoryError": "循环历史加载失败"
+    "skipToContent": "跳转到内容"
   },
   "feedback": {
     "charCounter": "{{count}} 字符"

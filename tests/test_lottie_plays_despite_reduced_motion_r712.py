@@ -11,6 +11,8 @@
   动画（Lottie 嫩芽 + loading 进度条）**豁免**系统偏好、照常循环——
   两者均为小幅面积装饰动画、无大幅位移/视差/闪烁，前庭风险低；
   页面其余动画（入场/过渡/骨架屏等）继续尊重 prefers-reduced-motion。
+* R894：进度条换成三个依次亮起的小圆点（只动 opacity），类名由
+  ``.no-content-progress-bar`` 改为 ``.no-content-progress-dot``，豁免契约不变。
 
 本文件锁定 R712 契约，防止未来重构把空态动画重新挂回系统偏好：
 
@@ -19,7 +21,7 @@
 3. ``error`` 处理仍须先 ``destroyHourglassAnimation()`` 再渲染降级
    SVG（残留实例会让下一次 init 提前 return，卡死在降级画面——
    该顺序契约与偏好无关，从 R704 原样继承）；
-4. main.css 的全局 reduce 块必须保留 ``.no-content-progress-bar``
+4. main.css 的全局 reduce 块必须保留 ``.no-content-progress-dot``
    豁免（animation-iteration-count: infinite）。
 """
 
@@ -109,13 +111,13 @@ class TestProgressBarCssExemption(unittest.TestCase):
         # 提取全局 reduce 块（含 * 选择器 0.01ms 规则的那个）之后的
         # 豁免规则：进度条 animation-iteration-count 必须回到 infinite。
         match = re.search(
-            r"\.no-content-progress-bar\s*\{[^}]*animation-iteration-count:\s*"
+            r"\.no-content-progress-dot\s*\{[^}]*animation-iteration-count:\s*"
             r"infinite\s*!important[^}]*\}",
             self.css,
         )
         self.assertIsNotNone(
             match,
-            "R712: main.css 必须保留 .no-content-progress-bar 的 "
+            "R712: main.css 必须保留 .no-content-progress-dot 的 "
             "reduced-motion 豁免（animation-iteration-count: infinite "
             "!important），否则减弱动态设备上进度条 0.01ms 跑完一次后"
             "永久静止",

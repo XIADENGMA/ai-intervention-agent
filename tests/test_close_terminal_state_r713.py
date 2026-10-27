@@ -108,7 +108,7 @@ class TestTerminalStateRenderer(unittest.TestCase):
 
     def test_strips_data_i18n_before_writing_copy(self) -> None:
         # R709 教训：不摘 data-i18n，translateDOM 迟到会把终态文案
-        # 覆盖回「暂无交互反馈请求」
+        # 覆盖回空态页的默认文案（当时是「暂无交互反馈请求」）
         self.assertIn('removeAttribute("data-i18n")', self.body)
 
     def test_hides_waiting_affordances(self) -> None:

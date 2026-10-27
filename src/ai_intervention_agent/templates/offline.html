@@ -112,24 +112,52 @@
           transparent
         );
       }
-      .icon {
-        width: 56px;
-        height: 56px;
+      /* 图标：淡橙圆底里的信号波。原来的 wifi 图标被一条斜线整个划掉，
+         像是“出错了”；这里只是暂时连不上，所以去掉斜线，换成会亮起的信号。 */
+      .icon-badge {
+        display: grid;
+        place-items: center;
+        width: 96px;
+        height: 96px;
         margin: 0 auto 1.25rem;
+        border-radius: 50%;
+        background: rgba(217, 119, 87, 0.15);
         color: var(--primary-500);
-        opacity: 0.9;
+      }
+      .icon {
+        width: 50px;
+        height: 50px;
+      }
+      /* 圆点和三道弧由内向外依次亮起（相隔 0.3s，一圈 1.8s）：只改
+         opacity、每半圈分五步（steps），与无任务页的三个点同一种动法，
+         空闲时开销很低；“减少动态效果”时常亮不动。 */
+      .wave {
+        animation: offline-wave 1.8s steps(5, end) infinite;
+      }
+      .wave-1 {
+        animation-delay: -1.5s;
+      }
+      .wave-2 {
+        animation-delay: -1.2s;
+      }
+      .wave-3 {
+        animation-delay: -0.9s;
+      }
+      @keyframes offline-wave {
+        0%,
+        100% {
+          opacity: 0.2;
+        }
+        50% {
+          opacity: 1;
+        }
       }
       h1 {
         font-size: 1.35rem;
-        margin: 0 0 0.75rem;
+        margin: 0 0 1.5rem;
         font-weight: 600;
         color: var(--text-primary);
-      }
-      .hint {
-        font-size: 0.9rem;
-        color: var(--text-secondary);
-        margin: 0 0 1.5rem;
-        line-height: 1.7;
+        text-wrap: balance;
       }
       .actions {
         display: flex;
@@ -174,7 +202,17 @@
       .status.is-online {
         color: var(--success-500);
       }
+      /* 标题不再带产品名，卡片底部补一行小字，让人知道是哪个服务。 */
+      .brand {
+        margin: 1.25rem 0 0;
+        font-size: 0.75rem;
+        letter-spacing: 0.04em;
+        color: var(--text-secondary);
+      }
       @media (prefers-reduced-motion: reduce) {
+        .wave {
+          animation: none;
+        }
         button {
           transition: none;
         }
@@ -186,32 +224,36 @@
   </head>
   <body>
     <main class="card" role="main">
-      <svg
-        class="icon"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M1.42 9a16 16 0 0 1 21.16 0" />
-        <path d="M5 12.55a11 11 0 0 1 14.08 0" />
-        <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-        <line x1="12" y1="20" x2="12.01" y2="20" />
-        <line x1="23" y1="1" x2="1" y2="23" />
-      </svg>
-      <h1 id="offline-title">Can't reach AI Intervention Agent</h1>
-      <p class="hint" id="offline-hint">
-        The service may be stopped, or your device is offline. The page will
-        reload automatically once the connection is restored.
-      </p>
+      <div class="icon-badge" aria-hidden="true">
+        <svg
+          class="icon"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path class="wave wave-3" d="M1.42 9a16 16 0 0 1 21.16 0" />
+          <path class="wave wave-2" d="M5 12.55a11 11 0 0 1 14.08 0" />
+          <path class="wave wave-1" d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+          <circle
+            class="wave"
+            cx="12"
+            cy="19.7"
+            r="1.15"
+            fill="currentColor"
+            stroke="none"
+          />
+        </svg>
+      </div>
+      <h1 id="offline-title">Hang on, the service isn't back yet</h1>
       <div class="actions">
-        <button id="retry-btn" type="button" autofocus>Retry</button>
+        <button id="retry-btn" type="button" autofocus>Try again</button>
       </div>
       <p class="status" id="status" aria-live="polite"></p>
+      <p class="brand">AI Intervention Agent</p>
     </main>
 
     <script nonce="{{ csp_nonce }}">
@@ -224,29 +266,24 @@
         var MESSAGES = {
           en: {
             docTitle: "Offline — AI Intervention Agent",
-            title: "Can't reach AI Intervention Agent",
-            hint:
-              "The service may be stopped, or your device is offline. " +
-              "The page will reload automatically once the connection is restored.",
-            retry: "Retry",
+            title: "Hang on, the service isn't back yet",
+            retry: "Try again",
             retrying: "Retrying…",
             online: "Network restored — retrying…",
             back: "Service restored — reloading…"
           },
           "zh-CN": {
             docTitle: "离线 — AI Intervention Agent",
-            title: "无法连接到 AI Intervention Agent",
-            hint: "服务可能已停止，或设备当前处于离线状态。连接恢复后将自动重新加载。",
-            retry: "重试",
+            title: "稍等，服务还没回来",
+            retry: "再试试",
             retrying: "正在重试…",
             online: "网络已恢复，正在重试…",
             back: "服务已恢复，正在重新加载…"
           },
           "zh-TW": {
             docTitle: "離線 — AI Intervention Agent",
-            title: "無法連接到 AI Intervention Agent",
-            hint: "服務可能已停止，或裝置目前處於離線狀態。連線恢復後將自動重新載入。",
-            retry: "重試",
+            title: "稍等，服務還沒回來",
+            retry: "再試試",
             retrying: "正在重試…",
             online: "網路已恢復，正在重試…",
             back: "服務已恢復，正在重新載入…"
@@ -321,8 +358,6 @@
             document.title = T.docTitle;
             var titleEl = document.getElementById("offline-title");
             if (titleEl) titleEl.textContent = T.title;
-            var hintEl = document.getElementById("offline-hint");
-            if (hintEl) hintEl.textContent = T.hint;
             var retryBtnEl = document.getElementById("retry-btn");
             if (retryBtnEl) retryBtnEl.textContent = T.retry;
           }

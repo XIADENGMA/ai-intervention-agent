@@ -25,6 +25,9 @@ VSCode 插件设置页底部"v1.7.X · GitHub"两段视觉合并为单一链接
   中点伪元素；``.settings-footer-link`` 升级为胶囊按钮风格（圆角 8px +
   半透明灰底 + ``--vscode-foreground`` 文字色），通过中性灰 ``rgba(127,
   127, 127, .X)`` 适配 dark / light / hc 三种主题。
+- **R897 hover restyle**：鼠标移上去时文字曾变成链接蓝（``--vscode-textLink-activeForeground``），
+  和 web ``.version-link``（静止偏暗，移上去变亮，不改色相）不一致。现在静止态文字用
+  ``--vscode-descriptionForeground``，悬停回到 ``--vscode-foreground``；底和边框仍是中性灰。
 - ``packages/vscode/locales/{en,zh-CN}.json``：``settings.footer.version`` +
   ``settings.footer.github`` 两个 key 退役，换成 ``settings.footer.versionLink``
   （含 ``{{version}}`` 插值）+ ``settings.footer.versionLinkTitle``（title 属性）。
@@ -41,7 +44,8 @@ VSCode 插件设置页底部"v1.7.X · GitHub"两段视觉合并为单一链接
    ``svg.github-icon``（fill="currentColor" 让图标跟随主题色）。
 2. webview.css：``.settings-footer-version`` 选择器必须移除；
    ``.settings-footer-link`` 必须仍定义且引入 ``focus-visible`` 强调框；
-   cycle-22 起必须用 ``border-radius`` / ``inline-flex`` 胶囊布局。
+   cycle-22 起必须用 ``border-radius`` / ``inline-flex`` 胶囊布局；
+   R897 起静止态偏暗、悬停变亮且不变色相（见 ``test_footer_link_hover_*``）。
 3. locales：三个 locale 必须有新 ``versionLink`` / ``versionLinkTitle``
    两个 key，且旧 ``version`` / ``github`` 两个 key 必须移除。
 4. i18n-keys.d.ts：union 与 array 必须同步。
@@ -231,11 +235,11 @@ class TestWebviewCssFooterMigration(unittest.TestCase):
         )
         assert m is not None
         block = m.group(1)
-        # 既能用 var(--vscode-foreground) 文字色，也能用 rgba 灰底
+        # 静止态文字用主题自己的"次要文字色"（R897：和 web 的偏暗静止态同一语义），灰底用 rgba
         self.assertIn(
-            "var(--vscode-foreground)",
+            "var(--vscode-descriptionForeground",
             block,
-            "应用 var(--vscode-foreground) 作为文字色（自动跟随 VSCode 主题）",
+            "静止态应用 var(--vscode-descriptionForeground, ...) 作为文字色（自动跟随 VSCode 主题）",
         )
         self.assertRegex(
             block,
@@ -243,6 +247,51 @@ class TestWebviewCssFooterMigration(unittest.TestCase):
             "应用中性灰 rgba(127, 127, 127, .X) 作为背景/边框 fallback "
             "（dark / light / hc 主题下均不突兀）",
         )
+
+    def _block(self, selector: str) -> str:
+        m = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", self.css, re.DOTALL)
+        self.assertIsNotNone(m, f"未找到 {selector} 选择器块")
+        assert m is not None
+        return m.group(1)
+
+    @staticmethod
+    def _color(block: str) -> str:
+        m = re.search(r"(?<![-\w])color:\s*([^;]+);", block)
+        assert m is not None, block
+        return " ".join(m.group(1).split())
+
+    def test_footer_link_hover_brightens_without_changing_hue(self) -> None:
+        """R897：鼠标移上去文字变亮（``--vscode-foreground``），不再变成链接蓝；
+        底和边框仍变深一档。和 web ``.version-link`` 的悬停同一语义。"""
+        rest = self._block(".settings-footer-link")
+        hover = self._block(".settings-footer-link:hover")
+        self.assertEqual(
+            self._color(hover),
+            "var(--vscode-foreground)",
+            "悬停时文字应回到 var(--vscode-foreground)（比静止态亮）",
+        )
+        self.assertNotEqual(
+            self._color(rest),
+            self._color(hover),
+            "静止态与悬停态文字色必须不同，否则鼠标移上去没有反馈",
+        )
+        for token in ("textLink", "focusBorder", "button-"):
+            self.assertNotIn(
+                token,
+                hover,
+                f"悬停态不得用 {token}（主题的链接 / 强调色）：web 的悬停只变亮，不改色相",
+            )
+        for prop in ("background", "border-color"):
+            self.assertIn(prop, hover, f"悬停态应改变 {prop}（底 / 边框变深一档）")
+
+    def test_footer_link_never_uses_a_link_colour(self) -> None:
+        """整个 webview.css 里 ``.settings-footer-link*`` 的任何规则都不能引用链接色。"""
+        for m in re.finditer(r"(\.settings-footer-link[^{]*)\{([^}]*)\}", self.css):
+            self.assertNotIn(
+                "textLink",
+                m.group(2),
+                f"{m.group(1).strip()} 不应使用 --vscode-textLink-*",
+            )
 
 
 class TestLocalesUpdated(unittest.TestCase):

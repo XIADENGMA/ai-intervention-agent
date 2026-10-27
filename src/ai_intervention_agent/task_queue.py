@@ -823,7 +823,8 @@ class TaskQueue:
         self, loop_id: str, task_field: str, bucket_key: str
     ) -> str | None:
         """R803: a round that leaves ``loop_objective`` / ``success_criteria`` out keeps the
-        loop's most recent value, so the reviewer still sees them from round 2 on.
+        loop's most recent value, so every round of the loop still carries them in
+        ``GET /api/tasks`` / ``GET /api/config`` from round 2 on.
 
         The candidates are the newest round still in the queue that has the value and the
         ledger's value; whichever was supplied last wins (a round that nobody answered must

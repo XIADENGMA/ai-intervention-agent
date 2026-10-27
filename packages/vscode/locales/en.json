@@ -100,7 +100,7 @@
     "settingsBtn": "Notification Settings",
     "connecting": "Connecting to server…",
     "noContent": {
-      "title": "No feedback requests",
+      "title": "All quiet for now",
       "connecting": "Connecting…",
       "waiting": "Waiting"
     },
@@ -142,16 +142,6 @@
       "switchedTo": "Switched to task: {{id}}",
       "switchFailed": "Switch task failed: {{reason}}",
       "activateTimeoutCheckServer": "Activate task timeout: please check server availability"
-    },
-    "loop": {
-      "idTitle": "Loop ID",
-      "phaseTitle": "Loop phase",
-      "iterTitle": "Iteration",
-      "objectiveLabel": "Objective",
-      "criteriaLabel": "Success criteria",
-      "historyToggle": "Rounds",
-      "historyEmpty": "No completed rounds yet",
-      "historyError": "Failed to load loop history"
     },
     "clipboard": {
       "empty": "Clipboard is empty, please copy some code first.",

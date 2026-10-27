@@ -1949,37 +1949,16 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     <div class="breathing-light" id="statusLightStandalone" title="${tl("ui.status.serverStatus")}" data-i18n-title="ui.status.serverStatus"></div>
                     <span id="statusTextStandalone" data-i18n="ui.noContent.connecting">${tl("ui.noContent.connecting")}</span>
                 </div>
-                <div class="no-content-progress" id="noContentProgress">
-                    <div class="no-content-progress-bar"></div>
+                <div class="no-content-progress" id="noContentProgress" aria-hidden="true">
+                    <span class="no-content-progress-dot"></span>
+                    <span class="no-content-progress-dot"></span>
+                    <span class="no-content-progress-dot"></span>
                 </div>
             </div>
 
             <div class="feedback-form hidden" id="feedbackForm">
                 <div class="scrollable-content">
                     <div class="task-header-chip hidden" id="taskHeaderChip" aria-hidden="false"></div>
-                    <div class="task-loop-context hidden" id="taskLoopContext" role="status">
-                        <div class="loop-context-chips">
-                            <span class="loop-chip hidden" id="loopChipId" title="${tl("ui.loop.idTitle")}" data-i18n-title="ui.loop.idTitle"></span>
-                            <span class="loop-chip hidden" id="loopChipPhase" title="${tl("ui.loop.phaseTitle")}" data-i18n-title="ui.loop.phaseTitle"></span>
-                            <span class="loop-chip hidden" id="loopChipIter" title="${tl("ui.loop.iterTitle")}" data-i18n-title="ui.loop.iterTitle"></span>
-                        </div>
-                        <div class="loop-context-line hidden" id="loopObjectiveLine">
-                            <span class="loop-context-label" data-i18n="ui.loop.objectiveLabel">${tl("ui.loop.objectiveLabel")}</span>
-                            <span class="loop-context-value" id="loopObjectiveValue"></span>
-                        </div>
-                        <div class="loop-context-line hidden" id="loopCriteriaLine">
-                            <span class="loop-context-label" data-i18n="ui.loop.criteriaLabel">${tl("ui.loop.criteriaLabel")}</span>
-                            <span class="loop-context-value" id="loopCriteriaValue"></span>
-                        </div>
-                        <button type="button" class="loop-history-toggle hidden" id="loopHistoryToggle" aria-expanded="false" aria-controls="loopHistoryList">
-                            <svg class="loop-history-caret" width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                                <polyline points="5 3 11 8 5 13" />
-                            </svg>
-                            <span data-i18n="ui.loop.historyToggle">${tl("ui.loop.historyToggle")}</span>
-                            <span class="loop-history-count" id="loopHistoryCount"></span>
-                        </button>
-                        <div class="loop-history-list hidden" id="loopHistoryList" role="list"></div>
-                    </div>
                     <div class="markdown-content" id="markdownContent"></div>
                 </div>
 

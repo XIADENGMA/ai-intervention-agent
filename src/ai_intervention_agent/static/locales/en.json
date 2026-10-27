@@ -1,8 +1,8 @@
 {
   "page": {
     "noContent": {
-      "title": "No feedback requests",
-      "description": "Keep this page open — new requests will appear automatically",
+      "title": "All quiet for now",
+      "description": "When your AI has a question, it shows up here right away",
       "newTasks": "Received {count, plural, one {# new feedback request} other {# new feedback requests}}"
     },
     "countdown": "{seconds, plural, one {#s until auto-resubmit} other {#s until auto-resubmit}}",
@@ -68,15 +68,7 @@
     "copyCode": "Copy code",
     "copied": "Copied",
     "copyFailed": "Copy failed",
-    "skipToContent": "Skip to content",
-    "loopIdTitle": "Loop ID",
-    "loopPhaseTitle": "Loop phase",
-    "loopIterTitle": "Iteration",
-    "loopObjectiveLabel": "Objective",
-    "loopCriteriaLabel": "Success criteria",
-    "loopHistoryToggle": "Rounds",
-    "loopHistoryEmpty": "No completed rounds yet",
-    "loopHistoryError": "Failed to load loop history"
+    "skipToContent": "Skip to content"
   },
   "feedback": {
     "charCounter": "{{count}} chars"

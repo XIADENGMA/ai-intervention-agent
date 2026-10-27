@@ -135,14 +135,6 @@ export type I18nKey =
   | "ui.image.tooLarge"
   | "ui.image.tooManyFiles"
   | "ui.image.unsupportedFormat"
-  | "ui.loop.criteriaLabel"
-  | "ui.loop.historyEmpty"
-  | "ui.loop.historyError"
-  | "ui.loop.historyToggle"
-  | "ui.loop.idTitle"
-  | "ui.loop.iterTitle"
-  | "ui.loop.objectiveLabel"
-  | "ui.loop.phaseTitle"
   | "ui.noContent.connecting"
   | "ui.noContent.title"
   | "ui.noContent.waiting"
@@ -308,14 +300,6 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "ui.image.tooLarge",
   "ui.image.tooManyFiles",
   "ui.image.unsupportedFormat",
-  "ui.loop.criteriaLabel",
-  "ui.loop.historyEmpty",
-  "ui.loop.historyError",
-  "ui.loop.historyToggle",
-  "ui.loop.idTitle",
-  "ui.loop.iterTitle",
-  "ui.loop.objectiveLabel",
-  "ui.loop.phaseTitle",
   "ui.noContent.connecting",
   "ui.noContent.title",
   "ui.noContent.waiting",

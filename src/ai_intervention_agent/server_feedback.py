@@ -1324,9 +1324,10 @@ async def interactive_feedback(
             "Loop engineering: optional stable identifier shared by every "
             "feedback round that belongs to the same goal / outer loop "
             "(agent-chosen, e.g. 'auth-refactor-2026-07'). Rounds that carry "
-            "the same loop_id are grouped in the UI so the human reviewer can "
-            "replay 'which rounds did this objective go through, and what was "
-            "decided each time'. Length: clamped to 64 characters server-side. "
+            "the same loop_id are grouped in the server's loop ledger "
+            "(GET /api/loops), which records 'which rounds did this objective "
+            "go through, and what was decided each time'. The page itself does "
+            "not display it. Length: clamped to 64 characters server-side. "
             "Omit for standalone one-shot questions (default behavior "
             "unchanged)."
         ),
@@ -1337,18 +1338,18 @@ async def interactive_feedback(
             "Loop engineering: optional one-sentence description of the "
             "loop's goal (e.g. 'Migrate auth/session.py to PyJWT 2.x with "
             "green integration tests'). Pass it on the first round of a "
-            "loop_id; later rounds may omit it. Shown to the reviewer as "
-            "loop context above the prompt. Length: clamped to 500 "
-            "characters server-side."
+            "loop_id; later rounds may omit it. Stored with the task and "
+            "the loop ledger, not displayed on the page. Length: clamped to "
+            "500 characters server-side."
         ),
     ),
     loop_phase: str | None = Field(
         default=None,
         description=(
             "Loop engineering: optional free-form phase tag for this round, "
-            "e.g. 'investigate' / 'implement' / 'verify' / 'review'. Helps "
-            "the reviewer see where in the inner loop the agent currently "
-            "is. Length: clamped to 32 characters server-side."
+            "e.g. 'investigate' / 'implement' / 'verify' / 'review'. Stored "
+            "with the task and the loop ledger, not displayed on the page. "
+            "Length: clamped to 32 characters server-side."
         ),
     ),
     success_criteria: str | None = Field(
@@ -1356,19 +1357,19 @@ async def interactive_feedback(
         description=(
             "Loop engineering: optional verifiable completion criteria the "
             "human should judge the evidence against (e.g. 'pytest all "
-            "green + no new ruff warnings + docs regenerated'). Rendered "
-            "alongside the loop context so the verdict is made against an "
-            "explicit baseline. Length: clamped to 500 characters "
-            "server-side."
+            "green + no new ruff warnings + docs regenerated'). Stored with "
+            "the task and the loop ledger but not displayed on the page, so "
+            "put anything the human must read in `message`. Length: clamped "
+            "to 500 characters server-side."
         ),
     ),
     iteration_label: str | None = Field(
         default=None,
         description=(
             "Loop engineering: optional round label such as 'iter-3' or "
-            "'attempt-2'. Shown with the loop context so multiple rounds "
-            "of the same loop are distinguishable at a glance. Length: "
-            "clamped to 32 characters server-side."
+            "'attempt-2'. Shown as a small badge on the task's tab so "
+            "multiple rounds of the same loop are distinguishable at a "
+            "glance. Length: clamped to 32 characters server-side."
         ),
     ),
     feedback_type: str | None = Field(

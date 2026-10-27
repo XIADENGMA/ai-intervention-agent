@@ -85,6 +85,7 @@ def _run_node(case_js: str) -> str:
                 'aiia-static-v2',
                 'aiia-offline-v0',
                 'aiia-offline-v1',
+                'aiia-offline-v2',
                 'foreign-cache',
                 42,
               ];
@@ -182,6 +183,6 @@ def test_activate_cleanup_deletes_only_old_aiia_cache_versions() -> None:
     """
 
     assert json.loads(_run_node(script)) == {
-        "deletedCaches": ["aiia-static-v1", "aiia-offline-v0"],
+        "deletedCaches": ["aiia-static-v1", "aiia-offline-v0", "aiia-offline-v1"],
         "claimCalls": 1,
     }

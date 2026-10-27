@@ -100,7 +100,7 @@
     "settingsBtn": "通知设置",
     "connecting": "正在连接服务器…",
     "noContent": {
-      "title": "暂无交互反馈请求",
+      "title": "这里暂时很安静",
       "connecting": "连接中…",
       "waiting": "等待中"
     },
@@ -142,16 +142,6 @@
       "switchedTo": "切换到任务: {{id}}",
       "switchFailed": "切换任务失败：{{reason}}",
       "activateTimeoutCheckServer": "激活任务超时：请检查服务端是否可用"
-    },
-    "loop": {
-      "idTitle": "循环 ID",
-      "phaseTitle": "循环阶段",
-      "iterTitle": "轮次",
-      "objectiveLabel": "循环目标",
-      "criteriaLabel": "完成标准",
-      "historyToggle": "历史轮次",
-      "historyEmpty": "暂无已完成轮次",
-      "historyError": "循环历史加载失败"
     },
     "clipboard": {
       "empty": "剪贴板为空，请先复制一段代码。",

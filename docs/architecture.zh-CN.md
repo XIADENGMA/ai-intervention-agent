@@ -148,9 +148,9 @@ sequenceDiagram
 完整参数参考 + 综合调用示例见
 [`mcp_tools.zh-CN.md#agent-模式专用参数cursor--composer--cline--augment--trae`](mcp_tools.zh-CN.md#agent-模式专用参数cursor--composer--cline--augment--trae)。
 
-**Loop 工程**（长程自主循环）：携带同一 `loop_id` 的多轮任务会在
-prompt 上方渲染 loop 上下文条，并提供可折叠的「历史轮次」时间线
-（每轮的人类裁决摘要），数据来自 `GET /api/loops`。详见
+**Loop 工程**（长程自主循环）：5 个可选的 `loop_*` 字段随任务存储；
+`iteration_label` 以小徽标显示在任务标签上；携带同一 `loop_id` 的已完成
+轮次记入有界台账，由 `GET /api/loops` 提供。页面没有 loop 面板。详见
 [`mcp_tools.zh-CN.md#loop-工程参数长程自主循环`](mcp_tools.zh-CN.md#loop-工程参数长程自主循环)。
 
 ### 用户端工作流特性（内置在 Web UI）
