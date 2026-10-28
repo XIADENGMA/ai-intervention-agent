@@ -1029,6 +1029,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   closed settings for such a list. Both configuration documents name `blocked_ips` as the
   exception to the rule that a value of the wrong type only affects its own key.
 
+### Security
+
+- Refresh `uv.lock` so the release dependency gate (`scripts/dependency_audit.py --gate release`,
+  which `release.yml` runs before it publishes; the pull-request gate runs the same audit) passes
+  again. `pip-audit` passed on the 1.9.0 lock on 2026-10-25 and now reports eight advisories in it:
+  `authlib` 1.7.1 → 1.9.1 (seven, GHSA-6v38-4h7w-rj9h, GHSA-fch4-3c6x-j4gc, GHSA-7vr2-2fgp-9w7p,
+  GHSA-c5mf-xmp2-59rc, GHSA-x4rv-c3wx-4cr8, GHSA-jj7h-c3hg-m23x and GHSA-8m4g-j4wp-wgcg, fixed in
+  1.8.0, 1.9.0 and 1.9.1: signature, audience, nonce and key checks of its JWS, OAuth and OpenID
+  code that could be skipped) and `dnspython` 2.7.0 → 2.9.0 (GHSA-45c3-73f7-pv4m: a crafted DNS
+  message made the decompression of a name use excessive CPU). Neither package is imported by this
+  project or reached by the Web UI or the `interactive_feedback` tool: `authlib` comes in with the
+  OAuth parts of `fastmcp` and `dnspython` with the e-mail validation of `pydantic`. Only
+  `uv.lock` moves, by those two packages (6 lines); `pyproject.toml` is unchanged, and since
+  `fastmcp-slim` asks for `authlib>=1.6.11` and `email-validator` for `dnspython>=2.0.0`, an
+  installation that resolves its own dependencies already received the new versions. The
+  audit passes again: 110 locked packages, no finding, and `npm audit` has no unaccepted one.
+
 ## [1.9.0] - 2026-10-25
 
 ### Added
