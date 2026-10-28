@@ -415,8 +415,8 @@ class TestPrintConfigRedactsBarkDeviceKey(unittest.TestCase):
         payload = json.loads(raw)
         notif = payload.get("sections", {}).get("notification", {})
         device_key = notif.get("bark_device_key")
-        # 用户的 config.toml 里 bark_device_key 是 "uvMegCBMH9PQ8M2gDMpC4A"
-        # （真实 device token）。本测试断言它**绝不**进 stdout。
+        # 用户的 config.toml 里的 bark_device_key（真实 device token，这里不写出它的值）。
+        # 本测试断言它**绝不**进 stdout。
         if device_key is not None:
             self.assertEqual(
                 device_key,

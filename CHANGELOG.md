@@ -1045,6 +1045,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `fastmcp-slim` asks for `authlib>=1.6.11` and `email-validator` for `dnspython>=2.0.0`, an
   installation that resolves its own dependencies already received the new versions. The
   audit passes again: 110 locked packages, no finding, and `npm audit` has no unaccepted one.
+- A test comment no longer quotes a value from the author's own configuration (R923). The comment
+  above `test_real_bark_device_key_redacted_in_stdout` in `tests/test_server_print_config.py`
+  spelled out the `bark_device_key` that the author's `config.toml` holds, as the example of what
+  must never reach stdout. The test compares with the redaction marker only, so nothing read the
+  value; the comment now describes it without quoting it. None of the 835 files in the published
+  sdist, wheel and VSIX holds it. Whatever has once been committed stays in the history of a public
+  repository, so a Bark device key that has appeared in a commit counts as public: the way to retire
+  it is to generate a new one in the Bark app and write that to `bark_device_key`.
 
 ## [1.9.0] - 2026-10-25
 
