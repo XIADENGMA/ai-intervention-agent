@@ -11,6 +11,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Nothing yet.
+
+## [1.9.1] - 2026-10-28
+
+### Changed
+
 - The countdown ring no longer keeps the browser redrawing (R889). The ring in a task tab
   (`.countdown-ring` on the page, `.task-tab-countdown` in the VS Code panel) had
   `transition: stroke-dashoffset 0.3s ease, stroke 0.2s`, and the script moves the dash offset once
