@@ -94,6 +94,8 @@ MCP 服务端和它启动的 Web UI 各自每 2 秒检查一次配置文件的�
 在它的 MCP 服务端之后还活着（服务端是被杀掉而不是正常停止的），它会继续使用旧值和旧端口：
 把它也停掉，参见 [故障排查 第 1 条](troubleshooting.zh-CN.md#1-web-ui-启动失败端口被占用)。
 
+代理也会写这个文件：通过 Web UI 或接口做的修改，以及进程退出时的保存。它是在你写的内容上改，所以注释和各段的先后顺序会保留。用点号键写的文件（`notification.sound_volume = 80`、`notification.enabled = true`）或被别的表隔开的段，保存后值不变、排版也不变；用内联表写的段（`web_ui = {port = 8080}`）保存后值不变，写成普通的 `[web_ui]` 段。保持原排版会改变文件的意思时（已知的是：内联表后面跟着别的段的点号键），整份文件按当前生效的设置重新写一遍，不保留注释，日志里有一条 `WARNING` 说明；连这样写出的内容读回来也和设置对不上，就什么都不写，文件保持原样（R917）。
+
 ### 环境变量覆盖
 
 为方便 `uvx`、Docker、systemd 等「难以直接修改 `config.toml`」的运行场景，
@@ -131,13 +133,23 @@ uvx ai-intervention-agent
 >
 > 1. 在 `config.toml` 把 `network_security.allowed_networks` 设置为你
 >    实际信任的最小 CIDR（例如 `["192.168.1.0/24"]`）。默认值
->    （`["127.0.0.0/8"]`，仅 loopback）**不会**被 `*_WEB_UI_HOST` env
->    var 覆盖——它们是相互独立的两层。
+>    （loopback 加内网网段 `192.168.0.0/16`、`10.0.0.0/8`、`172.16.0.0/12`）
+>    **不会**被 `*_WEB_UI_HOST` env var 覆盖——它们是相互独立的两层。
 > 2. 优先考虑 `ssh -L 18080:127.0.0.1:18080` 隧道，而不是直接 bind
 >    `0.0.0.0`——从远端机器上访问的体验一样，端口却完全不暴露。
 > 3. `ai-intervention-agent --print-config` 会自动 redact 敏感 key，
 >    但运行中的 HTTP API **不会**——边界 redaction 故意没启用，否
 >    则 settings 面板就没法 round-trip 已有配置值。
+
+#### 示例：容器里发布端口
+
+容器发布的端口，是经过容器自己的网络地址到达 Web UI 的，不走回环地址，所以默认的 `127.0.0.1` 从容器外面什么也连不上。要在容器里设置监听地址，并且只在宿主机的回环地址上发布端口（本项目没有提供容器镜像；下面的命令只是说明要紧的两个设置）：
+
+```bash
+docker run -e AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0 -p 127.0.0.1:8080:8080 <your-image>
+```
+
+`config.toml` 里写 `bind_interface = "0.0.0.0"` 效果一样（默认值只在没写这个键时才起作用）。不要用不带地址的 `-p 8080:8080` 发布：Docker 会在宿主机的所有地址上打开这个端口，能连到宿主机的人都能打开显示 Bark device key 的页面。访问控制也补不上：取决于容器运行时和网络模式，Web UI 看到的连接来源地址可能是容器网络的网关，而不是访问者本人的地址，这时 `allowed_networks` 和 `blocked_ips` 分不出谁是谁。要从另一台机器访问，用 SSH 隧道连到宿主机的回环端口，或者在宿主机上放一个把访问者地址传过来的反向代理（见 [deployment.zh-CN.md](deployment.zh-CN.md)）。
 
 #### 验证当前生效的配置
 
@@ -304,7 +316,7 @@ Bark 请求直接发往 `bark_url`，不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_
 | 配置项                 | 类型    | 默认值      | 说明                                                                                                                                                                                                                                                                                   |
 | ---------------------- | ------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"` / `"zh-TW"`。新请求推送（Bark、系统通知、声音）的标题也跟随它；没有浏览器可问时，`"auto"` 取操作系统的显示语言（macOS 的“首选语言”、Windows 的界面语言，其余看 `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG`），不是我们支持的语言时用英文（R830）                                                                                                                                                  |
-| `host`                 | string  | `127.0.0.1` | 不是监听地址：Web UI 监听的是 `network_security.bind_interface`（默认 `0.0.0.0`），只要它存在就会忽略本项，而合并过默认值的配置里它总是存在。见下面的“Host 选择规则”。                                                                                                                                                                 |
+| `host`                 | string  | `127.0.0.1` | 不是监听地址：Web UI 监听的是 `network_security.bind_interface`（默认 `127.0.0.1`），只要它存在就会忽略本项，而合并过默认值的配置里它总是存在。见下面的“Host 选择规则”。                                                                                                                                                               |
 | `port`                 | number  | `8080`      | 范围 `[1, 65535]`                                                                                                                                                                                                                                                                      |
 | `debug`                | boolean | `false`     | 调试模式                                                                                                                                                                                                                                                                               |
 | `http_request_timeout` | number  | `30`        | HTTP 请求超时（秒），范围 `[1, 600]`                                                                                                                                                                                                                                                   |
@@ -318,20 +330,22 @@ Bark 请求直接发往 `bark_url`，不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_
 
 控制 Web UI 绑定网卡与访问控制。
 
-| 配置项                   | 类型     | 默认值     | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------ | -------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bind_interface`         | string   | `0.0.0.0`  | `127.0.0.1` 仅本机；`0.0.0.0` 所有接口                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `allowed_networks`       | string[] | （见模板） | CIDR 白名单                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `blocked_ips`            | string[] | `[]`       | IP 黑名单                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `trusted_hosts`          | string[] | `[]`       | 额外允许的 HTTP `Host` 头具体值。默认会自动信任 loopback、具体 `bind_interface`、`mdns.hostname`、以及 `web_ui.external_base_url` 的主机名。仅当反向代理、自定义 DNS、隧道域名或 VS Code 自定义 `serverUrl` 使用其它主机名时才需要追加。通配符/后缀模式（如 `*.example.com` 或 `.example.com`）会被忽略。不要填写 `0.0.0.0` 或 `::`；它们是监听地址，不是请求 Host。                                                                                                                                    |
-| `trusted_proxy_hops`     | integer  | `1`        | 访客和 Web UI 之间有几层反向代理（`0`–`8`）。只有来自 Web UI 所在机器的连接（同机反向代理）才会读取 `X-Forwarded-For`；客户端是从右数这么多项的那个地址，因为每一层代理把它看到的地址追加在右边，更左边的都是访客自己写的。`1`：一层代理（如 nginx）；`2`：CDN → nginx → Web UI；`0`：不信任这个头（经本机代理来的请求都按 `127.0.0.1` 算）。访问控制和限流用的是同一个地址。不是 0 到 8 的整数一律按 `1` 处理并打 warning。详见[部署](deployment.zh-CN.md#反向代理后面的客户端地址)。                                                                                                                                                                       |
-| `access_control_enabled` | boolean  | `true`     | 是否启用访问控制                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `api_token`              | string   | `""`       | 可选 API token 认证（R189 / T4）。空串=未配置（仅 loopback 来源能调用敏感写入端点，与默认行为一致）。配置后 non-loopback 客户端可通过 `Authorization: Bearer <token>` 或 `X-API-Token: <token>` 头携带 token 调用 `POST /api/system/log-level` / `POST /api/system/open-config-file` 等写入端点。Loopback 来源始终通过——token 是**额外**通道，不是替代。“Loopback”指访问者本人的地址：同机反向代理后面看代理写在 `X-Forwarded-For` 里的那一项，经代理来的远程访问者不算（见[部署](deployment.zh-CN.md#反向代理后面的客户端地址)）。最少 16 字符（短于此长度静默视作未配置并打 warning）。生成方式：`python -c "import secrets; print(secrets.token_urlsafe(32))"` |
-| `api_token_rotated_at`   | string   | `""`       | R199 / Cycle 7。上次 `POST /api/system/rotate-api-token` 调用的 ISO-8601 UTC 时间戳。由 rotation 端点**自动**写入；`GET /api/system/api-token-info` 读取后计算「token age」用于 dashboard alert（NIST SP 800-63B 建议 30-90 天轮换）。空串 = 从未轮换。**禁止手动编辑**——这是 rotation 端点的 owned field。非法格式（不是 ISO-8601、或缺少 `Z`/`+00:00` 后缀）会被静默丢弃并打 warning。                                                                                               |
+| 配置项                   | 类型     | 默认值      | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------ | -------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bind_interface`         | string   | `127.0.0.1` | `127.0.0.1`（默认）：仅本机。`0.0.0.0`：所有接口，手机或别的电脑要访问就要用它（见 [iPhone 推荐用法](#iphone-推荐用法快捷指令--bark)）                                                                                                                                                                                                                                                                                                                                                                                     |
+| `allowed_networks`       | string[] | （见模板）  | CIDR 白名单                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `blocked_ips`            | string[] | `[]`        | IP 黑名单                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `trusted_hosts`          | string[] | `[]`        | 额外允许的 HTTP `Host` 头具体值。默认会自动信任 loopback、具体 `bind_interface`、`mdns.hostname`、以及 `web_ui.external_base_url` 的主机名。仅当反向代理、自定义 DNS、隧道域名或 VS Code 自定义 `serverUrl` 使用其它主机名时才需要追加。通配符/后缀模式（如 `*.example.com` 或 `.example.com`）会被忽略。不要填写 `0.0.0.0` 或 `::`；它们是监听地址，不是请求 Host。                                                                                                                                    |
+| `trusted_proxy_hops`     | integer  | `1`         | 访客和 Web UI 之间有几层反向代理（`0`–`8`）。只有来自 Web UI 所在机器的连接（同机反向代理）才会读取 `X-Forwarded-For`；客户端是从右数这么多项的那个地址，因为每一层代理把它看到的地址追加在右边，更左边的都是访客自己写的。`1`：一层代理（如 nginx）；`2`：CDN → nginx → Web UI；`0`：不信任这个头（经本机代理来的请求都按 `127.0.0.1` 算）。访问控制和限流用的是同一个地址。不是 0 到 8 的整数一律按 `1` 处理并打 warning。详见[部署](deployment.zh-CN.md#反向代理后面的客户端地址)。                                                                                                                                                                       |
+| `access_control_enabled` | boolean  | `true`      | 是否启用访问控制                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `api_token`              | string   | `""`        | 可选 API token 认证（R189 / T4）。空串=未配置（仅 loopback 来源能调用敏感写入端点，与默认行为一致）。配置后 non-loopback 客户端可通过 `Authorization: Bearer <token>` 或 `X-API-Token: <token>` 头携带 token 调用 `POST /api/system/log-level` / `POST /api/system/open-config-file` 等写入端点。Loopback 来源始终通过——token 是**额外**通道，不是替代。“Loopback”指访问者本人的地址：同机反向代理后面看代理写在 `X-Forwarded-For` 里的那一项，经代理来的远程访问者不算（见[部署](deployment.zh-CN.md#反向代理后面的客户端地址)）。最少 16 字符（短于此长度静默视作未配置并打 warning）。生成方式：`python -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `api_token_rotated_at`   | string   | `""`        | R199 / Cycle 7。上次 `POST /api/system/rotate-api-token` 调用的 ISO-8601 UTC 时间戳。由 rotation 端点**自动**写入；`GET /api/system/api-token-info` 读取后计算「token age」用于 dashboard alert（NIST SP 800-63B 建议 30-90 天轮换）。空串 = 从未轮换。**禁止手动编辑**——这是 rotation 端点的 owned field。非法格式（不是 ISO-8601、或缺少 `Z`/`+00:00` 后缀）会被静默丢弃并打 warning。                                                                                               |
+
+**写错类型的值**不会让整个文件作废：只有那一项退回安全的值，日志里有一条 `WARNING`；这一段的其他项和文件里的其他段照常读取（`blocked_ips` 是例外，见下）。`allowed_networks = "192.168.1.0/24"`（字符串，不是列表）只放行本机回环，不会回到默认的内网网段；列表里不是字符串、不是合法网段的条目会被丢掉，一个都不剩时同样只放行本机回环。文件完全解析不了（TOML 语法错误、同一个键写了两次、不是 UTF-8）、或 JSON 里 `allowed_networks` / `blocked_ips` 定义了两次，仍然整个文件按无效处理（其他段启动时用默认值，编辑之后沿用上一份设置），并且不会被覆盖。`network_security` 不会因为读不出来的文件而放开，不管是什么原因（没有读取权限也算）；`network_security` 写成不是表的东西（字符串、数字、数组、表的数组）也一样处理（文件里的其他段照常读取）：服务运行中，已经生效的设置继续生效，直到文件修好，所以黑名单不会被忘掉；启动时就没有上一份设置，则只监听 `127.0.0.1`、只放行本机回环（默认值还会放行内网网段），日志里一条 `ERROR` 写明文件路径（整段不是表时还写明写的是什么类型，不写内容）。`blocked_ips` 不是列表、或有不是 IP 地址也不是网段的条目时同样处理，因为条目被丢掉，那个地址就不再被拦住；这时 `ERROR` 写明是 `blocked_ips`、第几项读不懂，不写内容。文件修好之后，访问规则几秒内自动恢复，监听地址在下次启动时恢复。文件不存在或是空的，表示没有配置过，用默认值：只监听 `127.0.0.1`，手机要访问得自己把 `bind_interface` 改成 `0.0.0.0`。
 
 **Host 选择规则**：
 
-- Web UI 监听的地址：设置了环境变量 `AI_INTERVENTION_AGENT_WEB_UI_HOST` 就用它，否则用 `network_security.bind_interface`（默认 `0.0.0.0`）。`web_ui.host` 只是没有 `bind_interface` 时的回退；合并过默认值的配置里 `bind_interface` 总是存在，所以只改 `web_ui.host` **不会**改变监听地址（`web_ui.host = "127.0.0.1"` 不会让 Web UI 只对本机开放，要用 `network_security.bind_interface = "127.0.0.1"`）。
+- Web UI 监听的地址：设置了环境变量 `AI_INTERVENTION_AGENT_WEB_UI_HOST` 就用它，否则用 `network_security.bind_interface`（默认 `127.0.0.1`：只有本机能访问；手机或别的电脑要访问，改成 `0.0.0.0` 或某个局域网地址）。`web_ui.host` 只是没有 `bind_interface` 时的回退；合并过默认值的配置里 `bind_interface` 总是存在，所以只改 `web_ui.host` **不会**改变监听地址（`web_ui.host = "0.0.0.0"` 不会让 Web UI 对网络开放，要用 `network_security.bind_interface = "0.0.0.0"`）。早先版本生成的 `config.toml` 里写着 `bind_interface = "0.0.0.0"`，不改这一行就仍然监听所有网卡。
 - HTTP `Host` 校验与 IP 白名单是两层不同边界：`trusted_hosts` 描述浏览器/代理可以使用哪些主机名，`allowed_networks` 描述哪些客户端来源网段可以访问。
 - 默认允许 `localhost`、`127.0.0.1`、`[::1]`、`mdns.hostname`（默认 `ai.local`）、配置的具体 bind host/IP，以及 `web_ui.external_base_url` 中的主机名。
 - 浏览器发来的写请求还要单独核对是不是 Web UI 自己的来源，与上面的 `Host` 和 IP 检查互不相干：会改状态的请求（所有 `POST` / `PUT` / `PATCH` / `DELETE`，加上 `GET /api/feedback`）在浏览器声明是另一个页面发起时，会返回 `403 cross_origin_write_blocked`。放行：浏览器自己的 `Sec-Fetch-Site: same-origin`；既没有 `Origin` 也没有 `Sec-Fetch-Site` 的客户端（MCP 服务、`curl`、脚本、VS Code 扩展宿主）；`Origin` 与 `Host` 是同一个主机和端口、页面自己的 `localhost` / `127.0.0.1` 来源、VS Code webview，或 `web_ui.external_base_url` 的来源。放在改写 `Host` 的纯 HTTP 反向代理（nginx 默认）后面时，把 `web_ui.external_base_url` 设成你在浏览器里打开的地址，或者让代理把原始 `Host` 传下去并写进 `trusted_hosts`（见 [故障排查 §19](troubleshooting.zh-CN.md#19-web-ui-里的按钮没反应浏览器里看到-403-cross_origin_write_blocked)）。
@@ -349,6 +363,7 @@ Bark 请求直接发往 `bark_url`，不读 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_
 **默认启用策略**：
 
 - 当实际监听地址（`bind_interface`）不是 `127.0.0.1` / `localhost` / `::1` 时，自动启用。
+- 默认的 `bind_interface` 是 `127.0.0.1`，所以改成局域网地址之前 mDNS 不会发布。
 
 **IP 自动探测策略**：
 
@@ -427,6 +442,8 @@ frontend_countdown = 240
 ```
 
 ## iPhone 推荐用法：快捷指令 + Bark
+
+手机要先能访问到这台电脑。Web UI 默认只监听 `127.0.0.1`，只有本机打得开：在 `config.toml` 里把 `network_security.bind_interface` 设成 `"0.0.0.0"`（或这台电脑的局域网地址），再重启 MCP 服务。默认的 `allowed_networks` 已经放行内网网段；设置之前请先看[示例：SSH 远程绑定](#示例ssh-远程绑定到非默认端口)下面的安全提示。
 
 手机上最顺手的打开方式是把 Web UI 包进一个快捷指令（Shortcuts），
 再让 [Bark](https://github.com/Finb/Bark) 通知点击后直接启动它——

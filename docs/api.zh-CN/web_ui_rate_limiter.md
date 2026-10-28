@@ -6,6 +6,16 @@ Lightweight in-memory rate limiter for the local Web UI.
 
 ## 函数
 
+### `_is_more_limiting(candidate: _LimitDecision, current: _LimitDecision) -> bool`
+
+Whether ``candidate`` is the decision to report instead of ``current``.
+
+A request goes through only when every limit that applies to it lets it
+through, so a refusal outranks a pass whatever the numbers say (R914). Of
+two refusals the one that lifts later is reported, because that is when the
+request can go through again; of two passes the one with fewer calls left,
+and on a tie the one that resets first.
+
 ### `_parse_limit(raw: str) -> _LimitSpec`
 
 ### `_limit_period_seconds(raw: str) -> int`

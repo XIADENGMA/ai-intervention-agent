@@ -68,6 +68,25 @@ class _LimitDecision:
         self.retry_after = retry_after
 
 
+def _is_more_limiting(candidate: _LimitDecision, current: _LimitDecision) -> bool:
+    """Whether ``candidate`` is the decision to report instead of ``current``.
+
+    A request goes through only when every limit that applies to it lets it
+    through, so a refusal outranks a pass whatever the numbers say (R914). Of
+    two refusals the one that lifts later is reported, because that is when the
+    request can go through again; of two passes the one with fewer calls left,
+    and on a tie the one that resets first.
+    """
+    if candidate.allowed != current.allowed:
+        return not candidate.allowed
+    if not candidate.allowed:
+        return candidate.reset_at > current.reset_at
+    return (candidate.remaining, candidate.reset_at) < (
+        current.remaining,
+        current.reset_at,
+    )
+
+
 def _parse_limit(raw: str) -> _LimitSpec:
     parts = raw.strip().lower().split()
     if len(parts) != 3 or parts[1] != "per":
@@ -197,13 +216,7 @@ class WebUiRateLimiter:
                     reset_at=reset_at,
                     retry_after=max(1, math.ceil(reset_at - now)),
                 )
-                if decision is None or (
-                    current_decision.remaining,
-                    current_decision.reset_at,
-                ) < (
-                    decision.remaining,
-                    decision.reset_at,
-                ):
+                if decision is None or _is_more_limiting(current_decision, decision):
                     decision = current_decision
 
         if decision is None:

@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `_is_more_limiting(candidate: _LimitDecision, current: _LimitDecision) -> bool`
+
 ### `_parse_limit(raw: str) -> _LimitSpec`
 
 ### `_limit_period_seconds(raw: str) -> int`

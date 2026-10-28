@@ -46,6 +46,18 @@ Web UI 的访问控制用这些函数，``ConfigManager`` 保存和读取配置�
 - 不是字符串、不是 IP / 网段的条目跳过，各记一条带字段名 ``field`` 的 WARNING
 - 规范化之后重复的只留第一个（``10.0.0.5/8`` 和 ``10.0.0.0/8`` 是同一项）
 
+### `_judge_ip_entry(item: Any) -> str | None`
+
+名单里一项算什么：``normalize_ip_entries`` 和 ``unusable_ip_entries`` 共用这一份判断。
+
+返回规范写法（能用）；``""``（只有空白，静默跳过）；``None``（不是字符串，或不是 IP / 网段）。
+
+### `unusable_ip_entries(items: list[Any]) -> list[int]`
+
+名单里 ``normalize_ip_entries`` 会丢掉（并各记一条 WARNING）的条目的位置，从 0 数起。
+
+只有位置，没有内容：读不懂的那一项可能是贴错了地方的令牌，不该被写进日志。
+
 ### `validate_allowed_networks(networks: Any) -> list[str]`
 
 验证并规范化 allowed_networks；空列表 / 全部无效时只放行本机回环。
@@ -57,6 +69,15 @@ Web UI 的访问控制用这些函数，``ConfigManager`` 保存和读取配置�
 ### `validate_blocked_ips(ips: Any) -> list[str]`
 
 验证并规范化 blocked_ips（单个 IP 或 CIDR）；不是列表时按空名单处理。
+
+### `blocked_ips_problem(ips: Any) -> str | None`
+
+``blocked_ips`` 里有 ``validate_blocked_ips`` 会丢掉的东西时，返回一句说明；没有就是 ``None``。
+
+拦截名单丢掉一项，那个地址就没有被拦住；放行名单丢掉一项只是少放行一个。所以读配置文件的
+一侧（``ConfigManager.get_network_security_config``）遇到这样的名单，不把这一段当成一份能用的
+配置（R920）。没写（``None``）、空列表、只有空白的条目都不是问题。说明里只有类型和位置，
+没有内容：读不懂的那一项可能是贴错了地方的令牌。
 
 ### `validate_trusted_hosts(hosts: Any) -> list[str]`
 

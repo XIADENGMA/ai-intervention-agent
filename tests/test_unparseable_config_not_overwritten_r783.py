@@ -35,7 +35,9 @@ Bark 的 ``device_key``、提示词……）就被默认值换掉了，磁盘上
 ====
 
 ``ConfigManager`` 记下"磁盘上的配置文件内容加载失败"（``_on_disk_config_invalid``）：
-``_load_config`` 因解码、解析或结构校验失败（``ValueError`` / ``ConfigValidationError``）时置位，
+``_load_config`` 因解码、解析或结构校验失败（``ValueError`` / ``ConfigValidationError``，
+以及 tomlkit 的 ``TOMLKitError``：同一个键写两次抛的 ``KeyAlreadyPresent`` 不是 ``ValueError``，
+见 R916）时置位，
 成功加载时清除。置位期间所有自动写入都不动文件：``_save_config_immediate`` 记一条 WARNING
 后跳过，``_save_network_security_config_immediate`` 抛 ``RuntimeError``（调用方本来就处理
 这个异常）。用户修好文件（热重载成功）后恢复正常；删掉文件则下次启动重新生成默认配置；

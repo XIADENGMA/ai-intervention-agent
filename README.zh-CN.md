@@ -209,7 +209,7 @@ pip install ai-intervention-agent
 - 提示词里的本地图片：在提示词里写 `![说明](图片路径)`，Web UI 就会把图片显示出来；只读取工作区目录和临时目录内的图片（可用 `[feedback] local_image_dirs` 调整）；点击消息里的任意图片即可查看大图（Web UI 与 VS Code 面板均支持）
 - Agent 循环上下文：每任务 `header_label` 上下文短标签、`feedback_placeholder` 自定义占位提示、循环工程元数据（`loop_id`、`loop_phase`、`success_criteria`）
 - 通知：Web UI / 声音 / 系统通知 / Bark（iOS 推送），支持上传自定义通知音效
-- SSH / 局域网友好：适配 SSH 端口转发；本地网络支持时通过 mDNS 发布 `<host>.local` 入口
+- SSH / 局域网友好：适配 SSH 端口转发；默认只监听本机，把 `bind_interface` 改成局域网地址后，本地网络支持时通过 mDNS 发布 `<host>.local` 入口
 - i18n：Web UI + VS Code 插件原生支持 `en` / `zh-CN` / `zh-TW` 三语
 - PWA + 离线可用 + WCAG 2.1 AA 无障碍：可从浏览器安装；对比度 / 焦点管理 / 减弱动态效果均经审计并由不变量测试锁定
 - 稳定安装：基于 Flask 3.x + 保守的依赖锁版；不受 2026 年初 [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) 影响（该变更让若干同类项目默认安装即报错）
@@ -256,7 +256,7 @@ AIIA 由两个协作的 Python 进程组成，桥接三个界面：暴露 `inter
 `uvx`、Docker、systemd、SSH 远程等不便编辑文件的场景下，最常用的 `web_ui` 配置可以用环境变量在启动时覆盖（非法值会记 `WARNING` 并安全回退；完整列表见 [`docs/configuration.zh-CN.md#环境变量覆盖`](docs/configuration.zh-CN.md#环境变量覆盖)）：
 
 ```bash
-export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # 监听地址，默认 0.0.0.0（所有网卡）
+export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # 监听地址，默认 127.0.0.1（只有本机）；0.0.0.0 = 所有网卡
 export AI_INTERVENTION_AGENT_WEB_UI_PORT=8181         # 默认 8080，范围 [1, 65535]
 export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=zh-CN    # auto / en / zh-CN / zh-TW
 uvx ai-intervention-agent
@@ -291,7 +291,7 @@ iPhone 上最顺手的用法是把 Web UI 包进快捷指令（Shortcuts），�
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp)（poliva） | 约 310 | 直系上游 fork（参见下方致谢）；最精简的 Python MCP，单一反馈对话框。 |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp)（Pursue-LLL） | 约 30 | 体量更小的独立 fork，强调"依赖最少"。 |
 
-AIIA 在光谱中的位置：AIIA 走的是完整运维栈路线。Web UI 与 VS Code 插件共享同一后端，可观测性由 `/api/system/metrics` Prometheus 端点和[参考 Grafana 仪表盘](docs/observability/README.zh-CN.md)提供。Web UI 内置三种界面语言，文档提供中英双语；项目遵循不变量测试纪律（15,000+ 测试 + 1,300+ subtests，40 cycles 持续审计），发布流水线有 4 个 job。只想要最轻量的 drop-in，选 poliva 版本；想要桌面应用，选 mcp-feedback-enhanced；想要语音输入或多 tab UI，看 Relay 或 Node.js 版本。
+AIIA 在光谱中的位置：AIIA 走的是完整运维栈路线。Web UI 与 VS Code 插件共享同一后端，可观测性由 `/api/system/metrics` Prometheus 端点和[参考 Grafana 仪表盘](docs/observability/README.zh-CN.md)提供。Web UI 内置三种界面语言，文档提供中英双语；项目遵循不变量测试纪律（15,500+ 测试 + 1,300+ subtests，40 cycles 持续审计），发布流水线有 4 个 job。只想要最轻量的 drop-in，选 poliva 版本；想要桌面应用，选 mcp-feedback-enhanced；想要语音输入或多 tab UI，看 Relay 或 Node.js 版本。
 
 功能缺口（欢迎贡献）：语音转文字输入、原生置顶窗口、Cursor 用量监控、多 tab 会话合并 UI。
 

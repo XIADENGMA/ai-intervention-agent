@@ -11,8 +11,10 @@ from typing import TYPE_CHECKING, Any, cast
 from ai_intervention_agent.config_utils import atomic_write_text
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.web_ui_validators import (
+    DEFAULT_BIND_INTERFACE,
     LOOPBACK_ALLOWED_NETWORKS,
     VALID_BIND_INTERFACES,
+    blocked_ips_problem,
     parse_bind_interface,
     validate_allowed_networks,
     validate_blocked_ips,
@@ -104,6 +106,12 @@ class NetworkSecurityMixin:
     # 默认值。
     _on_disk_config_invalid: bool = False
 
+    # 眼下正在生效的那一份 network_security：成功读到文件、或成功保存之后放在这里，文件读不出来时
+    # 就用它（R915）。它不随 ``invalidate_all_caches()`` 清掉——那个方法的用途是逼下一次重新读文件
+    # （热重载、令牌轮换要立刻生效），不是让我们忘掉正在生效的配置；而热重载时文件被改成读不了的
+    # 样子，恰恰是最需要它的时候。定义成类属性，理由同上：没走 ``__init__`` 的宿主也读得到默认值。
+    _network_security_last_good: dict[str, Any] | None = None
+
     if TYPE_CHECKING:
         _lock: RLock
         config_file: Path
@@ -122,9 +130,7 @@ class NetworkSecurityMixin:
         def invalidate_all_caches(self) -> None: ...
         def _trigger_config_change_callbacks(self) -> None: ...
         def _parse_config_content(self, content: str) -> dict[str, Any]: ...
-        def _validate_config_structure(
-            self, parsed_config: dict[str, Any], content: str
-        ) -> None: ...
+        def _validate_config_structure(self, content: str) -> None: ...
 
     def _validate_network_security_config(self, raw: Any) -> dict[str, Any]:
         """强校验并归一化 network_security（与文档/模板对齐，兼容旧字段）。
@@ -140,6 +146,8 @@ class NetworkSecurityMixin:
         )
 
         if not isinstance(raw, dict):
+            # 文件里写成不是表的 network_security 到不了这里：get_network_security_config 先按
+            # “读不出来”处理了（R919）；这一行只给直接调用本方法的人兜底
             raw = {}
 
         def given_or_default(key: str) -> Any:
@@ -147,7 +155,7 @@ class NetworkSecurityMixin:
             return raw[key] if key in raw else default_ns.get(key)
 
         bind_raw = raw.get(
-            "bind_interface", default_ns.get("bind_interface", "0.0.0.0")
+            "bind_interface", default_ns.get("bind_interface", DEFAULT_BIND_INTERFACE)
         )
         bind = parse_bind_interface(
             bind_raw if isinstance(bind_raw, str) else str(bind_raw)
@@ -283,6 +291,7 @@ class NetworkSecurityMixin:
         with self._lock:
             self._network_security_cache = validated
             self._network_security_cache_time = time.monotonic()
+            self._network_security_last_good = validated
         if trigger_callbacks:
             try:
                 self._trigger_config_change_callbacks()
@@ -323,6 +332,7 @@ class NetworkSecurityMixin:
         with self._lock:
             self._network_security_cache = validated
             self._network_security_cache_time = time.monotonic()
+            self._network_security_last_good = validated
 
         if trigger_callbacks:
             try:
@@ -331,7 +341,12 @@ class NetworkSecurityMixin:
                 logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
     def get_network_security_config(self) -> dict[str, Any]:
-        """从文件读取 network_security 配置（带 30 秒缓存，失败返回默认配置）"""
+        """从文件读取 network_security 配置（带 30 秒缓存）。
+
+        文件不存在或没有内容：默认值。文件读不出来、``network_security`` 写成了不是表的东西、或
+        ``blocked_ips`` 里有读不懂的东西：见 ``_network_security_when_unreadable``（上一份好配置，
+        没有就只放行本机）。
+        """
         current_time = time.monotonic()
         with self._lock:
             if (
@@ -363,14 +378,41 @@ class NetworkSecurityMixin:
 
             full_config = self._parse_config_content(content)
 
-            self._validate_config_structure(full_config, content)
+            # 只拒绝文件本身的损坏；值写坏了不让整个文件作废，逐项退回安全的值（R913）
+            self._validate_config_structure(content)
 
             network_security_obj = full_config.get("network_security")
+            if network_security_obj is not None and not isinstance(
+                network_security_obj, dict
+            ):
+                # 写了，但不是表：不知道用户想要什么，和读不出来的文件一样不能放开任何东西（R919）。
+                # 只写类型不写内容：那一行可能是贴错了地方的令牌。（None 是 JSON 里的 null，
+                # 和没写一样，走下面的默认值）
+                return self._network_security_when_unreadable(
+                    ValueError(
+                        "network_security 不是表（table），实际类型 "
+                        f"{type(network_security_obj).__name__}；要写成 [network_security] "
+                        "再在下面写各项"
+                    )
+                )
             network_security_config = (
                 cast(dict[str, Any], network_security_obj)
                 if isinstance(network_security_obj, dict)
                 else {}
             )
+
+            # 拦截名单里有读不懂的东西：丢掉它，那个地址就没有被拦住。放行名单丢掉一项只是少放行一个，
+            # 这里是多放行一个，所以和读不出来的文件一样，不能放开任何东西（R920）。
+            block_list_problem = blocked_ips_problem(
+                network_security_config.get("blocked_ips")
+            )
+            if block_list_problem is not None:
+                return self._network_security_when_unreadable(
+                    ValueError(
+                        f"network_security.blocked_ips {block_list_problem}；"
+                        "读不懂的地址拦不住，这一段先不当成一份能用的配置"
+                    )
+                )
 
             if not network_security_config:
                 default_config = self._get_default_config()
@@ -387,25 +429,47 @@ class NetworkSecurityMixin:
             with self._lock:
                 self._network_security_cache = validated
                 self._network_security_cache_time = current_time
+                self._network_security_last_good = validated
                 logger.debug("已更新 network_security 配置缓存")
 
             return validated
 
         except Exception as e:
-            logger.error(f"读取 network_security 配置失败: {e}", exc_info=True)
-            with self._lock:
-                if self._network_security_cache is not None:
-                    logger.warning(
-                        "读取 network_security 配置失败，返回缓存的上一次成功配置",
-                        exc_info=True,
-                    )
-                    return self._network_security_cache
+            return self._network_security_when_unreadable(e)
 
-            default_config = self._get_default_config()
-            raw_default_obj = default_config.get("network_security")
-            raw_default = (
-                cast(dict[str, Any], raw_default_obj)
-                if isinstance(raw_default_obj, dict)
-                else {}
+    def _network_security_when_unreadable(self, error: Exception) -> dict[str, Any]:
+        """文件存在、有内容、却读不出来（TOML 语法错误、重复的键、编码不对、没有权限），或者
+        ``network_security`` 写成了不是表的东西（字符串、数字、数组……）、或 ``blocked_ips`` 里有
+        读不懂的东西（不是列表、有不是 IP / 网段的条目）时用哪一份（R915、R919、R920）。
+
+        不知道用户想要什么，就不能放开任何东西：
+
+        - 之前读到过好的（服务已经在跑）：继续用它。编辑器自动保存下来的半截文件，不该在两秒内
+          清空黑名单、把整个内网放进来，也不该在文件修好之前一直开着；
+        - 没有（进程刚启动）：只监听本机、只放行本机访问。多挡了人，用户在日志里看到原因、改好文件
+          就恢复；放开了，是别人在用户不知情时拿到访问权。
+
+        文件不存在、或没有内容，不走这里：那是没配置过，用默认值；``network_security = {}`` 或
+        ``[network_security]`` 下面什么都没写也一样（那是一张空表）。
+        """
+        with self._lock:
+            last_good = self._network_security_last_good
+        if last_good is not None:
+            logger.error(
+                f"读取 network_security 配置失败，沿用上一次读到的配置，"
+                f"{self.config_file} 修好后自动恢复: {error}",
+                exc_info=error,
             )
-            return self._validate_network_security_config(raw_default)
+            return last_good
+        logger.error(
+            f"读取 network_security 配置失败，又没有上一份可用的配置，按最保守的方式运行："
+            f"只监听本机（127.0.0.1）、只放行本机访问。{self.config_file} 修好后访问控制"
+            f"自动恢复，监听地址在下次启动服务时恢复: {error}",
+            exc_info=error,
+        )
+        return self._validate_network_security_config(
+            {
+                "bind_interface": "127.0.0.1",
+                "allowed_networks": LOOPBACK_ALLOWED_NETWORKS,
+            }
+        )

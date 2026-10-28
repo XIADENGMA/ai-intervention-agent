@@ -498,14 +498,26 @@ class SecurityMixin:
         return secrets.token_urlsafe(16)
 
     def _load_network_security_config(self) -> dict:
-        """加载并验证 network_security 配置，失败时返回默认值。"""
+        """加载并验证 network_security 配置；连配置管理器都用不了时只放行本机（R915）。
+
+        配置文件读不出来的情形在 ``ConfigManager.get_network_security_config`` 里已经处理好
+        （上一份好配置，没有就只放行本机）；这里兜的是更靠前的失败，同样不能退回放开内网的默认值。
+        """
         try:
             config_mgr = get_config()
             raw_config = config_mgr.get_section("network_security")
             return validate_network_security_config(raw_config)
         except Exception as e:
-            logger.warning(f"无法加载网络安全配置，使用默认配置: {e}", exc_info=True)
-            return validate_network_security_config({})
+            logger.error(
+                f"无法加载网络安全配置，按最保守的方式运行（只放行本机访问）: {e}",
+                exc_info=True,
+            )
+            return validate_network_security_config(
+                {
+                    "bind_interface": "127.0.0.1",
+                    "allowed_networks": LOOPBACK_ALLOWED_NETWORKS,
+                }
+            )
 
     def _ensure_network_security_config_loaded(self) -> None:
         """Load network security config once, just before request enforcement.

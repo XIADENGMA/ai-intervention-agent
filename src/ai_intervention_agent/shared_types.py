@@ -7,6 +7,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict
 from ai_intervention_agent.local_images import DEFAULT_IMAGE_DIRS, normalize_image_dirs
 from ai_intervention_agent.skill_catalog import DEFAULT_SKILL_DIRS, normalize_skill_dirs
 from ai_intervention_agent.web_ui_validators import (
+    DEFAULT_BIND_INTERFACE,
     DEFAULT_TRUSTED_PROXY_HOPS,
     validate_trusted_proxy_hops,
 )
@@ -186,7 +187,7 @@ class NetworkSecuritySectionConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    bind_interface: SafeStr = "0.0.0.0"
+    bind_interface: SafeStr = DEFAULT_BIND_INTERFACE
     allowed_networks: list[str] = [
         "127.0.0.0/8",
         "::1/128",

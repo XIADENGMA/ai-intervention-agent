@@ -147,7 +147,7 @@ itself is left alone, and so is our own override: calling this again is a no-op.
 只改错误处理，不动编码，所以在 UTF-8 的终端里输出和以前完全一样。流不支持
 ``reconfigure``（被替换成别的对象，或者是 ``None``）时什么都不做。
 
-### `web_feedback_ui(prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, output_file: str | None = None, host: str = '0.0.0.0', port: int = 8080, external_base_url: str = '', mdns_hostname: str = MDNS_DEFAULT_HOSTNAME, trusted_hosts: list[str] | None = None) -> FeedbackResult | None`
+### `web_feedback_ui(prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, output_file: str | None = None, host: str = DEFAULT_BIND_INTERFACE, port: int = 8080, external_base_url: str = '', mdns_hostname: str = MDNS_DEFAULT_HOSTNAME, trusted_hosts: list[str] | None = None) -> FeedbackResult | None`
 
 启动 Web UI（交互反馈界面）的便捷函数
 
@@ -160,7 +160,7 @@ itself is left alone, and so is our own override: calling this again is a no-op.
     task_id: 任务 ID（可选）
     auto_resubmit_timeout: 自动重调倒计时（秒，默认 240；范围 [10, 3600]；0=禁用）
     output_file: 输出文件路径（可选；若指定则将结果保存为 JSON 文件）
-    host: 绑定主机地址（默认"0.0.0.0"）
+    host: 绑定主机地址（默认 "127.0.0.1"，只监听本机）
     port: 绑定端口（默认8080）
     external_base_url: 反向代理或自定义域名的外部基地址（可选）
     mdns_hostname: mDNS 主机名（默认 ai.local）
@@ -211,7 +211,7 @@ Web 反馈界面核心类 - Flask 应用、安全策略、API 路由、任务管
 
 #### 方法
 
-##### `__init__(self, prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, host: str = '0.0.0.0', port: int = 8080, external_base_url: str = '', mdns_hostname: str = MDNS_DEFAULT_HOSTNAME, trusted_hosts: list[str] | None = None)`
+##### `__init__(self, prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, host: str = DEFAULT_BIND_INTERFACE, port: int = 8080, external_base_url: str = '', mdns_hostname: str = MDNS_DEFAULT_HOSTNAME, trusted_hosts: list[str] | None = None)`
 
 初始化 Flask 应用、安全策略、路由
 
@@ -438,7 +438,7 @@ R26.3 lazy-init 行为：
     4. 返回self.feedback_result（若无反馈则返回空字典）
 
 启动参数：
-    - host: self.host（默认"0.0.0.0"）
+    - host: self.host（默认 "127.0.0.1"，只监听本机）
     - port: self.port（默认8080）
     - debug: False（禁用调试模式）
     - use_reloader: False（禁用自动重载）

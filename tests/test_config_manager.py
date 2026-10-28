@@ -448,17 +448,18 @@ class TestNetworkSecurityConfig(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        test_config = {
-            "notification": {"enabled": True},
-            "network_security": {
-                "bind_interface": "0.0.0.0",
-                "allowed_networks": ["127.0.0.0/8"],
-                "access_control_enabled": True,
-            },
-        }
-
-        with open(self.config_file, "w", encoding="utf-8") as f:
-            json.dump(test_config, f)
+        # 文件名是 .toml，内容就得是 TOML：以前这里写的是 JSON，读不出来，读到的“配置”其实是
+        # 读不出来时的退路，断言恰好和默认值一致，从来没有读过这份文件（R915 之后退路是只放行本机，才暴露）
+        self.config_file.write_text(
+            "[notification]\n"
+            "enabled = true\n"
+            "\n"
+            "[network_security]\n"
+            'bind_interface = "0.0.0.0"\n'
+            'allowed_networks = ["127.0.0.0/8", "203.0.113.0/24"]\n'
+            "access_control_enabled = true\n",
+            encoding="utf-8",
+        )
 
     def test_network_security_not_in_memory(self):
         """测试 network_security 不加载到内存"""
@@ -480,7 +481,9 @@ class TestNetworkSecurityConfig(unittest.TestCase):
 
         self.assertIsInstance(ns_config, dict)
         self.assertEqual(ns_config.get("bind_interface"), "0.0.0.0")
-        self.assertIn("127.0.0.0/8", ns_config.get("allowed_networks", []))
+        self.assertEqual(
+            ns_config.get("allowed_networks"), ["127.0.0.0/8", "203.0.113.0/24"]
+        )
 
 
 class TestConfigManagerAdvanced(unittest.TestCase):
@@ -2184,39 +2187,33 @@ class TestValidateConfigStructure(unittest.TestCase):
 
     def test_duplicate_blocked_ips(self):
         content = '{\n"blocked_ips": [],\n"blocked_ips": []\n}'
-        parsed = json.loads(content)
         with self.assertRaises(ConfigValidationError):
-            self._json_mgr()._validate_config_structure(parsed, content)
+            self._json_mgr()._validate_config_structure(content)
 
-    def test_network_security_not_dict(self):
-        content = '{"network_security": "bad"}'
-        parsed = json.loads(content)
-        with self.assertRaises(ConfigValidationError):
-            self._mgr()._validate_config_structure(parsed, content)
+    def test_wrongly_typed_network_security_is_not_a_structure_error(self):
+        """值写得对不对只由 _validate_network_security_config 判断（R913）。
 
-    def test_allowed_networks_not_list(self):
-        content = '{"network_security": {"allowed_networks": "bad"}}'
-        parsed = json.loads(content)
-        with self.assertRaises(ConfigValidationError):
-            self._mgr()._validate_config_structure(parsed, content)
-
-    def test_allowed_networks_invalid_element(self):
-        content = '{"network_security": {"allowed_networks": [123]}}'
-        parsed = json.loads(content)
-        with self.assertRaises(ConfigValidationError):
-            self._mgr()._validate_config_structure(parsed, content)
+        这里抛错，读文件时整个文件就按解析失败处理，所有段回到默认值。以前这三种写法
+        （整段不是表、allowed_networks 不是列表、列表里有非字符串）都在这里抛错。
+        """
+        for content in (
+            '{"network_security": "bad"}',
+            '{"network_security": {"allowed_networks": "bad"}}',
+            '{"network_security": {"allowed_networks": [123]}}',
+        ):
+            with self.subTest(content=content):
+                self._mgr()._validate_config_structure(content)
+                self._json_mgr()._validate_config_structure(content)
 
     def test_toml_skips_duplicate_check(self):
         """TOML 模式下跳过 JSON 重复数组检测（TOML 解析器自身会拒绝重复键）"""
         content = '{\n"blocked_ips": [],\n"blocked_ips": []\n}'
-        parsed = json.loads(content)
-        self._mgr()._validate_config_structure(parsed, content)
+        self._mgr()._validate_config_structure(content)
 
     def test_json_comment_line_skipped(self):
         """JSON 模式：# 注释行被正确跳过"""
         content = '# "allowed_networks": []\n{"key": "value"}'
-        parsed = {"key": "value"}
-        self._json_mgr()._validate_config_structure(parsed, content)
+        self._json_mgr()._validate_config_structure(content)
 
 
 # ──────────────────────────────────────────────────────────

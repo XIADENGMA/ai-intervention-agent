@@ -102,8 +102,9 @@ empty / spinning panel.
 - **Network firewall** — corporate Zscaler / Endpoint Security
   occasionally blocks `localhost` requests from VS Code. Ask IT for
   an exception, or point `ai-intervention-agent.serverUrl` at the LAN IP.
-  The Web UI listens on all interfaces unless `network_security.bind_interface`
-  was changed to `127.0.0.1`; set it back to `0.0.0.0` if it was.
+  That only works if the Web UI listens beyond this computer: it listens on
+  `127.0.0.1` by default, so set `network_security.bind_interface` to `0.0.0.0`
+  (or that IP) first.
 
 ## 3. Task list is empty after the AI calls `interactive_feedback`
 
@@ -146,7 +147,7 @@ does not show the task.
 
 - **mDNS only publishes when bound to a non-loopback interface**.
   Set `network_security.bind_interface` to your LAN IP (e.g. `192.168.x.y`)
-  or `0.0.0.0`, not `127.0.0.1`. (`bind_interface` lives under the
+  or `0.0.0.0`, not `127.0.0.1` (the default). (`bind_interface` lives under the
   `[network_security]` section, not `[web_ui]` — `web_ui.host` does not
   choose the listen address.)
 - **macOS Sleep / Wi-Fi power-save** drops the Bonjour record after

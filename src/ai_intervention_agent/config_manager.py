@@ -17,6 +17,7 @@ from typing import Any, cast
 
 import tomlkit
 from pydantic import BaseModel, ValidationError
+from tomlkit.exceptions import TOMLKitError
 
 from ai_intervention_agent.config_utils import (
     apply_legacy_key_aliases,
@@ -754,7 +755,7 @@ class ConfigManager(
                     fmt = self.config_file.suffix.lstrip(".")
                     logger.info(f"{fmt.upper()} 配置文件已加载: {self.config_file}")
 
-                    self._validate_config_structure(full_config, content)
+                    self._validate_config_structure(content)
 
                     self._original_content = content
 
@@ -785,8 +786,12 @@ class ConfigManager(
 
             except Exception as e:
                 logger.error(f"加载配置文件失败: {e}", exc_info=True)
+                # 文件内容本身的错：解码、解析、结构校验。tomlkit 的解析错误大多是 ValueError，
+                # 但同一个键写两次（含 ``[a.x]`` 压在已有的值 ``x`` 上、内联表里的键重复）抛的
+                # KeyAlreadyPresent 不是，它只继承 TOMLKitError；漏掉它，这样的文件就不受 R783
+                # 保护，下一次保存（退出时的 force_save 也算）会把用户的内容换成默认配置（R916）
                 if (
-                    isinstance(e, ValueError | ConfigValidationError)
+                    isinstance(e, ValueError | ConfigValidationError | TOMLKitError)
                     and self._config_file_has_content()
                 ):
                     self._on_disk_config_invalid = True
@@ -964,17 +969,30 @@ class ConfigManager(
             with open(self.config_file, encoding="utf-8-sig") as f:
                 content = f.read()
 
-            parsed_config = self._parse_config_content(content)
+            # 只核对写出去的文件还能解析、没有损坏；解析结果不用
+            self._parse_config_content(content)
 
-            self._validate_config_structure(parsed_config, content)
+            self._validate_config_structure(content)
 
             logger.debug("配置文件验证通过")
         except Exception as e:
             logger.error(f"配置文件验证失败: {e}", exc_info=True)
             raise
 
-    def _validate_config_structure(self, parsed_config: dict[str, Any], content: str):
-        """验证配置结构完整性（network_security 格式等）"""
+    def _validate_config_structure(self, content: str):
+        """核对配置文件本身有没有损坏：目前只有 JSON 里重复的数组定义（TOML 解析器自己就拒绝重复键）。
+
+        值写得对不对不在这里判断。``network_security`` 里每一项该是什么类型、写错了退回什么，
+        只在 ``_validate_network_security_config``（R843）一个地方决定：留下写对的项，写坏的
+        那一项退回安全的值（``allowed_networks`` 只放行本机）。
+
+        以前这里还有一份：``allowed_networks`` 不是列表、列表里混进非字符串、整段不是表，就抛
+        错。读文件时一抛，整个文件按解析失败处理，所有段回到默认值，``bind_interface``、
+        ``blocked_ips``、``api_token`` 也一起：配置里写着 127.0.0.1 加令牌，一处笔误之后重启，
+        就监听 0.0.0.0（R918 之前的默认值）、放开整个内网、黑名单和令牌都没了（R913）。保存之后的核对
+        （``_validate_saved_config``）也用这一条：``_save_toml_with_comments`` 原样保留
+        用户写的 ``network_security``，里面的笔误不是这次写入出的错。
+        """
         if not self._is_toml_file():
             lines_list = content.splitlines()
             array_definitions: dict[str, int] = {}
@@ -994,23 +1012,6 @@ class ConfigManager(
                             f"配置文件格式损坏：重复的数组定义在第{i + 1}行"
                         )
                     array_definitions["blocked_ips"] = i + 1
-
-        if "network_security" in parsed_config:
-            ns_config = parsed_config["network_security"]
-            if not isinstance(ns_config, dict):
-                raise ConfigValidationError("network_security 配置段必须是 object")
-            if "allowed_networks" in ns_config:
-                allowed_networks = ns_config["allowed_networks"]
-                if not isinstance(allowed_networks, list):
-                    raise ConfigValidationError(
-                        "network_security.allowed_networks 应该是数组类型"
-                    )
-
-                for network in allowed_networks:
-                    if not isinstance(network, str):
-                        raise ConfigValidationError(
-                            f"network_security.allowed_networks 包含无效元素: {network}"
-                        )
 
         logger.debug("配置文件结构验证通过")
 

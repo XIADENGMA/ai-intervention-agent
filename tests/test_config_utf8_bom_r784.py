@@ -63,7 +63,7 @@ def _user_edited_template() -> str:
     for pattern, replacement in (
         (r"^port = 8080$", "port = 18793"),
         (r"^sound_volume = 80$", "sound_volume = 77"),
-        (r'^bind_interface = "0\.0\.0\.0"$', 'bind_interface = "192.168.1.1"'),
+        (r'^bind_interface = "127\.0\.0\.1"$', 'bind_interface = "192.168.1.1"'),
         (r"^blocked_ips = \[\]$", 'blocked_ips = ["203.0.113.7"]'),
     ):
         text, count = re.subn(pattern, replacement, text, flags=re.MULTILINE)

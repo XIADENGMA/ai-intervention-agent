@@ -997,7 +997,7 @@ def parse_arguments():
         "--host",
         type=str,
         default=None,
-        help="指定测试使用的主机地址 (默认使用配置文件中的设置或0.0.0.0)",
+        help="指定测试使用的主机地址 (默认使用配置文件 network_security.bind_interface 的设置，没写则 127.0.0.1)",
     )
 
     parser.add_argument(

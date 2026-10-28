@@ -210,7 +210,7 @@ Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
 - Local images in prompts: write `![alt](path/to/image.png)` in the message and the Web UI shows the file; only images inside your workspace folders and the temp directory are read (adjust with `[feedback] local_image_dirs`); click any image in the message to see it larger (Web UI and VS Code panel)
 - Agent-loop context: per-task `header_label` context chips, `feedback_placeholder` hints, and loop engineering metadata (`loop_id`, `loop_phase`, `success_criteria`)
 - Notifications: web / sound / system / Bark (iOS push), plus custom notification sound upload
-- SSH / LAN friendly: works behind port forwarding; mDNS publishes a `<host>.local` URL when supported
+- SSH / LAN friendly: works behind port forwarding; listens on this computer only by default, and once `bind_interface` is a LAN address mDNS publishes a `<host>.local` URL when supported
 - i18n: Web UI + VS Code extension shipped in `en` / `zh-CN` / `zh-TW`
 - PWA, offline-aware, WCAG 2.1 AA accessible: installable from the browser, with contrast / focus / reduced-motion audited and locked by invariant tests
 - Stable install: built on Flask 3.x with conservative dependency pins; not affected by the [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) that broke several MCP feedback servers in early 2026
@@ -259,7 +259,7 @@ On first run, `config.toml` is created from [`config.toml.default`](config.toml.
 For `uvx`, Docker, systemd, or SSH-remote runtimes where editing the file is awkward, the most-used `web_ui` settings can be overridden by env var at startup (invalid values log a `WARNING` and fall back safely; full surface in [`docs/configuration.md#environment-variable-overrides`](docs/configuration.md#environment-variable-overrides)):
 
 ```bash
-export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # listen address, default 0.0.0.0 (all interfaces)
+export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # listen address, default 127.0.0.1 (this computer only); 0.0.0.0 = all interfaces
 export AI_INTERVENTION_AGENT_WEB_UI_PORT=8181         # default 8080, range [1, 65535]
 export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=en       # auto / en / zh-CN / zh-TW
 uvx ai-intervention-agent
@@ -294,7 +294,7 @@ On iPhone, the smoothest setup wraps the Web UI in a Shortcuts automation and po
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp) (poliva) | ~310 | Direct ancestor fork (see Acknowledgements); minimal Python MCP, single feedback dialog. |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp) (Pursue-LLL) | ~30 | Independent smaller-scale fork emphasising minimal dependencies. |
 
-Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/api/system/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (15,000+ tests + 1,300+ subtests across 40 audit cycles), and releases run through a 4-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
+Where AIIA sits on the spectrum: AIIA targets the operationally deep end. The Web UI and the VS Code extension share one backend, and observability comes from a `/api/system/metrics` Prometheus endpoint plus a [reference Grafana dashboard](docs/observability/README.md). The Web UI ships in three languages and the docs in two, the project follows an invariant test discipline (15,500+ tests + 1,300+ subtests across 40 audit cycles), and releases run through a 4-job pipeline. If you want the smallest drop-in, use poliva's fork; for a desktop app, mcp-feedback-enhanced; for voice input or a multi-tab UI, Relay or the Node.js fork.
 
 Feature gaps (contributions welcome): Speech-to-Text input, always-on-top native window, Cursor usage monitoring, multi-tab session merging UI.
 

@@ -5,7 +5,7 @@ This document describes the recommended development and release workflow for thi
 ### Web UI / real-machine verification
 
 - `uv run python scripts/manual_test.py --port 8080 --verbose --thread-timeout 0`
-- Open (local): `http://127.0.0.1:8080` (LAN: `http://ai.local:8080` or `http://<LAN-IP>:8080`)
+- Open (local): `http://127.0.0.1:8080` (LAN, once `network_security.bind_interface` is `"0.0.0.0"`: `http://ai.local:8080` or `http://<LAN-IP>:8080`)
 - VSCode extension (optional): set `ai-intervention-agent.serverUrl` to your server URL (e.g. `http://ai.local:8080`)
 
 ### Pre-commit (Local CI Gate)

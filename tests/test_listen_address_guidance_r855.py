@@ -3,9 +3,10 @@
 ``service_manager.get_web_ui_config`` picks the address the Web UI is started on: the env
 var ``AI_INTERVENTION_AGENT_WEB_UI_HOST``, else ``network_security.bind_interface``, else
 (only when that key is missing) ``web_ui.host``.  The key is never missing - the section is
-merged with the defaults, which carry ``bind_interface = "0.0.0.0"`` - so ``web_ui.host`` is
-dead.  A real start of the Web UI with ``web_ui.host = "127.0.0.1"`` and nothing else
-listened on ``*:PORT`` (every interface), exactly as with no setting at all.
+merged with the defaults, which carry ``bind_interface`` (``"0.0.0.0"`` when this was written,
+``"127.0.0.1"`` since R918) - so ``web_ui.host`` is dead.  A real start of the Web UI with
+``web_ui.host = "127.0.0.1"`` and nothing else listened on ``*:PORT`` (every interface),
+exactly as with no setting at all - that was the default then.
 
 The product kept sending people to the dead key: the Bark hint of the settings page and of
 the VS Code panel ("... or change web_ui.host to 0.0.0.0"), two Bark log lines, the two
@@ -15,9 +16,11 @@ the VS Code panel ("... or change web_ui.host to 0.0.0.0"), two Bark log lines, 
 wrote the dead key and so never changed the address.  Someone who followed any of them to
 keep the Web UI local ended up with a listener on every interface.
 
-Behaviour is **not** changed - the default stays ``0.0.0.0`` and ``web_ui.host`` stays a
-fallback.  This file pins what is true (which setting wins, with the real config loader),
-and that every place that talks about the listen address names the setting that works.
+Behaviour was **not** changed by R855 - the default stayed ``0.0.0.0`` and ``web_ui.host``
+stayed a fallback.  This file pins what is true (which setting wins, with the real config
+loader), and that every place that talks about the listen address names the setting that
+works.  R918 changed the default to ``127.0.0.1`` (this computer only); the dead key is still
+dead, so ``web_ui.host = "0.0.0.0"`` alone does not open the Web UI to the network either.
 """
 
 from __future__ import annotations
@@ -88,9 +91,10 @@ def _listen_address(
 
 # (name, [web_ui] lines, [network_security] lines, env var, address the Web UI listens on)
 LISTEN_CASES = [
-    ("nothing set: every interface", "", "", None, "0.0.0.0"),
-    ("web_ui.host=127.0.0.1 alone", 'host = "127.0.0.1"', "", None, "0.0.0.0"),
-    ("web_ui.host=192.168.1.5 alone", 'host = "192.168.1.5"', "", None, "0.0.0.0"),
+    ("nothing set: this computer only", "", "", None, "127.0.0.1"),
+    ("web_ui.host=127.0.0.1 alone", 'host = "127.0.0.1"', "", None, "127.0.0.1"),
+    ("web_ui.host=0.0.0.0 alone", 'host = "0.0.0.0"', "", None, "127.0.0.1"),
+    ("web_ui.host=192.168.1.5 alone", 'host = "192.168.1.5"', "", None, "127.0.0.1"),
     ("bind_interface=127.0.0.1", "", 'bind_interface = "127.0.0.1"', None, "127.0.0.1"),
     ("bind_interface=0.0.0.0", "", 'bind_interface = "0.0.0.0"', None, "0.0.0.0"),
     (
@@ -107,7 +111,7 @@ LISTEN_CASES = [
         None,
         "0.0.0.0",
     ),
-    ("env var beats the default", "", "", "127.0.0.1", "127.0.0.1"),
+    ("env var beats the default", "", "", "0.0.0.0", "0.0.0.0"),
     (
         "env var beats bind_interface",
         "",
@@ -136,12 +140,13 @@ class TestWhichSettingChoosesTheListenAddress(unittest.TestCase):
                     _listen_address(web_ui, network_security, env), expected
                 )
 
-    def test_web_ui_host_alone_cannot_keep_the_web_ui_local(self) -> None:
-        # The case the old advice led to: "I set web_ui.host to 127.0.0.1, so it is local".
-        self.assertEqual(_listen_address(web_ui='host = "127.0.0.1"'), "0.0.0.0")
+    def test_web_ui_host_alone_cannot_open_the_web_ui_to_the_network(self) -> None:
+        # The case the advice leads to: "I set web_ui.host to 0.0.0.0 so my phone can
+        # connect" - the Web UI still listens on this computer only.
+        self.assertEqual(_listen_address(web_ui='host = "0.0.0.0"'), "127.0.0.1")
         self.assertEqual(
-            _listen_address(network_security='bind_interface = "127.0.0.1"'),
-            "127.0.0.1",
+            _listen_address(network_security='bind_interface = "0.0.0.0"'),
+            "0.0.0.0",
         )
 
 
@@ -171,12 +176,12 @@ GUIDES_ALLOWED_MENTIONS = {
     "configuration.md": [
         r"`web_ui\.host` is only a fallback for a config that has no `bind_interface`",
         r"setting `web_ui\.host` alone does \*\*not\*\* change the listen address",
-        r'`web_ui\.host = "127\.0\.0\.1"` does not make the Web UI local-only',
+        r'`web_ui\.host = "0\.0\.0\.0"` does not open the Web UI to the network',
     ],
     "configuration.zh-CN.md": [
         r"`web_ui\.host` 只是没有 `bind_interface` 时的回退",
         r"只改 `web_ui\.host` \*\*不会\*\*改变监听地址",
-        r'`web_ui\.host = "127\.0\.0\.1"` 不会让 Web UI 只对本机开放',
+        r'`web_ui\.host = "0\.0\.0\.0"` 不会让 Web UI 对网络开放',
     ],
 }
 
@@ -310,9 +315,12 @@ class TestNothingSendsPeopleToTheDeadKey(unittest.TestCase):
                 ]
                 self.assertEqual(len(lines), 1)
                 self.assertIn(
-                    "0.0.0.0（" if name.endswith("CN.md") else "0.0.0.0 (", lines[0]
+                    "默认 127.0.0.1（"
+                    if name.endswith("CN.md")
+                    else "default 127.0.0.1 (",
+                    lines[0],
                 )
-                self.assertNotRegex(lines[0], r"(default|默认) 127\.0\.0\.1")
+                self.assertNotRegex(lines[0], r"(default|默认) 0\.0\.0\.0")
 
     def test_the_default_config_says_which_key_decides(self) -> None:
         lines = (REPO / "config.toml.default").read_text(encoding="utf-8").split("\n")
@@ -366,20 +374,18 @@ class TestManualTestHostOption(unittest.TestCase):
     ) -> None:
         module = _load_manual_test()
         with _real_config("[web_ui]\nport = 18080\n"):
-            self.assertEqual(service_manager.get_web_ui_config()[0].host, "0.0.0.0")
-            service_manager.reset_config_cache_for_testing()
-            self.assertTrue(
-                module.setup_test_environment(_manual_test_args("127.0.0.1"))
-            )
-            service_manager.reset_config_cache_for_testing()
             self.assertEqual(service_manager.get_web_ui_config()[0].host, "127.0.0.1")
+            service_manager.reset_config_cache_for_testing()
+            self.assertTrue(module.setup_test_environment(_manual_test_args("0.0.0.0")))
+            service_manager.reset_config_cache_for_testing()
+            self.assertEqual(service_manager.get_web_ui_config()[0].host, "0.0.0.0")
 
     def test_without_the_host_option_the_environment_is_left_alone(self) -> None:
         module = _load_manual_test()
         with _real_config("[web_ui]\nport = 18080\n"):
             self.assertTrue(module.setup_test_environment(_manual_test_args(None)))
             self.assertNotIn(ENV_HOST, os.environ)
-            self.assertEqual(service_manager.get_web_ui_config()[0].host, "0.0.0.0")
+            self.assertEqual(service_manager.get_web_ui_config()[0].host, "127.0.0.1")
 
 
 if __name__ == "__main__":

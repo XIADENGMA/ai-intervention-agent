@@ -88,9 +88,9 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
   **Developer: Open Webview Developer Tools** 可以查看面板的控制台。
 - **企业网络拦截** —— 公司 Zscaler / 终端安全软件偶尔会拦
   VS Code 发起的 `localhost` 请求。要么找 IT 加白，要么把
-  `ai-intervention-agent.serverUrl` 指向局域网 IP。Web UI 默认监听所有网卡；
-  只有把 `network_security.bind_interface` 改成了 `127.0.0.1` 才不是，
-  那就改回 `0.0.0.0`。
+  `ai-intervention-agent.serverUrl` 指向局域网 IP。这只有在 Web UI 监听本机之外的地址时才行：
+  它默认只监听 `127.0.0.1`，先把 `network_security.bind_interface` 改成 `0.0.0.0`
+  （或那个 IP）。
 
 ## 3. AI 调用了 `interactive_feedback` 后 Web UI 没看到任务
 
@@ -129,7 +129,7 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
 
 - **mDNS 只在绑定到非 loopback 接口时发布**。
   把 `network_security.bind_interface` 改成局域网 IP（比如 `192.168.x.y`）
-  或者 `0.0.0.0`，不能是 `127.0.0.1`。（`bind_interface` 配置项在
+  或者 `0.0.0.0`，不能是 `127.0.0.1`（默认值）。（`bind_interface` 配置项在
   `[network_security]` section 下，不是 `[web_ui]` —— `web_ui.host`
   不决定监听地址。）
 - **macOS 休眠 / Wi-Fi 省电** 大约 5 分钟后会清掉 Bonjour 记录。

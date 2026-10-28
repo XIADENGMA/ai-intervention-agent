@@ -18,9 +18,15 @@
 
 ### `normalize_ip_entries(items: list[Any], field: str) -> list[str]`
 
+### `_judge_ip_entry(item: Any) -> str | None`
+
+### `unusable_ip_entries(items: list[Any]) -> list[int]`
+
 ### `validate_allowed_networks(networks: Any) -> list[str]`
 
 ### `validate_blocked_ips(ips: Any) -> list[str]`
+
+### `blocked_ips_problem(ips: Any) -> str | None`
 
 ### `validate_trusted_hosts(hosts: Any) -> list[str]`
 

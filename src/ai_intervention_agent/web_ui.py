@@ -109,6 +109,7 @@ from ai_intervention_agent.web_ui_security import (
 )
 from ai_intervention_agent.web_ui_validators import (
     DEFAULT_ALLOWED_NETWORKS,
+    DEFAULT_BIND_INTERFACE,
     VALID_BIND_INTERFACES,
     validate_allowed_networks,
     validate_auto_resubmit_timeout,
@@ -496,7 +497,7 @@ class WebFeedbackUI(
         predefined_options: list[str] | None = None,
         task_id: str | None = None,
         auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
-        host: str = "0.0.0.0",
+        host: str = DEFAULT_BIND_INTERFACE,
         port: int = 8080,
         external_base_url: str = "",
         mdns_hostname: str = MDNS_DEFAULT_HOSTNAME,
@@ -1795,7 +1796,7 @@ class WebFeedbackUI(
             4. 返回self.feedback_result（若无反馈则返回空字典）
 
         启动参数：
-            - host: self.host（默认"0.0.0.0"）
+            - host: self.host（默认 "127.0.0.1"，只监听本机）
             - port: self.port（默认8080）
             - debug: False（禁用调试模式）
             - use_reloader: False（禁用自动重载）
@@ -1909,7 +1910,7 @@ def web_feedback_ui(
     task_id: str | None = None,
     auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     output_file: str | None = None,
-    host: str = "0.0.0.0",
+    host: str = DEFAULT_BIND_INTERFACE,
     port: int = 8080,
     external_base_url: str = "",
     mdns_hostname: str = MDNS_DEFAULT_HOSTNAME,
@@ -1926,7 +1927,7 @@ def web_feedback_ui(
         task_id: 任务 ID（可选）
         auto_resubmit_timeout: 自动重调倒计时（秒，默认 240；范围 [10, 3600]；0=禁用）
         output_file: 输出文件路径（可选；若指定则将结果保存为 JSON 文件）
-        host: 绑定主机地址（默认"0.0.0.0"）
+        host: 绑定主机地址（默认 "127.0.0.1"，只监听本机）
         port: 绑定端口（默认8080）
         external_base_url: 反向代理或自定义域名的外部基地址（可选）
         mdns_hostname: mDNS 主机名（默认 ai.local）
@@ -1997,7 +1998,7 @@ if __name__ == "__main__":
         --task-id: 任务 ID（可选；主要用于调试/脚本集成）
         --auto-resubmit-timeout: 自动重调倒计时（秒，默认 240；范围 [10, 3600]；0=禁用）
         --output-file: 将反馈结果保存为 JSON 文件的路径
-        --host: Web UI 监听地址（默认 "0.0.0.0"）
+        --host: Web UI 监听地址（默认 "127.0.0.1"，只监听本机）
         --port: Web UI 监听端口（默认 8080）
         --external-base-url: 反向代理或自定义域名的外部基地址（可选）
         --mdns-hostname: mDNS 主机名（默认 ai.local）
@@ -2042,7 +2043,11 @@ if __name__ == "__main__":
         help="自动重调倒计时（秒；0 表示禁用；范围 [10, 3600]，与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐）",
     )
     parser.add_argument("--output-file", help="将反馈结果保存为 JSON 文件的路径")
-    parser.add_argument("--host", default="0.0.0.0", help="Web UI 监听地址")
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_BIND_INTERFACE,
+        help="Web UI 监听地址（默认只监听本机；0.0.0.0 = 所有网卡）",
+    )
     parser.add_argument("--port", type=int, default=8080, help="Web UI 监听端口")
     parser.add_argument(
         "--external-base-url",

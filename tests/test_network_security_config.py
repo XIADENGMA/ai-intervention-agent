@@ -1209,28 +1209,42 @@ class TestGetNetworkSecurityConfig(unittest.TestCase):
             result = mgr.get_network_security_config()
             self.assertIn("bind_interface", result)
 
-    def test_read_exception_returns_cached(self):
-        mgr = ConfigManager()
-        mgr._network_security_cache = {
-            "bind_interface": "1.2.3.4",
-            "allowed_networks": [],
-            "blocked_ips": [],
-            "access_control_enabled": True,
-        }
-        mgr._network_security_cache_time = 0
+    def test_read_exception_returns_the_config_in_force(self):
+        """读到过一份好配置之后文件读不出来：沿用那一份，缓存过期、被清空都一样（R915）。"""
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "config.toml"
+            cfg_path.write_text(
+                '[network_security]\nbind_interface = "127.0.0.1"\n'
+                'allowed_networks = ["10.0.0.0/8"]\n',
+                encoding="utf-8",
+            )
+            mgr = ConfigManager(str(cfg_path))
+            self.assertEqual(
+                mgr.get_network_security_config()["bind_interface"], "127.0.0.1"
+            )
+            mgr.invalidate_all_caches()
 
-        with patch("builtins.open", side_effect=OSError("disk error")):
-            result = mgr.get_network_security_config()
-            self.assertEqual(result["bind_interface"], "1.2.3.4")
+            with patch("builtins.open", side_effect=OSError("disk error")):
+                result = mgr.get_network_security_config()
 
-    def test_read_exception_no_cache_returns_default(self):
-        mgr = ConfigManager()
-        mgr._network_security_cache = None
-        mgr._network_security_cache_time = 0
+            self.assertEqual(result["bind_interface"], "127.0.0.1")
+            self.assertEqual(result["allowed_networks"], ["10.0.0.0/8"])
 
-        with patch("builtins.open", side_effect=OSError("disk error")):
-            result = mgr.get_network_security_config()
-            self.assertIn("bind_interface", result)
+    def test_read_exception_nothing_in_force_lets_only_the_own_machine_in(self):
+        """没有读到过好配置、又读不出来：只监听本机、只放行本机回环，不是放开内网的默认值（R915）。"""
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "config.toml"
+            cfg_path.write_text(
+                '[network_security]\nbind_interface = "0.0.0.0"\n', encoding="utf-8"
+            )
+            mgr = ConfigManager(str(cfg_path))
+            mgr.invalidate_all_caches()
+
+            with patch("builtins.open", side_effect=OSError("disk error")):
+                result = mgr.get_network_security_config()
+
+            self.assertEqual(result["bind_interface"], "127.0.0.1")
+            self.assertEqual(result["allowed_networks"], ["127.0.0.0/8", "::1/128"])
 
 
 # ──────────────────────────────────────────────────────────

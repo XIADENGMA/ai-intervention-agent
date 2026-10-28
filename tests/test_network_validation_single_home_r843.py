@@ -59,7 +59,7 @@ def _enforced(raw: object) -> dict[str, object]:
 
 def _expected(**overrides: object) -> dict[str, object]:
     section: dict[str, object] = {
-        "bind_interface": "0.0.0.0",
+        "bind_interface": "127.0.0.1",
         "allowed_networks": list(DEFAULT_ALLOWED),
         "blocked_ips": [],
         "trusted_hosts": [],
@@ -209,7 +209,11 @@ class TestEnforcedSection(unittest.TestCase):
 
     CASES: tuple[tuple[str, object, dict[str, object]], ...] = (
         ("empty section", {}, _expected()),
-        ("not a table", "oops", _expected()),
+        (
+            "not a table (a direct call; a config file never gets here, R919)",
+            "oops",
+            _expected(),
+        ),
         (
             "padding and duplicates",
             {

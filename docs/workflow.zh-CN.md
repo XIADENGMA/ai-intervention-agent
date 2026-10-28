@@ -5,7 +5,7 @@
 ### Web UI/交互真机验证
 
 - `uv run python scripts/manual_test.py --port 8080 --verbose --thread-timeout 0`
-- 打开（本机）：`http://127.0.0.1:8080`（局域网：`http://ai.local:8080` 或 `http://<局域网IP>:8080`）
+- 打开（本机）：`http://127.0.0.1:8080`（局域网，要先把 `network_security.bind_interface` 设成 `"0.0.0.0"`：`http://ai.local:8080` 或 `http://<局域网IP>:8080`）
 - VSCode 插件（可选）：在 VSCode 设置里配置 `ai-intervention-agent.serverUrl` 为你的服务端地址（例如 `http://ai.local:8080`）
 
 ### 提交前（本地 CI Gate）

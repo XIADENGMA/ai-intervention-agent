@@ -278,6 +278,62 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   all caught. The one deliberately silent `except Exception: pass` of the old method (keeping the
   failure detail on a debug event must never turn a failed push into a crash) moved with the answer
   handling to `_handle_response`; its entry in the R120 baseline now names it there (two lines).
+- The Web UI listens on this computer only when `bind_interface` is not set (R918). The default
+  listen address was `0.0.0.0`, in the code and in `config.toml.default`, the template that a
+  fresh install copies to `config.toml`. The Web UI of a fresh install, or of any config without
+  the key, therefore listened on every network interface, and the default `allowed_networks` lets
+  the private ranges in (`192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12`): any machine on the
+  local network could open a page that shows the Bark device key, the task text and the
+  auto-submit prompts. A key that is not an address already fell back to `127.0.0.1`, and two log
+  lines called that "the default" (the README did too, until R855 changed it to match the code):
+  the code had two answers to "what listens when nothing is said", and the unsafe one was the real
+  default. Real processes, connecting to this computer's own address on the default route
+  (198.18.0.1 here): the command line without `--host` and the MCP server's start path (a fresh
+  install, and a config without the key) were reachable on the old code and are refused now; a
+  written `"0.0.0.0"` is reachable on both. The default is now `127.0.0.1`, written once as
+  `DEFAULT_BIND_INTERFACE` in `web_ui_validators` and used by the section model (the default
+  configuration is built from it), the Web UI validator, the manager's fallback, the `host` of
+  `WebFeedbackUI` and `web_feedback_ui`, the `--host` option and `config.toml.default`. To let a
+  phone or another computer in, write `bind_interface = "0.0.0.0"` (or the address of one network
+  interface); the env var `AI_INTERVENTION_AGENT_WEB_UI_HOST` still wins. A `config.toml` that an
+  earlier version created has `bind_interface = "0.0.0.0"` written in it and is not changed: this
+  changes what happens when the key is missing, not what the key says. Nothing else about the
+  defaults moved (the allowed networks, the block list and the token are as before), and mDNS
+  `auto`, which already meant "publish unless the Web UI listens on loopback", now stays off until
+  the address is changed. With no address that a phone can reach, a Bark notification goes out
+  without its click link (the log says why) until `bind_interface` or `external_base_url` is set.
+  71 tests in `test_bind_interface_defaults_to_loopback_r918.py`, 46 of which fail on the old code
+  (the other 24 are controls; the one test that starts a fresh install as a real process was not
+  run there, where it would have announced the Web UI by mDNS); 24 one-point mutants are all
+  caught. Tests of R784, R843, R855, R913 and R915 that pinned the old default now pin the new
+  one. Both configuration documents, both troubleshooting guides and both READMEs give the new
+  default; the iPhone setup, and the LAN addresses in both workflow guides, name the setting that
+  makes the Web UI reachable; the configuration documents say that a file from an earlier version
+  keeps its `0.0.0.0`. The same documents said the `allowed_networks` default was
+  `["127.0.0.0/8"]` (loopback only); the default has the private ranges too, and the text now says
+  so.
+- Both configuration guides say how to publish the Web UI from a container (R921). R918 made the
+  Web UI listen on `127.0.0.1` when `bind_interface` is not set. A port published by a container
+  reaches the Web UI through the container's own network address, not through loopback, so a
+  container on the default answers nothing from outside, and the guides, which mention Docker in
+  the environment-variable section, did not say so; the user is left with "cannot connect" and an
+  easy next step, a bare `-p 8080:8080`. A new example in both guides (after the SSH one) gives
+  the command
+  `docker run -e AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0 -p 127.0.0.1:8080:8080 <your-image>`,
+  says that a `config.toml` that already has `bind_interface = "0.0.0.0"` works the same way,
+  and warns against the bare form: Docker then opens the port on every address of the
+  host (its documentation: a published port is available to the outside world unless the publish
+  flag names `127.0.0.1`), and depending on the runtime and its network mode the address the Web UI
+  sees can be the gateway of the container network instead of the visitor's, so `allowed_networks`
+  and `blocked_ips` cannot tell visitors apart. The way in from another machine is an SSH tunnel to
+  the host's loopback port, or a reverse proxy on the host that passes the visitor's address on
+  (linked to the deployment guide). The project ships no container image, and the text says so; a
+  test fails the day a Dockerfile, a compose file, a Containerfile or a devcontainer appears.
+  Documentation only, no code changed. 13 tests in `test_container_published_port_note_r921.py`, 8
+  of which fail on the old guides (the other 5 are controls that pin what the text relies on: the
+  name of the environment variable, the default listen address, a written `0.0.0.0` read as
+  written and a missing key read as loopback, the default port 8080); 24 one-point mutants are all
+  caught.
 
 ### Fixed
 
@@ -739,6 +795,239 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `400`s, then the `409`. The task route still takes no JSON (its OpenAPI text says
   `multipart/form-data` and now lists the `400`; the `/api/submit` text names the form case and
   `success`). 149 tests, 105 of which fail on the old code; 44 one-point mutants are all caught.
+- One value of the wrong type in `[network_security]` voided the whole `config.toml` (R913).
+  `_validate_config_structure`, which every read of the file ran first, raised
+  `ConfigValidationError` for an `allowed_networks` that is not a list, a list with something that
+  is not a string in it, and a `network_security` that is not a table. `_load_config` takes that
+  for an unreadable file, so every section went back to its defaults, and
+  `get_network_security_config` fell back to the defaults the same way, the permissive ones:
+  `0.0.0.0`, the whole private network, no block list, no token. A config with `bind_interface =
+  "127.0.0.1"`, a block list, trusted hosts, an API token and a port, that has `allowed_networks =
+  "192.168.1.0/24"` (a string) by mistake, was started in a fresh process on port 8080 instead of
+  its own, let `10.1.2.3` and the blocked `192.168.1.66` in (`200` instead of `403`), and had lost
+  the token and the trusted hosts; started the way the MCP server starts the Web UI, with the port
+  forced through the environment, it listened on every interface (`*:19913`) where the file says
+  `127.0.0.1`. The traces were two `ERROR` lines. R843 had made the per-key rules fail closed ("a
+  typo in the file does not open the LAN"), but its tests call `_validate_network_security_config`
+  directly and none goes through the file, so the promise held for everything except the way the
+  file is read. The structure check now judges the file itself only (a JSON file that defines
+  `allowed_networks` or `blocked_ips` twice); what a value may be, and what a wrong one turns
+  into, is decided in one place, `_validate_network_security_config`. A wrongly typed
+  `allowed_networks` lets in loopback only, a list keeps its valid entries, a `network_security`
+  that is not a table is ignored like a missing one, a `WARNING` names the key, and everything
+  else in the file is read as written. The same file now listens on `127.0.0.1` (port 19913), lets
+  in loopback only, keeps the block list, the trusted hosts and the token, and a connection to the
+  machine's LAN address is refused. A config that was running open only because of such a typo is
+  closed to the network until the line is fixed; the warning says which key. The check after a
+  save (`_validate_saved_config`) follows the same rule. The first version of this fix left it
+  strict: every save after the lenient load wrote the user's section back unchanged and then
+  failed its own check (`ConfigValidationError`, an `ERROR` with a traceback each time); it showed
+  when a save was tried, not in the load. Saving settings works again for a file with such a typo
+  (the protection of R783 used to switch every write off, because the file counted as invalid),
+  the user's line and comments stay as written, and saving the network settings in the Web UI
+  replaces a garbled section with a proper table (it was refused). What still rejects a whole
+  file: one that does not parse, and a JSON file with duplicated arrays. 89 tests, 70 of which
+  fail on the old code; 18 one-point mutants are all caught; 20,000 random `[network_security]`
+  tables read from a file give what the validator makes of the parsed table (6,251 of them have a
+  wrongly typed `allowed_networks`: 6,251 differ on the old code, nothing else), and 1,850 single
+  hostile values over every key of every section lose nothing (the probe found problems at
+  `allowed_networks` only). The two configuration documents say what a wrong value does.
+- A request that one limit refused was let through when another limit had nothing left (R914).
+  A route without a limit of its own (`GET /`, `/api/health`, `/api/capabilities`,
+  `/api/get-notification-config`, `/api/time`, `/api/update`, `/api/close` and `/api/test-bark`
+  among them) has to pass two limits, `60 per minute` and `10 per second`. Both were counted
+  right, but the decision the limiter acted on and reported was the one with the fewest calls
+  left, the earlier reset on a tie, and nobody asked whether it was a refusal. With the minute
+  used up (count 61 of 60, remaining 0) the 10th request of a second (count 10 of 10, remaining
+  0, a pass) resets first, so its pass was the decision and the request went through: a `200`
+  with `X-RateLimit-Limit: 10` and no `Retry-After`. A client that paces itself at the
+  per-second limit, 10 requests every second, got 113 requests through `60 per minute` in each
+  minute (the first six seconds as the limit says, then the 10th request of every second until
+  the minute ended); one that sent 12 a second got 55 through where 50 should. A request that
+  both limits refused reported the per-second one (`X-RateLimit-Limit: 10`, `Retry-After: 1`)
+  instead of the minute (`60`, up to 60 seconds), so a client that waited as told came back to
+  another refusal. On real sockets, a client sending 10 requests at the start of every
+  wall-clock second to a real Web UI (`GET /api/time`, two full minutes): 113 and 113 of 600
+  requests got a `200` on the old code, 60 and 60 on the new; the 10th request of the 10th
+  second was `200 Limit=10 Remaining=0` and is now `429 Limit=60 Remaining=0 Retry-After=51`.
+  One rule, `_is_more_limiting`, now picks the decision: a refusal outranks a pass whatever the
+  numbers say; of two refusals the one that lifts later, because that is when the request can
+  go through again; of two passes the one with fewer calls left, the earlier reset on a tie, as
+  before. A route with a limit of its own has one limit and is unchanged, and so are the counts,
+  the windows and the headers of a request that passes. 34 tests, 23 of which fail on the old
+  code (14 of them need the new rule; the other 11 are controls); 19 one-point mutants of the
+  rule, its use and the counting are all caught; 12,000 random requests against one to three
+  random limits (2,296 refused, 544 of them the case that went wrong) agree with a model that
+  keeps the times of the hits on the status, `Retry-After` and the three `X-RateLimit-*` headers.
+- An unreadable `config.toml` turned the network settings into the open defaults (R915). Take a
+  config with `bind_interface = "127.0.0.1"`, an allowed network and a blocked address. When the
+  file stops parsing (a half-typed line saved by an editor, bytes that are not UTF-8, a truncated
+  JSON file), `get_network_security_config` had nothing to read and nothing to fall back on, and
+  returned the permissive defaults: `0.0.0.0`, the whole private network, no block list. It
+  happened in two ways. At a start, the MCP side picked `0.0.0.0` and the Web UI let the blocked
+  `192.168.1.66` and `10.1.2.3` in (`200` instead of `403`); on real sockets a Web UI started on
+  such a file listened on every interface and served this machine's LAN address
+  (`192.168.31.167`). While the service ran, `reload()` clears the settings cache even when the
+  reload failed, and the file watcher runs the change callbacks regardless, so the Web UI's
+  callback read the broken file, found nothing to parse and no cache (the one it had just
+  dropped), and replaced the access rules in force with the defaults: a LAN address blocked in the
+  file went from `403` to `200` within the 2-second poll after the file was saved with a syntax
+  error, and stayed `200` until it was fixed (so did `10.1.2.3` and `172.20.0.5`, which the file
+  kept out). An editor's auto-save is enough to cause it. The configuration document said the
+  opposite ("the previous settings after an edit"): true for the other sections, whose last good
+  copy R783 keeps in memory, not for `network_security`, which is read from the file every time.
+  An unreadable file no longer changes what the network settings let in. `_network_security_last_good`
+  holds the settings in force (every successful read and save updates it; `invalidate_all_caches()`,
+  which only forces the next read, does not clear it) and is what an unreadable file leaves in
+  place, so a block list is not forgotten and the file takes over again at its next good reload.
+  With nothing in force (a start on such a file, or a service that had not read the section yet)
+  the settings are the closed ones: `127.0.0.1`, loopback only, every other key at its default, and
+  an `ERROR` names the file and says what is in force. The same file now makes a Web UI listen on
+  `127.0.0.1` and refuse a connection to the LAN address, and a running Web UI answers `403` for
+  the blocked address the whole time; the access rules come back within a couple of seconds of
+  the fix, the listen address on the next start. A file that is missing or empty still means
+  "nothing configured" (the defaults, so a fresh install is reachable from the LAN), and so does
+  one deleted while the service runs; a value of the wrong type is still handled per key (R913),
+  and a save is still refused for an unreadable file (R783). The fallback of
+  `WebFeedbackUI._load_network_security_config` for a configuration manager that cannot be used at
+  all is closed the same way. Three tests had been standing on the old behaviour: one set the
+  cache by hand, one only asserted that a key exists, and `TestNetworkSecurityConfig` wrote JSON
+  into a `.toml` file, so it never read its file and passed because the defaults happened to equal
+  its assertions; they now read what they write. 54 tests, 46 of which fail on the old code (the
+  other 8 are controls); 18 one-point mutants are all caught; 2,400 random steps of good file,
+  broken file, read, cache invalidation, save and restart agree with a model that remembers only
+  the latest good settings (1,153 checks on a good file, 911 on a broken one with settings in
+  force, 336 on a broken one with none; 159 saves went through and 191 were refused). Both
+  configuration documents say what an unreadable file does.
+- A config file with a TOML key written twice could be overwritten with the defaults (R916). R783
+  keeps a config file whose content cannot be loaded from being written over: `_load_config` marks
+  the file as unusable, and every save (the one at exit included) is skipped. The mark was set for
+  `ValueError` and `ConfigValidationError`, and nearly every tomlkit parse error is a `ValueError`;
+  a duplicated key is the exception: tomlkit raises `KeyAlreadyPresent`, which derives from
+  `TOMLKitError` only. There are three ways to write it, all plain mistakes of a hand edit: the
+  same key twice in one table (a copied line), `[web_ui.port]` on top of an existing value `port`,
+  and a repeated key in an inline table. Such a file was reported in the log and loaded as the
+  defaults (a running service kept its previous settings) but not marked, so the protection was
+  off. Measured on three files of 69 to 79 bytes, one per form, and five ways of writing: the
+  exit-time `force_save` and a save after a changed value turned the file into the 1,050-byte
+  defaults, `set_network_security_config` into a file of 0 bytes, a running service whose file
+  picked up the duplicate into 1,051 bytes, and a process that only started and exited (nothing
+  touched; the exit-time save) into the 1,050-byte defaults: 15 of 15 cases overwritten. The port,
+  `bind_interface`, access rules, Bark `device_key` and everything else the user had written were
+  replaced by the defaults, with one `ERROR` in the log that nobody reads. Now any `TOMLKitError`
+  marks the file: the base class, because what is protected is "tomlkit cannot read this file",
+  not one subclass. The same 15 cases keep the file byte for byte, a change made meanwhile still
+  applies in memory, the log says the save was skipped, `set_network_security_config` refuses with
+  a `RuntimeError`, and fixing the file (or deleting it) lifts the mark at the next load. A read
+  error (`OSError`) still does not mark the file (R783: it can be transient); valid TOML that only
+  looks similar (the same key name in two tables, a repeated `[[x]]`) is read and saved as before;
+  and `network_security` in such a file is closed as R915 says, for all three forms. 44 tests, 26
+  of which fail on the old code (the other 18 are controls); 7 one-point mutants are all caught.
+  Both configuration documents list a key written twice among the files that are never
+  overwritten, and no longer put a file the Web UI cannot read in that list: that file is not
+  marked (the failure can be transient), only its `network_security` is closed.
+- Saving the configuration could turn a file written with dotted keys into another file, losing
+  settings and opening network access (R917). The file is not written from scratch: tomlkit edits
+  it on top of the layout the user wrote, to keep comments and order, and the writer never checked
+  what came out. Two layouts came out wrong. First, a section written as dotted keys
+  (`notification.sound_volume = 33` on one line, `notification.bark_enabled = false` on the next)
+  is not a plain table for tomlkit but an `OutOfOrderTableProxy`; the writer took it for "not a
+  table" and replaced the whole section with a dict, which tomlkit renders as `[notification]`
+  followed by `notification.sound_volume = 58`, a table inside itself. Read back, `notification`
+  had a single key named `notification` and every setting was the default again. The
+  `network_security` writer did the same: after one token update `bind_interface` read back as
+  `0.0.0.0`, the block list was empty and the token was not saved, the same fail-open result R915
+  closed for an unreadable file. Second, an inline table (`web_ui = {port = 18792}`) was replaced
+  by a `[web_ui]` heading in the same place, and the root-level dotted keys written after it, such
+  as `network_security.bind_interface`, then belonged to that table: one edit of a Web UI setting
+  moved `network_security` into `web_ui`. Measured through the real `ConfigManager` on 300 random
+  layouts (tables, dotted keys, inline tables, split tables, mixed): 199 read back wrong (166
+  after an ordinary save, 33 after a `network_security` save), every one of them with dotted keys.
+  Now such a section is updated in place (a file of dotted keys stays in dotted keys, a table
+  split by another table stays where it was, comments stay), and the text is checked before it
+  replaces the file: it must contain this change, and every top-level key the change does not
+  touch must be unchanged. If not, the file is generated whole from the settings in force (same
+  settings, no comments, one `WARNING`), and if even that does not read back the same, the save
+  is refused with a `ValueError` and the file stays as it was. Of 400 random layouts 121 needed the
+  rebuild, every one with both inline tables and dotted keys; the other 279, every layout of
+  tables only, dotted keys only or inline tables only included, kept their layout; 600 random
+  layouts are now all correct. 30 tests, 26 of which fail on the old code (13 for the two layouts
+  above, 13 for the check and its helpers, which the old code does not have; the other 4 are
+  controls); 15 one-point mutants are all caught. Both configuration documents say what a save
+  does to the layout of the file.
+- A `network_security` that was not a table turned the network settings into the open defaults
+  (R919). R913 made a `network_security` written as something other than a table
+  (`network_security = "oops"`, `= 5`, `= [1, 2]`, `[[network_security]]`) read as if the section
+  were missing, and R915 then decided that settings that cannot be used must never open anything
+  up; this one way of writing it stayed on the old rule. The file is valid TOML, so nothing is
+  unreadable, but not a word of what the user wrote is used, which comes to the same thing.
+  Measured with the real Web UI on the old code (the sources are simulated through `REMOTE_ADDR`,
+  as in R915): a start on `network_security = "oops"` let `192.168.1.50`, `192.168.1.66`,
+  `10.1.2.3` and `10.9.9.9` in (`200`), and a running Web UI whose configuration A blocks
+  `192.168.1.66` and whose configuration B blocks `10.9.9.9` answered `200` for both blocked
+  addresses after the file became a string, and again after it became an array of tables; each
+  went back to `403` only when a good file was written. Now `get_network_security_config` hands
+  such a value to the function R915 wrote for a file that cannot be read: a service that is
+  running keeps the settings in force (the block list is not forgotten), a start with nothing in
+  force listens on `127.0.0.1` and lets in loopback only, and one `ERROR` names the file and the
+  type that was written, never the value (the line may be a token pasted in the wrong place). The
+  rest of the file is still read, the file is not marked invalid, and saving the network settings
+  in the Web UI still replaces the line with a proper table (R913); an update merges into what is
+  in force (loopback only, or the running settings), not into the open defaults. Unchanged:
+  `network_security = {}`, an empty `[network_security]`, dotted keys and a missing section read
+  as the defaults, and so does a JSON `null`. Two edges are left as they were: the two validators
+  still answer a non-dict handed to them directly with the defaults (a config file never gets
+  there), and an old `config.json` with such a section is migrated to TOML by leaving it out,
+  which gives the template's section (loopback listen address, the default networks). 119 tests in
+  `test_network_security_not_a_table_fails_closed_r919.py`, 79 of which fail on the old code (the
+  other 40 are controls); 16 one-point mutants are all caught; 2,400 random steps of good table,
+  not a table, unreadable file, no section and restart agree with a model that remembers only the
+  latest good settings (1,373 checks on a file or a section that cannot be used, 995 with settings
+  in force and 378 with none, 901 of them a section that is not a table). Two tests of R913 (eight
+  cases) that expected the defaults and a `WARNING` now expect the closed settings and an `ERROR`.
+  Both configuration documents say what a section that is not a table does.
+- A `blocked_ips` that could not be read was dropped, and the address it named was no longer
+  blocked (R920). Every other key of `[network_security]` falls back to the stricter value when
+  it cannot be used (`bind_interface` to `127.0.0.1`, `access_control_enabled` to on,
+  `allowed_networks` to loopback only, an entry of `trusted_hosts` that cannot be read means one
+  host less trusted), and R915 and R919 had just decided that a section that cannot be used must
+  open nothing. `blocked_ips` was the one key that went the other way: an entry that is not an IP
+  address or network was dropped (a `WARNING` that printed it), a value that is not a list read
+  as no list, and an address that is no longer in the list is an address that is no longer
+  refused. Measured with the real Web UI on the old code (the sources are simulated through
+  `REMOTE_ADDR`, as in R915), with `allowed_networks` letting `10.0.0.0/8` in and `10.9.9.9` the
+  address to block: a start on `blocked_ips = "10.9.9.9"`, `= 5`, `= { ip = "10.9.9.9" }` or
+  `= ["10.9.9.999"]` (a typo in the only entry) answered `200` for `10.9.9.9`, and a running Web
+  UI that was blocking it answered `200` after the file became a string and again after it
+  became a typo, going back to `403` only when a good file was written. With a typo among good
+  entries the good ones were still enforced, so what was lost was the one address the typo was
+  meant to name (the whole list when it had a single entry). Now `get_network_security_config`
+  hands a `blocked_ips` that is not a list, or has an entry that is not an IP address or
+  network, to the function R915 wrote for a file that cannot be read: a service that is running
+  keeps the settings in force (the block list is not forgotten), a start with nothing in force
+  listens on `127.0.0.1` and lets in loopback only, and one `ERROR` names the file,
+  `network_security.blocked_ips` and the positions of the entries that cannot be read (the first
+  five, then a count), never what is written there (the line may be a token pasted in the wrong
+  place). The rest of the file is still read and the file is not marked invalid. This is how a
+  server treats a configuration it cannot use: the old one keeps running until the new one is
+  fixed. The entries that can be read are not enforced while the list has one that cannot be,
+  because enforcing half of what the user wrote is how the old code got here; closing only
+  `allowed_networks` was not chosen, since the next save of the network settings (a token
+  rotation included) would have written that closed list into the file. Unchanged: a key that is
+  not written (and a JSON `null`), an empty list, blank entries (still skipped silently),
+  `::ffff:` addresses, a network with host bits and repeated entries read as before, and the
+  writers (`set_network_security_config`, `update_network_security_config`) still drop what
+  cannot be read, with a `WARNING`. Whether an entry can be read is decided in one place,
+  `_judge_ip_entry` in `web_ui_validators`, which `normalize_ip_entries` and the new check both
+  use, so they cannot disagree. 322 tests in
+  `test_unusable_blocked_ips_fails_closed_r920.py`, 221 of which fail on the old code (the
+  other 101 are controls); 24 one-point mutants are all caught; 2,400 random steps of good
+  table, a block list that cannot be read, not a table, unreadable file, no section and restart
+  agree with a model that remembers only the latest good settings (1,478 checks on a file or a
+  section that cannot be used, 1,097 with settings in force and 381 with none, 814 of them a
+  block list that cannot be read). One test of R913 (the random comparison) now expects the
+  closed settings for such a list. Both configuration documents name `blocked_ips` as the
+  exception to the rule that a value of the wrong type only affects its own key.
 
 ## [1.9.0] - 2026-10-25
 

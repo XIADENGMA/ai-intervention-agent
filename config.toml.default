@@ -66,7 +66,7 @@ bark_timeout = 10
 # - "zh-TW": 繁體中文 / Traditional Chinese
 language = "auto"
 # 这一项不决定监听地址 / This key does NOT choose the listen address. The Web UI listens on
-# [network_security] bind_interface (default "0.0.0.0") and only falls back to this key when
+# [network_security] bind_interface (default "127.0.0.1") and only falls back to this key when
 # bind_interface is missing, which it never is in a config merged with the defaults. To change
 # the address edit network_security.bind_interface, or set the env var
 # AI_INTERVENTION_AGENT_WEB_UI_HOST.
@@ -107,9 +107,9 @@ ios_a2hs_hint_dismissed = false
 # ──────────────────────────────────────────────
 [network_security]
 # 绑定网络接口 / Bind network interface: the address the Web UI listens on
-# (127.0.0.1=local only, 0.0.0.0=all interfaces). The env var
-# AI_INTERVENTION_AGENT_WEB_UI_HOST overrides it.
-bind_interface = "0.0.0.0"
+# (127.0.0.1=this computer only, the default; 0.0.0.0=all interfaces, which a phone or another
+# computer on the network needs). The env var AI_INTERVENTION_AGENT_WEB_UI_HOST overrides it.
+bind_interface = "127.0.0.1"
 # 允许访问的网络段 / Allowed network segments
 allowed_networks = [
     "127.0.0.0/8",       # Loopback / 本地回环

@@ -22,6 +22,10 @@ logger = EnhancedLogger(__name__)
 
 VALID_BIND_INTERFACES = {"0.0.0.0", "127.0.0.1", "localhost", "::1", "::"}
 
+# 配置里没写 bind_interface 时 Web UI 监听的地址：只监听本机（R918）。要让手机、别的电脑访问，
+# 自己写 "0.0.0.0"（所有网卡）或某个具体的网卡地址。
+DEFAULT_BIND_INTERFACE = "127.0.0.1"
+
 # 白名单为空 / 全部无效时的兜底：只放行本机回环。宁可锁住远程访问，也不在配置写坏时放大范围
 LOOPBACK_ALLOWED_NETWORKS = ["127.0.0.0/8", "::1/128"]
 
@@ -127,21 +131,39 @@ def normalize_ip_entries(items: list[Any], field: str) -> list[str]:
     valid: list[str] = []
     seen: set[str] = set()
     for item in items:
-        if not isinstance(item, str):
-            logger.warning(f"{field} 无效条目已忽略: {item!r}")
+        canonical = _judge_ip_entry(item)
+        if canonical is None:
+            shown = item.strip() if isinstance(item, str) else repr(item)
+            logger.warning(f"{field} 无效条目已忽略: {shown}")
             continue
-        text = item.strip()
-        if not text:
-            continue
-        try:
-            canonical = _canonical_ip_entry(text)
-        except ValueError:
-            logger.warning(f"{field} 无效条目已忽略: {text}")
-            continue
-        if canonical not in seen:
+        if canonical and canonical not in seen:
             seen.add(canonical)
             valid.append(canonical)
     return valid
+
+
+def _judge_ip_entry(item: Any) -> str | None:
+    """名单里一项算什么：``normalize_ip_entries`` 和 ``unusable_ip_entries`` 共用这一份判断。
+
+    返回规范写法（能用）；``""``（只有空白，静默跳过）；``None``（不是字符串，或不是 IP / 网段）。
+    """
+    if not isinstance(item, str):
+        return None
+    text = item.strip()
+    if not text:
+        return ""
+    try:
+        return _canonical_ip_entry(text)
+    except ValueError:
+        return None
+
+
+def unusable_ip_entries(items: list[Any]) -> list[int]:
+    """名单里 ``normalize_ip_entries`` 会丢掉（并各记一条 WARNING）的条目的位置，从 0 数起。
+
+    只有位置，没有内容：读不懂的那一项可能是贴错了地方的令牌，不该被写进日志。
+    """
+    return [i for i, item in enumerate(items) if _judge_ip_entry(item) is None]
 
 
 def validate_allowed_networks(
@@ -175,6 +197,29 @@ def validate_blocked_ips(ips: Any) -> list[str]:
             logger.warning("blocked_ips 不是列表，已忽略")
         return []
     return normalize_ip_entries(ips, "blocked_ips")
+
+
+def blocked_ips_problem(ips: Any) -> str | None:
+    """``blocked_ips`` 里有 ``validate_blocked_ips`` 会丢掉的东西时，返回一句说明；没有就是 ``None``。
+
+    拦截名单丢掉一项，那个地址就没有被拦住；放行名单丢掉一项只是少放行一个。所以读配置文件的
+    一侧（``ConfigManager.get_network_security_config``）遇到这样的名单，不把这一段当成一份能用的
+    配置（R920）。没写（``None``）、空列表、只有空白的条目都不是问题。说明里只有类型和位置，
+    没有内容：读不懂的那一项可能是贴错了地方的令牌。
+    """
+    if ips is None:
+        return None
+    if not isinstance(ips, list):
+        return (
+            f"不是列表（实际类型 {type(ips).__name__}），"
+            '要写成 blocked_ips = ["10.0.0.5", "192.168.9.0/24"]'
+        )
+    bad = unusable_ip_entries(ips)
+    if not bad:
+        return None
+    where = "、".join(str(i + 1) for i in bad[:5])
+    lead = f"第 {where} 项" if len(bad) <= 5 else f"第 {where} 项等共 {len(bad)} 项"
+    return f"{lead}不是 IP 地址或网段（名单共 {len(ips)} 项）"
 
 
 def validate_trusted_hosts(hosts: Any) -> list[str]:
@@ -234,7 +279,7 @@ def validate_network_security_config(config: Any) -> dict[str, Any]:
 
     validated = {
         "bind_interface": validate_bind_interface(
-            config.get("bind_interface", "0.0.0.0")
+            config.get("bind_interface", DEFAULT_BIND_INTERFACE)
         ),
         "allowed_networks": validate_allowed_networks(
             config.get("allowed_networks", DEFAULT_ALLOWED_NETWORKS)
